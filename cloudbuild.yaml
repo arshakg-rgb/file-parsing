@@ -94,7 +94,7 @@ steps:
       - --memory
       - 512Mi
       - --cpu
-      - 1
+      - '1'
       - --timeout
       - 3600s
       - --set-env-vars
@@ -123,7 +123,7 @@ steps:
       - --memory
       - 512Mi
       - --cpu
-      - 1
+      - '1'
       - --timeout
       - 3600s
       - --set-env-vars
@@ -152,7 +152,7 @@ steps:
       - --memory
       - 512Mi
       - --cpu
-      - 1
+      - '1'
       - --timeout
       - 3600s
       - --set-env-vars
@@ -181,7 +181,7 @@ steps:
       - --memory
       - 512Mi
       - --cpu
-      - 1
+      - '1'
       - --timeout
       - 3600s
       - --set-env-vars
@@ -210,7 +210,7 @@ steps:
       - --memory
       - 512Mi
       - --cpu
-      - 1
+      - '1'
       - --timeout
       - 3600s
       - --set-env-vars
@@ -239,7 +239,7 @@ steps:
       - --memory
       - 512Mi
       - --cpu
-      - 1
+      - '1'
       - --timeout
       - 3600s
       - --set-env-vars
