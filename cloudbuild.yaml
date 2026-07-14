@@ -97,7 +97,7 @@ steps:
     args:
       - -c
       - |
-        gcloud run deploy detect_bootstrap \
+        gcloud run deploy detect-bootstrap \
           --image $_DETECT_IMAGE \
           --region $_REGION \
           --platform managed \
