@@ -1,0 +1,259 @@
+options:
+  logging: CLOUD_LOGGING_ONLY
+substitutions:
+  _REGION: us-central1
+  _INGEST_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ingest:latest
+  _DETECT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/detect_bootstrap:latest
+  _STREAM_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/stream_parser:latest
+  _LOAD_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/load:latest
+  _REPORT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/report:latest
+  _RETRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/retry:latest
+
+steps:
+  # Step 1: Load secrets into environment file
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: 'Create .env file from secrets'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "GCP_PROJECT_ID=data-etl-499916" >> .env
+        echo "DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)" >> .env
+        echo "DEPLOYMENT_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DEPLOYMENT_BUCKET)" >> .env
+        echo "DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)" >> .env
+        echo "QUEUE_BACKEND=pubsub" >> .env
+        echo "FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)" >> .env
+        echo "TEMPLATE_COLLECTION=file-parsing-templates" >> .env
+        echo "BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)" >> .env
+        echo "HEALTH_CHECK_PORT=8080" >> .env
+        
+        echo "NODE_ENV=production" >> .env
+
+  # Step 2: Use Node.js v20 to install and build
+  - name: node:20
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        npm ci
+        npm run build
+
+  # Step 3: Build and push Docker image for each service
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', 'Dockerfile.ingest', '-t', '$_INGEST_IMAGE', '.']
+  
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_INGEST_IMAGE']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', 'Dockerfile.detect', '-t', '$_DETECT_IMAGE', '.']
+  
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_DETECT_IMAGE']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', 'Dockerfile.stream', '-t', '$_STREAM_IMAGE', '.']
+  
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_STREAM_IMAGE']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', 'Dockerfile.load', '-t', '$_LOAD_IMAGE', '.']
+  
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_LOAD_IMAGE']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', 'Dockerfile.report', '-t', '$_REPORT_IMAGE', '.']
+  
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_REPORT_IMAGE']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', 'Dockerfile.retry', '-t', '$_RETRY_IMAGE', '.']
+  
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_RETRY_IMAGE']
+
+  # Step 4: Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ingest
+      - --image
+      - $_INGEST_IMAGE
+      - --region
+      - $_REGION
+      --platform
+      managed
+      --allow-unauthenticated
+      --memory
+      512Mi
+      --cpu
+      1
+      --timeout
+      3600s
+      --set-env-vars
+      ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
+      ^^^^DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
+      ^^^^QUEUE_BACKEND=pubsub
+      ^^^^GCP_PROJECT_ID=data-etl-499916
+      ^^^^FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
+      ^^^^TEMPLATE_COLLECTION=file-parsing-templates
+      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
+      ^^^^HEALTH_CHECK_PORT=8080
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - detect_bootstrap
+      --image
+      - $_DETECT_IMAGE
+      --region
+      - $_REGION
+      --platform
+      managed
+      --allow-unauthenticated
+      --memory
+      512Mi
+      --cpu
+      1
+      --timeout
+      3600s
+      --set-env-vars
+      ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
+      ^^^^DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
+      ^^^^QUEUE_BACKEND=pubsub
+      ^^^^GCP_PROJECT_ID=data-etl-499916
+      ^^^^FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
+      ^^^^TEMPLATE_COLLECTION=file-parsing-templates
+      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
+      ^^^^HEALTH_CHECK_PORT=8080
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - stream_parser
+      --image
+      - $_STREAM_IMAGE
+      --region
+      - $_REGION
+      --platform
+      managed
+      --allow-unauthenticated
+      --memory
+      512Mi
+      --cpu
+      1
+      --timeout
+      3600s
+      --set-env-vars
+      ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
+      ^^^^DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
+      ^^^^QUEUE_BACKEND=pubsub
+      ^^^^GCP_PROJECT_ID=data-etl-499916
+      ^^^^FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
+      ^^^^TEMPLATE_COLLECTION=file-parsing-templates
+      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
+      ^^^^HEALTH_CHECK_PORT=8080
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - load
+      --image
+      - $_LOAD_IMAGE
+      --region
+      - $_REGION
+      --platform
+      managed
+      --allow-unauthenticated
+      --memory
+      512Mi
+      --cpu
+      1
+      --timeout
+      -3600s
+      --set-env-vars
+      ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
+      ^^^^DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
+      ^^^^QUEUE_BACKEND=pubsub
+      ^^^^GCP_PROJECT_ID=data-etl-499916
+      ^^^^FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
+      ^^^^TEMPLATE_COLLECTION=file-parsing-templates
+      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
+      ^^^^HEALTH_CHECK_PORT=8080
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - report
+      --image
+      - $_REPORT_IMAGE
+      --region
+      - $_REGION
+      --platform
+      managed
+      --allow-unauthenticated
+      --memory
+      512Mi
+      --cpu
+      1
+      --timeout
+      3600s
+      --set-env-vars
+      ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
+      ^^^^DATA_BUCKET=$(gcloud secrets access latest --secret=FILE_DATA_BUCKET)
+      ^^^^QUEUE_BACKEND=pubsub
+      ^^^^GCP_PROJECT_ID=data-etl-499916
+      ^^^^FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
+      ^^^^TEMPLATE_COLLECTION=file-parsing-templates
+      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets access latest --secret=FILE_BEDROCK_MODEL_ID)
+      ^^^^HEALTH_CHECK_PORT=8080
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - retry
+      --image
+      - $_RETRY_IMAGE
+      --region
+      - $_REGION
+      --platform
+      managed
+      --allow-unauthenticated
+      --memory
+      512Mi
+      --cpu
+      -1
+      --timeout
+      3600s
+      --set-env-vars
+      ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
+      ^^^^DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
+      ^^^^QUEUE_BACKEND=pubsub
+      ^^^^GCP_PROJECT_ID=data-etl-499916
+      ^^^^FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
+      ^^^^TEMPLATE_COLLECTION=file-parsing-templates
+      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
+      ^^^^HEALTH_CHECK_PORT=8080
+
+images:
+  - $_INGEST_IMAGE
+  - $_DETECT_IMAGE
+  - $_STREAM_IMAGE
+  - $_LOAD_IMAGE
+  - $_REPORT_IMAGE
+  - $_RETRY_IMAGE
