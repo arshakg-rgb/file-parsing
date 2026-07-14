@@ -37,8 +37,7 @@ steps:
     args:
       - -c
       - |
-        npm ci
-        npm run build
+        npm ci && npm run build
 
   # Step 3: Build and push Docker image for each service
   - name: 'gcr.io/cloud-builders/docker'
