@@ -4,7 +4,6 @@ import { receiveMessages, deleteMessage } from "../../shared/queueUtils.js";
 import { JobEvent, EventType } from "../../shared/models/events.js";
 import { handleEvent } from "./stateMachine.js";
 import { router } from "./router.js";
-import { startHealthCheckServer } from "../../shared/health.js";
 import { pool } from "../../shared/db.js";
 
 const app = express();
@@ -33,10 +32,6 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error("error", err);
   res.status(500).json({ detail: err.message });
 });
-
-if (process.env.HEALTH_CHECK_PORT) {
-  startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
-}
 
 async function eventConsumerLoop(): Promise<void> {
   while (true) {
