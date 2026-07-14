@@ -26,9 +26,7 @@ steps:
         echo "TEMPLATE_COLLECTION=file-parsing-templates" >> .env
         echo "BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)" >> .env
         echo "HEALTH_CHECK_PORT=8080" >> .env
-        
         echo "NODE_ENV=production" >> .env
-        
         echo "LOKI_HOST=$(gcloud secrets versions access latest --secret=FILE_LOKI_HOST)" >> .env
         echo "LOKI_USERNAME=$(gcloud secrets versions access latest --secret=FILE_LOKI_USERNAME)" >> .env
         echo "LOKI_PASSWORD=$(gcloud secrets versions access latest --secret=FILE_LOKI_PASSWORD)" >> .env
@@ -90,24 +88,24 @@ steps:
       - $_INGEST_IMAGE
       - --region
       - $_REGION
-      --platform
-      managed
-      --allow-unauthenticated
-      --memory
-      512Mi
-      --cpu
-      1
-      --timeout
-      3600s
-      --set-env-vars
-      ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
-      ^^^^DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
-      ^^^^QUEUE_BACKEND=pubsub
-      ^^^^GCP_PROJECT_ID=data-etl-499916
-      ^^^^FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
-      ^^^^TEMPLATE_COLLECTION=file-parsing-templates
-      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
-      ^^^^HEALTH_CHECK_PORT=8080
+      - --platform
+      - managed
+      - --allow-unauthenticated
+      - --memory
+      - 512Mi
+      - --cpu
+      - 1
+      - --timeout
+      - 3600s
+      - --set-env-vars
+      - DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
+      - DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
+      - QUEUE_BACKEND=pubsub
+      - GCP_PROJECT_ID=data-etl-499916
+      - FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
+      - TEMPLATE_COLLECTION=file-parsing-templates
+      - BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
+      - HEALTH_CHECK_PORT=8080
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
@@ -115,28 +113,28 @@ steps:
       - run
       - deploy
       - detect_bootstrap
-      --image
+      - --image
       - $_DETECT_IMAGE
-      --region
+      - --region
       - $_REGION
-      --platform
-      managed
-      --allow-unauthenticated
-      --memory
-      512Mi
-      --cpu
-      1
-      --timeout
-      3600s
-      --set-env-vars
-      ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
-      ^^^^DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
-      ^^^^QUEUE_BACKEND=pubsub
-      ^^^^GCP_PROJECT_ID=data-etl-499916
-      ^^^^FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
-      ^^^^TEMPLATE_COLLECTION=file-parsing-templates
-      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
-      ^^^^HEALTH_CHECK_PORT=8080
+      - --platform
+      - managed
+      - --allow-unauthenticated
+      - --memory
+      - 512Mi
+      - --cpu
+      - 1
+      - --timeout
+      - 3600s
+      - --set-env-vars
+      - DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
+      - DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
+      - QUEUE_BACKEND=pubsub
+      - GCP_PROJECT_ID=data-etl-499916
+      - FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
+      - TEMPLATE_COLLECTION=file-parsing-templates
+      - BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
+      - HEALTH_CHECK_PORT=8080
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
@@ -144,28 +142,28 @@ steps:
       - run
       - deploy
       - stream_parser
-      --image
+      - --image
       - $_STREAM_IMAGE
-      --region
+      - --region
       - $_REGION
-      --platform
-      managed
-      --allow-unauthenticated
-      --memory
-      512Mi
-      --cpu
-      1
-      --timeout
-      3600s
-      --set-env-vars
-      ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
-      ^^^^DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
-      ^^^^QUEUE_BACKEND=pubsub
-      ^^^^GCP_PROJECT_ID=data-etl-499916
-      ^^^^FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
-      ^^^^TEMPLATE_COLLECTION=file-parsing-templates
-      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
-      ^^^^HEALTH_CHECK_PORT=8080
+      - --platform
+      - managed
+      - --allow-unauthenticated
+      - --memory
+      - 512Mi
+      - --cpu
+      - 1
+      - --timeout
+      - 3600s
+      - --set-env-vars
+      - DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
+      - DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
+      - QUEUE_BACKEND=pubsub
+      - GCP_PROJECT_ID=data-etl-499916
+      - FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
+      - TEMPLATE_COLLECTION=file-parsing-templates
+      - BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
+      - HEALTH_CHECK_PORT=8080
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
@@ -173,28 +171,28 @@ steps:
       - run
       - deploy
       - load
-      --image
+      - --image
       - $_LOAD_IMAGE
-      --region
+      - --region
       - $_REGION
-      --platform
-      managed
-      --allow-unauthenticated
-      --memory
-      512Mi
-      --cpu
-      1
-      --timeout
-      3600s
-      --set-env-vars
-      ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
-      ^^^^DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
-      ^^^^QUEUE_BACKEND=pubsub
-      ^^^^GCP_PROJECT_ID=data-etl-499916
-      ^^^^FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
-      ^^^^TEMPLATE_COLLECTION=file-parsing-templates
-      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
-      ^^^^HEALTH_CHECK_PORT=8080
+      - --platform
+      - managed
+      - --allow-unauthenticated
+      - --memory
+      - 512Mi
+      - --cpu
+      - 1
+      - --timeout
+      - 3600s
+      - --set-env-vars
+      - DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
+      - DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
+      - QUEUE_BACKEND=pubsub
+      - GCP_PROJECT_ID=data-etl-499916
+      - FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
+      - TEMPLATE_COLLECTION=file-parsing-templates
+      - BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
+      - HEALTH_CHECK_PORT=8080
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
@@ -202,28 +200,28 @@ steps:
       - run
       - deploy
       - report
-      --image
+      - --image
       - $_REPORT_IMAGE
-      --region
+      - --region
       - $_REGION
-      --platform
-      managed
-      --allow-unauthenticated
-      --memory
-      512Mi
-      --cpu
-      1
-      --timeout
-      3600s
-      --set-env-vars
-      ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
-      ^^^^DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
-      ^^^^QUEUE_BACKEND=pubsub
-      ^^^^GCP_PROJECT_ID=data-etl-499916
-      ^^^^FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
-      ^^^^TEMPLATE_COLLECTION=file-parsing-templates
-      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
-      ^^^^HEALTH_CHECK_PORT=8080
+      - --platform
+      - managed
+      - --allow-unauthenticated
+      - --memory
+      - 512Mi
+      - --cpu
+      - 1
+      - --timeout
+      - 3600s
+      - --set-env-vars
+      - DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
+      - DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
+      - QUEUE_BACKEND=pubsub
+      - GCP_PROJECT_ID=data-etl-499916
+      - FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
+      - TEMPLATE_COLLECTION=file-parsing-templates
+      - BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
+      - HEALTH_CHECK_PORT=8080
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
@@ -231,28 +229,28 @@ steps:
       - run
       - deploy
       - retry
-      --image
+      - --image
       - $_RETRY_IMAGE
-      --region
+      - --region
       - $_REGION
-      --platform
-      managed
-      --allow-unauthenticated
-      --memory
-      512Mi
-      --cpu
-      1
-      --timeout
-      3600s
-      --set-env-vars
-      ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
-      ^^^^DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
-      ^^^^QUEUE_BACKEND=pubsub
-      ^^^^GCP_PROJECT_ID=data-etl-499916
-      ^^^^FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
-      ^^^^TEMPLATE_COLLECTION=file-parsing-templates
-      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
-      ^^^^HEALTH_CHECK_PORT=8080
+      - --platform
+      - managed
+      - --allow-unauthenticated
+      - --memory
+      - 512Mi
+      - --cpu
+      - 1
+      - --timeout
+      - 3600s
+      - --set-env-vars
+      - DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
+      - DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
+      - QUEUE_BACKEND=pubsub
+      - GCP_PROJECT_ID=data-etl-499916
+      - FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
+      - TEMPLATE_COLLECTION=file-parsing-templates
+      - BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
+      - HEALTH_CHECK_PORT=8080
 
 images:
   - $_INGEST_IMAGE
