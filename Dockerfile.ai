@@ -1,0 +1,9 @@
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY dist ./dist
+COPY src/services/ai_classifier ./src/services/ai_classifier
+COPY src/shared ./src/shared
+ENV NODE_ENV=production
+CMD ["node", "dist/services/ai_classifier/main.js"]
