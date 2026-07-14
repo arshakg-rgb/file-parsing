@@ -5,13 +5,24 @@ import { JobEvent, EventType } from "../../shared/models/events.js";
 import { handleEvent } from "./stateMachine.js";
 import { router } from "./router.js";
 import { startHealthCheckServer } from "../../shared/health.js";
+import { pool } from "../../shared/db.js";
 
 const app = express();
 app.use(express.json());
 app.use("/v1", router);
 
-app.get("/health", (_req: Request, res: Response) => {
-  res.json({ status: "healthy", timestamp: new Date().toISOString() });
+app.get("/health", async (_req: Request, res: Response) => {
+  try {
+    // Test database connection
+    await pool.query("SELECT 1");
+    res.json({ status: "healthy", timestamp: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ 
+      status: "unhealthy", 
+      timestamp: new Date().toISOString(),
+      error: err instanceof Error ? err.message : String(err)
+    });
+  }
 });
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
