@@ -54,3 +54,5 @@ npm run dev:retry
 - Uses AWS SDK v3 with `AWS_ENDPOINT_URL` pointing at LocalStack for local development.
 - Parquet I/O uses `@dsnp/parquetjs`.
 - Archive extraction uses `node-stream-zip`, `tar`, `node-7z`, and `unrar-async`.
+- Automatic CI/CD deployment via Cloud Build on push to main branch.
+- Loki/Grafana logging integration for production monitoring.
