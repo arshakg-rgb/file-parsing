@@ -19,7 +19,6 @@ steps:
       - |
         echo "GCP_PROJECT_ID=data-etl-499916" >> .env
         echo "DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)" >> .env
-        echo "DEPLOYMENT_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DEPLOYMENT_BUCKET)" >> .env
         echo "DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)" >> .env
         echo "QUEUE_BACKEND=pubsub" >> .env
         echo "FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)" >> .env
@@ -37,9 +36,10 @@ steps:
     args:
       - -c
       - |
-        npm ci && npm run build
+        npm install
+        npm run build
 
-  # Step 3: Build and push Docker image for each service
+  # Step 3: Build and push Docker images
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-f', 'Dockerfile.ingest', '-t', '$_INGEST_IMAGE', '.']
   
