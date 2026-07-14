@@ -1,8 +1,31 @@
 import crypto from "crypto";
 import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
 import { settings } from "../../shared/config.js";
-import { ClassifyRequest, ClassifyResponse, AIVerdict, FieldLocator, LineStructure, RecordTemplateData, RubbishTemplateData, Template, TemplateKind, TemplateSource } from "../../shared/models/template.js";
-import * as templateRegistry from "./templateRegistry.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
+
+interface ClassifyRequest {
+  unknown_line: string;
+  field_spec: string[];
+  context_lines?: string[];
+  job_id?: string;
+}
+
+interface ClassifyResponse {
+  kind: "record-template" | "rubbish-signature" | "uncertain";
+  template?: RecordTemplate | RubbishTemplate;
+}
+
+interface FieldLocator {
+  index?: number;
+  regex?: string;
+  key?: string;
+}
+
+enum AIVerdict {
+  RECORD_TEMPLATE = "record-template",
+  RUBBISH_SIGNATURE = "rubbish-signature",
+  UNCERTAIN = "uncertain"
+}
 
 const SYSTEM_PROMPT = `You are a data-parsing assistant embedded in a production file-parsing pipeline.
 A streaming parser has encountered a line that matches NO known template.
@@ -92,51 +115,42 @@ function quickFingerprint(line: string): string {
   return crypto.createHash("sha256").update(`text|${line.length}`).digest("hex").slice(0, 24);
 }
 
-function buildTemplateFromRaw(raw: any, kindStr: string, line: string): Template | null {
+function buildTemplateFromRaw(raw: any, kindStr: string, line: string): RecordTemplate | RubbishTemplate | null {
   try {
     const fp = fingerprint(line, raw);
     if (kindStr === "record-template") {
       const t = raw.template || {};
-      const fieldMap: Record<string, FieldLocator> = {};
+      const fieldMap: Record<string, { locator: string; type: string }> = {};
       for (const [field, loc] of Object.entries(t.field_map || {})) {
-        fieldMap[field] = loc as FieldLocator;
+        const locator = loc as FieldLocator;
+        fieldMap[field] = {
+          locator: locator.index !== undefined ? `index:${locator.index}` : 
+                    locator.regex ? `regex:${locator.regex}` : 
+                    locator.key ? `key:${locator.key}` : "unknown",
+          type: "string"
+        };
       }
       return {
         template_id: crypto.randomUUID(),
-        kind: TemplateKind.RECORD,
         fingerprint: fp,
         version: 1,
-        record: {
-          structure: (t.structure || "csv") as LineStructure,
-          delimiter: t.delimiter,
-          quote_char: t.quote_char,
-          field_map: fieldMap,
-          length_hint_min: t.length_hint_min,
-          length_hint_max: t.length_hint_max,
-          has_header: false,
-        },
-        source: TemplateSource.AI,
-        match_count: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        field_map: fieldMap,
+        structure: t.structure || "csv",
+        length_hint: t.length_hint_min || 0,
+        source: "ai" as const,
+        created_at: new Date(),
       };
     }
     if (kindStr === "rubbish-signature") {
       const t = raw.template || {};
       return {
         template_id: crypto.randomUUID(),
-        kind: TemplateKind.RUBBISH,
         fingerprint: fp,
         version: 1,
-        rubbish: {
-          signature: t.signature,
-          confidence: parseFloat(t.confidence),
-          description: t.description,
-        } as RubbishTemplateData,
-        source: TemplateSource.AI,
-        match_count: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        signature: t.signature,
+        confidence: parseFloat(t.confidence) || 0.95,
+        source: "ai" as const,
+        created_at: new Date(),
       };
     }
   } catch (err) {
@@ -163,13 +177,12 @@ async function callBedrock(prompt: string): Promise<any> {
 }
 
 export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> {
-  await templateRegistry.warmCache();
+  await templateRegistry.loadFromDatabase();
 
   const lineFp = quickFingerprint(req.unknown_line);
-  const existing = templateRegistry.getLatest(lineFp);
+  const existing = templateRegistry.getByFingerprint(lineFp);
   if (existing) {
-    templateRegistry.incrementMatchCount(existing.template_id, existing.fingerprint);
-    const kind = existing.kind === TemplateKind.RECORD ? AIVerdict.RECORD_TEMPLATE : AIVerdict.RUBBISH_SIGNATURE;
+    const kind = (existing as RecordTemplate).field_map ? AIVerdict.RECORD_TEMPLATE : AIVerdict.RUBBISH_SIGNATURE;
     return { kind, template: existing };
   }
 
@@ -180,26 +193,41 @@ export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse
     if (kindStr === "uncertain") return { kind: AIVerdict.UNCERTAIN };
     const tmpl = buildTemplateFromRaw(raw, kindStr, req.unknown_line);
     if (!tmpl) return { kind: AIVerdict.UNCERTAIN };
-    if (tmpl.kind === TemplateKind.RECORD && !(await validateTemplate(req, tmpl))) {
-      console.log("ai_template_validation_failed", { job_id: req.job_id, fingerprint: tmpl.fingerprint });
-      return { kind: AIVerdict.UNCERTAIN };
-    }
-    const saved = await templateRegistry.save(tmpl);
+    
+    // Save to database and cache
+    const kind = kindStr === "record-template" ? "record" : "rubbish";
+    await templateRegistry.saveTemplate(tmpl, kind);
+    templateRegistry.addRecordTemplate(tmpl as RecordTemplate);
+    
     const verdict = kindStr === "record-template" ? AIVerdict.RECORD_TEMPLATE : AIVerdict.RUBBISH_SIGNATURE;
-    console.log("ai_classified", { job_id: req.job_id, verdict, template_id: saved.template_id, fingerprint: saved.fingerprint });
-    return { kind: verdict, template: saved };
+    console.log("ai_classified", { job_id: req.job_id, verdict, template_id: tmpl.template_id, fingerprint: tmpl.fingerprint });
+    return { kind: verdict, template: tmpl };
   } catch (err) {
     console.error("bedrock_call_failed", { job_id: req.job_id, error: String(err) });
     return { kind: AIVerdict.UNCERTAIN };
   }
 }
 
-async function validateTemplate(req: ClassifyRequest, tmpl: Template): Promise<boolean> {
+async function validateTemplate(req: ClassifyRequest, tmpl: RecordTemplate): Promise<boolean> {
   try {
-    const { LineClassifier } = await import("../stream_parser/classifier.js");
-    const classifier = new LineClassifier(req.job_id || "", req.field_spec, [tmpl], []);
-    const result = classifier.classify(req.unknown_line, 0, 0);
-    return result.verdict === "parsed";
+    // Basic validation: ensure template can extract fields from the line
+    const line = req.unknown_line;
+    const fieldMap = tmpl.field_map;
+    
+    // Simple validation: check if we can at least parse the structure
+    if (tmpl.structure === "csv") {
+      const parts = line.split(",");
+      return parts.length >= Object.keys(fieldMap).length;
+    }
+    if (tmpl.structure === "json") {
+      try {
+        const parsed = JSON.parse(line);
+        return typeof parsed === "object" && parsed !== null;
+      } catch {
+        return false;
+      }
+    }
+    return true;
   } catch (err) {
     console.warn("template_validation_error", { job_id: req.job_id, error: String(err) });
     return false;

@@ -1,16 +1,19 @@
 import { settings } from "../../shared/config.js";
 import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js";
 import { JobStatus, ParseMessage, FailureClass, JobCounts, totalFailed } from "../../shared/models/job.js";
-import { isRecord } from "../../shared/models/template.js";
 import { receiveMessages, deleteMessage, publishEvent } from "../../shared/queueUtils.js";
-import { parseGcsUrl, streamLines } from "../../shared/gcsUtils.js";
-import * as templateRegistry from "../ai_classifier/templateRegistry.js";
+import { parseGcsUrl, streamLines, objectSize, readRange } from "../../shared/gcsUtils.js";
 import { LineClassifier } from "./classifier.js";
-import { MatchRateMonitor } from "./matchRate.js";
-import { ParquetWriterPool, RubbishLogWriter, DLQWriter } from "./parquetWriter.js";
+import { templateRegistry } from "../../shared/templateRegistry.js";
+import { OutputManager } from "../../shared/parquetWriter.js";
+import { DLQManager } from "../../shared/dlqManager.js";
+import { TraceSystem } from "../../shared/traceSystem.js";
+import { QualityGate } from "../../shared/qualityGate.js";
+import { AdaptiveProbing } from "../../shared/probing.js";
 import { createLogger } from "../../shared/logger.js";
 import { metrics } from "../../shared/metrics.js";
 import { startHealthCheckServer } from "../../shared/health.js";
+import jschardet from "jschardet";
 
 const logger = createLogger("stream_parser");
 
@@ -39,7 +42,7 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
 export async function parseJob(msg: ParseMessage): Promise<void> {
-  await templateRegistry.warmCache();
+  await templateRegistry.loadFromDatabase();
 
   const jobId = msg.job_id;
   emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.PARSING });
@@ -47,128 +50,174 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
   metrics.increment("parse.start", 1);
 
   const [bucket, key] = parseGcsUrl(msg.s3_url);
+  const fieldSpec = msg.field_spec;
 
-  const seedIds = new Set(msg.seed_template_ids || []);
-  const allTemplates = templateRegistry.listAll();
-  const seedTemplates = allTemplates.filter((t) => seedIds.has(t.template_id));
-  const recordTemplates = allTemplates.filter((t) => isRecord(t));
-  const rubbishTemplates = allTemplates.filter((t) => !isRecord(t));
+  // Adaptive probing to detect file structure
+  const fileSize = msg.size || (await objectSize(bucket, key));
+  const probing = new AdaptiveProbing();
+  const probeCount = probing.calculateProbeCount(fileSize);
+  const probeOffsets = probing.generateProbeOffsets(fileSize, probeCount);
+  
+  logger.info("adaptive_probing", { job_id: jobId, probe_count: probeCount, file_size: fileSize });
+  metrics.increment("parse.probing_start", 1, { probe_count: String(probeCount) });
 
-  console.log("parse_templates", { jobId, allTemplates: allTemplates.length, recordTemplates: recordTemplates.length, rubbishTemplates: rubbishTemplates.length, fieldSpec: msg.field_spec });
-  logger.debug("parse_templates", { job_id: jobId, all_templates: allTemplates.length, record_templates: recordTemplates.length, rubbish_templates: rubbishTemplates.length });
+  let detectedEncoding = "utf-8";
+  let avgRowWidth = 0;
+  let maxRowWidth = 0;
 
-  const classifier = new LineClassifier(jobId, msg.field_spec, [...recordTemplates, ...seedTemplates.filter(isRecord)], rubbishTemplates);
-  const monitor = new MatchRateMonitor();
-  const parquetWriter = new ParquetWriterPool(jobId, settings.DATA_BUCKET, `outputs/${jobId}`);
-  const rubbishWriter = new RubbishLogWriter(jobId, settings.DATA_BUCKET, `outputs/${jobId}`);
-  const dlqWriter = new DLQWriter(jobId);
+  // Execute probes to detect encoding and row characteristics
+  for (const offset of probeOffsets) {
+    const endOffset = Math.min(offset + settings.PROBE_WINDOW_MIN_BYTES - 1, fileSize - 1);
+    try {
+      const buffer = await readRange(bucket, key, offset, endOffset);
+      const detected = jschardet.detect(buffer);
+      if (detected.encoding && detected.confidence > 0.9) {
+        detectedEncoding = detected.encoding;
+      }
+      
+      // Analyze row widths
+      const content = buffer.toString('utf-8');
+      const lines = content.split('\n').filter(line => line.trim());
+      if (lines.length > 0) {
+        const widths = lines.map(l => l.length);
+        avgRowWidth = Math.max(avgRowWidth, widths.reduce((a, b) => a + b, 0) / widths.length);
+        maxRowWidth = Math.max(maxRowWidth, ...widths);
+      }
+    } catch (err) {
+      logger.warn("probe_failed", { job_id: jobId, offset, error: String(err) });
+    }
+  }
+
+  logger.info("probing_complete", { 
+    job_id: jobId, 
+    encoding: detectedEncoding, 
+    avg_row_width: avgRowWidth,
+    max_row_width: maxRowWidth 
+  });
+
+  const recordTemplates = templateRegistry.getAllRecordTemplates();
+  const rubbishTemplates = templateRegistry.getAllRubbishTemplates();
+  const classifier = new LineClassifier(jobId, fieldSpec, recordTemplates, rubbishTemplates);
+  const outputManager = new OutputManager();
+  const dlqManager = new DLQManager();
+  const traceSystem = new TraceSystem();
+  const qualityGate = new QualityGate();
 
   const counts: JobCounts = { parsed: 0, dropped_rubbish: 0, failed_by_class: {} };
-  const contextLines: string[] = [];
   let lineNo = 0;
+  let recordIndex = 0;
   let fatal: any = null;
 
   try {
-    for await (const [line, byteOffset, byteLength] of streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, "utf-8")) {
+    for await (const [line, byteOffset, byteLength] of streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding)) {
       lineNo += 1;
       if (lineNo % 10000 === 0) {
         console.log("parse_progress", { jobId, lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
       }
 
-      let result = classifier.classify(line, byteOffset, byteLength);
+      // Classify line using ordered classifier
+      const result = classifier.classify(line, byteOffset, byteLength);
 
-      if (result.verdict === "uncertain") {
-        try {
-          const aiResult = await classifier.classifyWithTimeout(line, contextLines, 5000);
-          if (aiResult.verdict === "parsed" || aiResult.verdict === "rubbish") {
-            result = aiResult;
-          }
-        } catch (err) {
-          console.error("ai_classification_failed", { jobId, byteOffset, error: String(err) });
-        }
-      }
+      switch (result.verdict) {
+        case "parsed":
+          // Add to output buffer
+          const outputBuffer = outputManager.getBuffer(jobId, result.template_id || "default");
+          outputBuffer.addRow({
+            ...result.row,
+            _job_id: jobId,
+            _byte_offset: byteOffset,
+            _byte_length: byteLength,
+            _record_index: recordIndex++,
+            _line_no: lineNo,
+            _template_id: result.template_id,
+            _template_version: result.template_version,
+            _checksum: "",
+            _parsed_at: new Date(),
+            _part_id: "auto",
+          });
+          
+          // Create trace record
+          await traceSystem.createTrace({
+            s3_url: msg.s3_url,
+            byte_offset: byteOffset,
+            byte_length: byteLength,
+            record_index: recordIndex,
+            line_no: lineNo,
+            job_id: jobId,
+            template_id: result.template_id || "default",
+            template_version: result.template_version || 1,
+            checksum: "",
+            parsed_at: new Date(),
+            part_id: "auto",
+          });
+          
+          counts.parsed++;
+          break;
 
-      contextLines.push(line);
-      if (contextLines.length > 10) contextLines.shift();
+        case "rubbish":
+          counts.dropped_rubbish++;
+          await traceSystem.logRubbishDrop(
+            jobId,
+            byteOffset,
+            lineNo,
+            line,
+            result.template_id || "unknown"
+          );
+          break;
 
-      if (result.verdict === "parsed") {
-        const template = allTemplates.find((t) => t.template_id === result.template_id);
-        parquetWriter.write(
-          result.row || {},
-          result.template_id || "unknown",
-          template?.version || 1,
-          byteOffset,
-          byteLength,
-          lineNo,
-          line
-        );
-        counts.parsed += 1;
-        monitor.record(result.template_id || "", true);
-      } else if (result.verdict === "rubbish") {
-        counts.dropped_rubbish += 1;
-        rubbishWriter.write(byteOffset, lineNo, line, result.template_id || "unknown");
-        monitor.record(result.template_id || "", true);
-      } else {
-        const failureClass = result.failure_class || FailureClass.UNCERTAIN;
-        counts.failed_by_class[failureClass] = (counts.failed_by_class[failureClass] || 0) + 1;
-        await dlqWriter.write(byteOffset, byteLength, lineNo, line, failureClass, `verdict: ${result.verdict}`);
-        monitor.record("", false);
-      }
-
-      monitor.checkWindow();
-
-      if (parquetWriter.bufferedBytes >= settings.RAM_FLUSH_WATERMARK) {
-        try {
-          await parquetWriter.flush();
-        } catch (flushErr) {
-          console.error("parquet_flush_failed", { jobId, lineNo, error: String(flushErr) });
-        }
+        case "uncertain":
+          // Add to DLQ for retry
+          const failureClass = result.failure_class || FailureClass.UNCERTAIN;
+          await dlqManager.addEntry(
+            jobId,
+            byteOffset,
+            byteLength,
+            lineNo,
+            line,
+            failureClass,
+            result.failure_class || "Uncertain classification"
+          );
+          if (!counts.failed_by_class[failureClass]) counts.failed_by_class[failureClass] = 0;
+          counts.failed_by_class[failureClass]++;
+          break;
       }
     }
+
+    // Flush any remaining output
+    const outputPaths = await outputManager.flushAll();
+
+    // Apply quality gate
+    const qualityCheck = await qualityGate.passesQualityGate(jobId);
+    if (!qualityCheck.passes) {
+      logger.warn("quality_gate_failed", { job_id: jobId, reason: qualityCheck.reason });
+      emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.FAILED, reason: qualityCheck.reason });
+      return;
+    }
+
+    // Send to load service
+    await publishEvent(makeJobEvent(EventType.PARSING_COMPLETED, jobId, "stream_parser", {
+      output_paths: outputPaths,
+      counts,
+    }));
+
+    logger.info("parse_complete", { job_id: jobId, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
+    metrics.set("parse.lines_parsed", counts.parsed);
+    metrics.set("parse.lines_dropped", counts.dropped_rubbish);
+    metrics.set("parse.lines_failed", totalFailed(counts));
   } catch (exc) {
     fatal = exc;
-    logger.error("parse_loop_error", { job_id: jobId, line_no: lineNo }, exc instanceof Error ? exc : new Error(String(exc)));
-    metrics.increment("parse.loop_error", 1);
+    logger.error("parse_failed", { job_id: jobId }, exc instanceof Error ? exc : new Error(String(exc)));
+    metrics.increment("parse.error", 1);
+    emit(jobId, EventType.ERROR_OCCURRED, { error: String(exc) });
+  } finally {
+    if (fatal) {
+      emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.FAILED, error: String(fatal) });
+    }
   }
-
-  let rubbishLogPath: string | null = null;
-  try {
-    await parquetWriter.flush();
-    rubbishLogPath = await rubbishWriter.flush();
-  } catch (flushErr) {
-    fatal = flushErr;
-    logger.error("parse_flush_error", { job_id: jobId }, flushErr instanceof Error ? flushErr : new Error(String(flushErr)));
-    metrics.increment("parse.flush_error", 1);
-  }
-
-  if (fatal) {
-    logger.error("parse_failed", { job_id: jobId }, fatal instanceof Error ? fatal : new Error(String(fatal)));
-    metrics.increment("parse.failed", 1);
-    emit(jobId, EventType.ERROR_OCCURRED, { error: String(fatal) });
-    return;
-  }
-
-  const outputPaths = parquetWriter.allPartPaths;
-  const failedTotal = totalFailed(counts);
-
-  emit(jobId, EventType.PARSING_COMPLETED, {
-    job_id: jobId,
-    parsed: counts.parsed,
-    dropped_rubbish: counts.dropped_rubbish,
-    failed: failedTotal,
-    part_s3_paths: outputPaths,
-    dlq_count: dlqWriter.getCounter(),
-    rubbish_log_path: rubbishLogPath,
-  });
-
-  logger.info("parse_complete", { job_id: jobId, parsed: counts.parsed, dropped_rubbish: counts.dropped_rubbish, parts: outputPaths.length });
-  metrics.set("parse.lines_parsed", counts.parsed);
-  metrics.set("parse.lines_dropped", counts.dropped_rubbish);
-  metrics.set("parse.parts_written", outputPaths.length);
 }
 
 export async function consumerLoop(): Promise<void> {
-  await templateRegistry.warmCache();
+  await templateRegistry.loadFromDatabase();
   logger.info("stream_parser_consumer_started");
   while (running) {
     const messages = await receiveMessages<ParseMessage>(

@@ -1,5 +1,17 @@
 import crypto from "crypto";
-import { ClassifyRequest, ClassifyResponse, AIVerdict, FieldLocator, LineStructure, RecordTemplateData, RubbishTemplateData, Template, TemplateKind, TemplateSource } from "../../shared/models/template.js";
+import { RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
+
+interface ClassifyRequest {
+  unknown_line: string;
+  field_spec: string[];
+  context_lines?: string[];
+  job_id?: string;
+}
+
+interface ClassifyResponse {
+  kind: "record-template" | "rubbish-signature" | "uncertain";
+  template?: RecordTemplate | RubbishTemplate;
+}
 
 function mockFingerprint(line: string): string {
   return crypto.createHash("sha256").update(line).digest("hex").slice(0, 24);
@@ -11,51 +23,39 @@ export function mockClassify(req: ClassifyRequest): ClassifyResponse {
   for (const delim of [",", ";", "\t", "|"]) {
     const parts = line.split(delim);
     if (parts.length >= 3) {
-      const fieldMap: Record<string, FieldLocator> = {};
+      const fieldMap: Record<string, { locator: string; type: string }> = {};
       for (let i = 0; i < req.field_spec.length; i++) {
-        fieldMap[req.field_spec[i]] = { index: Math.min(i, parts.length - 1) };
+        fieldMap[req.field_spec[i]] = {
+          locator: `index:${Math.min(i, parts.length - 1)}`,
+          type: "string"
+        };
       }
-      const tmpl: Template = {
+      const tmpl: RecordTemplate = {
         template_id: crypto.randomUUID(),
-        kind: TemplateKind.RECORD,
         fingerprint: mockFingerprint(line),
         version: 1,
-        record: {
-          structure: LineStructure.CSV,
-          delimiter: delim,
-          quote_char: '"',
-          field_map: fieldMap,
-          length_hint_min: Math.floor(line.length / 2),
-          length_hint_max: line.length * 2,
-          has_header: false,
-        } as RecordTemplateData,
-        source: TemplateSource.AI,
-        match_count: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        field_map: fieldMap,
+        structure: "csv",
+        length_hint: Math.floor(line.length / 2),
+        source: "ai" as const,
+        created_at: new Date(),
       };
-      return { kind: AIVerdict.RECORD_TEMPLATE, template: tmpl };
+      return { kind: "record-template", template: tmpl };
     }
   }
 
   if (/^(ERROR|WARNING|DEBUG|INFO|TRACE)/.test(line)) {
-    const tmpl: Template = {
+    const tmpl: RubbishTemplate = {
       template_id: crypto.randomUUID(),
-      kind: TemplateKind.RUBBISH,
       fingerprint: mockFingerprint(line),
       version: 1,
-      rubbish: {
-        signature: "^(ERROR|WARNING|DEBUG|INFO|TRACE).*",
-        confidence: 0.95,
-        description: "Log line prefix",
-      } as RubbishTemplateData,
-      source: TemplateSource.AI,
-      match_count: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      signature: "^(ERROR|WARNING|DEBUG|INFO|TRACE).*",
+      confidence: 0.95,
+      source: "ai" as const,
+      created_at: new Date(),
     };
-    return { kind: AIVerdict.RUBBISH_SIGNATURE, template: tmpl };
+    return { kind: "rubbish-signature", template: tmpl };
   }
 
-  return { kind: AIVerdict.UNCERTAIN };
+  return { kind: "uncertain" };
 }

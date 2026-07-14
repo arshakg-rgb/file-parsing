@@ -168,5 +168,21 @@ export async function createTables(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS ix_parsed_records_job_id ON parsed_records(_job_id);
     CREATE INDEX IF NOT EXISTS ix_parsed_records_fields ON parsed_records USING gin(fields);
+
+    CREATE TABLE IF NOT EXISTS templates (
+      template_id VARCHAR(36) PRIMARY KEY,
+      fingerprint VARCHAR(64) NOT NULL UNIQUE,
+      version INTEGER NOT NULL DEFAULT 1,
+      kind VARCHAR(16) NOT NULL CHECK (kind IN ('record', 'rubbish')),
+      field_map JSONB,
+      structure TEXT,
+      length_hint INTEGER,
+      signature TEXT,
+      confidence NUMERIC,
+      source VARCHAR(16) NOT NULL CHECK (source IN ('ai', 'bootstrap', 'user')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS ix_templates_kind ON templates(kind);
+    CREATE INDEX IF NOT EXISTS ix_templates_fingerprint ON templates(fingerprint);
   `);
 }

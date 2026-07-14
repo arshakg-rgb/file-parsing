@@ -3,7 +3,7 @@ import { DLQMessage, DLQStatus, FailureClass, JobStatus, LoadMessage } from "../
 import { receiveMessages, deleteMessage, sendMessage } from "../../shared/queueUtils.js";
 import { pool } from "../../shared/db.js";
 import { ClassifyResult, LineClassifier } from "../stream_parser/classifier.js";
-import * as templateRegistry from "../ai_classifier/templateRegistry.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
 import { createLogger } from "../../shared/logger.js";
 import { metrics } from "../../shared/metrics.js";
 import { startHealthCheckServer } from "../../shared/health.js";
@@ -17,7 +17,7 @@ if (process.env.HEALTH_CHECK_PORT) {
 const ALT_ENCODINGS = ["utf-8", "latin-1", "cp1252", "iso-8859-1", "utf-16"];
 
 export async function handleDlqEntry(msg: DLQMessage): Promise<void> {
-  await templateRegistry.warmCache();
+  await templateRegistry.loadFromDatabase();
 
   logger.info("retry_attempt", {
     job_id: msg.job_id,
@@ -91,12 +91,13 @@ async function retryBroadCoercion(rawBytes: Buffer, msg: DLQMessage): Promise<Cl
 
 async function classifyLine(line: string, msg: DLQMessage): Promise<ClassifyResult | null> {
   const fieldSpec = await getFieldSpec(msg.job_id);
-  const allTemplates = templateRegistry.listAll();
+  const recordTemplates = templateRegistry.getAllRecordTemplates();
+  const rubbishTemplates = templateRegistry.getAllRubbishTemplates();
   const classifier = new LineClassifier(
     msg.job_id,
     fieldSpec,
-    allTemplates.filter((t) => t.kind === "record"),
-    allTemplates.filter((t) => t.kind === "rubbish")
+    recordTemplates,
+    rubbishTemplates
   );
   const result = classifier.classify(line, msg.byte_offset, msg.byte_length);
   if (result.verdict === "parsed") return result;

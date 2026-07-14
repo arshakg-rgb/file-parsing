@@ -216,7 +216,7 @@ export interface DLQMessage {
 
 export interface LoadMessage {
   job_id: string;
-  merged_parquet_paths?: string[];
+  output_paths?: string[];
   field_spec?: string[];
   recovered_row?: Record<string, any>;
   byte_offset?: number;

@@ -7,8 +7,24 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { gcsClient, parseGcsUrl, readFull, objectSize, putObject } from "../../shared/gcsUtils.js";
 import { settings } from "../../shared/config.js";
-import { buildSchema } from "../stream_parser/parquetWriter.js";
 import { getJob, pool } from "../../shared/db.js";
+
+function buildSchema(rows: Record<string, any>[]): any {
+  const schemaObj: any = {};
+  for (const row of rows) {
+    for (const [k, v] of Object.entries(row)) {
+      if (!schemaObj[k]) {
+        const type = v === null || v === undefined ? "UTF8" :
+                    typeof v === "boolean" ? "BOOLEAN" :
+                    typeof v === "number" ? (Number.isInteger(v) && Number.isSafeInteger(v) ? "INT64" : "DOUBLE") :
+                    v instanceof Date ? "TIMESTAMP_MILLIS" :
+                    "UTF8";
+        schemaObj[k] = { type, optional: true };
+      }
+    }
+  }
+  return new (require("@dsnp/parquetjs").ParquetSchema)(schemaObj);
+}
 
 export interface FinalizeResult {
   failed: boolean;

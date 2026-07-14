@@ -3,7 +3,8 @@ import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js
 import { JobStatus, ReportMessage, JobCounts } from "../../shared/models/job.js";
 import { pool, ParseJobRow, OutputPartRow } from "../../shared/db.js";
 import { receiveMessages, deleteMessage, publishEvent } from "../../shared/queueUtils.js";
-import { putJson } from "../../shared/s3Utils.js";
+import { putJson } from "../../shared/gcsUtils.js";
+import { QualityGate } from "../../shared/qualityGate.js";
 import { createLogger } from "../../shared/logger.js";
 import { metrics } from "../../shared/metrics.js";
 import { startHealthCheckServer } from "../../shared/health.js";
@@ -34,6 +35,11 @@ export async function generateReport(msg: ReportMessage): Promise<void> {
   const parts = await getParts(jobId);
   const batchSiblings = jobRow.batch_id ? await getBatchJobs(jobRow.batch_id) : [];
 
+  // Get quality metrics
+  const qualityGate = new QualityGate();
+  const qualityMetrics = await qualityGate.calculateMetrics(jobId);
+  const qualityCheck = await qualityGate.passesQualityGate(jobId);
+
   const report = {
     job_id: jobId,
     batch_id: jobRow.batch_id,
@@ -52,6 +58,15 @@ export async function generateReport(msg: ReportMessage): Promise<void> {
       failed_total: totalFailed(msg.counts),
       failed_by_class: msg.counts.failed_by_class,
     },
+    quality: {
+      total_lines: qualityMetrics.totalLines,
+      parsed_lines: qualityMetrics.parsedLines,
+      dropped_rubbish_lines: qualityMetrics.droppedRubbishLines,
+      failed_lines: qualityMetrics.failedLines,
+      failed_line_ratio: qualityMetrics.failedLineRatio,
+      passed_quality_gate: qualityCheck.passes,
+      quality_gate_reason: qualityCheck.reason,
+    },
     output_parts: parts.map((p) => ({ s3_path: p.s3_path, rows: p.row_count, bytes: p.byte_size })),
     output_paths: msg.output_paths,
     rubbish_log_path: msg.rubbish_log_path,
@@ -61,7 +76,7 @@ export async function generateReport(msg: ReportMessage): Promise<void> {
 
   const reportKey = `reports/${jobId}/report.json`;
   await putJson(settings.DATA_BUCKET, reportKey, report);
-  logger.info("report_written", { job_id: jobId, s3_key: reportKey });
+  logger.info("report_written", { job_id: jobId, s3_key: reportKey, quality_passed: qualityCheck.passes });
   metrics.increment("report.generated", 1);
 
   if (batchSiblings.length && jobRow.batch_id) {

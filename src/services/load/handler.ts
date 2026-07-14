@@ -3,7 +3,7 @@ import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js
 import { JobStatus, LoadMessage } from "../../shared/models/job.js";
 import { pool } from "../../shared/db.js";
 import { receiveMessages, deleteMessage, publishEvent } from "../../shared/queueUtils.js";
-import { parseS3Url, readFull } from "../../shared/s3Utils.js";
+import { parseGcsUrl, readFull } from "../../shared/gcsUtils.js";
 import { ParquetReader } from "@dsnp/parquetjs";
 import { createLogger } from "../../shared/logger.js";
 import { metrics } from "../../shared/metrics.js";
@@ -31,12 +31,12 @@ export async function loadJob(msg: LoadMessage): Promise<void> {
     return;
   }
 
-  logger.info("load_start", { job_id: jobId, parts: (msg.merged_parquet_paths || []).length });
-  metrics.increment("load.start", 1, { parts: String((msg.merged_parquet_paths || []).length) });
+  logger.info("load_start", { job_id: jobId, parts: (msg.output_paths || []).length });
+  metrics.increment("load.start", 1, { parts: String((msg.output_paths || []).length) });
 
   let totalRows = 0;
   try {
-    for (const s3Path of msg.merged_parquet_paths || []) {
+    for (const s3Path of msg.output_paths || []) {
       const rows = await readParquet(s3Path);
       if (!rows.length) continue;
       await upsertRows(jobId, rows);
@@ -71,7 +71,7 @@ function buildRecoveredRow(msg: LoadMessage): Record<string, any> {
 }
 
 async function readParquet(s3Path: string): Promise<Record<string, any>[]> {
-  const [bucket, key] = parseS3Url(s3Path);
+  const [bucket, key] = parseGcsUrl(s3Path);
   const raw = await readFull(bucket, key);
   const reader = await ParquetReader.openBuffer(raw);
   const cursor = reader.getCursor();

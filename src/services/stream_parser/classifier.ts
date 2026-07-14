@@ -1,10 +1,25 @@
-import { ClassifyRequest, AIVerdict, FieldLocator, LineStructure, RecordTemplateData, Template, TemplateKind } from "../../shared/models/template.js";
 import { settings } from "../../shared/config.js";
 import { FailureClass } from "../../shared/models/job.js";
-import { mockClassify } from "../ai_classifier/mock.js";
-import { classifyAi } from "../ai_classifier/handler.js";
-import * as templateRegistry from "../ai_classifier/templateRegistry.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
 import { safeRegex, safeRegexTest } from "../../shared/safeRegex.js";
+
+interface ClassifyRequest {
+  unknown_line: string;
+  field_spec: string[];
+  context_lines?: string[];
+  job_id?: string;
+}
+
+interface ClassifyResponse {
+  kind: "record-template" | "rubbish-signature" | "uncertain";
+  template?: RecordTemplate | RubbishTemplate;
+}
+
+enum AIVerdict {
+  RECORD_TEMPLATE = "record-template",
+  RUBBISH_SIGNATURE = "rubbish-signature",
+  UNCERTAIN = "uncertain"
+}
 
 export interface ClassifyResult {
   verdict: "parsed" | "rubbish" | "uncertain";
@@ -17,15 +32,15 @@ export interface ClassifyResult {
 export class LineClassifier {
   private jobId: string;
   private fieldSpec: string[];
-  private recordTemplates: Template[];
-  private rubbishTemplates: Template[];
-  private aiCache: Map<string, Template>;
+  private recordTemplates: RecordTemplate[];
+  private rubbishTemplates: RubbishTemplate[];
+  private aiCache: Map<string, RecordTemplate | RubbishTemplate>;
 
   constructor(
     jobId: string,
     fieldSpec: string[],
-    recordTemplates: Template[],
-    rubbishTemplates: Template[]
+    recordTemplates: RecordTemplate[],
+    rubbishTemplates: RubbishTemplate[]
   ) {
     this.jobId = jobId;
     this.fieldSpec = fieldSpec;
@@ -47,14 +62,11 @@ export class LineClassifier {
     const cached = this.aiCache.get(fp);
 
     // 2. Known record templates (records have priority over rubbish).
-    let bestRecord: { row: Record<string, any>; template: Template; score: number } | null = null;
+    let bestRecord: { row: Record<string, any>; template: RecordTemplate; score: number } | null = null;
     for (const t of this.recordTemplates) {
-      const rec = t.record;
-      if (!rec) continue;
-      if (rec.length_hint_min !== undefined && line.length < rec.length_hint_min) continue;
-      if (rec.length_hint_max !== undefined && line.length > rec.length_hint_max) continue;
+      if (t.length_hint !== undefined && line.length < t.length_hint) continue;
       try {
-        const row = this.extractLine(line, rec);
+        const row = this.extractLine(line, t);
         if (row) {
           const meaningful = Object.values(row).filter((v) => v !== undefined && v !== null && v !== "").length;
           const present = Object.values(row).filter((v) => v !== undefined).length;
@@ -68,25 +80,24 @@ export class LineClassifier {
       }
     }
     if (bestRecord) {
-      templateRegistry.incrementMatchCount(bestRecord.template.template_id, bestRecord.template.fingerprint);
       return { verdict: "parsed", row: this.coerce(bestRecord.row), template_id: bestRecord.template.template_id, template_version: bestRecord.template.version };
     }
 
     // 3. AI-cached record (learned in this job).
-    if (cached && cached.kind === TemplateKind.RECORD && cached.record) {
-      const row = this.extractLine(line, cached.record);
+    if (cached && "field_map" in cached) {
+      const row = this.extractLine(line, cached);
       if (row) return { verdict: "parsed", row: this.coerce(row), template_id: cached.template_id, template_version: cached.version };
     }
 
     // 4. Known high-confidence rubbish templates.
     for (const t of this.rubbishTemplates) {
-      if (t.rubbish && (t.rubbish.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(t.rubbish.signature, line)) {
+      if ((t.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(t.signature, line)) {
         return { verdict: "rubbish", template_id: t.template_id };
       }
     }
 
     // 5. AI-cached rubbish (learned in this job).
-    if (cached && cached.kind === TemplateKind.RUBBISH && cached.rubbish && (cached.rubbish.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(cached.rubbish.signature || "", line)) {
+    if (cached && "signature" in cached && (cached.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(cached.signature, line)) {
       return { verdict: "rubbish", template_id: cached.template_id };
     }
 
@@ -109,7 +120,8 @@ export class LineClassifier {
       job_id: this.jobId,
     };
 
-    const resp = settings.BEDROCK_MODEL_ID === "mock" ? mockClassify(req) : await classifyAi(req);
+    const { classifyAi } = await import("../ai_classifier/handler.js");
+    const resp = await classifyAi(req);
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
     }
@@ -127,21 +139,21 @@ export class LineClassifier {
     ]);
   }
 
-  private toResult(line: string, tmpl: Template): ClassifyResult {
-    if (tmpl.kind === TemplateKind.RUBBISH && tmpl.rubbish) {
-      if ((tmpl.rubbish.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(tmpl.rubbish.signature, line)) {
+  private toResult(line: string, tmpl: RecordTemplate | RubbishTemplate): ClassifyResult {
+    if ("signature" in tmpl) {
+      if ((tmpl.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(tmpl.signature, line)) {
         return { verdict: "rubbish", template_id: tmpl.template_id };
       }
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
     }
-    if (tmpl.kind === TemplateKind.RECORD && tmpl.record) {
-      const row = this.extractLine(line, tmpl.record);
+    if ("field_map" in tmpl) {
+      const row = this.extractLine(line, tmpl);
       if (row) return { verdict: "parsed", row: this.coerce(row), template_id: tmpl.template_id, template_version: tmpl.version };
     }
     return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
   }
 
-  private extractLine(line: string, rec: RecordTemplateData): Record<string, any> | null {
+  private extractLine(line: string, rec: RecordTemplate): Record<string, any> | null {
     const parsed = this.parseStructure(line, rec);
     if (!parsed) return null;
 
@@ -153,15 +165,15 @@ export class LineClassifier {
         row[field] = undefined;
         continue;
       }
-      const value = this.applyLocator(line, parsed, loc);
+      const value = this.applyLocator(line, parsed, loc.locator);
       if (value !== undefined) presentCount++;
       row[field] = value;
     }
     return presentCount > 0 ? row : null;
   }
 
-  private parseStructure(line: string, rec: RecordTemplateData): string | any[] | Record<string, any> | null {
-    if (rec.structure === LineStructure.JSON) {
+  private parseStructure(line: string, rec: RecordTemplate): string | any[] | Record<string, any> | null {
+    if (rec.structure === "json") {
       if (line[0] !== "{" && line[0] !== "[") return null;
       try {
         const obj = JSON.parse(line);
@@ -170,7 +182,7 @@ export class LineClassifier {
         return null;
       }
     }
-    if (rec.structure === LineStructure.KV) {
+    if (rec.structure === "kv") {
       const obj: Record<string, string> = {};
       for (const part of line.split(/[;\s]/)) {
         const [k, v] = part.split("=", 2);
@@ -178,12 +190,14 @@ export class LineClassifier {
       }
       return Object.keys(obj).length > 0 ? obj : null;
     }
-    if (rec.structure === LineStructure.CSV) {
-      const delim = rec.delimiter ?? ",";
-      const quote = rec.quote_char ?? '"';
+    if (rec.structure === "csv") {
+      const delim = rec.field_map && Object.values(rec.field_map)[0]?.locator?.startsWith("index:") 
+        ? Object.values(rec.field_map)[0].locator.replace("index:", "") 
+        : ",";
+      const quote = '"';
       return parseCsvLine(line, delim, quote);
     }
-    if (rec.structure === LineStructure.REGEX || rec.structure === LineStructure.FIXED) {
+    if (rec.structure === "regex" || rec.structure === "fixed") {
       return line;
     }
     return null;
@@ -207,17 +221,20 @@ export class LineClassifier {
     return row;
   }
 
-  private applyLocator(line: string, parsed: string | any[] | Record<string, any>, loc: FieldLocator): any {
-    if (loc.index !== undefined) {
-      if (Array.isArray(parsed) && loc.index < parsed.length) return parsed[loc.index];
+  private applyLocator(line: string, parsed: string | any[] | Record<string, any>, loc: string): any {
+    if (loc.startsWith("index:")) {
+      const index = parseInt(loc.replace("index:", ""));
+      if (Array.isArray(parsed) && index < parsed.length) return parsed[index];
       return undefined;
     }
-    if (loc.key !== undefined) {
-      if (parsed && !Array.isArray(parsed) && typeof parsed === "object") return (parsed as any)[loc.key];
+    if (loc.startsWith("key:")) {
+      const key = loc.replace("key:", "");
+      if (parsed && !Array.isArray(parsed) && typeof parsed === "object") return (parsed as any)[key];
       return undefined;
     }
-    if (loc.regex) {
-      const re = safeRegex(loc.regex);
+    if (loc.startsWith("regex:")) {
+      const regexStr = loc.replace("regex:", "");
+      const re = safeRegex(regexStr);
       if (!re) return undefined;
       const target = typeof parsed === "string" ? parsed : line;
       const match = re.exec(target);
@@ -236,8 +253,6 @@ export class LineClassifier {
         out[k] = v;
       } else {
         const s = String(v).trim();
-        // Preserve as string unless it's explicitly a boolean or number type
-        // Don't auto-convert strings that look like numbers - keep them as strings
         out[k] = s;
       }
     }
