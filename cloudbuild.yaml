@@ -28,6 +28,10 @@ steps:
         echo "HEALTH_CHECK_PORT=8080" >> .env
         
         echo "NODE_ENV=production" >> .env
+        
+        echo "LOKI_HOST=$(gcloud secrets versions access latest --secret=FILE_LOKI_HOST)" >> .env
+        echo "LOKI_USERNAME=$(gcloud secrets versions access latest --secret=FILE_LOKI_USERNAME)" >> .env
+        echo "LOKI_PASSWORD=$(gcloud secrets versions access latest --secret=FILE_LOKI_PASSWORD)" >> .env
 
   # Step 2: Use Node.js v20 to install and build
   - name: node:20
@@ -181,7 +185,7 @@ steps:
       --cpu
       1
       --timeout
-      -3600s
+      3600s
       --set-env-vars
       ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
       ^^^^DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
@@ -213,12 +217,12 @@ steps:
       3600s
       --set-env-vars
       ^^^^DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)
-      ^^^^DATA_BUCKET=$(gcloud secrets access latest --secret=FILE_DATA_BUCKET)
+      ^^^^DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)
       ^^^^QUEUE_BACKEND=pubsub
       ^^^^GCP_PROJECT_ID=data-etl-499916
       ^^^^FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)
       ^^^^TEMPLATE_COLLECTION=file-parsing-templates
-      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets access latest --secret=FILE_BEDROCK_MODEL_ID)
+      ^^^^BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)
       ^^^^HEALTH_CHECK_PORT=8080
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -237,7 +241,7 @@ steps:
       --memory
       512Mi
       --cpu
-      -1
+      1
       --timeout
       3600s
       --set-env-vars
