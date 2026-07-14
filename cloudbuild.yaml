@@ -3,8 +3,8 @@ options:
 substitutions:
   _REGION: us-central1
   _INGEST_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ingest:latest
-  _DETECT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/detect_bootstrap:latest
-  _STREAM_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/stream_parser:latest
+  _DETECT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/detect-bootstrap:latest
+  _STREAM_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/stream-parser:latest
   _LOAD_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/load:latest
   _REPORT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/report:latest
   _RETRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/retry:latest
@@ -112,7 +112,7 @@ steps:
     args:
       - -c
       - |
-        gcloud run deploy stream_parser \
+        gcloud run deploy stream-parser \
           --image $_STREAM_IMAGE \
           --region $_REGION \
           --platform managed \
