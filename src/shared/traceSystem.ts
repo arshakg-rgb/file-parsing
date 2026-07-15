@@ -70,8 +70,8 @@ export class TraceSystem {
   ): Promise<void> {
     try {
       await pool.query(
-        `INSERT INTO rubbish_log (job_id, byte_offset, line_no, raw_bytes, matched_template_id)
-         VALUES ($1, $2, $3, $4, $5)`,
+        `INSERT INTO rubbish_log (job_id, byte_offset, line_no, raw_bytes, matched_template_id, logged_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())`,
         [jobId, byteOffset, lineNo, rawBytes, matchedTemplateId]
       );
       

@@ -44,8 +44,8 @@ export class DLQManager {
     const dlqId = crypto.randomUUID();
     
     await pool.query(
-      `INSERT INTO dead_letters (dlq_id, job_id, byte_offset, byte_length, line_no, raw_bytes, failure_class, error, attempts, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+      `INSERT INTO dead_letters (dlq_id, job_id, byte_offset, byte_length, line_no, raw_bytes, failure_class, error, attempts, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
       [dlqId, jobId, byteOffset, byteLength, lineNo, rawBytes, failureClass, error, 0, "pending"]
     );
     
