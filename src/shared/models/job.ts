@@ -53,6 +53,8 @@ export interface JobCounts {
   parsed: number;
   dropped_rubbish: number;
   failed_by_class: Record<string, number>;
+  dlq_count?: number;
+  rubbish_log_path?: string;
 }
 
 export function totalFailed(counts: JobCounts): number {

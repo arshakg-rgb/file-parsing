@@ -196,8 +196,12 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
 
     // Send to load service
     await publishEvent(makeJobEvent(EventType.PARSING_COMPLETED, jobId, "stream_parser", {
-      output_paths: outputPaths,
-      counts,
+      parsed: counts.parsed,
+      dropped_rubbish: counts.dropped_rubbish,
+      failed: totalFailed(counts),
+      part_s3_paths: outputPaths,
+      dlq_count: counts.dlq_count || 0,
+      rubbish_log_path: counts.rubbish_log_path,
     }));
 
     logger.info("parse_complete", { job_id: jobId, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
