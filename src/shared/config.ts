@@ -57,6 +57,10 @@ export const settings = {
   BEDROCK_MODEL_ID: getString("BEDROCK_MODEL_ID", "mock"),
   AI_CLASSIFIER_URL: getOptionalString("AI_CLASSIFIER_URL"),
 
+  // ---- Vertex AI ----
+  VERTEX_MODEL: getString("VERTEX_MODEL", "gemini-2.5-flash"),
+  VERTEX_LOCATION: getString("VERTEX_LOCATION", "us-central1"),
+
   // ---- Loki Logging ----
   LOKI_HOST: getOptionalString("LOKI_HOST"),
   LOKI_USERNAME: getOptionalString("LOKI_USERNAME"),

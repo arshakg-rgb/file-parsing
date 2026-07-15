@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenAI } from "@google/genai";
 import { settings } from "../../shared/config.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
 
@@ -159,24 +159,30 @@ function buildTemplateFromRaw(raw: any, kindStr: string, line: string): RecordTe
   return null;
 }
 
-async function callAnthropic(prompt: string): Promise<any> {
-  const anthropic = new Anthropic({
-    apiKey: settings.ANTHROPIC_API_KEY,
+async function callVertexAI(prompt: string): Promise<any> {
+  const ai = new GoogleGenAI({
+    vertexai: true,
+    project: settings.GCP_PROJECT_ID || 'data-etl-499916',
+    location: settings.VERTEX_LOCATION || 'us-central1',
   });
-  
-  const resp = await anthropic.messages.create({
-    model: settings.ANTHROPIC_MODEL || "claude-3-sonnet-20240229",
-    max_tokens: 1024,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0.0,
+
+  const response = await ai.models.generateContent({
+    model: settings.VERTEX_MODEL || 'gemini-2.5-flash',
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: prompt }],
+      },
+    ],
+    config: {
+      responseModalities: ['TEXT'],
+      temperature: 0.0,
+      maxOutputTokens: 1024,
+    },
   });
-  
-  const content = resp.content[0];
-  if (content.type === "text") {
-    return extractJson(content.text);
-  }
-  throw new Error("No text content in Anthropic response");
+
+  const text = response.text || response.candidates?.[0]?.content?.parts?.map((part: any) => part.text).join('') || '';
+  return extractJson(text);
 }
 
 export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> {
@@ -191,7 +197,7 @@ export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse
 
   const userPrompt = buildUserPrompt(req);
   try {
-    const raw = await callAnthropic(userPrompt);
+    const raw = await callVertexAI(userPrompt);
     const kindStr = raw.kind || "uncertain";
     if (kindStr === "uncertain") return { kind: AIVerdict.UNCERTAIN };
     const tmpl = buildTemplateFromRaw(raw, kindStr, req.unknown_line);
@@ -206,7 +212,7 @@ export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse
     console.log("ai_classified", { job_id: req.job_id, verdict, template_id: tmpl.template_id, fingerprint: tmpl.fingerprint });
     return { kind: verdict, template: tmpl };
   } catch (err) {
-    console.error("anthropic_call_failed", { job_id: req.job_id, error: String(err) });
+    console.error("vertex_ai_call_failed", { job_id: req.job_id, error: String(err) });
     return { kind: AIVerdict.UNCERTAIN };
   }
 }
