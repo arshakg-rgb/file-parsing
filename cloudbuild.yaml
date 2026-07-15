@@ -149,7 +149,7 @@ steps:
           --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 512Mi \
+          --memory 2Gi \
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
