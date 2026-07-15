@@ -10,7 +10,7 @@ import Seven from "node-7z";
 import { once } from "node:events";
 import { RARExtractor } from "unrar-async";
 import { settings } from "../../shared/config.js";
-import { parseGcsUrl as parseS3Url, objectSize, readFull, putObject, listObjects } from "../../shared/gcsUtils.js";
+import { parseGcsUrl as parseS3Url, objectSize, readFull, putObject, listObjects, copyObject } from "../../shared/gcsUtils.js";
 import { fetchUrlStream } from "./ssrf_guard.js";
 
 const gunzip = promisify(zlib.gunzip);
@@ -26,12 +26,22 @@ export async function fetchUrlToS3(jobId: string, url: string): Promise<[string,
   // Handle gs:// URLs directly using GCS utilities
   if (url.startsWith("gs://")) {
     const [bucket, key] = parseS3Url(url);
-    const data = await readFull(bucket, key);
+    const size = await objectSize(bucket, key);
     const s3Key = `ingested/${jobId}/source`;
-    await putObject(settings.DATA_BUCKET, s3Key, data);
+    
+    // Use streaming for large files to avoid OOM
+    if (size > settings.SMALL_FILE_SINGLE_GET_THRESHOLD) {
+      console.log("gcs_streaming_copy", { jobId, size, threshold: settings.SMALL_FILE_SINGLE_GET_THRESHOLD });
+      await streamGcsToGcs(bucket, key, settings.DATA_BUCKET, s3Key);
+    } else {
+      // Small files: use readFull for efficiency
+      const data = await readFull(bucket, key);
+      await putObject(settings.DATA_BUCKET, s3Key, data);
+    }
+    
     const s3Url = `gs://${settings.DATA_BUCKET}/${s3Key}`;
-    console.log("gcs_copied_to_gcs", { jobId, s3Url, bytes: data.length });
-    return [s3Url, data.length];
+    console.log("gcs_copied_to_gcs", { jobId, s3Url, bytes: size });
+    return [s3Url, size];
   }
   
   // Handle HTTP/HTTPS URLs using fetch
@@ -47,6 +57,12 @@ export async function fetchUrlToS3(jobId: string, url: string): Promise<[string,
   const s3Url = `gs://${settings.DATA_BUCKET}/${s3Key}`;
   console.log("url_fetched_to_gcs", { jobId, s3Url, bytes: total });
   return [s3Url, total];
+}
+
+// Stream GCS object to another GCS location using GCS copy (server-side, no memory)
+async function streamGcsToGcs(srcBucket: string, srcKey: string, dstBucket: string, dstKey: string): Promise<void> {
+  await copyObject(srcBucket, srcKey, dstBucket, dstKey);
+  console.log("gcs_copy_complete", { srcBucket, srcKey, dstBucket, dstKey });
 }
 
 export async function listS3Prefix(prefixUrl: string): Promise<[string, number][]> {
