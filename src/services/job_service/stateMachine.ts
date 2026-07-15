@@ -159,9 +159,25 @@ async function onParsingCompleted(event: JobEvent): Promise<void> {
   }
   const mergedPaths = finalizeResult.paths;
 
+  console.log("finalize_complete", { job_id: event.job_id, merged_paths_count: mergedPaths.length, merged_paths: mergedPaths });
+
   if (failedRatio > settings.FAILED_LINE_RATIO_THRESHOLD) {
     console.warn("quality_gate_held", { job_id: event.job_id, failed_ratio: failedRatio, threshold: settings.FAILED_LINE_RATIO_THRESHOLD });
     await transition(event.job_id, JobStatus.HELD, undefined, { output_paths: mergedPaths });
+    return;
+  }
+
+  // If no output paths but we have parsed data, this is likely a template issue
+  if (mergedPaths.length === 0 && data.parsed > 0) {
+    console.warn("no_output_paths_with_parsed_data", { job_id: event.job_id, parsed: data.parsed });
+    await transition(event.job_id, JobStatus.FAILED, "No output files generated despite parsed data");
+    return;
+  }
+
+  // If no output paths and no parsed data, complete successfully
+  if (mergedPaths.length === 0 && data.parsed === 0) {
+    console.info("no_output_no_data", { job_id: event.job_id });
+    await transition(event.job_id, JobStatus.DONE, undefined, { output_paths: [] });
     return;
   }
 
