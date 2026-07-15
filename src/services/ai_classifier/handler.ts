@@ -3,6 +3,38 @@ import { GoogleGenAI } from "@google/genai";
 import { settings } from "../../shared/config.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
 
+// Vertex AI integration using local implementation pattern
+async function askVertexAI(prompt: string): Promise<string> {
+  const PROJECT_ID = settings.GCP_PROJECT_ID || 'data-etl-499916';
+  const LOCATION = settings.VERTEX_LOCATION || 'us-central1';
+  const MODEL = settings.VERTEX_MODEL || 'gemini-2.5-flash';
+
+  const ai = new GoogleGenAI({
+    vertexai: true,
+    project: PROJECT_ID,
+    location: LOCATION,
+  });
+
+  const response = await ai.models.generateContent({
+    model: MODEL,
+    contents: [
+      {
+        role: 'user',
+        parts: [{ text: prompt }],
+      },
+    ],
+    config: {
+      responseModalities: ['TEXT'],
+      temperature: 0.2,
+      maxOutputTokens: 1024,
+    },
+  });
+
+  return response.text
+    ?? response.candidates?.[0]?.content?.parts?.map((part: any) => part.text).join('')
+    ?? '';
+}
+
 interface ClassifyRequest {
   unknown_line: string;
   field_spec: string[];
@@ -160,29 +192,13 @@ function buildTemplateFromRaw(raw: any, kindStr: string, line: string): RecordTe
 }
 
 async function callVertexAI(prompt: string): Promise<any> {
-  const ai = new GoogleGenAI({
-    vertexai: true,
-    project: settings.GCP_PROJECT_ID || 'data-etl-499916',
-    location: settings.VERTEX_LOCATION || 'us-central1',
-  });
-
-  const response = await ai.models.generateContent({
-    model: settings.VERTEX_MODEL || 'gemini-2.5-flash',
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text: prompt }],
-      },
-    ],
-    config: {
-      responseModalities: ['TEXT'],
-      temperature: 0.0,
-      maxOutputTokens: 1024,
-    },
-  });
-
-  const text = response.text || response.candidates?.[0]?.content?.parts?.map((part: any) => part.text).join('') || '';
-  return extractJson(text);
+  try {
+    const text = await askVertexAI(prompt);
+    return extractJson(text);
+  } catch (error) {
+    console.error("vertex_ai_request_failed", { error: String(error) });
+    throw error;
+  }
 }
 
 export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> {
