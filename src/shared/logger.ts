@@ -31,6 +31,9 @@ export class Logger {
     }
 
     try {
+      // Loki expects nanosecond timestamps
+      const timestamp = Date.now() * 1000000; // Convert to nanoseconds
+      
       const logEntry = {
         streams: [
           {
@@ -40,7 +43,10 @@ export class Logger {
               ...(context.job_id ? { job_id: context.job_id } : {}),
             },
             values: [
-              [String(Date.now()), this.format(level, message, context)],
+              [
+                String(timestamp),
+                this.format(level, message, context),
+              ],
             ],
           },
         ],
