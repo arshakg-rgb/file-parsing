@@ -1,5 +1,7 @@
 import { randomUUID } from "crypto";
 import fs from "fs/promises";
+import { createWriteStream } from "fs";
+import { pipeline } from "stream/promises";
 import os from "os";
 import path from "path";
 import zlib from "zlib";
@@ -10,7 +12,7 @@ import Seven from "node-7z";
 import { once } from "node:events";
 import { RARExtractor } from "unrar-async";
 import { settings } from "../../shared/config.js";
-import { parseGcsUrl as parseS3Url, objectSize, readFull, putObject, listObjects, copyObject } from "../../shared/gcsUtils.js";
+import { parseGcsUrl as parseS3Url, objectSize, readFull, putObject, listObjects, copyObject, gcsClient } from "../../shared/gcsUtils.js";
 import { fetchUrlStream } from "./ssrf_guard.js";
 
 const gunzip = promisify(zlib.gunzip);
@@ -97,6 +99,47 @@ export async function extractArchiveToS3(
     throw new BombError(`Archive nesting depth ${_depth} exceeds maximum ${settings.ARCHIVE_MAX_NESTING_DEPTH}`);
   }
   const [bucket, key] = parseS3Url(s3Url);
+
+  // For RAR: stream directly from GCS to temp file to avoid loading 2GB+ into memory
+  if (archiveType === "rar") {
+    const size = await objectSize(bucket, key);
+    console.log("rar_streaming_extract", { jobId, bucket, key, size });
+    const tmpPath = path.join(os.tmpdir(), `${randomUUID()}.rar`);
+    const fileStream = gcsClient().bucket(bucket).file(key).createReadStream();
+    const writeStream = createWriteStream(tmpPath);
+    await pipeline(fileStream, writeStream);
+    console.log("rar_download_complete", { jobId, tmpPath, size });
+    const extractor = await RARExtractor.fromFile(tmpPath, { password: password || undefined });
+    const result = await extractor.extract();
+    const out: Record<string, any>[] = [];
+    let totalUncompressed = 0;
+    const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
+    const MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024;
+    for await (const { fileHeader, extraction } of result.files) {
+      if (!extraction) continue;
+      if (fileHeader.unpSize > MAX_FILE_SIZE) {
+        console.log("rar_skip_large_file", { jobId, name: fileHeader.name, size: fileHeader.unpSize });
+        continue;
+      }
+      if (totalUncompressed + fileHeader.unpSize > MAX_TOTAL_UNCOMPRESSED) {
+        console.log("rar_skip_total_limit", { jobId, name: fileHeader.name });
+        continue;
+      }
+      const chunks: Buffer[] = [];
+      for await (const chunk of extraction) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      const data = Buffer.concat(chunks);
+      totalUncompressed += data.length;
+      checkRatio(size, totalUncompressed);
+      const [url, entrySize] = await storeEntry(jobId, fileHeader.name, data);
+      out.push(makeEntryEvent(jobId, batchId, url, fileHeader.name, entrySize, fieldSpec));
+    }
+    extractor.close();
+    await fs.unlink(tmpPath).catch(() => {});
+    return out;
+  }
+
   const raw = await readFull(bucket, key);
   const compressedSize = raw.length;
 
@@ -104,7 +147,6 @@ export async function extractArchiveToS3(
   if (archiveType === "gz") return extractGz(jobId, raw, compressedSize, fieldSpec, batchId);
   if (archiveType === "tar") return extractTarArchive(jobId, raw, compressedSize, fieldSpec, batchId);
   if (archiveType === "7z") return extract7z(jobId, raw, compressedSize, fieldSpec, batchId, password);
-  if (archiveType === "rar") return extractRar(jobId, raw, compressedSize, fieldSpec, batchId, password);
   throw new Error(`Unsupported archive type: ${archiveType}`);
 }
 
