@@ -16,7 +16,7 @@
     "dev:report": "tsx src/services/report/handler.ts",
     "dev:retry": "tsx src/services/retry/handler.ts",
     "init:db": "tsx src/scripts/init_db.ts",
-    "migrate": "tsx src/db/migrate.ts",
+    "migrate": "tsx src/scripts/migrate.ts",
     "setup:localstack": "tsx src/scripts/setup_localstack.ts",
     "setup:gcp": "tsx src/scripts/setup_gcp.ts",
     "test:upload": "tsx src/scripts/test_upload.ts",

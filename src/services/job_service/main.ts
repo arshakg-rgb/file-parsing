@@ -4,7 +4,7 @@ import { receiveMessages, deleteMessage } from "../../shared/queueUtils.js";
 import { JobEvent, EventType } from "../../shared/models/events.js";
 import { handleEvent } from "./stateMachine.js";
 import { router } from "./router.js";
-import { pool } from "../../shared/db.js";
+import { pool, createTables } from "../../shared/db.js";
 
 const app = express();
 app.use(express.json());
@@ -58,7 +58,25 @@ async function eventConsumerLoop(): Promise<void> {
 }
 
 const PORT = process.env.PORT || 8000;
-app.listen(PORT, () => {
+
+async function initializeDatabase(): Promise<void> {
+  try {
+    console.log("Running database migration...");
+    await createTables();
+    console.log("Database migration completed successfully");
+  } catch (err) {
+    console.error("Database migration failed:", err);
+    throw err;
+  }
+}
+
+app.listen(PORT, async () => {
   console.log(`Job Service listening on port ${PORT}`);
-  eventConsumerLoop();
+  try {
+    await initializeDatabase();
+    eventConsumerLoop();
+  } catch (err) {
+    console.error("Failed to initialize database:", err);
+    process.exit(1);
+  }
 });
