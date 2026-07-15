@@ -1,3 +1,5 @@
+import { settings } from "./config.js";
+
 export interface LogContext {
   job_id?: string;
   [key: string]: any;
@@ -21,12 +23,54 @@ export class Logger {
     return JSON.stringify(logEntry);
   }
 
+  private async sendToLoki(level: string, message: string, context: LogContext = {}): Promise<void> {
+    if (!settings.LOKI_HOST || !settings.LOKI_USERNAME || !settings.LOKI_PASSWORD) {
+      return;
+    }
+
+    try {
+      const logEntry = {
+        streams: [
+          {
+            stream: {
+              service: this.service,
+              level,
+              ...(context.job_id ? { job_id: context.job_id } : {}),
+            },
+            values: [
+              [String(Date.now()), this.format(level, message, context)],
+            ],
+          },
+        ],
+      };
+
+      const response = await fetch(`${settings.LOKI_HOST}/loki/api/v1/push`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Basic ${btoa(`${settings.LOKI_USERNAME}:${settings.LOKI_PASSWORD}`)}`,
+        },
+        body: JSON.stringify(logEntry),
+      });
+
+      if (!response.ok) {
+        console.error('loki_send_failed', { status: response.status, statusText: response.statusText });
+      }
+    } catch (error) {
+      console.error('loki_send_error', { error: String(error) });
+    }
+  }
+
   info(message: string, context: LogContext = {}): void {
-    console.log(this.format("info", message, context));
+    const formatted = this.format("info", message, context);
+    console.log(formatted);
+    this.sendToLoki("info", message, context).catch(() => {});
   }
 
   warn(message: string, context: LogContext = {}): void {
-    console.warn(this.format("warn", message, context));
+    const formatted = this.format("warn", message, context);
+    console.warn(formatted);
+    this.sendToLoki("warn", message, context).catch(() => {});
   }
 
   error(message: string, context: LogContext = {}, error?: Error): void {
@@ -35,11 +79,17 @@ export class Logger {
       ...(error ? { error: error.message, stack: error.stack } : {}),
     });
     console.error(entry);
+    this.sendToLoki("error", message, {
+      ...context,
+      ...(error ? { error: error.message, stack: error.stack } : {}),
+    }).catch(() => {});
   }
 
   debug(message: string, context: LogContext = {}): void {
     if (process.env.LOG_LEVEL === "debug") {
-      console.log(this.format("debug", message, context));
+      const formatted = this.format("debug", message, context);
+      console.log(formatted);
+      this.sendToLoki("debug", message, context).catch(() => {});
     }
   }
 }

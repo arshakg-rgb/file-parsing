@@ -57,6 +57,11 @@ export const settings = {
   BEDROCK_MODEL_ID: getString("BEDROCK_MODEL_ID", "mock"),
   AI_CLASSIFIER_URL: getOptionalString("AI_CLASSIFIER_URL"),
 
+  // ---- Loki Logging ----
+  LOKI_HOST: getOptionalString("LOKI_HOST"),
+  LOKI_USERNAME: getOptionalString("LOKI_USERNAME"),
+  LOKI_PASSWORD: getOptionalString("LOKI_PASSWORD"),
+
   // ---- Stream Parser tuning ----
   FETCH_CHUNK_SIZE: getNumber("FETCH_CHUNK_SIZE", 8 * 1024 * 1024),
   SMALL_FILE_SINGLE_GET_THRESHOLD: getNumber(
