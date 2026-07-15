@@ -153,49 +153,55 @@ async function onParsingCompleted(event: JobEvent): Promise<void> {
   const totalLines = data.parsed + data.dropped_rubbish + data.failed;
   const failedRatio = totalLines > 0 ? data.failed / totalLines : 0;
 
-  console.log("transitioning_to_finalizing", { job_id: event.job_id,  failed_ratio: failedRatio });
+  console.log("transitioning_to_finalizing", { job_id: event.job_id, failed_ratio: failedRatio });
   await transition(event.job_id, JobStatus.FINALIZING, undefined, { counts, timings });
 
   // Merge parts by template, backfill line numbers, and produce a final set of paths.
   console.log("starting_finalization", { job_id: event.job_id, part_paths: data.part_s3_paths });
-  const finalizeResult = await finalizeOutput(event.job_id, data.part_s3_paths, settings.DATA_BUCKET);
-  console.log("finalization_result", { job_id: event.job_id, failed: finalizeResult.failed, paths_count: finalizeResult.paths.length, error: finalizeResult.error });
   
-  if (finalizeResult.failed) {
-    console.error("finalize_failed", { job_id: event.job_id, error: finalizeResult.error });
-    await transition(event.job_id, JobStatus.FAILED, finalizeResult.error || "finalize_failed");
-    return;
+  try {
+    const finalizeResult = await finalizeOutput(event.job_id, data.part_s3_paths, settings.DATA_BUCKET);
+    console.log("finalization_result", { job_id: event.job_id, failed: finalizeResult.failed, paths_count: finalizeResult.paths.length, error: finalizeResult.error });
+    
+    if (finalizeResult.failed) {
+      console.error("finalize_failed", { job_id: event.job_id, error: finalizeResult.error });
+      await transition(event.job_id, JobStatus.FAILED, finalizeResult.error || "finalize_failed");
+      return;
+    }
+    const mergedPaths = finalizeResult.paths;
+
+    console.log("finalize_complete", { job_id: event.job_id, merged_paths_count: mergedPaths.length, merged_paths: mergedPaths });
+
+    if (failedRatio > settings.FAILED_LINE_RATIO_THRESHOLD) {
+      console.warn("quality_gate_held", { job_id: event.job_id, failed_ratio: failedRatio, threshold: settings.FAILED_LINE_RATIO_THRESHOLD });
+      await transition(event.job_id, JobStatus.HELD, undefined, { output_paths: mergedPaths });
+      return;
+    }
+
+    // If no output paths but we have parsed data, this is likely a template issue
+    if (mergedPaths.length === 0 && data.parsed > 0) {
+      console.warn("no_output_paths_with_parsed_data", { job_id: event.job_id, parsed: data.parsed, part_paths: data.part_s3_paths });
+      await transition(event.job_id, JobStatus.FAILED, "No output files generated despite parsed data");
+      return;
+    }
+
+    // If no output paths and no parsed data, complete successfully
+    if (mergedPaths.length === 0 && data.parsed === 0) {
+      console.info("no_output_no_data", { job_id: event.job_id });
+      await transition(event.job_id, JobStatus.DONE, undefined, { output_paths: [] });
+      return;
+    }
+
+    console.log("transitioning_to_loading", { job_id: event.job_id, merged_paths_count: mergedPaths.length });
+    await transition(event.job_id, JobStatus.LOADING, undefined, { output_paths: mergedPaths });
+    await sendRaw(settings.LOAD_QUEUE_URL, {
+      job_id: event.job_id,
+      merged_parquet_paths: mergedPaths,
+      field_spec: row.field_spec,
+    });
+    console.log("loading_message_sent", { job_id: event.job_id });
+  } catch (error) {
+    console.error("finalization_exception", { job_id: event.job_id, error: String(error), stack: error instanceof Error ? error.stack : undefined });
+    await transition(event.job_id, JobStatus.FAILED, `Finalization error: ${String(error)}`);
   }
-  const mergedPaths = finalizeResult.paths;
-
-  console.log("finalize_complete", { job_id: event.job_id, merged_paths_count: mergedPaths.length, merged_paths: mergedPaths });
-
-  if (failedRatio > settings.FAILED_LINE_RATIO_THRESHOLD) {
-    console.warn("quality_gate_held", { job_id: event.job_id, failed_ratio: failedRatio, threshold: settings.FAILED_LINE_RATIO_THRESHOLD });
-    await transition(event.job_id, JobStatus.HELD, undefined, { output_paths: mergedPaths });
-    return;
-  }
-
-  // If no output paths but we have parsed data, this is likely a template issue
-  if (mergedPaths.length === 0 && data.parsed > 0) {
-    console.warn("no_output_paths_with_parsed_data", { job_id: event.job_id, parsed: data.parsed, part_paths: data.part_s3_paths });
-    await transition(event.job_id, JobStatus.FAILED, "No output files generated despite parsed data");
-    return;
-  }
-
-  // If no output paths and no parsed data, complete successfully
-  if (mergedPaths.length === 0 && data.parsed === 0) {
-    console.info("no_output_no_data", { job_id: event.job_id });
-    await transition(event.job_id, JobStatus.DONE, undefined, { output_paths: [] });
-    return;
-  }
-
-  console.log("transitioning_to_loading", { job_id: event.job_id, merged_paths_count: mergedPaths.length });
-  await transition(event.job_id, JobStatus.LOADING, undefined, { output_paths: mergedPaths });
-  await sendRaw(settings.LOAD_QUEUE_URL, {
-    job_id: event.job_id,
-    merged_parquet_paths: mergedPaths,
-    field_spec: row.field_spec,
-  });
-  console.log("loading_message_sent", { job_id: event.job_id });
 }
