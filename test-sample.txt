@@ -1,0 +1,15 @@
+Sample test file for end-to-end pipeline testing.
+This is a multi-line text file that will be processed through the parsing pipeline.
+
+Line 1: Sample data entry
+Line 2: Another data point
+Line 3: Third line of content
+Line 4: Final test line
+
+The pipeline should:
+1. Ingest this file
+2. Detect the format
+3. Parse the content
+4. Classify unknown lines
+5. Load parsed data into database
+6. Generate a report

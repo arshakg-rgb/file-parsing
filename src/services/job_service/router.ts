@@ -48,9 +48,9 @@ router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => 
 
     await pool.query(
       `INSERT INTO parse_jobs
-        (job_id, batch_id, source_type, source_ref, s3_url, field_spec, exec_path, status, counts, timings, output_paths, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())`,
-      [row.job_id, row.batch_id, row.source_type, row.source_ref, row.s3_url, JSON.stringify(row.field_spec), row.exec_path, row.status, JSON.stringify(row.counts), JSON.stringify(row.timings), JSON.stringify(row.output_paths)]
+        (job_id, batch_id, parent_job_id, source_type, source_ref, s3_url, size, field_spec, exec_path, status, output_paths, counts, timings, error, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())`,
+      [row.job_id, row.batch_id, row.parent_job_id, row.source_type, row.source_ref, row.s3_url, row.size, JSON.stringify(row.field_spec), row.exec_path, row.status, JSON.stringify(row.output_paths), JSON.stringify(row.counts), JSON.stringify(row.timings), row.error]
     );
 
     await sendRaw(settings.INGEST_QUEUE_URL, {
