@@ -147,7 +147,7 @@ export async function listObjects(bucket: string, prefix: string): Promise<[stri
   );
 }
 
-export async function presignedPutUrl(bucket: string, key: string, expiresIn = 3600): Promise<string> {
+export async function presignedPutUrl(bucket: string, key: string, expiresIn = 3600, contentType = "application/octet-stream"): Promise<string> {
   return withRetry(
     () => withTimeout(async () => {
       const [url] = await gcsClient()
@@ -156,6 +156,7 @@ export async function presignedPutUrl(bucket: string, key: string, expiresIn = 3
         .getSignedUrl({
           action: "write",
           expires: Date.now() + expiresIn * 1000,
+          contentType,
         });
       return url;
     }, GCS_TIMEOUT_MS),
