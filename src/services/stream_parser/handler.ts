@@ -149,6 +149,7 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
             checksum: "",
             parsed_at: new Date(),
             part_id: "auto",
+            row_data: result.row // Store actual parsed row data
           });
           
           counts.parsed++;

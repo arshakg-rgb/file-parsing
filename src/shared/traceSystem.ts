@@ -16,6 +16,7 @@ export interface TraceRecord {
   template_version: number;
   checksum: string;
   parsed_at: Date;
+  row_data?: Record<string, any>; // Actual parsed row data
 }
 
 export class TraceSystem {
@@ -39,7 +40,10 @@ export class TraceSystem {
           trace.checksum,
           trace.parsed_at,
           trace.part_id,
-          JSON.stringify({ s3_url: trace.s3_url }) // Store metadata in fields
+          JSON.stringify({
+            s3_url: trace.s3_url,
+            ...trace.row_data // Store actual parsed row data
+          })
         ]
       );
       
