@@ -104,7 +104,7 @@ steps:
           --image $_JOB_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD,ANTHROPIC_API_KEY || true
 
         gcloud run deploy job-service \
           --image $_JOB_IMAGE \
@@ -122,7 +122,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest,ANTHROPIC_API_KEY=FILE_ANTHROPIC_API_KEY:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -133,7 +133,7 @@ steps:
           --image $_INGEST_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD,ANTHROPIC_API_KEY || true
 
         gcloud run deploy ingest \
           --image $_INGEST_IMAGE \
@@ -151,7 +151,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest,ANTHROPIC_API_KEY=FILE_ANTHROPIC_API_KEY:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -162,7 +162,7 @@ steps:
           --image $_DETECT_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD,ANTHROPIC_API_KEY || true
 
         gcloud run deploy detect-bootstrap \
           --image $_DETECT_IMAGE \
@@ -180,7 +180,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest,ANTHROPIC_API_KEY=FILE_ANTHROPIC_API_KEY:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -191,7 +191,7 @@ steps:
           --image $_STREAM_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD,ANTHROPIC_API_KEY || true
 
         gcloud run deploy stream-parser \
           --image $_STREAM_IMAGE \
@@ -209,7 +209,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest,ANTHROPIC_API_KEY=FILE_ANTHROPIC_API_KEY:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -220,7 +220,7 @@ steps:
           --image $_AI_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD,ANTHROPIC_API_KEY || true
 
         gcloud run deploy ai-classifier \
           --image $_AI_IMAGE \
@@ -238,7 +238,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest,ANTHROPIC_API_KEY=FILE_ANTHROPIC_API_KEY:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -249,7 +249,7 @@ steps:
           --image $_LOAD_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD,ANTHROPIC_API_KEY || true
 
         gcloud run deploy load \
           --image $_LOAD_IMAGE \
@@ -267,7 +267,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest,ANTHROPIC_API_KEY=FILE_ANTHROPIC_API_KEY:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -278,7 +278,7 @@ steps:
           --image $_REPORT_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD,ANTHROPIC_API_KEY || true
 
         gcloud run deploy report \
           --image $_REPORT_IMAGE \
@@ -296,7 +296,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest,ANTHROPIC_API_KEY=FILE_ANTHROPIC_API_KEY:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -307,7 +307,7 @@ steps:
           --image $_RETRY_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD,ANTHROPIC_API_KEY || true
 
         gcloud run deploy retry \
           --image $_RETRY_IMAGE \
@@ -325,7 +325,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest,ANTHROPIC_API_KEY=FILE_ANTHROPIC_API_KEY:latest
 
 images:
   - $_JOB_IMAGE

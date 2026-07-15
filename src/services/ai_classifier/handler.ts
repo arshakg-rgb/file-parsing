@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { BedrockRuntimeClient, ConverseCommand } from "@aws-sdk/client-bedrock-runtime";
+import Anthropic from "@anthropic-ai/sdk";
 import { settings } from "../../shared/config.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
 
@@ -159,21 +159,24 @@ function buildTemplateFromRaw(raw: any, kindStr: string, line: string): RecordTe
   return null;
 }
 
-async function callBedrock(prompt: string): Promise<any> {
-  const client = new BedrockRuntimeClient({ region: process.env.AWS_REGION ?? "us-east-1" });
-  const resp = await client.send(
-    new ConverseCommand({
-      modelId: settings.BEDROCK_MODEL_ID,
-      system: [{ text: SYSTEM_PROMPT }],
-      messages: [{ role: "user", content: [{ text: prompt }] }],
-      inferenceConfig: { temperature: 0.0, maxTokens: 1024 },
-    })
-  );
-  const content = resp.output?.message?.content || [];
-  for (const item of content) {
-    if (item.text) return extractJson(item.text);
+async function callAnthropic(prompt: string): Promise<any> {
+  const anthropic = new Anthropic({
+    apiKey: settings.ANTHROPIC_API_KEY,
+  });
+  
+  const resp = await anthropic.messages.create({
+    model: settings.ANTHROPIC_MODEL || "claude-3-sonnet-20240229",
+    max_tokens: 1024,
+    system: SYSTEM_PROMPT,
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.0,
+  });
+  
+  const content = resp.content[0];
+  if (content.type === "text") {
+    return extractJson(content.text);
   }
-  throw new Error("No text content in Bedrock response");
+  throw new Error("No text content in Anthropic response");
 }
 
 export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> {
@@ -188,7 +191,7 @@ export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse
 
   const userPrompt = buildUserPrompt(req);
   try {
-    const raw = await callBedrock(userPrompt);
+    const raw = await callAnthropic(userPrompt);
     const kindStr = raw.kind || "uncertain";
     if (kindStr === "uncertain") return { kind: AIVerdict.UNCERTAIN };
     const tmpl = buildTemplateFromRaw(raw, kindStr, req.unknown_line);
@@ -203,7 +206,7 @@ export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse
     console.log("ai_classified", { job_id: req.job_id, verdict, template_id: tmpl.template_id, fingerprint: tmpl.fingerprint });
     return { kind: verdict, template: tmpl };
   } catch (err) {
-    console.error("bedrock_call_failed", { job_id: req.job_id, error: String(err) });
+    console.error("anthropic_call_failed", { job_id: req.job_id, error: String(err) });
     return { kind: AIVerdict.UNCERTAIN };
   }
 }

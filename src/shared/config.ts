@@ -52,6 +52,8 @@ export const settings = {
   TEMPLATE_COLLECTION: getString("TEMPLATE_COLLECTION", "file-parsing-templates"),
 
   // ---- AI Classifier ----
+  ANTHROPIC_API_KEY: getString("ANTHROPIC_API_KEY", ""),
+  ANTHROPIC_MODEL: getString("ANTHROPIC_MODEL", "claude-3-sonnet-20240229"),
   BEDROCK_MODEL_ID: getString("BEDROCK_MODEL_ID", "mock"),
   AI_CLASSIFIER_URL: getOptionalString("AI_CLASSIFIER_URL"),
 
