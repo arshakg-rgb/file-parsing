@@ -17,6 +17,16 @@ router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => 
       return;
     }
 
+    // Extract field names from field_spec if it's in the new format
+    let fieldNames: string[] = [];
+    if (field_spec) {
+      if (Array.isArray(field_spec)) {
+        fieldNames = field_spec;
+      } else if (field_spec.fields && Array.isArray(field_spec.fields)) {
+        fieldNames = field_spec.fields.map((f: any) => f.name);
+      }
+    }
+
     const jobId = randomUUID();
     const batchId = batch_id || randomUUID();
     let putUrl: string | undefined;
@@ -35,7 +45,7 @@ router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => 
       source_type,
       source_ref: source_ref || s3Url!,
       s3_url: s3Url,
-      field_spec,
+      field_spec: fieldNames, // Store as simple array of field names
       exec_path: "stream",
       status: JobStatus.QUEUED,
       output_paths: [],
