@@ -100,11 +100,16 @@ steps:
           --image $_JOB_IMAGE \
           --region $_REGION \
           --platform managed \
+          --remove-env-vars=DATABASE_URL || true
+
+        gcloud run deploy job-service \
+          --image $_JOB_IMAGE \
+          --region $_REGION \
+          --platform managed \
           --allow-unauthenticated \
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --remove-env-vars=DATABASE_URL \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
           --update-secrets=DATABASE_URL=FILE_DATABASE_URL
 
@@ -117,11 +122,16 @@ steps:
           --image $_INGEST_IMAGE \
           --region $_REGION \
           --platform managed \
+          --remove-env-vars=DATABASE_URL || true
+
+        gcloud run deploy ingest \
+          --image $_INGEST_IMAGE \
+          --region $_REGION \
+          --platform managed \
           --allow-unauthenticated \
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --remove-env-vars=DATABASE_URL \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
           --update-secrets=DATABASE_URL=FILE_DATABASE_URL
 
@@ -134,11 +144,16 @@ steps:
           --image $_DETECT_IMAGE \
           --region $_REGION \
           --platform managed \
+          --remove-env-vars=DATABASE_URL || true
+
+        gcloud run deploy detect-bootstrap \
+          --image $_DETECT_IMAGE \
+          --region $_REGION \
+          --platform managed \
           --allow-unauthenticated \
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --remove-env-vars=DATABASE_URL \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
           --update-secrets=DATABASE_URL=FILE_DATABASE_URL
 
@@ -151,11 +166,16 @@ steps:
           --image $_STREAM_IMAGE \
           --region $_REGION \
           --platform managed \
+          --remove-env-vars=DATABASE_URL || true
+
+        gcloud run deploy stream-parser \
+          --image $_STREAM_IMAGE \
+          --region $_REGION \
+          --platform managed \
           --allow-unauthenticated \
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --remove-env-vars=DATABASE_URL \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
           --update-secrets=DATABASE_URL=FILE_DATABASE_URL
 
@@ -168,11 +188,16 @@ steps:
           --image $_AI_IMAGE \
           --region $_REGION \
           --platform managed \
+          --remove-env-vars=DATABASE_URL || true
+
+        gcloud run deploy ai-classifier \
+          --image $_AI_IMAGE \
+          --region $_REGION \
+          --platform managed \
           --allow-unauthenticated \
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --remove-env-vars=DATABASE_URL \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
           --update-secrets=DATABASE_URL=FILE_DATABASE_URL
 
@@ -185,11 +210,16 @@ steps:
           --image $_LOAD_IMAGE \
           --region $_REGION \
           --platform managed \
+          --remove-env-vars=DATABASE_URL || true
+
+        gcloud run deploy load \
+          --image $_LOAD_IMAGE \
+          --region $_REGION \
+          --platform managed \
           --allow-unauthenticated \
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --remove-env-vars=DATABASE_URL \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
           --update-secrets=DATABASE_URL=FILE_DATABASE_URL
 
@@ -202,11 +232,16 @@ steps:
           --image $_REPORT_IMAGE \
           --region $_REGION \
           --platform managed \
+          --remove-env-vars=DATABASE_URL || true
+
+        gcloud run deploy report \
+          --image $_REPORT_IMAGE \
+          --region $_REGION \
+          --platform managed \
           --allow-unauthenticated \
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --remove-env-vars=DATABASE_URL \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
           --update-secrets=DATABASE_URL=FILE_DATABASE_URL
 
@@ -219,11 +254,16 @@ steps:
           --image $_RETRY_IMAGE \
           --region $_REGION \
           --platform managed \
+          --remove-env-vars=DATABASE_URL || true
+
+        gcloud run deploy retry \
+          --image $_RETRY_IMAGE \
+          --region $_REGION \
+          --platform managed \
           --allow-unauthenticated \
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --remove-env-vars=DATABASE_URL \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
           --update-secrets=DATABASE_URL=FILE_DATABASE_URL
 
