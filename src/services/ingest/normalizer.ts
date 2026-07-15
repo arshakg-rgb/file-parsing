@@ -23,6 +23,18 @@ export class BombError extends Error {
 }
 
 export async function fetchUrlToS3(jobId: string, url: string): Promise<[string, number]> {
+  // Handle gs:// URLs directly using GCS utilities
+  if (url.startsWith("gs://")) {
+    const [bucket, key] = parseS3Url(url);
+    const data = await readFull(bucket, key);
+    const s3Key = `ingested/${jobId}/source`;
+    await putObject(settings.DATA_BUCKET, s3Key, data);
+    const s3Url = `gs://${settings.DATA_BUCKET}/${s3Key}`;
+    console.log("gcs_copied_to_gcs", { jobId, s3Url, bytes: data.length });
+    return [s3Url, data.length];
+  }
+  
+  // Handle HTTP/HTTPS URLs using fetch
   const s3Key = `ingested/${jobId}/source`;
   const chunks: Buffer[] = [];
   let total = 0;
