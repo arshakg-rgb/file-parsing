@@ -91,6 +91,10 @@ steps:
     args: ['push', '$_RETRY_IMAGE']
 
   # Step 4: Deploy to Cloud Run
+  # Each service: (1) strip any conflicting plain env vars, (2) strip any conflicting
+  # secret-backed vars, (3) deploy with all four sensitive values as secret references.
+  # This makes future secret rotations always work without type-conflict errors.
+
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
     args:
@@ -100,7 +104,13 @@ steps:
           --image $_JOB_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
+
+        gcloud run deploy job-service \
+          --image $_JOB_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --remove-secrets=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
 
         gcloud run deploy job-service \
           --image $_JOB_IMAGE \
@@ -110,8 +120,8 @@ steps:
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates \
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -122,7 +132,13 @@ steps:
           --image $_INGEST_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
+
+        gcloud run deploy ingest \
+          --image $_INGEST_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --remove-secrets=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
 
         gcloud run deploy ingest \
           --image $_INGEST_IMAGE \
@@ -132,8 +148,8 @@ steps:
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates \
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -144,7 +160,13 @@ steps:
           --image $_DETECT_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
+
+        gcloud run deploy detect-bootstrap \
+          --image $_DETECT_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --remove-secrets=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
 
         gcloud run deploy detect-bootstrap \
           --image $_DETECT_IMAGE \
@@ -154,8 +176,8 @@ steps:
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates \
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -166,7 +188,13 @@ steps:
           --image $_STREAM_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
+
+        gcloud run deploy stream-parser \
+          --image $_STREAM_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --remove-secrets=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
 
         gcloud run deploy stream-parser \
           --image $_STREAM_IMAGE \
@@ -176,8 +204,8 @@ steps:
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates \
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -188,7 +216,13 @@ steps:
           --image $_AI_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
+
+        gcloud run deploy ai-classifier \
+          --image $_AI_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --remove-secrets=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
 
         gcloud run deploy ai-classifier \
           --image $_AI_IMAGE \
@@ -198,8 +232,8 @@ steps:
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates \
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -210,7 +244,13 @@ steps:
           --image $_LOAD_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
+
+        gcloud run deploy load \
+          --image $_LOAD_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --remove-secrets=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
 
         gcloud run deploy load \
           --image $_LOAD_IMAGE \
@@ -220,8 +260,8 @@ steps:
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates \
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -232,7 +272,13 @@ steps:
           --image $_REPORT_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
+
+        gcloud run deploy report \
+          --image $_REPORT_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --remove-secrets=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
 
         gcloud run deploy report \
           --image $_REPORT_IMAGE \
@@ -242,8 +288,8 @@ steps:
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates \
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -254,7 +300,13 @@ steps:
           --image $_RETRY_IMAGE \
           --region $_REGION \
           --platform managed \
-          --remove-env-vars=DATABASE_URL || true
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
+
+        gcloud run deploy retry \
+          --image $_RETRY_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --remove-secrets=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID || true
 
         gcloud run deploy retry \
           --image $_RETRY_IMAGE \
@@ -264,8 +316,8 @@ steps:
           --memory 512Mi \
           --cpu 1 \
           --timeout 3600s \
-          --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates \
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest
 
 images:
   - $_JOB_IMAGE
