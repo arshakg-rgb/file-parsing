@@ -89,7 +89,7 @@ export class OutputBuffer {
       await writer.close();
 
       const buffer = await fs.readFile(tempFile);
-      const gcsPath = `${settings.DATA_BUCKET}/output/${this.partId}.parquet`;
+      const gcsPath = `gs://${settings.DATA_BUCKET}/output/${this.partId}.parquet`;
       await putObject(settings.DATA_BUCKET, `output/${this.partId}.parquet`, buffer);
 
       await fs.unlink(tempFile).catch(() => {});
