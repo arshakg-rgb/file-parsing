@@ -94,6 +94,10 @@ export class SSRFError extends Error {
 
 export async function checkUrl(url: string): Promise<void> {
   const parsed = new URL(url);
+  // Allow gs:// URLs (internal GCS) - no SSRF risk
+  if (parsed.protocol === "gs:") {
+    return;
+  }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new SSRFError(`Disallowed URL scheme: ${parsed.protocol}`);
   }
