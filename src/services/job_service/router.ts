@@ -151,6 +151,42 @@ router.post("/jobs/:job_id/release-hold", async (req: Request, res: Response, ne
   }
 });
 
+router.post("/jobs/:job_id/fail", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { reason } = req.body;
+    const result = await pool.query<ParseJobRow>("SELECT * FROM parse_jobs WHERE job_id = $1", [req.params.job_id]);
+    const row = result.rows[0];
+    if (!row) {
+      res.status(404).json({ detail: "Job not found" });
+      return;
+    }
+    await pool.query(
+      `UPDATE parse_jobs SET status = 'failed', error = $1, updated_at = NOW(),
+       timings = timings || jsonb_build_object('failed_at', to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+       WHERE job_id = $2`,
+      [reason || "manually_failed", req.params.job_id]
+    );
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/jobs/stuck", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const thresholdMinutes = parseInt(req.query.minutes as string) || 15;
+    const result = await pool.query<ParseJobRow>(
+      `SELECT job_id, status, timings, error, created_at FROM parse_jobs
+       WHERE status NOT IN ('done', 'failed', 'partial', 'held')
+       AND updated_at < NOW() - INTERVAL '${thresholdMinutes} minutes'
+       ORDER BY updated_at ASC`
+    );
+    res.json({ stuck_jobs: result.rows, count: result.rows.length, threshold_minutes: thresholdMinutes });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/jobs/:job_id/retry", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { target_status } = req.body;
