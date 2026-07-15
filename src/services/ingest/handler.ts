@@ -210,7 +210,7 @@ export async function consumerLoop(): Promise<void> {
       } catch (exc) {
         const errorStr = String(exc);
         // Ack bad messages to prevent infinite retry loop
-        if (errorStr.includes("Job") && errorStr.includes("not found")) {
+        if ((errorStr.includes("Job") && errorStr.includes("not found")) || errorStr.includes("cannot transition")) {
           logger.error("ingest_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
           metrics.increment("ingest.message_error_ack", 1);
           await deleteMessage(settings.INGEST_QUEUE_URL, receiptHandle);
