@@ -76,7 +76,7 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
       }
       
       // Analyze row widths
-      const content = buffer.toString('utf-8');
+      const content = buffer.toString('utf-8').replace(/\0/g, ''); // Remove null bytes
       const lines = content.split('\n').filter(line => line.trim());
       if (lines.length > 0) {
         const widths = lines.map(l => l.length);
