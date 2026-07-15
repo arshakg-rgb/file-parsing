@@ -56,6 +56,8 @@ export const settings = {
   ANTHROPIC_MODEL: getString("ANTHROPIC_MODEL", "claude-3-sonnet-20240229"),
   BEDROCK_MODEL_ID: getString("BEDROCK_MODEL_ID", "mock"),
   AI_CLASSIFIER_URL: getOptionalString("AI_CLASSIFIER_URL"),
+  AI_RATE_LIMIT_RPM: getNumber("AI_RATE_LIMIT_RPM", 60), // 60 requests per minute
+  AI_RATE_LIMIT_BURST: getNumber("AI_RATE_LIMIT_BURST", 10), // Burst of 10 requests
 
   // ---- Vertex AI ----
   VERTEX_MODEL: getString("VERTEX_MODEL", "gemini-2.5-flash"),

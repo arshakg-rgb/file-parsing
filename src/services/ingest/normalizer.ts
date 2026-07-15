@@ -254,13 +254,24 @@ async function extractRar(
   const result = await extractor.extract();
   const out: Record<string, any>[] = [];
   let totalUncompressed = 0;
-  const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB per file limit to avoid memory issues
+  const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB per file limit for very large files
+  const MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024; // 10GB total limit
+  
   for await (const { fileHeader, extraction } of result.files) {
     if (!extraction) continue;
+    
+    // Skip files that are too large individually
     if (fileHeader.unpSize > MAX_FILE_SIZE) {
-      console.log("rar_skip_large_file", { jobId, name: fileHeader.name, size: fileHeader.unpSize });
+      console.log("rar_skip_large_file", { jobId, name: fileHeader.name, size: fileHeader.unpSize, maxSize: MAX_FILE_SIZE });
       continue;
     }
+    
+    // Check if adding this file would exceed total limit
+    if (totalUncompressed + fileHeader.unpSize > MAX_TOTAL_UNCOMPRESSED) {
+      console.log("rar_skip_total_limit", { jobId, name: fileHeader.name, size: fileHeader.unpSize, currentTotal: totalUncompressed, maxTotal: MAX_TOTAL_UNCOMPRESSED });
+      continue;
+    }
+    
     const chunks: Buffer[] = [];
     for await (const chunk of extraction) {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
