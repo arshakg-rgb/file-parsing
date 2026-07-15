@@ -6,8 +6,8 @@ import { settings } from "./config.js";
 
 const QUEUE_RETRIES = 3;
 const QUEUE_RETRY_DELAY = 200;
-const QUEUE_TIMEOUT_SEND = 10000;
-const QUEUE_TIMEOUT_RECEIVE = 35000;
+const QUEUE_TIMEOUT_SEND = 60000; // Increased from 10s to 60s for large files
+const QUEUE_TIMEOUT_RECEIVE = 60000; // Increased from 35s to 60s for large files
 
 function isRetryable(err: any): boolean {
   if (!err) return false;

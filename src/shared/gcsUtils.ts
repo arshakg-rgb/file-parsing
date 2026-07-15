@@ -16,7 +16,7 @@ export function gcsClient(): Storage {
 }
 
 const GCS_RETRIES = 3;
-const GCS_TIMEOUT_MS = 30000;
+const GCS_TIMEOUT_MS = 120000; // Increased from 30s to 120s for large files
 
 function isRetryable(err: any): boolean {
   if (!err) return false;
