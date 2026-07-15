@@ -111,7 +111,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -133,7 +133,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -155,7 +155,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -177,7 +177,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -199,7 +199,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -221,7 +221,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -243,7 +243,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
@@ -265,7 +265,7 @@ steps:
           --cpu 1 \
           --timeout 3600s \
           --set-env-vars DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET),QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID),TEMPLATE_COLLECTION=file-parsing-templates,BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID) \
-          --update-secrets=DATABASE_URL=FILE_DATABASE_URL
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
 
 images:
   - $_JOB_IMAGE
