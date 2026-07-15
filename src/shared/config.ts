@@ -110,7 +110,7 @@ export const settings = {
   ),
   FETCH_TIMEOUT_SECONDS: getNumber("FETCH_TIMEOUT_SECONDS", 600),
   QUEUE_TIMEOUT_SECONDS: getNumber("QUEUE_TIMEOUT_SECONDS", 60), // Increased from 10s to 60s for large files
-  GCS_TIMEOUT_SECONDS: getNumber("GCS_TIMEOUT_SECONDS", 300), // Increased to 300s (5 minutes) for very large files
+  GCS_TIMEOUT_SECONDS: getNumber("GCS_TIMEOUT_SECONDS", 1200), // Increased to 1200s (20 minutes) for very large files
 
   // ---- Retry schedule ----
   RETRY_IMMEDIATE_DELAY_SECONDS: getNumber("RETRY_IMMEDIATE_DELAY_SECONDS", 0),
