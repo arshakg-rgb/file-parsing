@@ -10,6 +10,10 @@ app.use(express.json());
 
 ensureTableExists();
 
+app.get("/health", (_req: Request, res: Response) => {
+  res.json({ status: "healthy", timestamp: new Date().toISOString() });
+});
+
 app.post("/classify", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const request = req.body as ClassifyRequest;
