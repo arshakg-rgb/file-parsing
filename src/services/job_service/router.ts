@@ -150,3 +150,67 @@ router.post("/jobs/:job_id/release-hold", async (req: Request, res: Response, ne
     res.status(409).json({ detail: String(err) });
   }
 });
+
+router.post("/jobs/:job_id/retry", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { target_status } = req.body;
+    const result = await pool.query<ParseJobRow>("SELECT * FROM parse_jobs WHERE job_id = $1", [req.params.job_id]);
+    const row = result.rows[0];
+    if (!row) {
+      res.status(404).json({ detail: "Job not found" });
+      return;
+    }
+
+    // Determine appropriate queue based on target status
+    let queueUrl: string;
+    let message: any = { job_id: req.params.job_id, manual_override: true };
+
+    switch (target_status) {
+      case JobStatus.INGESTING:
+        queueUrl = settings.INGEST_QUEUE_URL;
+        message = {
+          job_id: req.params.job_id,
+          source_type: row.source_type,
+          source_ref: row.source_ref,
+          field_spec: row.field_spec,
+          batch_id: row.batch_id,
+          manual_override: true
+        };
+        break;
+      case JobStatus.DETECTING:
+        queueUrl = settings.CLASSIFY_QUEUE_URL;
+        message = {
+          job_id: req.params.job_id,
+          s3_url: row.s3_url,
+          size: row.size,
+          field_spec: row.field_spec,
+          manual_override: true
+        };
+        break;
+      case JobStatus.PARSING:
+        queueUrl = settings.PARSE_QUEUE_URL;
+        message = {
+          job_id: req.params.job_id,
+          s3_url: row.s3_url,
+          field_spec: row.field_spec,
+          manual_override: true
+        };
+        break;
+      case JobStatus.LOADING:
+        queueUrl = settings.LOAD_QUEUE_URL;
+        break;
+      case JobStatus.REPORTING:
+        queueUrl = settings.REPORT_QUEUE_URL;
+        break;
+      default:
+        res.status(400).json({ detail: `Invalid target_status: ${target_status}` });
+        return;
+    }
+
+    await transition(req.params.job_id as string, target_status as JobStatus);
+    await sendRaw(queueUrl, message);
+    res.status(204).send();
+  } catch (err) {
+    res.status(409).json({ detail: String(err) });
+  }
+});

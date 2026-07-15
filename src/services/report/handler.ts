@@ -137,8 +137,16 @@ export async function consumerLoop(): Promise<void> {
         await generateReport(payload);
         await deleteMessage(settings.REPORT_QUEUE_URL, receiptHandle);
       } catch (exc) {
-        logger.error("report_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
-        metrics.increment("report.error", 1);
+        const errorStr = String(exc);
+        // Ack bad messages to prevent infinite retry loop
+        if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition"))) {
+          logger.error("report_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
+          metrics.increment("report.error_ack", 1);
+          await deleteMessage(settings.REPORT_QUEUE_URL, receiptHandle);
+        } else {
+          logger.error("report_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
+          metrics.increment("report.error", 1);
+        }
       }
     }
   }

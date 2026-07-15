@@ -284,8 +284,16 @@ export async function consumerLoop(): Promise<void> {
         await currentJob;
         await deleteMessage(settings.PARSE_QUEUE_URL, receiptHandle);
       } catch (exc) {
-        logger.error("stream_parser_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
-        metrics.increment("parse.message_error", 1);
+        const errorStr = String(exc);
+        // Ack bad messages to prevent infinite retry loop
+        if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition"))) {
+          logger.error("stream_parser_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
+          metrics.increment("parse.message_error_ack", 1);
+          await deleteMessage(settings.PARSE_QUEUE_URL, receiptHandle);
+        } else {
+          logger.error("stream_parser_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
+          metrics.increment("parse.message_error", 1);
+        }
       } finally {
         currentJob = null;
       }

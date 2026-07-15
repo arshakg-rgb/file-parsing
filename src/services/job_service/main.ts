@@ -47,7 +47,14 @@ async function eventConsumerLoop(): Promise<void> {
           await handleEvent(payload);
           await deleteMessage(settings.JOB_EVENTS_QUEUE_URL, receiptHandle);
         } catch (exc) {
-          console.error("event_processing_error", { error: String(exc), body: payload });
+          const errorStr = String(exc);
+          // Ack bad messages to prevent infinite retry loop
+          if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition"))) {
+            console.error("event_processing_error_ack", { error: errorStr, body: payload, action: "ack_to_prevent_retry" });
+            await deleteMessage(settings.JOB_EVENTS_QUEUE_URL, receiptHandle);
+          } else {
+            console.error("event_processing_error", { error: errorStr, body: payload });
+          }
         }
       }
     } catch (exc) {
