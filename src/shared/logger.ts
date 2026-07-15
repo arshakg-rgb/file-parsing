@@ -7,9 +7,11 @@ export interface LogContext {
 
 export class Logger {
   private service: string;
+  private lokiEnabled: boolean;
 
   constructor(service: string) {
     this.service = service;
+    this.lokiEnabled = !!(settings.LOKI_HOST && settings.LOKI_USERNAME && settings.LOKI_PASSWORD);
   }
 
   private format(level: string, message: string, context: LogContext = {}): string {
@@ -24,7 +26,7 @@ export class Logger {
   }
 
   private async sendToLoki(level: string, message: string, context: LogContext = {}): Promise<void> {
-    if (!settings.LOKI_HOST || !settings.LOKI_USERNAME || !settings.LOKI_PASSWORD) {
+    if (!this.lokiEnabled) {
       return;
     }
 
@@ -51,12 +53,14 @@ export class Logger {
           'Authorization': `Basic ${btoa(`${settings.LOKI_USERNAME}:${settings.LOKI_PASSWORD}`)}`,
         },
         body: JSON.stringify(logEntry),
+        signal: AbortSignal.timeout(5000), // 5 second timeout
       });
 
       if (!response.ok) {
         console.error('loki_send_failed', { status: response.status, statusText: response.statusText });
       }
     } catch (error) {
+      // Silently fail Loki errors to avoid disrupting application
       console.error('loki_send_error', { error: String(error) });
     }
   }
