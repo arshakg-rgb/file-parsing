@@ -7,7 +7,7 @@ export const pool = new Pool({
   connectionString: settings.DATABASE_URL,
   max: 15,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: 10000,
 });
 
 export interface ParseJobRow {
