@@ -126,14 +126,14 @@ export async function copyObject(
   dstBucket: string,
   dstKey: string
 ): Promise<void> {
-  // For large files, use streaming copy instead of GCS .copy() method
-  // which can hang for large files
-  const [files] = await gcsClient().bucket(srcBucket).getFiles({ prefix: srcKey });
-  if (files.length === 0) {
+  // Use direct file reference instead of prefix listing
+  const srcFile = gcsClient().bucket(srcBucket).file(srcKey);
+  const [exists] = await srcFile.exists();
+  if (!exists) {
     throw new Error(`Source file not found: ${srcBucket}/${srcKey}`);
   }
-  const file = files[0];
-  const size = Number((file.metadata as any).size ?? 0);
+  const [meta] = await srcFile.getMetadata();
+  const size = Number((meta as any).size ?? 0);
   
   // Use streaming copy for files larger than 100MB
   if (size > 100 * 1024 * 1024) {
