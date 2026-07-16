@@ -101,6 +101,8 @@ export async function extractArchiveToS3(
   const [bucket, key] = parseS3Url(s3Url);
 
   // For RAR: stream directly from GCS to temp file to avoid loading 2GB+ into memory
+  // Note: Cloud Run /tmp is RAM-backed, so this still consumes memory
+  // Future improvement: use streaming extraction if library supports it
   if (archiveType === "rar") {
     const size = await objectSize(bucket, key);
     console.log("rar_streaming_extract", { jobId, bucket, key, size });
@@ -109,68 +111,78 @@ export async function extractArchiveToS3(
     const writeStream = createWriteStream(tmpPath);
     await pipeline(fileStream, writeStream);
     console.log("rar_download_complete", { jobId, tmpPath, size });
+    
     const extractor = await RARExtractor.fromFile(tmpPath, { password: password || undefined });
     const result = await extractor.extract();
     const out: Record<string, any>[] = [];
     let totalUncompressed = 0;
     const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
     const MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024;
-    for await (const { fileHeader, extraction } of result.files) {
-      if (!extraction) continue;
-      if (fileHeader.unpSize > MAX_FILE_SIZE) {
-        console.log("rar_skip_large_file", { jobId, name: fileHeader.name, size: fileHeader.unpSize });
-        continue;
-      }
-      if (totalUncompressed + fileHeader.unpSize > MAX_TOTAL_UNCOMPRESSED) {
-        console.log("rar_skip_total_limit", { jobId, name: fileHeader.name });
-        continue;
-      }
-      // Stream extraction directly to GCS to avoid OOM (architecture requirement)
-      const entryKey = `archive/${jobId}/${fileHeader.name}`;
-      const entryFile = gcsClient().bucket(bucket).file(entryKey);
-      const writeStream = entryFile.createWriteStream();
-      let totalEntrySize = 0;
-      const RAM_WATERMARK = 256 * 1024 * 1024; // 256MB buffer per architecture
-      
-      let bufferChunks: Buffer[] = [];
-      let bufferSize = 0;
-      
-      for await (const chunk of extraction) {
-        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        bufferChunks.push(buffer);
-        bufferSize += buffer.length;
-        totalEntrySize += buffer.length;
-        
-        // Flush to GCS when buffer reaches watermark
-        if (bufferSize >= RAM_WATERMARK) {
-          const flushData = Buffer.concat(bufferChunks);
-          bufferChunks.length = 0;
-          bufferSize = 0;
-          // Write chunk to GCS stream
-          writeStream.write(flushData);
+    
+    try {
+      for await (const { fileHeader, extraction } of result.files) {
+        if (!extraction) continue;
+        if (fileHeader.unpSize > MAX_FILE_SIZE) {
+          console.log("rar_skip_large_file", { jobId, name: fileHeader.name, size: fileHeader.unpSize });
+          continue;
         }
+        if (totalUncompressed + fileHeader.unpSize > MAX_TOTAL_UNCOMPRESSED) {
+          console.log("rar_skip_total_limit", { jobId, name: fileHeader.name });
+          continue;
+        }
+        // Stream extraction directly to GCS to avoid OOM (architecture requirement)
+        const entryKey = `archive/${jobId}/${fileHeader.name}`;
+        const entryFile = gcsClient().bucket(bucket).file(entryKey);
+        const writeStream = entryFile.createWriteStream();
+        let totalEntrySize = 0;
+        const RAM_WATERMARK = 256 * 1024 * 1024; // 256MB buffer per architecture
+        
+        let bufferChunks: Buffer[] = [];
+        let bufferSize = 0;
+        
+        for await (const chunk of extraction) {
+          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          bufferChunks.push(buffer);
+          bufferSize += buffer.length;
+          totalEntrySize += buffer.length;
+          
+          // Flush to GCS when buffer reaches watermark
+          if (bufferSize >= RAM_WATERMARK) {
+            const flushData = Buffer.concat(bufferChunks);
+            bufferChunks.length = 0;
+            bufferSize = 0;
+            // Write chunk to GCS stream with backpressure handling
+            if (!writeStream.write(flushData)) {
+              await once(writeStream, "drain");
+            }
+          }
+        }
+        
+        // Flush remaining buffer with backpressure handling
+        if (bufferChunks.length > 0) {
+          const finalData = Buffer.concat(bufferChunks);
+          if (!writeStream.write(finalData)) {
+            await once(writeStream, "drain");
+          }
+        }
+        
+        // End the write stream
+        await new Promise<void>((resolve, reject) => {
+          writeStream.on('finish', resolve);
+          writeStream.on('error', reject);
+          writeStream.end();
+        });
+        
+        totalUncompressed += totalEntrySize;
+        checkRatio(size, totalUncompressed);
+        const entryUrl = `gs://${bucket}/${entryKey}`;
+        out.push(makeEntryEvent(jobId, batchId, entryUrl, fileHeader.name, totalEntrySize, fieldSpec));
       }
-      
-      // Flush remaining buffer
-      if (bufferChunks.length > 0) {
-        const finalData = Buffer.concat(bufferChunks);
-        writeStream.write(finalData);
-      }
-      
-      // End the write stream
-      await new Promise<void>((resolve, reject) => {
-        writeStream.on('finish', resolve);
-        writeStream.on('error', reject);
-        writeStream.end();
-      });
-      
-      totalUncompressed += totalEntrySize;
-      checkRatio(size, totalUncompressed);
-      const entryUrl = `gs://${bucket}/${entryKey}`;
-      out.push(makeEntryEvent(jobId, batchId, entryUrl, fileHeader.name, totalEntrySize, fieldSpec));
+    } finally {
+      // Ensure cleanup happens even on error
+      extractor.close();
+      await fs.unlink(tmpPath).catch(() => {});
     }
-    extractor.close();
-    await fs.unlink(tmpPath).catch(() => {});
     return out;
   }
 
