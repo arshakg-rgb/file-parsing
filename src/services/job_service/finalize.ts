@@ -146,7 +146,12 @@ async function readAllRows(paths: string[]): Promise<Record<string, any>[]> {
     const cursor = reader.getCursor();
     let row: any;
     while ((row = await cursor.next())) {
-      rows.push(row);
+      // Convert BigInt values to numbers for compatibility
+      const processedRow: Record<string, any> = {};
+      for (const [k, v] of Object.entries(row)) {
+        processedRow[k] = typeof v === "bigint" ? Number(v) : v;
+      }
+      rows.push(processedRow);
     }
     await reader.close();
   }
@@ -184,7 +189,9 @@ async function backfillLineNumbers(jobId: string, mergedPaths: string[]): Promis
       let row: any;
       while ((row = await cursor.next())) {
         if (row._byte_offset !== undefined && row._byte_offset !== null) {
-          targetOffsets.add(Number(row._byte_offset));
+          // Convert BigInt to number for offset comparison
+          const offset = typeof row._byte_offset === "bigint" ? Number(row._byte_offset) : row._byte_offset;
+          targetOffsets.add(offset);
         }
       }
       await reader.close();
@@ -265,7 +272,12 @@ async function backfillLineNumbers(jobId: string, mergedPaths: string[]): Promis
       const rows: Record<string, any>[] = [];
       let row: any;
       while ((row = await cursor.next())) {
-        rows.push(row);
+        // Convert BigInt values to numbers for compatibility
+        const processedRow: Record<string, any> = {};
+        for (const [k, v] of Object.entries(row)) {
+          processedRow[k] = typeof v === "bigint" ? Number(v) : v;
+        }
+        rows.push(processedRow);
       }
       await reader.close();
 
