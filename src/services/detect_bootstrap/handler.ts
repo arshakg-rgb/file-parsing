@@ -142,10 +142,23 @@ export async function bootstrapJob(msg: ClassifyMessage): Promise<void> {
     const sampleLines = extractSampleLines(probeRaw, encoding, 10);
     if (!sampleLines.length) continue;
 
+    // Skip header lines for CSV files - use actual data lines for classification
+    let dataLines = sampleLines;
+    const firstLine = sampleLines[0];
+    const hasHeader = /^[a-zA-Z_][a-zA-Z0-9_]*(,[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine) ||
+                     /^[a-zA-Z_][a-zA-Z0-9_]*(;[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine) ||
+                     /^[a-zA-Z_][a-zA-Z0-9_]*(\t[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine);
+    
+    if (hasHeader && sampleLines.length > 1) {
+      dataLines = sampleLines.slice(1);
+    }
+
+    if (!dataLines.length) continue;
+
     const req: ClassifyRequest = {
-      unknown_line: sampleLines[0],
+      unknown_line: dataLines[0],
       field_spec: msg.field_spec,
-      context_lines: sampleLines.slice(1) || [],
+      context_lines: dataLines.slice(1) || [],
       job_id: jobId,
     };
     let resp: ClassifyResponse;
