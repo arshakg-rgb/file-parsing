@@ -4,7 +4,7 @@ import { receiveMessages, deleteMessage } from "../../shared/queueUtils.js";
 import { JobEvent, EventType } from "../../shared/models/events.js";
 import { handleEvent } from "./stateMachine.js";
 import { router } from "./router.js";
-import { pool, createTables } from "../../shared/db.js";
+import { pool, createTables, waitForDb } from "../../shared/db.js";
 
 const app = express();
 app.use(express.json());
@@ -69,6 +69,7 @@ const PORT = process.env.PORT || 8000;
 async function initializeDatabase(): Promise<void> {
   try {
     console.log("Running database migration...");
+    await waitForDb(); // Wait for Cloud SQL proxy to be ready
     await createTables();
     console.log("Database migration completed successfully");
   } catch (err) {
