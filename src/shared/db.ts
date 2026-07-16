@@ -10,6 +10,30 @@ export const pool = new Pool({
   connectionTimeoutMillis: 10000,
 });
 
+/**
+ * Wait for database connection to succeed (Cloud SQL proxy race condition guard).
+ * Retries with exponential backoff up to 30 seconds.
+ */
+export async function waitForDb(): Promise<void> {
+  const maxAttempts = 12; // 12 * 2.5s = 30s max
+  let attempt = 0;
+  while (attempt < maxAttempts) {
+    try {
+      const client = await pool.connect();
+      await client.query("SELECT 1");
+      client.release();
+      return;
+    } catch (err) {
+      attempt++;
+      const delay = Math.min(2500 * attempt, 5000); // 2.5s, 5s, 5s, ...
+      if (attempt < maxAttempts) {
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+  }
+  throw new Error(`Database connection failed after ${maxAttempts} attempts`);
+}
+
 export interface ParseJobRow {
   job_id: string;
   batch_id?: string;

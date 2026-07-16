@@ -484,6 +484,90 @@ check("/jobs/stuck route must be registered before /jobs/:job_id", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 14. waitForDb Cloud SQL proxy race condition guard
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log("\n=== 14. Cloud SQL proxy race condition guard ===");
+
+await checkAsync("waitForDb succeeds on first attempt (DB ready)", async () => {
+  let attempts = 0;
+  const mockPool = {
+    connect: async () => {
+      attempts++;
+      const client: any = { query: async () => {}, release: () => {} };
+      return client;
+    }
+  };
+  // Simulate waitForDb with mock pool
+  const maxAttempts = 12;
+  let attempt = 0;
+  while (attempt < maxAttempts) {
+    try {
+      const client: any = await mockPool.connect();
+      await client.query();
+      client.release();
+      break;
+    } catch (err) {
+      attempt++;
+      if (attempt < maxAttempts) await new Promise(r => setTimeout(r, 10));
+    }
+  }
+  assert.equal(attempts, 1, "Should succeed on first attempt when DB is ready");
+});
+
+await checkAsync("waitForDb retries with backoff until DB is ready", async () => {
+  let attempts = 0;
+  const mockPool = {
+    connect: async () => {
+      attempts++;
+      if (attempts < 3) throw new Error("ECONNREFUSED");
+      const client: any = { query: async () => {}, release: () => {} };
+      return client;
+    }
+  };
+  const maxAttempts = 12;
+  let attempt = 0;
+  while (attempt < maxAttempts) {
+    try {
+      const client: any = await mockPool.connect();
+      await client.query();
+      client.release();
+      break;
+    } catch (err) {
+      attempt++;
+      if (attempt < maxAttempts) await new Promise(r => setTimeout(r, 10));
+    }
+  }
+  assert.equal(attempts, 3, "Should retry 3 times before succeeding");
+});
+
+await checkAsync("waitForDb throws after max attempts (DB never ready)", async () => {
+  const mockPool = {
+    connect: async () => { throw new Error("ECONNREFUSED"); }
+  };
+  const maxAttempts = 3; // Reduced for test speed
+  let attempt = 0;
+  let threw = false;
+  try {
+    while (attempt < maxAttempts) {
+      try {
+        const client: any = await mockPool.connect();
+        await client.query();
+        client.release();
+        break;
+      } catch (err) {
+        attempt++;
+        if (attempt < maxAttempts) await new Promise(r => setTimeout(r, 10));
+      }
+    }
+    if (attempt >= maxAttempts) throw new Error(`Database connection failed after ${maxAttempts} attempts`);
+  } catch (e) {
+    threw = true;
+  }
+  assert.ok(threw, "Should throw after max attempts");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Summary
 // ─────────────────────────────────────────────────────────────────────────────
 

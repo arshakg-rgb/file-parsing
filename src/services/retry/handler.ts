@@ -1,7 +1,7 @@
 import { settings } from "../../shared/config.js";
 import { DLQMessage, DLQStatus, FailureClass, JobStatus, LoadMessage } from "../../shared/models/job.js";
 import { receiveMessages, deleteMessage, sendMessage } from "../../shared/queueUtils.js";
-import { pool } from "../../shared/db.js";
+import { pool, waitForDb } from "../../shared/db.js";
 import { ClassifyResult, LineClassifier } from "../stream_parser/classifier.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
 import { createLogger } from "../../shared/logger.js";
@@ -172,6 +172,7 @@ async function reEnqueue(msg: DLQMessage, delaySeconds: number): Promise<void> {
 }
 
 export async function consumerLoop(): Promise<void> {
+  await waitForDb();
   logger.info("retry_consumer_started");
   while (true) {
     const messages = await receiveMessages<DLQMessage>(

@@ -1,7 +1,7 @@
 import { settings } from "../../shared/config.js";
 import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js";
 import { JobStatus, ReportMessage, JobCounts } from "../../shared/models/job.js";
-import { pool, ParseJobRow, OutputPartRow } from "../../shared/db.js";
+import { pool, ParseJobRow, OutputPartRow, waitForDb } from "../../shared/db.js";
 import { receiveMessages, deleteMessage, publishEvent } from "../../shared/queueUtils.js";
 import { putJson } from "../../shared/gcsUtils.js";
 import { QualityGate } from "../../shared/qualityGate.js";
@@ -125,6 +125,7 @@ async function writeBatchRollup(batchId: string, jobs: ParseJobRow[]): Promise<v
 }
 
 export async function consumerLoop(): Promise<void> {
+  await waitForDb();
   logger.info("report_consumer_started");
   while (true) {
     const messages = await receiveMessages<ReportMessage>(

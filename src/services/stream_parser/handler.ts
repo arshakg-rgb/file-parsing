@@ -13,6 +13,7 @@ import { AdaptiveProbing } from "../../shared/probing.js";
 import { createLogger } from "../../shared/logger.js";
 import { metrics } from "../../shared/metrics.js";
 import { startHealthCheckServer } from "../../shared/health.js";
+import { waitForDb } from "../../shared/db.js";
 import jschardet from "jschardet";
 
 const logger = createLogger("stream_parser");
@@ -269,6 +270,7 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
 }
 
 export async function consumerLoop(): Promise<void> {
+  await waitForDb();
   await templateRegistry.loadFromDatabase();
   logger.info("stream_parser_consumer_started");
   while (running) {

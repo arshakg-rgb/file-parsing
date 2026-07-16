@@ -9,6 +9,7 @@ import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/
 import { createLogger } from "../../shared/logger.js";
 import { metrics } from "../../shared/metrics.js";
 import { startHealthCheckServer } from "../../shared/health.js";
+import { waitForDb } from "../../shared/db.js";
 
 const logger = createLogger("detect_bootstrap");
 
@@ -184,6 +185,7 @@ function extractSampleLines(raw: Buffer, encoding: string, n: number): string[] 
 }
 
 export async function consumerLoop(): Promise<void> {
+  await waitForDb();
   await templateRegistry.loadFromDatabase();
   logger.info("detect_bootstrap_consumer_started");
   while (true) {

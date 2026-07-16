@@ -3,7 +3,7 @@ import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js
 import { JobStatus, SourceType, IngestMessage } from "../../shared/models/job.js";
 import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "../../shared/queueUtils.js";
 import { parseGcsUrl, objectSize, readRange } from "../../shared/gcsUtils.js";
-import { getJob, pool } from "../../shared/db.js";
+import { getJob, pool, waitForDb } from "../../shared/db.js";
 import { detectArchiveType, extractArchiveToS3, fetchUrlToS3, listS3Prefix, BombError } from "./normalizer.js";
 import { SSRFError } from "./ssrf_guard.js";
 import { createLogger } from "../../shared/logger.js";
@@ -192,6 +192,7 @@ export async function handlePassword(jobId: string, password: string): Promise<v
 }
 
 export async function consumerLoop(): Promise<void> {
+  await waitForDb();
   logger.info("ingest_consumer_started");
   while (true) {
     const messages = await receiveMessages<IngestMessage>(

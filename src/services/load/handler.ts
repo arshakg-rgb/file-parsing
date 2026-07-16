@@ -1,7 +1,7 @@
 import { settings } from "../../shared/config.js";
 import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js";
 import { JobStatus, LoadMessage } from "../../shared/models/job.js";
-import { pool } from "../../shared/db.js";
+import { pool, waitForDb } from "../../shared/db.js";
 import { receiveMessages, deleteMessage, publishEvent } from "../../shared/queueUtils.js";
 import { parseGcsUrl, readFull } from "../../shared/gcsUtils.js";
 import { ParquetReader } from "@dsnp/parquetjs";
@@ -128,6 +128,7 @@ async function upsertRows(_jobId: string, rows: Record<string, any>[]): Promise<
 }
 
 export async function consumerLoop(): Promise<void> {
+  await waitForDb();
   logger.info("load_consumer_started");
   while (true) {
     const messages = await receiveMessages<LoadMessage>(
