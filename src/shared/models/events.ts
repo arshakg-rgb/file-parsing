@@ -44,10 +44,21 @@ export interface StatusChangedData {
 export interface EntryDiscoveredData {
   parent_job_id: string;
   batch_id: string;
-  entry_s3_url: string;
+  entry_s3_url: string | null;
   entry_name: string;
   entry_size: number;
   field_spec: string[];
+  pending?: boolean;
+}
+
+export interface PendingEntryData {
+  parent_job_id: string;
+  batch_id: string;
+  entry_s3_url: null;
+  entry_name: string;
+  entry_size: number;
+  field_spec: string[];
+  pending: true;
 }
 
 export interface ParsingCompletedData {

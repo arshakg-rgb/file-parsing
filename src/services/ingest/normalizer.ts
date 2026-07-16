@@ -13,6 +13,7 @@ import { once } from "node:events";
 import { settings } from "../../shared/config.js";
 import { parseGcsUrl as parseS3Url, objectSize, readFull, putObject, listObjects, copyObject, gcsClient } from "../../shared/gcsUtils.js";
 import { fetchUrlStream } from "./ssrf_guard.js";
+import { sendRaw } from "../../shared/queueUtils.js";
 
 const gunzip = promisify(zlib.gunzip);
 
@@ -224,6 +225,26 @@ export async function extractArchiveToS3(
       
       // Extract each file using CLI with streaming to GCS
       for (const file of files) {
+        // Route large files to async extraction BEFORE the hard-cap check
+        // This allows files > 2GB to be processed asynchronously instead of being skipped
+        if (file.size > settings.LARGE_FILE_THRESHOLD_BYTES) {
+          console.log("rar_route_to_async", { jobId, name: file.name, size: file.size, threshold: settings.LARGE_FILE_THRESHOLD_BYTES });
+          await sendRaw(settings.ARCHIVE_ENTRY_QUEUE_URL, {
+            job_id: jobId,
+            batchId: batchId,
+            archive_s3_url: s3Url,
+            entry_name: file.name,
+            entry_size: file.size,
+            field_spec: fieldSpec,
+            password: password || undefined,
+            archive_type: "rar",
+          });
+          // Track as pending entry for job status
+          out.push({ parent_job_id: jobId, batch_id: batchId, entry_s3_url: null, entry_name: file.name, entry_size: file.size, field_spec: fieldSpec, pending: true });
+          continue;
+        }
+        
+        // Hard cap now only applies to files staying on the inline/synchronous path
         if (file.size > MAX_FILE_SIZE) {
           console.log("rar_skip_large_file", { jobId, name: file.name, size: file.size });
           continue;
@@ -308,7 +329,7 @@ async function storeEntry(jobId: string, entryName: string, data: Buffer): Promi
 }
 
 function makeEntryEvent(parentJobId: string, batchId: string, s3Url: string, name: string, size: number, fieldSpec: string[]) {
-  return { parent_job_id: parentJobId, batch_id: batchId, entry_s3_url: s3Url, entry_name: name, entry_size: size, field_spec: fieldSpec };
+  return { parent_job_id: parentJobId, batchId: batchId, entry_s3_url: s3Url, entry_name: name, entry_size: size, field_spec: fieldSpec };
 }
 
 async function withTempFile(data: Buffer, ext: string): Promise<string> {

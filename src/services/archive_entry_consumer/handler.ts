@@ -1,0 +1,230 @@
+import crypto from "crypto";
+import fs from "fs/promises";
+import { createWriteStream } from "fs";
+import { pipeline } from "stream/promises";
+import os from "os";
+import path from "path";
+import { spawn } from "child_process";
+import { settings } from "../../shared/config.js";
+import { parseGcsUrl, objectSize, readFull, putObject, gcsClient } from "../../shared/gcsUtils.js";
+import { receiveMessages, deleteMessage, publishEvent } from "../../shared/queueUtils.js";
+import { EventType, makeJobEvent } from "../../shared/models/events.js";
+import { JobStatus } from "../../shared/models/job.js";
+import { markPendingEntryCompleted, markPendingEntryFailed, markPendingEntryProcessing, getPendingEntryCount, getPendingEntryTotalSize, getJob, pool, waitForDb } from "../../shared/db.js";
+import { createLogger } from "../../shared/logger.js";
+import { metrics } from "../../shared/metrics.js";
+
+const logger = createLogger("archive-entry-consumer");
+
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 5 * 60 * 1000; // 5 minutes between retries
+const MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024; // 10GB total limit per job
+
+interface ArchiveEntryMessage {
+  job_id: string;
+  batch_id: string;
+  archive_s3_url: string;
+  entry_name: string;
+  entry_size: number;
+  field_spec: string[];
+  password?: string;
+  archive_type: string;
+}
+
+// Deterministic entry ID based on jobId + entryName for idempotency
+function generateEntryId(jobId: string, entryName: string): string {
+  const hash = crypto.createHash("sha256").update(`${jobId}:${entryName}`).digest("hex");
+  return hash.substring(0, 36); // First 36 chars for UUID format
+}
+
+async function extractSingleRarEntry(
+  jobId: string,
+  archiveS3Url: string,
+  entryName: string,
+  password: string | undefined,
+  fieldSpec: string[]
+): Promise<{ s3Url: string; size: number }> {
+  const [bucket, archiveKey] = parseGcsUrl(archiveS3Url);
+  const mountPath = process.env.RAR_TEMP_MOUNT || '/mnt/scratch';
+  const tmpPath = path.join(mountPath, `${crypto.randomUUID()}.rar`);
+  
+  logger.info("archive_entry_download_start", { job_id: jobId, archive_s3_url: archiveS3Url, tmp_path: tmpPath });
+  
+  // Download archive to local mount
+  const fileStream = gcsClient().bucket(bucket).file(archiveKey).createReadStream();
+  const writeStream = createWriteStream(tmpPath);
+  
+  fileStream.on('error', (err) => {
+    logger.error("archive_entry_download_stream_error", { job_id: jobId, error: err.message });
+  });
+  
+  writeStream.on('error', (err) => {
+    logger.error("archive_entry_download_write_error", { job_id: jobId, error: err.message });
+  });
+  
+  await pipeline(fileStream, writeStream);
+  logger.info("archive_entry_download_complete", { job_id: jobId, tmp_path: tmpPath });
+  
+  try {
+    // Extract single entry using unrar
+    const entryKey = `archive/${jobId}/${entryName}`;
+    const entryFile = gcsClient().bucket(bucket).file(entryKey);
+    const writeStream = entryFile.createWriteStream();
+    
+    const extractArgs = ['p', '-inul', tmpPath, entryName];
+    if (password) {
+      extractArgs.push('-p' + password);
+    }
+    
+    logger.info("archive_entry_extract_start", { job_id: jobId, entry_name: entryName });
+    const extractProcess = spawn('unrar', extractArgs);
+    
+    extractProcess.stdout.pipe(writeStream);
+    
+    await new Promise<void>((resolve, reject) => {
+      writeStream.on('finish', resolve);
+      writeStream.on('error', reject);
+      extractProcess.on('error', reject);
+      extractProcess.on('close', (code) => {
+        if (code !== 0) {
+          reject(new Error(`unrar extraction failed with code ${code}`));
+        } else {
+          resolve();
+        }
+      });
+    });
+    
+    const size = await objectSize(bucket, entryKey);
+    const s3Url = `gs://${bucket}/${entryKey}`;
+    
+    logger.info("archive_entry_extract_complete", { job_id: jobId, entry_name: entryName, size, s3_url: s3Url });
+    
+    return { s3Url, size };
+  } finally {
+    // Cleanup temp archive file
+    await fs.unlink(tmpPath).catch(() => {});
+  }
+}
+
+async function handleArchiveEntry(msg: ArchiveEntryMessage, attempt: number): Promise<void> {
+  const { job_id, batch_id, archive_s3_url, entry_name, entry_size, field_spec, password, archive_type } = msg;
+  
+  logger.info("archive_entry_processing_start", { job_id, entry_name, entry_size, attempt });
+  metrics.increment("archive_entry.processing", 1, { attempt: attempt.toString() });
+  
+  try {
+    if (archive_type !== "rar") {
+      throw new Error(`Unsupported archive type: ${archive_type}`);
+    }
+    
+    // Mark as processing BEFORE extraction to close race condition
+    await markPendingEntryProcessing(job_id, entry_name);
+    logger.info("archive_entry_marked_processing", { job_id, entry_name });
+    // Check total uncompressed size limit to prevent archive bomb attacks via queue
+    const currentTotalSize = await getPendingEntryTotalSize(job_id);
+    if (currentTotalSize + entry_size > MAX_TOTAL_UNCOMPRESSED) {
+      throw new Error(`Entry size ${entry_size} would exceed total uncompressed limit ${MAX_TOTAL_UNCOMPRESSED} (current: ${currentTotalSize})`);
+    }
+    
+    const { s3Url, size } = await extractSingleRarEntry(job_id, archive_s3_url, entry_name, password || undefined, field_spec);
+    
+    // Mark entry as completed in database
+    await markPendingEntryCompleted(job_id, entry_name);
+    logger.info("archive_entry_marked_completed", { job_id, entry_name });
+    
+    // Publish ENTRY_DISCOVERED event
+    await publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, job_id, "archive-entry-consumer", {
+      parent_job_id: job_id,
+      batch_id: batch_id,
+      entry_s3_url: s3Url,
+      entry_name: entry_name,
+      entry_size: size,
+      field_spec: field_spec,
+    }));
+    
+    logger.info("archive_entry_success", { job_id, entry_name, s3_url: s3Url });
+    metrics.increment("archive_entry.success", 1);
+    
+    // Check if all pending entries are now complete
+    const counts = await getPendingEntryCount(job_id);
+    logger.info("archive_entry_completion_check", { job_id, pending: counts.pending, completed: counts.completed, failed: counts.failed });
+    
+    if (counts.pending === 0) {
+      // All entries processed - check job status and transition to DONE
+      const job = await getJob(job_id);
+      if (job && job.status === JobStatus.INGESTING) {
+        logger.info("archive_entry_all_complete_transitioning_to_done", { job_id });
+        // Publish event to transition job to DONE
+        await publishEvent(makeJobEvent(EventType.JOB_STATUS_CHANGED, job_id, "archive-entry-consumer", {
+          new_status: JobStatus.DONE,
+        }));
+      }
+    }
+  } catch (error) {
+    logger.error("archive_entry_processing_failed", { job_id, entry_name, attempt, error: String(error) }, error instanceof Error ? error : new Error(String(error)));
+    metrics.increment("archive_entry.error", 1, { attempt: attempt.toString() });
+    
+    if (attempt >= MAX_RETRIES) {
+      // Max retries exhausted - mark as failed
+      await markPendingEntryFailed(job_id, entry_name, String(error));
+      logger.error("archive_entry_max_retries_exhausted", { job_id, entry_name });
+      metrics.increment("archive_entry.exhausted", 1);
+      
+      // Check if this was the last pending entry
+      const counts = await getPendingEntryCount(job_id);
+      if (counts.pending === 0) {
+        const job = await getJob(job_id);
+        if (job && job.status === JobStatus.INGESTING) {
+          logger.info("archive_entry_final_failed_transitioning_to_done", { job_id, failed: counts.failed });
+          // Still transition to DONE even with failures - job has partial success
+          await publishEvent(makeJobEvent(EventType.JOB_STATUS_CHANGED, job_id, "archive-entry-consumer", {
+            new_status: JobStatus.DONE,
+          }));
+        }
+      }
+    } else {
+      // Retry with delay
+      logger.info("archive_entry_retry_scheduled", { job_id, entry_name, attempt, delay_ms: RETRY_DELAY_MS });
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+      await handleArchiveEntry(msg, attempt + 1);
+    }
+  }
+}
+
+export async function consumerLoop(): Promise<void> {
+  while (true) {
+    try {
+      await waitForDb();
+      logger.info("archive_entry_consumer_started", { queue_url: settings.ARCHIVE_ENTRY_QUEUE_URL, queue_backend: settings.QUEUE_BACKEND });
+      
+      while (true) {
+        logger.info("archive_entry_consumer_waiting_for_messages");
+        const messages = await receiveMessages<ArchiveEntryMessage>(
+          settings.ARCHIVE_ENTRY_QUEUE_URL,
+          (body) => JSON.parse(body) as ArchiveEntryMessage,
+          5
+        );
+        logger.info("archive_entry_consumer_messages_received", { count: messages.length });
+        
+        for (const { payload, receiptHandle } of messages) {
+          try {
+            await handleArchiveEntry(payload, 1);
+            await deleteMessage(settings.ARCHIVE_ENTRY_QUEUE_URL, receiptHandle);
+          } catch (exc) {
+            logger.error("archive_entry_consumer_message_failed", { job_id: payload.job_id, entry_name: payload.entry_name }, exc instanceof Error ? exc : new Error(String(exc)));
+            metrics.increment("archive_entry.message_error", 1);
+            // Ack to prevent infinite retry loop for bad messages
+            await deleteMessage(settings.ARCHIVE_ENTRY_QUEUE_URL, receiptHandle);
+          }
+        }
+      }
+    } catch (dbError) {
+      logger.error("archive_entry_consumer_database_connection_lost", { error: String(dbError) }, dbError instanceof Error ? dbError : new Error(String(dbError)));
+      metrics.increment("archive_entry.db_connection_lost", 1);
+      await waitForDb();
+      await new Promise(r => setTimeout(r, 5000));
+    }
+  }
+}
+
+consumerLoop();

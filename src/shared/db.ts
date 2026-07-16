@@ -78,6 +78,17 @@ export interface DeadLetterRow {
   updated_at: Date;
 }
 
+export interface PendingArchiveEntryRow {
+  id: string;
+  job_id: string;
+  entry_name: string;
+  entry_size: number;
+  status: string;
+  error?: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
 export async function getJob(jobId: string): Promise<ParseJobRow | undefined> {
   const result = await pool.query<ParseJobRow>(
     "SELECT * FROM parse_jobs WHERE job_id = $1",
@@ -100,6 +111,87 @@ export async function getJobParts(jobId: string): Promise<OutputPartRow[]> {
     [jobId]
   );
   return result.rows;
+}
+
+export async function createPendingArchiveEntry(
+  jobId: string,
+  entryName: string,
+  entrySize: number
+): Promise<void> {
+  const { randomUUID } = await import("crypto");
+  await pool.query(
+    `INSERT INTO pending_archive_entries (id, job_id, entry_name, entry_size, status)
+     VALUES ($1, $2, $3, $4, 'pending')`,
+    [randomUUID(), jobId, entryName, entrySize]
+  );
+}
+
+export async function markPendingEntryProcessing(
+  jobId: string,
+  entryName: string
+): Promise<void> {
+  await pool.query(
+    `UPDATE pending_archive_entries 
+     SET status = 'processing', updated_at = NOW() 
+     WHERE job_id = $1 AND entry_name = $2`,
+    [jobId, entryName]
+  );
+}
+
+export async function markPendingEntryCompleted(
+  jobId: string,
+  entryName: string
+): Promise<void> {
+  await pool.query(
+    `UPDATE pending_archive_entries 
+     SET status = 'completed', updated_at = NOW() 
+     WHERE job_id = $1 AND entry_name = $2`,
+    [jobId, entryName]
+  );
+}
+
+export async function markPendingEntryFailed(
+  jobId: string,
+  entryName: string,
+  error: string
+): Promise<void> {
+  await pool.query(
+    `UPDATE pending_archive_entries 
+     SET status = 'failed', error = $3, updated_at = NOW() 
+     WHERE job_id = $1 AND entry_name = $2`,
+    [jobId, entryName, error]
+  );
+}
+
+export async function getPendingEntries(jobId: string): Promise<PendingArchiveEntryRow[]> {
+  const result = await pool.query<PendingArchiveEntryRow>(
+    "SELECT * FROM pending_archive_entries WHERE job_id = $1",
+    [jobId]
+  );
+  return result.rows;
+}
+
+export async function getPendingEntryCount(jobId: string): Promise<{ pending: number; completed: number; failed: number }> {
+  const result = await pool.query(
+    `SELECT 
+       COUNT(*) FILTER (WHERE status = 'pending') as pending,
+       COUNT(*) FILTER (WHERE status = 'completed') as completed,
+       COUNT(*) FILTER (WHERE status = 'failed') as failed
+     FROM pending_archive_entries 
+     WHERE job_id = $1`,
+    [jobId]
+  );
+  return result.rows[0];
+}
+
+export async function getPendingEntryTotalSize(jobId: string): Promise<number> {
+  const result = await pool.query(
+    `SELECT COALESCE(SUM(entry_size), 0) as total_bytes
+     FROM pending_archive_entries 
+     WHERE job_id = $1 AND status IN ('completed', 'processing')`,
+    [jobId]
+  );
+  return parseInt(result.rows[0].total_bytes, 10);
 }
 
 export async function createTables(): Promise<void> {
@@ -208,5 +300,18 @@ export async function createTables(): Promise<void> {
     );
     CREATE INDEX IF NOT EXISTS ix_templates_kind ON templates(kind);
     CREATE INDEX IF NOT EXISTS ix_templates_fingerprint ON templates(fingerprint);
+
+    CREATE TABLE IF NOT EXISTS pending_archive_entries (
+      id VARCHAR(36) PRIMARY KEY,
+      job_id VARCHAR(36) NOT NULL,
+      entry_name TEXT NOT NULL,
+      entry_size BIGINT NOT NULL,
+      status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS ix_pending_entries_job_id ON pending_archive_entries(job_id);
+    CREATE INDEX IF NOT EXISTS ix_pending_entries_status ON pending_archive_entries(status);
   `);
 }

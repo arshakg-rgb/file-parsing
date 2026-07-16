@@ -40,6 +40,7 @@ export const settings = {
   LOAD_QUEUE_URL: getString("LOAD_QUEUE_URL", "fpp-load"),
   REPORT_QUEUE_URL: getString("REPORT_QUEUE_URL", "fpp-report"),
   JOB_EVENTS_QUEUE_URL: getString("JOB_EVENTS_QUEUE_URL", "fpp-job-events"),
+  ARCHIVE_ENTRY_QUEUE_URL: getString("ARCHIVE_ENTRY_QUEUE_URL", "fpp-archive-entry"),
 
   // ---- Postgres (Jobs DB) ----
   DATABASE_URL: getString(
@@ -103,6 +104,9 @@ export const settings = {
 
   // ---- Archive password handling ----
   ARCHIVE_PASSWORD_MAX_ATTEMPTS: getNumber("ARCHIVE_PASSWORD_MAX_ATTEMPTS", 3),
+
+  // ---- Large file async extraction ----
+  LARGE_FILE_THRESHOLD_BYTES: getNumber("LARGE_FILE_THRESHOLD_BYTES", 500 * 1024 * 1024), // 500MB threshold for async extraction
 
   // ---- SSRF guard ----
   ALLOWED_FETCH_SIZE_BYTES: getNumber(

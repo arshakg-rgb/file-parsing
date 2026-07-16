@@ -3,7 +3,7 @@ import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js
 import { JobStatus, SourceType, IngestMessage } from "../../shared/models/job.js";
 import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "../../shared/queueUtils.js";
 import { parseGcsUrl, objectSize, readRange, copyObject } from "../../shared/gcsUtils.js";
-import { getJob, pool, waitForDb } from "../../shared/db.js";
+import { getJob, pool, waitForDb, createPendingArchiveEntry, getPendingEntryCount } from "../../shared/db.js";
 import { detectArchiveType, extractArchiveToS3, fetchUrlToS3, listS3Prefix, BombError } from "./normalizer.js";
 import { SSRFError } from "./ssrf_guard.js";
 import { createLogger } from "../../shared/logger.js";
@@ -18,6 +18,16 @@ if (process.env.HEALTH_CHECK_PORT) {
 
 const _passwordCache = new Map<string, Buffer>();
 const _passwordAttempts = new Map<string, number>();
+
+const EXTRACTION_TIMEOUT_MS = 50 * 60 * 1000; // 50 minutes under 3600s Cloud Run ceiling
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 class PasswordError extends Error {
   constructor(message: string) {
@@ -173,19 +183,42 @@ async function handleArchive(
 ): Promise<void> {
   const password = msg.password ?? _passwordCache.get(jobId)?.toString();
   try {
-    const entries = await extractArchiveToS3(jobId, s3Url, archiveType, msg.field_spec, msg.batch_id || jobId, password);
+    const entries = await withTimeout(
+      extractArchiveToS3(jobId, s3Url, archiveType, msg.field_spec, msg.batch_id || jobId, password),
+      EXTRACTION_TIMEOUT_MS,
+      `extractArchiveToS3(${jobId})`
+    );
     if (!entries.length) {
       logger.warn("archive_empty", { job_id: jobId, s3_url: s3Url });
       metrics.increment("ingest.archive_empty", 1);
       transition(jobId, JobStatus.FAILED, "Archive contained no extractable files");
       return;
     }
+    
+    let hasPending = false;
     for (const entry of entries) {
-      await publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "ingest", entry));
+      if (entry.pending) {
+        hasPending = true;
+        logger.info("archive_entry_pending", { job_id: jobId, entry_name: entry.entry_name, entry_size: entry.entry_size });
+        metrics.increment("ingest.entry_pending", 1);
+        // Create pending entry record in database
+        await createPendingArchiveEntry(jobId, entry.entry_name, entry.entry_size);
+      } else {
+        await publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "ingest", entry));
+      }
     }
-    logger.info("archive_extracted", { job_id: jobId, entries: entries.length });
+    
+    logger.info("archive_extracted", { job_id: jobId, entries: entries.length, pending: hasPending });
     metrics.increment("ingest.archive_extracted", entries.length);
-    transition(jobId, JobStatus.DONE);
+    
+    // If there are pending entries, transition to INGESTING (stays there until async entries complete)
+    // If no pending entries, transition to DONE
+    if (hasPending) {
+      logger.info("archive_has_pending_entries", { job_id: jobId });
+      // Keep in INGESTING status - already set at start of handleIngest
+    } else {
+      transition(jobId, JobStatus.DONE);
+    }
   } catch (exc) {
     const errStr = String(exc).toLowerCase();
     if (errStr.includes("password") || errStr.includes("encrypted") || errStr.includes("bad password")) {
