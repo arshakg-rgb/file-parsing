@@ -389,26 +389,14 @@ steps:
         gcloud run jobs deploy archive-entry-consumer \
           --image $_ARCHIVE_ENTRY_IMAGE \
           --region $_REGION \
-          --platform managed \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
+          --set-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
           --memory 2Gi \
           --cpu 1 \
           --max-retries 3 \
-          --timeout 7200s \
+          --task-timeout 7200s \
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,ARCHIVE_ENTRY_QUEUE_URL=pubsub://projects/data-etl-499916/topics/fpp-archive-entry,LARGE_FILE_THRESHOLD_BYTES=524288000 \
           --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
-
-  # Step 5: Run database migration via Cloud Run Job (reuses Cloud SQL connection)
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        gcloud run jobs execute archive-entry-consumer \
-          --region $_REGION \
-          --command="node dist/scripts/migrate.js" \
-          --wait
 
 images:
   - $_JOB_IMAGE
