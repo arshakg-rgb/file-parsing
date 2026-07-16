@@ -175,25 +175,42 @@ export async function extractArchiveToS3(
         });
       });
       
-      // Parse technical listing output (Key: value blocks separated by blank lines)
-      function parseUnrarTechnicalListing(output: string): Array<{ name: string; size: number }> {
+      // Parse unrar list output (handle both table and technical listing formats)
+      function parseUnrarListing(output: string): Array<{ name: string; size: number }> {
         const files: Array<{ name: string; size: number }> = [];
-        const blocks = output.split(/\r?\n\r?\n/);
+        const lines = output.split('\n');
         
-        for (const block of blocks) {
-          const nameMatch = block.match(/^\s*Name:\s*(.+)$/m);
-          const sizeMatch = block.match(/^\s*Size:\s*(\d+)$/m);
-          const typeMatch = block.match(/^\s*Type:\s*(.+)$/m);
-          
-          if (nameMatch && sizeMatch && (!typeMatch || !/directory/i.test(typeMatch[1]))) {
-            files.push({ name: nameMatch[1].trim(), size: parseInt(sizeMatch[1], 10) });
+        // Check if output is in technical listing format (Name:/Size: blocks)
+        if (output.includes('Name:') && output.includes('Size:')) {
+          const blocks = output.split(/\r?\n\r?\n/);
+          for (const block of blocks) {
+            const nameMatch = block.match(/^\s*Name:\s*(.+)$/m);
+            const sizeMatch = block.match(/^\s*Size:\s*(\d+)$/m);
+            const typeMatch = block.match(/^\s*Type:\s*(.+)$/m);
+            
+            if (nameMatch && sizeMatch && (!typeMatch || !/directory/i.test(typeMatch[1]))) {
+              files.push({ name: nameMatch[1].trim(), size: parseInt(sizeMatch[1], 10) });
+            }
+          }
+        } else {
+          // Parse table format: "  ..A....  12345678  2025-12-28 12:45  filename.ext"
+          for (const line of lines) {
+            // Match lines that start with attributes and have size + date + time + filename
+            const match = line.match(/^\s+(\.\.A\.\.\.\.)\s+(\d+)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+(.+)$/);
+            if (match) {
+              const size = parseInt(match[2], 10);
+              const name = match[3].trim();
+              if (name && name.length > 0) {
+                files.push({ name, size });
+              }
+            }
           }
         }
         
         return files;
       }
       
-      const files = parseUnrarTechnicalListing(listOutput);
+      const files = parseUnrarListing(listOutput);
       
       console.log("rar_list_parsed", { jobId, fileCount: files.length, files: files.map(f => ({ name: f.name, size: f.size })) });
       
