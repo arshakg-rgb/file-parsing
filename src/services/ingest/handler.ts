@@ -253,8 +253,10 @@ export async function consumerLoop(): Promise<void> {
     } catch (dbError) {
       logger.error("database_connection_lost", { error: String(dbError) }, dbError instanceof Error ? dbError : new Error(String(dbError)));
       metrics.increment("ingest.db_connection_lost", 1);
-      // Wait before retrying to avoid tight loop
-      await new Promise(r => setTimeout(r, 10000));
+      // Wait for database to be available again before retrying
+      await waitForDb();
+      // Additional wait to avoid tight loop
+      await new Promise(r => setTimeout(r, 5000));
     }
   }
 }
