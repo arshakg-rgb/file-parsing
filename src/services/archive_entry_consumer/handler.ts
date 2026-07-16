@@ -122,6 +122,7 @@ async function handleArchiveEntry(msg: ArchiveEntryMessage, attempt: number): Pr
   logger.info("archive_entry_processing_start", { job_id, entry_name, entry_size, attempt });
   metrics.increment("archive_entry.processing", 1, { attempt: attempt.toString() });
   
+  
   try {
     if (archive_type !== "rar") {
       throw new Error(`Unsupported archive type: ${archive_type}`);
