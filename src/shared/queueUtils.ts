@@ -102,14 +102,18 @@ async function pubSend(queueUrl: string, payload: object, groupId: string): Prom
   return withRetry(async () => {
     const data = Buffer.from(JSON.stringify(payload)).toString("base64");
     const pub = await pubPublisher();
+    const topic = topicPath(queueUrl);
+    console.log("pub_send_attempt", { queueUrl, topic, groupId });
     const [resp] = await withTimeout<any>(
       () => pub.publish({
-        topic: topicPath(queueUrl),
+        topic: topic,
         messages: [{ data, orderingKey: groupId }],
       }),
       QUEUE_TIMEOUT_SEND
     );
-    return (resp.messageIds ?? [])[0] ?? "";
+    const messageId = (resp.messageIds ?? [])[0] ?? "";
+    console.log("pub_send_success", { topic, messageId });
+    return messageId;
   });
 }
 
