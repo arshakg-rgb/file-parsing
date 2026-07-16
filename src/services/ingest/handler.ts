@@ -36,6 +36,21 @@ function transition(jobId: string, newStatus: JobStatus, error?: string) {
 
 export async function handleIngest(msg: IngestMessage): Promise<void> {
   const jobId = msg.job_id;
+  
+  // Check current status before transitioning to avoid duplicate events
+  const currentJob = await pool.query("SELECT status FROM parse_jobs WHERE job_id = $1", [jobId]);
+  const currentStatus = currentJob.rows[0]?.status;
+  
+  if (currentStatus === JobStatus.INGESTING) {
+    logger.info("ingest_already_ingesting", { job_id: jobId });
+    return;
+  }
+  
+  if (currentStatus === JobStatus.FAILED) {
+    logger.info("ingest_job_failed", { job_id: jobId });
+    return;
+  }
+  
   transition(jobId, JobStatus.INGESTING);
   logger.info("ingest_start", { job_id: jobId, source_type: msg.source_type });
   metrics.increment("ingest.start", 1, { source_type: msg.source_type });
