@@ -176,7 +176,9 @@ export async function bootstrapJob(msg: ClassifyMessage): Promise<void> {
     field_spec: msg.field_spec,
     seed_template_ids: seedTemplateIds,
   };
+  console.log("detect_sending_to_parse", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL });
   await sendRaw(settings.PARSE_QUEUE_URL, parseMsg);
+  console.log("detect_parse_message_sent", { job_id: jobId });
 }
 
 function extractSampleLines(raw: Buffer, encoding: string, n: number): string[] {
