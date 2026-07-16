@@ -28,7 +28,7 @@ export const settings = {
   DEPLOYMENT_BUCKET: getString("DEPLOYMENT_BUCKET", "datalead-osint"),
 
   // ---- Queue backend: "pubsub" (GCP production) or "sqs" (LocalStack dev) ----
-  QUEUE_BACKEND: getString("QUEUE_BACKEND", "sqs"),
+  QUEUE_BACKEND: getString("QUEUE_BACKEND", "pubsub"),
 
   // ---- Pub/Sub Topics / SQS Queue URLs ----
   // For pubsub backend: short topic name (e.g. "fpp-ingest").
