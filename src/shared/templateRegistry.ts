@@ -172,11 +172,21 @@ export class TemplateRegistry {
       );
       
       for (const row of recordResult.rows) {
+        // Handle field_map - check if it's already an object or needs parsing
+        let fieldMap;
+        if (typeof row.field_map === 'string') {
+          fieldMap = JSON.parse(row.field_map);
+        } else if (typeof row.field_map === 'object' && row.field_map !== null) {
+          fieldMap = row.field_map;
+        } else {
+          fieldMap = {};
+        }
+        
         this.recordCache.set(row.fingerprint, {
           template_id: row.template_id,
           fingerprint: row.fingerprint,
           version: row.version,
-          field_map: JSON.parse(row.field_map),
+          field_map: fieldMap,
           structure: row.structure,
           length_hint: row.length_hint,
           source: row.source,
