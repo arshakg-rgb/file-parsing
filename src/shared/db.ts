@@ -6,8 +6,8 @@ const { Pool } = pg;
 export const pool = new Pool({
   connectionString: settings.DATABASE_URL,
   max: 50, // Increased from 15 to handle concurrent large file processing
-  idleTimeoutMillis: 60000, // Increased from 30s to keep connections longer
-  connectionTimeoutMillis: 30000, // Increased from 10s to 30s for cold starts
+  idleTimeoutMillis: 1200000, // 20 minutes to handle long-running RAR extraction
+  connectionTimeoutMillis: 30000, // 30s for cold starts
 });
 
 /**
