@@ -126,15 +126,58 @@ export async function copyObject(
   dstBucket: string,
   dstKey: string
 ): Promise<void> {
-  await withRetry(
-    () => withTimeout(async () => {
-      await gcsClient()
-        .bucket(srcBucket)
-        .file(srcKey)
-        .copy(gcsClient().bucket(dstBucket).file(dstKey));
-    }, GCS_TIMEOUT_MS),
-    GCS_RETRIES
-  );
+  // For large files, use streaming copy instead of GCS .copy() method
+  // which can hang for large files
+  const [files] = await gcsClient().bucket(srcBucket).getFiles({ prefix: srcKey });
+  if (files.length === 0) {
+    throw new Error(`Source file not found: ${srcBucket}/${srcKey}`);
+  }
+  const file = files[0];
+  const size = Number((file.metadata as any).size ?? 0);
+  
+  // Use streaming copy for files larger than 100MB
+  if (size > 100 * 1024 * 1024) {
+    console.log(`Using streaming copy for large file: ${size} bytes`);
+    await streamCopy(srcBucket, srcKey, dstBucket, dstKey);
+  } else {
+    // Use GCS copy for smaller files
+    await withRetry(
+      () => withTimeout(async () => {
+        await gcsClient()
+          .bucket(srcBucket)
+          .file(srcKey)
+          .copy(gcsClient().bucket(dstBucket).file(dstKey));
+      }, GCS_TIMEOUT_MS),
+      GCS_RETRIES
+    );
+  }
+}
+
+async function streamCopy(
+  srcBucket: string,
+  srcKey: string,
+  dstBucket: string,
+  dstKey: string
+): Promise<void> {
+  const srcFile = gcsClient().bucket(srcBucket).file(srcKey);
+  const dstFile = gcsClient().bucket(dstBucket).file(dstKey);
+  
+  const [exists] = await dstFile.exists();
+  if (exists) {
+    await dstFile.delete();
+  }
+  
+  const writeStream = dstFile.createWriteStream({
+    resumable: false,
+  });
+  
+  const readStream = srcFile.createReadStream();
+  
+  return new Promise((resolve, reject) => {
+    readStream.pipe(writeStream)
+      .on('error', reject)
+      .on('finish', resolve);
+  });
 }
 
 export async function listObjects(bucket: string, prefix: string): Promise<[string, number][]> {
