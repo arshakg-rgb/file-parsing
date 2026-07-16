@@ -235,17 +235,25 @@ interface CSVParseResult {
 function tryParseAsCSV(line: string, fieldSpec: string[]): CSVParseResult {
   const delimiters = [",", ";", "\t", "|"];
   
+  console.log("csv_parser_start", { line, fieldSpec, delimiterCount: delimiters.length });
+  
   for (const delimiter of delimiters) {
     const parts = line.split(delimiter);
+    console.log("csv_parser_try_delimiter", { delimiter, partCount: parts.length, expectedCount: fieldSpec.length });
+    
     if (parts.length === fieldSpec.length) {
       // Check if all parts are non-empty (basic validation)
       const allNonEmpty = parts.every(part => part.trim().length > 0);
+      console.log("csv_parser_validation", { delimiter, allNonEmpty, parts });
+      
       if (allNonEmpty) {
+        console.log("csv_parser_success", { delimiter, fields: parts });
         return { success: true, delimiter, fields: parts };
       }
     }
   }
   
+  console.log("csv_parser_failed", { reason: "no_delimiter_matched" });
   return { success: false, delimiter: "", fields: [] };
 }
 
@@ -256,7 +264,7 @@ function createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: str
     fieldMap[field] = { locator: `index:${index}`, type: "string" };
   });
   
-  return {
+  const template = {
     template_id: crypto.randomBytes(16).toString("hex"),
     fingerprint: quickFingerprint(line),
     version: 1,
@@ -266,6 +274,15 @@ function createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: str
     source: "ai" as const,
     created_at: new Date()
   };
+  
+  console.log("csv_template_created", { 
+    template_id: template.template_id, 
+    fieldMap, 
+    structure: template.structure,
+    delimiter 
+  });
+  
+  return template;
 }
 
 export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> {
