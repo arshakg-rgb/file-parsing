@@ -100,17 +100,15 @@ export async function extractArchiveToS3(
   }
   const [bucket, key] = parseS3Url(s3Url);
 
-  // For RAR: stream directly from GCS to temp file to avoid loading 2GB+ into memory
-  // Use GCS FUSE volume mount to avoid RAM-backed /tmp limitation
-  // Note: RAR format requires full file access, violating constant memory principle
-  // Apply size limits to maintain architectural constraints
+  // For RAR: use CLI-based extraction to avoid library OOM issues
+  // Architecture requirement: constant memory usage regardless of file size
+  // CLI approach provides real OS-level backpressure and avoids library internal buffering
   if (archiveType === "rar") {
     const size = await objectSize(bucket, key);
     console.log("rar_streaming_extract", { jobId, bucket, key, size });
     
     // Enforce size limit to maintain constant memory principle per architecture
-    // RAR requires full file access, so we limit to sizes that fit within memory constraints
-    // 4Gi memory + GCS FUSE overhead + RAR extraction library overhead = ~2.5GB practical limit
+    // 4Gi memory + GCS FUSE overhead + CLI process overhead = ~2.5GB practical limit
     const MAX_RAR_SIZE = 2.5 * 1024 * 1024 * 1024; // 2.5GB limit for RAR with 4Gi memory + GCS FUSE
     if (size > MAX_RAR_SIZE) {
       throw new Error(`RAR file size ${size} bytes exceeds maximum ${MAX_RAR_SIZE} bytes. RAR format requires full file access which violates constant memory principle for very large files. Consider using ZIP/7z/tar formats for large archives (they support true streaming).`);
@@ -124,99 +122,100 @@ export async function extractArchiveToS3(
     await pipeline(fileStream, writeStream);
     console.log("rar_download_complete", { jobId, tmpPath, size });
     
-    const extractor = await RARExtractor.fromFile(tmpPath, { password: password || undefined });
-    const result = await extractor.extract();
+    // Use CLI-based extraction for memory efficiency
+    const { spawn } = await import('child_process');
     const out: Record<string, any>[] = [];
     let totalUncompressed = 0;
     const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
     const MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024;
     
     try {
-      for await (const { fileHeader, extraction } of result.files) {
-        if (!extraction) continue;
-        if (fileHeader.unpSize > MAX_FILE_SIZE) {
-          console.log("rar_skip_large_file", { jobId, name: fileHeader.name, size: fileHeader.unpSize });
-          // Must still consume the stream to let the decoder advance past this entry
-          // without accumulating it in an internal buffer
-          let drained = 0;
-          for await (const chunk of extraction) {
-            drained += chunk.length;
-          }
-          console.log("rar_skip_drained", { jobId, name: fileHeader.name, drained, rss: process.memoryUsage().rss });
+      // First, list archive contents to get file info
+      const listArgs = ['l', '-v', tmpPath];
+      if (password) {
+        listArgs.push('-p' + password);
+      }
+      
+      const listProcess = spawn('unrar', listArgs);
+      let listOutput = '';
+      
+      listProcess.stdout.on('data', (data) => {
+        listOutput += data.toString();
+      });
+      
+      await new Promise<void>((resolve, reject) => {
+        listProcess.on('close', (code) => code === 0 ? resolve() : reject(new Error(`unrar list failed with code ${code}`)));
+        listProcess.on('error', reject);
+      });
+      
+      // Parse list output to get file information
+      const lines = listOutput.split('\n');
+      const files: Array<{ name: string; size: number }> = [];
+      
+      for (const line of lines) {
+        const match = line.match(/^\s*(\d+)\s+\d+\s+\d+%\s+(.+)$/);
+        if (match) {
+          const size = parseInt(match[1], 10);
+          const name = match[2].trim();
+          files.push({ name, size });
+        }
+      }
+      
+      // Extract each file using CLI with streaming to GCS
+      for (const file of files) {
+        if (file.size > MAX_FILE_SIZE) {
+          console.log("rar_skip_large_file", { jobId, name: file.name, size: file.size });
           continue;
         }
-        if (totalUncompressed + fileHeader.unpSize > MAX_TOTAL_UNCOMPRESSED) {
-          console.log("rar_skip_total_limit", { jobId, name: fileHeader.name });
-          // Must still consume the stream to let the decoder advance past this entry
-          let drained = 0;
-          for await (const chunk of extraction) {
-            drained += chunk.length;
-          }
-          console.log("rar_skip_drained", { jobId, name: fileHeader.name, drained, rss: process.memoryUsage().rss });
+        
+        if (totalUncompressed + file.size > MAX_TOTAL_UNCOMPRESSED) {
+          console.log("rar_skip_total_limit", { jobId, name: file.name });
           continue;
         }
-        // Stream extraction directly to GCS to avoid OOM (architecture requirement)
-        const entryKey = `archive/${jobId}/${fileHeader.name}`;
+        
+        console.log("rar_extracting_file", { jobId, name: file.name, size: file.size });
+        
+        const entryKey = `archive/${jobId}/${file.name}`;
         const entryFile = gcsClient().bucket(bucket).file(entryKey);
         const writeStream = entryFile.createWriteStream();
-        let totalEntrySize = 0;
-        const RAM_WATERMARK = 64 * 1024 * 1024; // Reduced to 64MB for memory optimization
         
-        let bufferChunks: Buffer[] = [];
-        let bufferSize = 0;
-        
-        for await (const chunk of extraction) {
-          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          bufferChunks.push(buffer);
-          bufferSize += buffer.length;
-          totalEntrySize += buffer.length;
-          
-          // Flush to GCS when buffer reaches watermark
-          if (bufferSize >= RAM_WATERMARK) {
-            const flushData = Buffer.concat(bufferChunks);
-            bufferChunks.length = 0;
-            bufferSize = 0;
-            // Write chunk to GCS stream with backpressure handling
-            if (!writeStream.write(flushData)) {
-              await once(writeStream, "drain");
-            }
-            // Force garbage collection hint
-            if (global.gc) global.gc();
-          }
+        const extractArgs = ['p', '-inul', tmpPath, file.name];
+        if (password) {
+          extractArgs.push('-p' + password);
         }
         
-        // Flush remaining buffer with backpressure handling
-        if (bufferChunks.length > 0) {
-          const finalData = Buffer.concat(bufferChunks);
-          if (!writeStream.write(finalData)) {
-            await once(writeStream, "drain");
-          }
-          bufferChunks.length = 0;
-          bufferSize = 0;
-          // Force garbage collection hint
-          if (global.gc) global.gc();
-        }
+        const extractProcess = spawn('unrar', extractArgs);
         
-        // End the write stream
+        // Pipe extraction output directly to GCS with backpressure
+        extractProcess.stdout.pipe(writeStream);
+        
         await new Promise<void>((resolve, reject) => {
           writeStream.on('finish', resolve);
           writeStream.on('error', reject);
-          writeStream.end();
+          extractProcess.on('error', reject);
+          extractProcess.on('close', (code) => {
+            if (code !== 0) {
+              reject(new Error(`unrar extraction failed with code ${code}`));
+            } else {
+              resolve();
+            }
+          });
         });
         
-        // Clear references immediately
-        bufferChunks.length = 0;
-        
-        totalUncompressed += totalEntrySize;
-        checkRatio(size, totalUncompressed);
+        totalUncompressed += file.size;
         const entryUrl = `gs://${bucket}/${entryKey}`;
-        out.push(makeEntryEvent(jobId, batchId, entryUrl, fileHeader.name, totalEntrySize, fieldSpec));
+        out.push(makeEntryEvent(jobId, batchId, entryUrl, file.name, file.size, fieldSpec));
+        
+        console.log("rar_extracted_file", { jobId, name: file.name, size: file.size });
       }
+      
+      console.log("rar_extraction_complete", { jobId, totalFiles: files.length, totalUncompressed });
+      
     } finally {
-      // Ensure cleanup happens even on error
-      extractor.close();
+      // Cleanup temp file
       await fs.unlink(tmpPath).catch(() => {});
     }
+    
     return out;
   }
 
