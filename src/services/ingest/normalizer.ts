@@ -125,15 +125,49 @@ export async function extractArchiveToS3(
         console.log("rar_skip_total_limit", { jobId, name: fileHeader.name });
         continue;
       }
-      const chunks: Buffer[] = [];
+      // Stream extraction directly to GCS to avoid OOM (architecture requirement)
+      const entryKey = `archive/${jobId}/${fileHeader.name}`;
+      const entryFile = gcsClient().bucket(bucket).file(entryKey);
+      const writeStream = entryFile.createWriteStream();
+      let totalEntrySize = 0;
+      const RAM_WATERMARK = 256 * 1024 * 1024; // 256MB buffer per architecture
+      
+      let bufferChunks: Buffer[] = [];
+      let bufferSize = 0;
+      
       for await (const chunk of extraction) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        bufferChunks.push(buffer);
+        bufferSize += buffer.length;
+        totalEntrySize += buffer.length;
+        
+        // Flush to GCS when buffer reaches watermark
+        if (bufferSize >= RAM_WATERMARK) {
+          const flushData = Buffer.concat(bufferChunks);
+          bufferChunks.length = 0;
+          bufferSize = 0;
+          // Write chunk to GCS stream
+          writeStream.write(flushData);
+        }
       }
-      const data = Buffer.concat(chunks);
-      totalUncompressed += data.length;
+      
+      // Flush remaining buffer
+      if (bufferChunks.length > 0) {
+        const finalData = Buffer.concat(bufferChunks);
+        writeStream.write(finalData);
+      }
+      
+      // End the write stream
+      await new Promise<void>((resolve, reject) => {
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
+        writeStream.end();
+      });
+      
+      totalUncompressed += totalEntrySize;
       checkRatio(size, totalUncompressed);
-      const [url, entrySize] = await storeEntry(jobId, fileHeader.name, data);
-      out.push(makeEntryEvent(jobId, batchId, url, fileHeader.name, entrySize, fieldSpec));
+      const entryUrl = `gs://${bucket}/${entryKey}`;
+      out.push(makeEntryEvent(jobId, batchId, entryUrl, fileHeader.name, totalEntrySize, fieldSpec));
     }
     extractor.close();
     await fs.unlink(tmpPath).catch(() => {});
