@@ -176,7 +176,7 @@ steps:
           --min-instances 1 \
           --no-cpu-throttling \
           --execution-environment gen2 \
-          --session-affinity true \
+          --session-affinity \
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,RAR_TEMP_MOUNT=/mnt/scratch,ARCHIVE_ENTRY_QUEUE_URL=pubsub://projects/data-etl-499916/topics/fpp-archive-entry,LARGE_FILE_THRESHOLD_BYTES=524288000 \
           --add-volume name=rar-temp,type=cloud-storage,bucket=datalead-osint \
           --add-volume-mount volume=rar-temp,mount-path=/mnt/scratch \
