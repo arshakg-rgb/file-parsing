@@ -208,7 +208,7 @@ router.post("/jobs/:job_id/retry", async (req: Request, res: Response, next: Nex
           job_id: req.params.job_id,
           source_type: row.source_type,
           source_ref: row.source_ref,
-          field_spec: row.field_spec,
+          field_spec: Array.isArray(row.field_spec) ? row.field_spec : [],
           batch_id: row.batch_id,
           manual_override: true
         };
@@ -219,7 +219,7 @@ router.post("/jobs/:job_id/retry", async (req: Request, res: Response, next: Nex
           job_id: req.params.job_id,
           s3_url: row.s3_url,
           size: row.size,
-          field_spec: row.field_spec,
+          field_spec: Array.isArray(row.field_spec) ? row.field_spec : [],
           manual_override: true
         };
         break;
@@ -228,7 +228,7 @@ router.post("/jobs/:job_id/retry", async (req: Request, res: Response, next: Nex
         message = {
           job_id: req.params.job_id,
           s3_url: row.s3_url,
-          field_spec: row.field_spec,
+          field_spec: Array.isArray(row.field_spec) ? row.field_spec : [],
           manual_override: true
         };
         break;

@@ -7,15 +7,15 @@ export const pool = new Pool({
   connectionString: settings.DATABASE_URL,
   max: 50, // Increased from 15 to handle concurrent large file processing
   idleTimeoutMillis: 60000, // Increased from 30s to keep connections longer
-  connectionTimeoutMillis: 10000,
+  connectionTimeoutMillis: 30000, // Increased from 10s to 30s for cold starts
 });
 
 /**
  * Wait for database connection to succeed (Cloud SQL proxy race condition guard).
- * Retries with exponential backoff up to 30 seconds.
+ * Retries with exponential backoff up to 120 seconds.
  */
 export async function waitForDb(): Promise<void> {
-  const maxAttempts = 12; // 12 * 2.5s = 30s max
+  const maxAttempts = 24; // 24 * 5s = 120s max for cold starts
   let attempt = 0;
   while (attempt < maxAttempts) {
     try {
@@ -25,7 +25,7 @@ export async function waitForDb(): Promise<void> {
       return;
     } catch (err) {
       attempt++;
-      const delay = Math.min(2500 * attempt, 5000); // 2.5s, 5s, 5s, ...
+      const delay = Math.min(5000 * attempt, 10000); // 5s, 10s, 10s, ...
       if (attempt < maxAttempts) {
         await new Promise(r => setTimeout(r, delay));
       }
@@ -42,10 +42,10 @@ export interface ParseJobRow {
   source_ref: string;
   s3_url?: string;
   size?: number;
-  field_spec: string[];
+  field_spec: any; // PostgreSQL JSONB is parsed automatically by pg
   exec_path: string;
   status: string;
-  output_paths: string[];
+  output_paths: any; // PostgreSQL JSONB is parsed automatically by pg
   counts: Record<string, any>;
   timings: Record<string, any>;
   error?: string;

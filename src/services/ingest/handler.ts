@@ -185,41 +185,51 @@ export async function handlePassword(jobId: string, password: string): Promise<v
     job_id: jobId,
     source_type: row.source_type,
     source_ref: row.source_ref,
-    field_spec: row.field_spec,
+    field_spec: Array.isArray(row.field_spec) ? row.field_spec : [],
     batch_id: row.batch_id,
     password,
   });
 }
 
 export async function consumerLoop(): Promise<void> {
-  await waitForDb();
-  logger.info("ingest_consumer_started");
   while (true) {
-    const messages = await receiveMessages<IngestMessage>(
-      settings.INGEST_QUEUE_URL,
-      (body) => JSON.parse(body) as IngestMessage,
-      5
-    );
-    for (const { payload, receiptHandle } of messages) {
-      try {
-        if ((payload as any).action === "provide_password") {
-          await handlePassword(payload.job_id, (payload as any).password);
-        } else {
-          await handleIngest(payload);
-        }
-        await deleteMessage(settings.INGEST_QUEUE_URL, receiptHandle);
-      } catch (exc) {
-        const errorStr = String(exc);
-        // Ack bad messages to prevent infinite retry loop
-        if ((errorStr.includes("Job") && errorStr.includes("not found")) || errorStr.includes("cannot transition")) {
-          logger.error("ingest_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
-          metrics.increment("ingest.message_error_ack", 1);
-          await deleteMessage(settings.INGEST_QUEUE_URL, receiptHandle);
-        } else {
-          logger.error("ingest_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
-          metrics.increment("ingest.message_error", 1);
+    try {
+      await waitForDb();
+      logger.info("ingest_consumer_started");
+      
+      while (true) {
+        const messages = await receiveMessages<IngestMessage>(
+          settings.INGEST_QUEUE_URL,
+          (body) => JSON.parse(body) as IngestMessage,
+          5
+        );
+        for (const { payload, receiptHandle } of messages) {
+          try {
+            if ((payload as any).action === "provide_password") {
+              await handlePassword(payload.job_id, (payload as any).password);
+            } else {
+              await handleIngest(payload);
+            }
+            await deleteMessage(settings.INGEST_QUEUE_URL, receiptHandle);
+          } catch (exc) {
+            const errorStr = String(exc);
+            // Ack bad messages to prevent infinite retry loop
+            if ((errorStr.includes("Job") && errorStr.includes("not found")) || errorStr.includes("cannot transition")) {
+              logger.error("ingest_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
+              metrics.increment("ingest.message_error_ack", 1);
+              await deleteMessage(settings.INGEST_QUEUE_URL, receiptHandle);
+            } else {
+              logger.error("ingest_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
+              metrics.increment("ingest.message_error", 1);
+            }
+          }
         }
       }
+    } catch (dbError) {
+      logger.error("database_connection_lost", { error: String(dbError) }, dbError instanceof Error ? dbError : new Error(String(dbError)));
+      metrics.increment("ingest.db_connection_lost", 1);
+      // Wait before retrying to avoid tight loop
+      await new Promise(r => setTimeout(r, 10000));
     }
   }
 }

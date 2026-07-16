@@ -83,7 +83,7 @@ export async function handleEvent(event: JobEvent): Promise<void> {
       job_id: event.job_id,
       status: row?.status,
       counts: row?.counts,
-      output_paths: row?.output_paths,
+      output_paths: Array.isArray(row?.output_paths) ? row.output_paths : [],
       rubbish_log_path: (row?.timings as any)?._rubbish_log_path ?? null,
       dlq_count: (row?.timings as any)?._dlq_count ?? 0,
     });
@@ -196,8 +196,8 @@ async function onParsingCompleted(event: JobEvent): Promise<void> {
     await transition(event.job_id, JobStatus.LOADING, undefined, { output_paths: mergedPaths });
     await sendRaw(settings.LOAD_QUEUE_URL, {
       job_id: event.job_id,
-      merged_parquet_paths: mergedPaths,
-      field_spec: row.field_spec,
+      output_paths: mergedPaths,
+      field_spec: Array.isArray(row.field_spec) ? row.field_spec : [],
     });
     console.log("loading_message_sent", { job_id: event.job_id });
   } catch (error) {

@@ -59,7 +59,7 @@ export class Logger {
           'Authorization': `Basic ${btoa(`${settings.LOKI_USERNAME}:${settings.LOKI_PASSWORD}`)}`,
         },
         body: JSON.stringify(logEntry),
-        signal: AbortSignal.timeout(5000), // 5 second timeout
+        signal: AbortSignal.timeout(10000), // 10 second timeout
       });
 
       if (!response.ok) {
