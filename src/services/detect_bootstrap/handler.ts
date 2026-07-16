@@ -147,7 +147,17 @@ export async function bootstrapJob(msg: ClassifyMessage): Promise<void> {
       context_lines: sampleLines.slice(1) || [],
       job_id: jobId,
     };
-    const resp = await classify(req);
+    let resp: ClassifyResponse;
+    try {
+      const aiTimeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("ai_classify_timeout")), settings.AI_CLASSIFY_TIMEOUT_MS)
+      );
+      resp = await Promise.race([classify(req), aiTimeout]);
+    } catch (aiErr) {
+      logger.warn("seed_classify_skipped", { job_id: jobId, fingerprint: fp, error: String(aiErr) });
+      metrics.increment("detect.ai_timeout", 1);
+      continue;
+    }
     if (resp.template) {
       seedTemplateIds.push(resp.template.template_id);
       logger.info("seed_template_created", { job_id: jobId, kind: resp.kind, template_id: resp.template.template_id, fingerprint: fp });

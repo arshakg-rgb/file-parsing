@@ -58,6 +58,7 @@ export const settings = {
   AI_CLASSIFIER_URL: getOptionalString("AI_CLASSIFIER_URL"),
   AI_RATE_LIMIT_RPM: getNumber("AI_RATE_LIMIT_RPM", 60), // 60 requests per minute
   AI_RATE_LIMIT_BURST: getNumber("AI_RATE_LIMIT_BURST", 10), // Burst of 10 requests
+  AI_CLASSIFY_TIMEOUT_MS: getNumber("AI_CLASSIFY_TIMEOUT_MS", 30000), // 30 s per AI probe call
 
   // ---- Vertex AI ----
   VERTEX_MODEL: getString("VERTEX_MODEL", "gemini-2.5-flash"),

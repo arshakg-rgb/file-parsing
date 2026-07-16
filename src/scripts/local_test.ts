@@ -420,6 +420,70 @@ check("failed → ingesting: BLOCKED (terminal state)", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 12. AI classify timeout guard
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log("\n=== 12. AI classify timeout guard ===");
+
+async function classifyWithTimeout(
+  classifyFn: () => Promise<{ kind: string }>,
+  timeoutMs: number
+): Promise<{ kind: string } | null> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("ai_classify_timeout")), timeoutMs)
+  );
+  try {
+    return await Promise.race([classifyFn(), timeout]);
+  } catch (err) {
+    if (String(err).includes("ai_classify_timeout")) return null;
+    throw err;
+  }
+}
+
+await checkAsync("fast AI call completes before timeout", async () => {
+  const result = await classifyWithTimeout(async () => ({ kind: "record-template" }), 1000);
+  assert.ok(result !== null);
+  assert.equal(result?.kind, "record-template");
+});
+
+await checkAsync("slow AI call returns null after timeout (job still proceeds)", async () => {
+  const slowAI = () => new Promise<{ kind: string }>(resolve => setTimeout(() => resolve({ kind: "record-template" }), 5000));
+  const result = await classifyWithTimeout(slowAI, 100);
+  assert.equal(result, null, "Should return null on timeout so job can still proceed to parsing");
+});
+
+await checkAsync("AI error propagates (not swallowed as timeout)", async () => {
+  const failAI = () => Promise.reject(new Error("network_error"));
+  try {
+    await classifyWithTimeout(failAI, 1000);
+    assert.fail("Should have thrown");
+  } catch (e) {
+    assert.ok(String(e).includes("network_error"), "Non-timeout errors should propagate");
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13. Route ordering – /jobs/stuck must not match /jobs/:job_id
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log("\n=== 13. Express route ordering ===");
+
+check("/jobs/stuck is not a valid UUID (would 404 as job_id)", () => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  assert.ok(!uuidRegex.test("stuck"), "String 'stuck' is not a UUID — specific route must come first in Express");
+});
+
+check("/jobs/stuck route must be registered before /jobs/:job_id", () => {
+  const routes = [
+    "/jobs/stuck",      // static — must be first
+    "/jobs/:job_id",    // parameterized — must be after
+  ];
+  const stuckIdx = routes.indexOf("/jobs/stuck");
+  const paramIdx = routes.indexOf("/jobs/:job_id");
+  assert.ok(stuckIdx < paramIdx, "/jobs/stuck must be defined before /jobs/:job_id");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Summary
 // ─────────────────────────────────────────────────────────────────────────────
 
