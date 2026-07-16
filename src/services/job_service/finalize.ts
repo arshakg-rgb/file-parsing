@@ -14,10 +14,12 @@ function buildSchema(rows: Record<string, any>[]): any {
   for (const row of rows) {
     for (const [k, v] of Object.entries(row)) {
       if (!schemaObj[k]) {
-        const type = v === null || v === undefined ? "UTF8" :
-                    typeof v === "boolean" ? "BOOLEAN" :
-                    typeof v === "number" ? (Number.isInteger(v) && Number.isSafeInteger(v) ? "INT64" : "DOUBLE") :
-                    v instanceof Date ? "TIMESTAMP_MILLIS" :
+        // Handle BigInt values by converting to number for type checking
+        const value = typeof v === "bigint" ? Number(v) : v;
+        const type = value === null || value === undefined ? "UTF8" :
+                    typeof value === "boolean" ? "BOOLEAN" :
+                    typeof value === "number" ? (Number.isInteger(value) && Number.isSafeInteger(value) ? "INT64" : "DOUBLE") :
+                    value instanceof Date ? "TIMESTAMP_MILLIS" :
                     "UTF8";
         schemaObj[k] = { type, optional: true };
       }
@@ -80,7 +82,12 @@ export async function finalizeOutput(
       const schema = buildSchema(rows);
       const writer = await ParquetWriter.openFile(schema, tempFile);
       for (const row of rows) {
-        await writer.appendRow(row);
+        // Convert BigInt values to numbers for parquet compatibility
+        const processedRow: Record<string, any> = {};
+        for (const [k, v] of Object.entries(row)) {
+          processedRow[k] = typeof v === "bigint" ? Number(v) : v;
+        }
+        await writer.appendRow(processedRow);
       }
       await writer.close();
 
@@ -274,7 +281,14 @@ async function backfillLineNumbers(jobId: string, mergedPaths: string[]): Promis
       if (fileChanged) {
         const tempFile = path.join(os.tmpdir(), `${randomUUID()}.parquet`);
         const writer = await ParquetWriter.openFile(buildSchema(rows), tempFile);
-        for (const r of rows) await writer.appendRow(r);
+        for (const r of rows) {
+          // Convert BigInt values to numbers for parquet compatibility
+          const processedRow: Record<string, any> = {};
+          for (const [k, v] of Object.entries(r)) {
+            processedRow[k] = typeof v === "bigint" ? Number(v) : v;
+          }
+          await writer.appendRow(processedRow);
+        }
         await writer.close();
 
         const uploadStream = gcsClient().bucket(bucket).file(key).createWriteStream({ contentType: "application/octet-stream" });
