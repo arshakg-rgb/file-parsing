@@ -210,8 +210,12 @@ function buildTemplateFromRaw(raw: any, kindStr: string, line: string): RecordTe
 
 async function callVertexAI(prompt: string): Promise<any> {
   try {
+    console.log("vertex_ai_request_start", { promptLength: prompt.length });
     const text = await askVertexAI(prompt);
-    return extractJson(text);
+    console.log("vertex_ai_response_raw", { response: text.slice(0, 500) });
+    const parsed = extractJson(text);
+    console.log("vertex_ai_response_parsed", { parsed: JSON.stringify(parsed).slice(0, 500) });
+    return parsed;
   } catch (error) {
     console.error("vertex_ai_request_failed", { error: String(error) });
     throw error;
