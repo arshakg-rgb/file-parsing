@@ -146,10 +146,16 @@ async function resolveSource(msg: IngestMessage): Promise<{ s3Url: string; size:
     // Copy from uploads to ingested bucket for upload jobs
     if (msg.source_type === SourceType.UPLOAD && bucket === settings.DATA_BUCKET && key.startsWith("uploads/")) {
       const dstKey = key.replace("uploads/", "ingested/");
-      await copyObject(bucket, key, bucket, dstKey);
-      const ingestedUrl = `gs://${bucket}/${dstKey}`;
-      logger.info("upload_copied_to_ingested", { job_id: msg.job_id, source_ref: msg.source_ref, ingested_url: ingestedUrl });
-      return { s3Url: ingestedUrl, size };
+      try {
+        await copyObject(bucket, key, bucket, dstKey);
+        const ingestedUrl = `gs://${bucket}/${dstKey}`;
+        logger.info("upload_copied_to_ingested", { job_id: msg.job_id, source_ref: msg.source_ref, ingested_url: ingestedUrl });
+        return { s3Url: ingestedUrl, size };
+      } catch (copyError) {
+        logger.error("upload_copy_failed", { job_id: msg.job_id, source_ref: msg.source_ref, error: String(copyError) }, copyError instanceof Error ? copyError : new Error(String(copyError)));
+        metrics.increment("ingest.copy_failed", 1);
+        throw new Error(`Failed to copy file from uploads to ingested: ${String(copyError)}`);
+      }
     }
     
     return { s3Url: msg.source_ref, size };
