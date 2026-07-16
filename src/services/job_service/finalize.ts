@@ -1,4 +1,4 @@
-import { ParquetReader, ParquetWriter } from "@dsnp/parquetjs";
+import { ParquetReader, ParquetWriter, ParquetSchema } from "@dsnp/parquetjs";
 import { createReadStream } from "fs";
 import fs from "fs/promises";
 import { pipeline } from "node:stream/promises";
@@ -43,7 +43,7 @@ function buildSchema(rows: Record<string, any>[]): any {
       }
     }
   }
-  return new (require("@dsnp/parquetjs").ParquetSchema)(schemaObj);
+  return new ParquetSchema(schemaObj);
 }
 
 export interface FinalizeResult {
