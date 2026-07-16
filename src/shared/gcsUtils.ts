@@ -174,9 +174,28 @@ async function streamCopy(
   const readStream = srcFile.createReadStream();
   
   return new Promise((resolve, reject) => {
+    let bytesCopied = 0;
+    const startTime = Date.now();
+    
+    readStream.on('data', (chunk) => {
+      bytesCopied += chunk.length;
+      const elapsed = (Date.now() - startTime) / 1000;
+      const speed = bytesCopied / elapsed / (1024 * 1024); // MB/s
+      if (bytesCopied % (100 * 1024 * 1024) === 0) { // Log every 100MB
+        console.log(`stream_copy_progress: ${bytesCopied / (1024 * 1024)}MB at ${speed.toFixed(2)}MB/s`);
+      }
+    });
+    
     readStream.pipe(writeStream)
-      .on('error', reject)
-      .on('finish', resolve);
+      .on('error', (error) => {
+        console.error('stream_copy_error:', error);
+        reject(error);
+      })
+      .on('finish', () => {
+        const elapsed = (Date.now() - startTime) / 1000;
+        console.log(`stream_copy_complete: ${bytesCopied / (1024 * 1024)}MB in ${elapsed.toFixed(2)}s`);
+        resolve();
+      });
   });
 }
 
