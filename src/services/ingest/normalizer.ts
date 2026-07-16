@@ -116,8 +116,18 @@ export async function extractArchiveToS3(
     // Use GCS FUSE mount path instead of RAM-backed /tmp
     const mountPath = process.env.RAR_TEMP_MOUNT || '/mnt/scratch';
     const tmpPath = path.join(mountPath, `${randomUUID()}.rar`);
+    console.log("rar_download_starting", { jobId, tmpPath, mountPath });
     const fileStream = gcsClient().bucket(bucket).file(key).createReadStream();
     const writeStream = createWriteStream(tmpPath);
+    
+    fileStream.on('error', (err) => {
+      console.error("rar_download_stream_error", { jobId, error: err.message });
+    });
+    
+    writeStream.on('error', (err) => {
+      console.error("rar_download_write_error", { jobId, error: err.message });
+    });
+    
     await pipeline(fileStream, writeStream);
     console.log("rar_download_complete", { jobId, tmpPath, size });
     
@@ -135,21 +145,40 @@ export async function extractArchiveToS3(
         listArgs.push('-p' + password);
       }
       
+      console.log("rar_list_starting", { jobId, args: listArgs });
       const listProcess = spawn('unrar', listArgs);
       let listOutput = '';
+      let listError = '';
       
       listProcess.stdout.on('data', (data) => {
         listOutput += data.toString();
       });
       
+      listProcess.stderr.on('data', (data) => {
+        listError += data.toString();
+        console.error("rar_list_stderr", { jobId, data: data.toString() });
+      });
+      
       await new Promise<void>((resolve, reject) => {
-        listProcess.on('close', (code) => code === 0 ? resolve() : reject(new Error(`unrar list failed with code ${code}`)));
-        listProcess.on('error', reject);
+        listProcess.on('close', (code) => {
+          console.log("rar_list_complete", { jobId, code, outputLength: listOutput.length, errorLength: listError.length });
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`unrar list failed with code ${code}: ${listError}`));
+          }
+        });
+        listProcess.on('error', (err) => {
+          console.error("rar_list_spawn_error", { jobId, error: err.message });
+          reject(err);
+        });
       });
       
       // Parse list output to get file information
       const lines = listOutput.split('\n');
       const files: Array<{ name: string; size: number }> = [];
+      
+      console.log("rar_list_parsing", { jobId, lineCount: lines.length, sampleOutput: listOutput.substring(0, 500) });
       
       for (const line of lines) {
         const match = line.match(/^\s*(\d+)\s+\d+\s+\d+%\s+(.+)$/);
@@ -159,6 +188,8 @@ export async function extractArchiveToS3(
           files.push({ name, size });
         }
       }
+      
+      console.log("rar_list_parsed", { jobId, fileCount: files.length, files: files.map(f => ({ name: f.name, size: f.size })) });
       
       // Extract each file using CLI with streaming to GCS
       for (const file of files) {
