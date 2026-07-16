@@ -136,10 +136,23 @@ export async function extractArchiveToS3(
         if (!extraction) continue;
         if (fileHeader.unpSize > MAX_FILE_SIZE) {
           console.log("rar_skip_large_file", { jobId, name: fileHeader.name, size: fileHeader.unpSize });
+          // Must still consume the stream to let the decoder advance past this entry
+          // without accumulating it in an internal buffer
+          let drained = 0;
+          for await (const chunk of extraction) {
+            drained += chunk.length;
+          }
+          console.log("rar_skip_drained", { jobId, name: fileHeader.name, drained, rss: process.memoryUsage().rss });
           continue;
         }
         if (totalUncompressed + fileHeader.unpSize > MAX_TOTAL_UNCOMPRESSED) {
           console.log("rar_skip_total_limit", { jobId, name: fileHeader.name });
+          // Must still consume the stream to let the decoder advance past this entry
+          let drained = 0;
+          for await (const chunk of extraction) {
+            drained += chunk.length;
+          }
+          console.log("rar_skip_drained", { jobId, name: fileHeader.name, drained, rss: process.memoryUsage().rss });
           continue;
         }
         // Stream extraction directly to GCS to avoid OOM (architecture requirement)
