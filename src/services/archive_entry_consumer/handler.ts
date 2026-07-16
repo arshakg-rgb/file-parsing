@@ -76,18 +76,32 @@ async function extractSingleRarEntry(
       extractArgs.push('-p' + password);
     }
     
-    logger.info("archive_entry_extract_start", { job_id: jobId, entry_name: entryName });
+    logger.info("archive_entry_extract_start", { job_id: jobId, entry_name: entryName, extract_args: extractArgs });
     const extractProcess = spawn('unrar', extractArgs);
     
     extractProcess.stdout.pipe(writeStream);
     
+    // Capture stderr for debugging
+    let stderrOutput = '';
+    extractProcess.stderr.on('data', (data) => {
+      stderrOutput += data.toString();
+      logger.error("archive_entry_extract_stderr", { job_id: jobId, entry_name: entryName, stderr: data.toString() });
+    });
+    
     await new Promise<void>((resolve, reject) => {
       writeStream.on('finish', resolve);
-      writeStream.on('error', reject);
-      extractProcess.on('error', reject);
+      writeStream.on('error', (err) => {
+        logger.error("archive_entry_extract_write_error", { job_id: jobId, entry_name: entryName, error: err.message });
+        reject(err);
+      });
+      extractProcess.on('error', (err) => {
+        logger.error("archive_entry_extract_spawn_error", { job_id: jobId, entry_name: entryName, error: err.message });
+        reject(err);
+      });
       extractProcess.on('close', (code) => {
         if (code !== 0) {
-          reject(new Error(`unrar extraction failed with code ${code}`));
+          logger.error("archive_entry_extract_failed", { job_id: jobId, entry_name: entryName, code, stderr: stderrOutput });
+          reject(new Error(`unrar extraction failed with code ${code}: ${stderrOutput}`));
         } else {
           resolve();
         }
