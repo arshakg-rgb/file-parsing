@@ -102,9 +102,19 @@ export async function extractArchiveToS3(
 
   // For RAR: stream directly from GCS to temp file to avoid loading 2GB+ into memory
   // Use GCS FUSE volume mount to avoid RAM-backed /tmp limitation
+  // Note: RAR format requires full file access, violating constant memory principle
+  // Apply size limits to maintain architectural constraints
   if (archiveType === "rar") {
     const size = await objectSize(bucket, key);
     console.log("rar_streaming_extract", { jobId, bucket, key, size });
+    
+    // Enforce size limit to maintain constant memory principle per architecture
+    // RAR requires full file access, so we limit to sizes that fit within memory constraints
+    const MAX_RAR_SIZE = 2 * 1024 * 1024 * 1024; // 2GB limit for RAR with 4Gi memory
+    if (size > MAX_RAR_SIZE) {
+      throw new Error(`RAR file size ${size} bytes exceeds maximum ${MAX_RAR_SIZE} bytes. RAR format requires full file access which violates constant memory principle for very large files. Consider using ZIP/7z/tar formats for large archives.`);
+    }
+    
     // Use GCS FUSE mount path instead of RAM-backed /tmp
     const mountPath = process.env.RAR_TEMP_MOUNT || '/mnt/scratch';
     const tmpPath = path.join(mountPath, `${randomUUID()}.rar`);
