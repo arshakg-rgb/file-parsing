@@ -101,6 +101,9 @@ export async function handleEvent(event: JobEvent): Promise<void> {
       rubbish_log_path: (row?.timings as any)?._rubbish_log_path ?? null,
       dlq_count: (row?.timings as any)?._dlq_count ?? 0,
     });
+  } else if (etype === EventType.REPORTING_COMPLETED) {
+    const row = await getJob(event.job_id);
+    await transition(event.job_id, JobStatus.DONE, undefined, { counts: row?.counts });
   } else if (etype === EventType.ERROR_OCCURRED) {
     await transition(event.job_id, JobStatus.FAILED, event.data.error);
   }

@@ -6,6 +6,7 @@ export enum EventType {
   ENTRY_DISCOVERED = "entry_discovered",
   PARSING_COMPLETED = "parsing_completed",
   LOADING_COMPLETED = "loading_completed",
+  REPORTING_COMPLETED = "reporting_completed",
   ERROR_OCCURRED = "error_occurred",
 }
 
