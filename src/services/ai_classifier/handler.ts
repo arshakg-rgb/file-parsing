@@ -76,6 +76,7 @@ Your task: classify the line and generate a REUSABLE declarative template.
 6. Every column name in field_map MUST come from the detected structure, not invented.
 7. Validate your template against the triggering line before responding.
 8. MUST return valid JSON format only - no YAML, no markdown code blocks.
+9. The "kind" field MUST be exactly one of: "record-template", "rubbish-signature", or "uncertain" - no other values are accepted.
 
 == OUTPUT FORMAT (JSON ONLY) ==
 
