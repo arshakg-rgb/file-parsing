@@ -2,8 +2,14 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install unrar for RAR extraction (from community repository)
-RUN apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/community unrar
+# Install unrar from official rarlab static binary (Alpine dropped unrar from its repos)
+RUN apk add --no-cache wget gcompat libc6-compat && \
+    wget https://www.rarlab.com/rar/rarlinux-x64-711.tar.gz -O /tmp/unrar.tar.gz && \
+    tar -xzf /tmp/unrar.tar.gz -C /tmp && \
+    cp /tmp/rar/unrar /usr/local/bin/unrar && \
+    chmod +x /usr/local/bin/unrar && \
+    rm -rf /tmp/rar /tmp/unrar.tar.gz && \
+    apk del wget
 
 # Install dependencies
 COPY package*.json ./
