@@ -91,8 +91,8 @@ export async function handleEvent(event: JobEvent): Promise<void> {
   } else if (etype === EventType.PARSING_COMPLETED) {
     await onParsingCompleted(event);
   } else if (etype === EventType.LOADING_COMPLETED) {
-    await transition(event.job_id, JobStatus.REPORTING);
     const row = await getJob(event.job_id);
+    await transition(event.job_id, JobStatus.REPORTING, undefined, { counts: row?.counts });
     await sendRaw(settings.REPORT_QUEUE_URL, {
       job_id: event.job_id,
       status: row?.status,
