@@ -89,7 +89,7 @@ export async function generateReport(msg: ReportMessage): Promise<void> {
   }
 
   // Emit REPORTING_COMPLETED to let job service handle DONE transition with counts preservation
-  emit(jobId, EventType.REPORTING_COMPLETED, {});
+  emit(jobId, EventType.REPORTING_COMPLETED, { counts: msg.counts });
 }
 
 async function getJob(jobId: string): Promise<ParseJobRow | undefined> {

@@ -103,7 +103,9 @@ export async function handleEvent(event: JobEvent): Promise<void> {
     });
   } else if (etype === EventType.REPORTING_COMPLETED) {
     const row = await getJob(event.job_id);
-    await transition(event.job_id, JobStatus.DONE, undefined, { counts: row?.counts });
+    // Use counts from event data if available, otherwise use database
+    const counts = event.data.counts || row?.counts;
+    await transition(event.job_id, JobStatus.DONE, undefined, { counts });
   } else if (etype === EventType.ERROR_OCCURRED) {
     await transition(event.job_id, JobStatus.FAILED, event.data.error);
   }
