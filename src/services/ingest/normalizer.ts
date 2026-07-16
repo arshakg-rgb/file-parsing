@@ -110,8 +110,8 @@ export async function extractArchiveToS3(
     
     // Enforce size limit to maintain constant memory principle per architecture
     // RAR requires full file access, so we limit to sizes that fit within memory constraints
-    // 4Gi memory + GCS FUSE overhead + RAR extraction library overhead = ~1GB practical limit
-    const MAX_RAR_SIZE = 1 * 1024 * 1024 * 1024; // 1GB limit for RAR with 4Gi memory + GCS FUSE
+    // 4Gi memory + GCS FUSE overhead + RAR extraction library overhead = ~2.5GB practical limit
+    const MAX_RAR_SIZE = 2.5 * 1024 * 1024 * 1024; // 2.5GB limit for RAR with 4Gi memory + GCS FUSE
     if (size > MAX_RAR_SIZE) {
       throw new Error(`RAR file size ${size} bytes exceeds maximum ${MAX_RAR_SIZE} bytes. RAR format requires full file access which violates constant memory principle for very large files. Consider using ZIP/7z/tar formats for large archives (they support true streaming).`);
     }
@@ -147,7 +147,7 @@ export async function extractArchiveToS3(
         const entryFile = gcsClient().bucket(bucket).file(entryKey);
         const writeStream = entryFile.createWriteStream();
         let totalEntrySize = 0;
-        const RAM_WATERMARK = 256 * 1024 * 1024; // 256MB buffer per architecture
+        const RAM_WATERMARK = 64 * 1024 * 1024; // Reduced to 64MB for memory optimization
         
         let bufferChunks: Buffer[] = [];
         let bufferSize = 0;
@@ -167,6 +167,8 @@ export async function extractArchiveToS3(
             if (!writeStream.write(flushData)) {
               await once(writeStream, "drain");
             }
+            // Force garbage collection hint
+            if (global.gc) global.gc();
           }
         }
         
@@ -176,6 +178,10 @@ export async function extractArchiveToS3(
           if (!writeStream.write(finalData)) {
             await once(writeStream, "drain");
           }
+          bufferChunks.length = 0;
+          bufferSize = 0;
+          // Force garbage collection hint
+          if (global.gc) global.gc();
         }
         
         // End the write stream
@@ -184,6 +190,9 @@ export async function extractArchiveToS3(
           writeStream.on('error', reject);
           writeStream.end();
         });
+        
+        // Clear references immediately
+        bufferChunks.length = 0;
         
         totalUncompressed += totalEntrySize;
         checkRatio(size, totalUncompressed);
