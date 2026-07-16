@@ -207,7 +207,7 @@ async function onParsingCompleted(event: JobEvent): Promise<void> {
     }
 
     console.log("transitioning_to_loading", { job_id: event.job_id, merged_paths_count: mergedPaths.length });
-    await transition(event.job_id, JobStatus.LOADING, undefined, { output_paths: mergedPaths });
+    await transition(event.job_id, JobStatus.LOADING, undefined, { output_paths: mergedPaths, counts });
     await sendRaw(settings.LOAD_QUEUE_URL, {
       job_id: event.job_id,
       output_paths: mergedPaths,
