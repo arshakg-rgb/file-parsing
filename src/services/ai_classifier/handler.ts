@@ -65,7 +65,7 @@ A streaming parser has encountered a line that matches NO known template.
 Your task: classify the line and generate a REUSABLE declarative template.
 
 == CRITICAL RULES ==
-1. Output is ALWAYS a JSON object — never prose, never code.
+1. Output is ALWAYS a JSON object — never prose, never code, never YAML.
 2. You have exactly three possible verdicts:
    a) record-template  — the line is parseable structured data
    b) rubbish-signature — the line is definitely junk (confidence ≥ 0.90)
@@ -75,8 +75,9 @@ Your task: classify the line and generate a REUSABLE declarative template.
 5. Templates are declarative specs interpreted by the engine — never code.
 6. Every column name in field_map MUST come from the detected structure, not invented.
 7. Validate your template against the triggering line before responding.
+8. MUST return valid JSON format only - no YAML, no markdown code blocks.
 
-== OUTPUT FORMAT ==
+== OUTPUT FORMAT (JSON ONLY) ==
 
 If record-template:
 {
