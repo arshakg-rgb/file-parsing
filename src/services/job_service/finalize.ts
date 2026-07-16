@@ -135,9 +135,20 @@ function groupByTemplate(paths: string[]): Map<string, string[]> {
     const [, key] = parseGcsUrl(p);
     const filename = key.split("/").pop() || "";
     // Extract templateId from filename: <jobId>-<templateId>-<timestamp>.parquet
+    // Job ID is a UUID with hyphens (8-4-4-4-12 pattern), templateId follows, then timestamp
     const parts = filename.split("-");
-    // Template ID is the second part (after jobId)
-    const templateId = parts.length >= 2 ? parts[1] : "unknown";
+    // Find where job ID ends (after 5 hyphens for UUID pattern)
+    // Job ID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (5 hyphens)
+    let jobIdEndIndex = 5; // After 5 hyphens, we're past the job ID
+    let templateId = "unknown";
+    
+    if (parts.length > jobIdEndIndex + 1) {
+      // Template ID is everything between job ID and timestamp
+      // Timestamp is the last part (before .parquet)
+      const timestampIndex = parts.length - 1;
+      templateId = parts.slice(jobIdEndIndex, timestampIndex).join("-");
+    }
+    
     if (!groups.has(templateId)) groups.set(templateId, []);
     groups.get(templateId)!.push(p);
   }
