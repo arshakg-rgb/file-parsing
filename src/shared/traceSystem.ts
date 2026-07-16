@@ -28,7 +28,8 @@ export class TraceSystem {
       await pool.query(
         `INSERT INTO parsed_records 
          (_job_id, _byte_offset, _byte_length, _record_index, _line_no, _template_id, _template_version, _checksum, _parsed_at, _part_id, fields)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT ("_job_id", "_byte_offset") DO NOTHING`,
         [
           trace.job_id,
           trace.byte_offset,
