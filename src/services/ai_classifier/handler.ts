@@ -113,11 +113,28 @@ function buildUserPrompt(req: ClassifyRequest): string {
 }
 
 function extractJson(text: string): any {
+  // Try markdown code fence first (```json or ```)
   const fence = /\`\`\`(?:json)?\s*(\{[\s\S]*?\})\s*\`\`\`/.exec(text);
   if (fence) return JSON.parse(fence[1]);
+  
+  // Try bare JSON object
   const brace = /\{[\s\S]*\}/.exec(text);
-  if (brace) return JSON.parse(brace[0]);
-  throw new Error("No JSON found in model output");
+  if (brace) {
+    try {
+      return JSON.parse(brace[0]);
+    } catch {}
+  }
+  
+  // Try to find JSON by looking for first { and last }
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(text.substring(firstBrace, lastBrace + 1));
+    } catch {}
+  }
+  
+  throw new Error(`No JSON found in model output. Response: ${text.slice(0, 200)}...`);
 }
 
 function fingerprint(line: string, raw: any): string {

@@ -568,6 +568,83 @@ await checkAsync("waitForDb throws after max attempts (DB never ready)", async (
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 15. Vertex AI JSON extraction (handle conversational text, markdown fences)
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log("\n=== 15. Vertex AI JSON extraction ===");
+
+function extractJson(text: string): any {
+  const fence = /\`\`\`(?:json)?\s*(\{[\s\S]*?\})\s*\`\`\`/.exec(text);
+  if (fence) return JSON.parse(fence[1]);
+  const brace = /\{[\s\S]*\}/.exec(text);
+  if (brace) {
+    try {
+      return JSON.parse(brace[0]);
+    } catch {}
+  }
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      return JSON.parse(text.substring(firstBrace, lastBrace + 1));
+    } catch {}
+  }
+  throw new Error(`No JSON found in model output. Response: ${text.slice(0, 200)}...`);
+}
+
+check("extractJson handles markdown code fence with json label", () => {
+  const text = 'Here is the result:\n```json\n{"kind":"record-template"}\n```';
+  const result = extractJson(text);
+  assert.equal(result.kind, "record-template");
+});
+
+check("extractJson handles markdown code fence without json label", () => {
+  const text = '```\n{"kind":"rubbish-signature"}\n```';
+  const result = extractJson(text);
+  assert.equal(result.kind, "rubbish-signature");
+});
+
+check("extractJson handles bare JSON object", () => {
+  const text = '{"kind":"uncertain"}';
+  const result = extractJson(text);
+  assert.equal(result.kind, "uncertain");
+});
+
+check("extractJson handles conversational text before JSON", () => {
+  const text = 'Based on the line, here is my analysis:\n{"kind":"record-template"}\nHope this helps!';
+  const result = extractJson(text);
+  assert.equal(result.kind, "record-template");
+});
+
+check("extractJson handles conversational text after JSON", () => {
+  const text = '{"kind":"uncertain"}\nLet me know if you need more details.';
+  const result = extractJson(text);
+  assert.equal(result.kind, "uncertain");
+});
+
+check("extractJson handles text both before and after JSON", () => {
+  const text = 'Analysis:\n{"kind":"rubbish-signature"}\nEnd of analysis.';
+  const result = extractJson(text);
+  assert.equal(result.kind, "rubbish-signature");
+});
+
+check("extractJson throws when no JSON is found", () => {
+  try {
+    extractJson("This is just plain text with no JSON object at all.");
+    assert.fail("Should have thrown");
+  } catch (e) {
+    assert.ok(String(e).includes("No JSON found"));
+  }
+});
+
+check("extractJson handles nested JSON objects", () => {
+  const text = 'Here is the template:\n{"kind":"record-template","template":{"structure":"csv"}}';
+  const result = extractJson(text);
+  assert.equal(result.kind, "record-template");
+  assert.equal(result.template.structure, "csv");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Summary
 // ─────────────────────────────────────────────────────────────────────────────
 
