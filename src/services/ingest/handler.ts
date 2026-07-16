@@ -220,14 +220,16 @@ export async function consumerLoop(): Promise<void> {
   while (true) {
     try {
       await waitForDb();
-      logger.info("ingest_consumer_started");
+      logger.info("ingest_consumer_started", { queue_url: settings.INGEST_QUEUE_URL, queue_backend: settings.QUEUE_BACKEND });
       
       while (true) {
+        logger.info("ingest_waiting_for_messages");
         const messages = await receiveMessages<IngestMessage>(
           settings.INGEST_QUEUE_URL,
           (body) => JSON.parse(body) as IngestMessage,
           5
         );
+        logger.info("ingest_messages_received", { count: messages.length });
         for (const { payload, receiptHandle } of messages) {
           try {
             if ((payload as any).action === "provide_password") {

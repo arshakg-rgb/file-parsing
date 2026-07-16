@@ -63,13 +63,15 @@ router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => 
       [row.job_id, row.batch_id, row.parent_job_id, row.source_type, row.source_ref, row.s3_url, row.size, JSON.stringify(row.field_spec), row.exec_path, row.status, JSON.stringify(row.output_paths), JSON.stringify(row.counts), JSON.stringify(row.timings), row.error]
     );
 
-    await sendRaw(settings.INGEST_QUEUE_URL, {
+    console.log("job_created_sending_queue", { job_id: jobId, queue_url: settings.INGEST_QUEUE_URL, queue_backend: settings.QUEUE_BACKEND });
+    const messageId = await sendRaw(settings.INGEST_QUEUE_URL, {
       job_id: jobId,
       source_type,
       source_ref: source_ref || s3Url,
       field_spec,
       batch_id: batchId,
     });
+    console.log("job_queue_message_sent", { job_id: jobId, message_id: messageId });
 
     res.status(202).json({ job_id: jobId, status: JobStatus.QUEUED, presigned_put_url: putUrl });
   } catch (err) {
