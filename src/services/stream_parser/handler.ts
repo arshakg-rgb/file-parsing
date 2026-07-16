@@ -178,7 +178,7 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
             _record_index: recordIndex++,
             _line_no: lineNo,
             _template_id: result.template_id,
-            _template_version: result.template_version,
+            _template_version: result.template_version ?? 1,
             _checksum: "",
             _parsed_at: new Date(),
             _part_id: "auto",
