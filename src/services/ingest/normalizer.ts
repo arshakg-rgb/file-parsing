@@ -101,12 +101,13 @@ export async function extractArchiveToS3(
   const [bucket, key] = parseS3Url(s3Url);
 
   // For RAR: stream directly from GCS to temp file to avoid loading 2GB+ into memory
-  // Note: Cloud Run /tmp is RAM-backed, so this still consumes memory
-  // Future improvement: use streaming extraction if library supports it
+  // Use GCS FUSE volume mount to avoid RAM-backed /tmp limitation
   if (archiveType === "rar") {
     const size = await objectSize(bucket, key);
     console.log("rar_streaming_extract", { jobId, bucket, key, size });
-    const tmpPath = path.join(os.tmpdir(), `${randomUUID()}.rar`);
+    // Use GCS FUSE mount path instead of RAM-backed /tmp
+    const mountPath = process.env.RAR_TEMP_MOUNT || '/mnt/scratch';
+    const tmpPath = path.join(mountPath, `${randomUUID()}.rar`);
     const fileStream = gcsClient().bucket(bucket).file(key).createReadStream();
     const writeStream = createWriteStream(tmpPath);
     await pipeline(fileStream, writeStream);
