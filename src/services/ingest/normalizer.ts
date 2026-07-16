@@ -110,9 +110,10 @@ export async function extractArchiveToS3(
     
     // Enforce size limit to maintain constant memory principle per architecture
     // RAR requires full file access, so we limit to sizes that fit within memory constraints
-    const MAX_RAR_SIZE = 3 * 1024 * 1024 * 1024; // 3GB limit for RAR with 4Gi memory + GCS FUSE overhead
+    // 4Gi memory + GCS FUSE overhead + RAR extraction library overhead = ~1GB practical limit
+    const MAX_RAR_SIZE = 1 * 1024 * 1024 * 1024; // 1GB limit for RAR with 4Gi memory + GCS FUSE
     if (size > MAX_RAR_SIZE) {
-      throw new Error(`RAR file size ${size} bytes exceeds maximum ${MAX_RAR_SIZE} bytes. RAR format requires full file access which violates constant memory principle for very large files. Consider using ZIP/7z/tar formats for large archives.`);
+      throw new Error(`RAR file size ${size} bytes exceeds maximum ${MAX_RAR_SIZE} bytes. RAR format requires full file access which violates constant memory principle for very large files. Consider using ZIP/7z/tar formats for large archives (they support true streaming).`);
     }
     
     // Use GCS FUSE mount path instead of RAM-backed /tmp
