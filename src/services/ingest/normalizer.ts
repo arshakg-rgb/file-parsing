@@ -140,7 +140,8 @@ export async function extractArchiveToS3(
     
     try {
       // First, list archive contents to get file info
-      const listArgs = ['l', '-v', tmpPath];
+      // Use technical listing mode (lt -v) for stable Key: value format instead of human-readable table
+      const listArgs = ['lt', '-v', tmpPath];
       if (password) {
         listArgs.push('-p' + password);
       }
@@ -174,38 +175,35 @@ export async function extractArchiveToS3(
         });
       });
       
-      // Parse list output to get file information
-      const lines = listOutput.split('\n');
-      const files: Array<{ name: string; size: number }> = [];
-      
-      console.log("rar_list_parsing", { jobId, lineCount: lines.length, sampleOutput: listOutput.substring(0, 500) });
-      
-      for (const line of lines) {
-        // Try multiple regex patterns to handle different unrar output formats
-        // Pattern 1: Standard unrar format: "  12345678  90123456  78%  filename.ext"
-        let match = line.match(/^\s*(\d+)\s+\d+\s+\d+%\s+(.+)$/);
+      // Parse technical listing output (Key: value blocks separated by blank lines)
+      function parseUnrarTechnicalListing(output: string): Array<{ name: string; size: number }> {
+        const files: Array<{ name: string; size: number }> = [];
+        const blocks = output.split(/\r?\n\r?\n/);
         
-        // Pattern 2: Alternative format without percentage: "  12345678  90123456  filename.ext"
-        if (!match) {
-          match = line.match(/^\s*(\d+)\s+\d+\s+(.+)$/);
-        }
-        
-        // Pattern 3: Simple format: "  12345678  filename.ext"
-        if (!match) {
-          match = line.match(/^\s*(\d+)\s+(.+)$/);
-        }
-        
-        if (match) {
-          const size = parseInt(match[1], 10);
-          const name = match[2].trim();
-          // Skip header lines and empty names
-          if (name && !name.includes('---') && name.length > 0) {
-            files.push({ name, size });
+        for (const block of blocks) {
+          const nameMatch = block.match(/^\s*Name:\s*(.+)$/m);
+          const sizeMatch = block.match(/^\s*Size:\s*(\d+)$/m);
+          const typeMatch = block.match(/^\s*Type:\s*(.+)$/m);
+          
+          if (nameMatch && sizeMatch && (!typeMatch || !/directory/i.test(typeMatch[1]))) {
+            files.push({ name: nameMatch[1].trim(), size: parseInt(sizeMatch[1], 10) });
           }
         }
+        
+        return files;
       }
       
+      const files = parseUnrarTechnicalListing(listOutput);
+      
       console.log("rar_list_parsed", { jobId, fileCount: files.length, files: files.map(f => ({ name: f.name, size: f.size })) });
+      
+      // Sanity check: distinguish empty archive from parser failure
+      if (files.length === 0) {
+        if (!/no files to extract|0 files? found/i.test(listOutput) && listOutput.trim().length > 200) {
+          console.error("rar_parse_suspicious_empty", { jobId, outputLength: listOutput.length, sampleOutput: listOutput.substring(0, 500) });
+          throw new Error(`RAR listing parse produced 0 files but unrar output was non-trivial (${listOutput.length} chars) — parser likely broken, not an empty archive`);
+        }
+      }
       
       // Extract each file using CLI with streaming to GCS
       for (const file of files) {
