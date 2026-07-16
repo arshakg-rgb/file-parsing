@@ -226,10 +226,63 @@ async function callVertexAI(prompt: string): Promise<any> {
   }
 }
 
+interface CSVParseResult {
+  success: boolean;
+  delimiter: string;
+  fields: string[];
+}
+
+function tryParseAsCSV(line: string, fieldSpec: string[]): CSVParseResult {
+  const delimiters = [",", ";", "\t", "|"];
+  
+  for (const delimiter of delimiters) {
+    const parts = line.split(delimiter);
+    if (parts.length === fieldSpec.length) {
+      // Check if all parts are non-empty (basic validation)
+      const allNonEmpty = parts.every(part => part.trim().length > 0);
+      if (allNonEmpty) {
+        return { success: true, delimiter, fields: parts };
+      }
+    }
+  }
+  
+  return { success: false, delimiter: "", fields: [] };
+}
+
+function createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: string): any {
+  const fieldMap: Record<string, { locator: string; type: string }> = {};
+  
+  fieldSpec.forEach((field, index) => {
+    fieldMap[field] = { locator: `index:${index}`, type: "string" };
+  });
+  
+  return {
+    template_id: crypto.randomBytes(16).toString("hex"),
+    fingerprint: quickFingerprint(line),
+    version: 1,
+    field_map: fieldMap,
+    structure: "csv",
+    length_hint: line.length,
+    source: "ai" as const,
+    created_at: new Date()
+  };
+}
+
 export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> {
   await templateRegistry.loadFromDatabase();
 
-  // First, try to match by fingerprint (fast path)
+  // Step 1: Try CSV parsing with common delimiters before template matching
+  const csvResult = tryParseAsCSV(req.unknown_line, req.field_spec);
+  if (csvResult.success) {
+    console.log("ai_classifier_csv_parse_success", { job_id: req.job_id, delimiter: csvResult.delimiter });
+    // Create a template from the CSV parse result
+    const template = createTemplateFromCSV(req.unknown_line, req.field_spec, csvResult.delimiter);
+    await templateRegistry.saveTemplate(template, "record");
+    templateRegistry.addRecordTemplate(template);
+    return { kind: AIVerdict.RECORD_TEMPLATE, template };
+  }
+
+  // Step 2: Try to match by fingerprint (fast path)
   const lineFp = quickFingerprint(req.unknown_line);
   const existing = templateRegistry.getByFingerprint(lineFp);
   if (existing) {
@@ -237,21 +290,21 @@ export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse
     return { kind, template: existing };
   }
 
-  // Try to match against existing record templates by attempting to parse
+  // Step 3: Try to match against existing record templates by attempting to parse
   const recordMatch = templateRegistry.matchRecordTemplate(req.unknown_line, req.field_spec);
   if (recordMatch) {
     console.log("ai_classifier_local_match", { job_id: req.job_id, template_id: recordMatch.template_id });
     return { kind: AIVerdict.RECORD_TEMPLATE, template: recordMatch };
   }
 
-  // Try to match against rubbish templates
+  // Step 4: Try to match against rubbish templates
   const rubbishMatch = templateRegistry.matchRubbishTemplate(req.unknown_line);
   if (rubbishMatch) {
     console.log("ai_classifier_rubbish_match", { job_id: req.job_id, template_id: rubbishMatch.template_id });
     return { kind: AIVerdict.RUBBISH_SIGNATURE, template: rubbishMatch };
   }
 
-  // No local match found, fall back to Vertex AI
+  // Step 5: No local match found, fall back to Vertex AI
   console.log("ai_classifier_fallback_to_ai", { job_id: req.job_id, reason: "no_local_template_match" });
   
   const userPrompt = buildUserPrompt(req);
