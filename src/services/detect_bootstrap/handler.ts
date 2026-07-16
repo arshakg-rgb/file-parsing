@@ -149,8 +149,11 @@ export async function bootstrapJob(msg: ClassifyMessage): Promise<void> {
                      /^[a-zA-Z_][a-zA-Z0-9_]*(;[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine) ||
                      /^[a-zA-Z_][a-zA-Z0-9_]*(\t[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine);
     
+    console.log("detect_header_check", { job_id: jobId, firstLine, hasHeader, sampleLinesCount: sampleLines.length });
+    
     if (hasHeader && sampleLines.length > 1) {
       dataLines = sampleLines.slice(1);
+      console.log("detect_header_skipped", { job_id: jobId, dataLinesCount: dataLines.length });
     }
 
     if (!dataLines.length) continue;
@@ -161,6 +164,7 @@ export async function bootstrapJob(msg: ClassifyMessage): Promise<void> {
       context_lines: dataLines.slice(1) || [],
       job_id: jobId,
     };
+    console.log("detect_classify_request", { job_id: jobId, unknown_line: dataLines[0], contextLinesCount: dataLines.slice(1).length });
     let resp: ClassifyResponse;
     try {
       const aiTimeout = new Promise<never>((_, reject) =>
