@@ -229,6 +229,7 @@ async function callVertexAI(prompt: string): Promise<any> {
 export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> {
   await templateRegistry.loadFromDatabase();
 
+  // First, try to match by fingerprint (fast path)
   const lineFp = quickFingerprint(req.unknown_line);
   const existing = templateRegistry.getByFingerprint(lineFp);
   if (existing) {
@@ -236,10 +237,34 @@ export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse
     return { kind, template: existing };
   }
 
+  // Try to match against existing record templates by attempting to parse
+  const recordMatch = templateRegistry.matchRecordTemplate(req.unknown_line, req.field_spec);
+  if (recordMatch) {
+    console.log("ai_classifier_local_match", { job_id: req.job_id, template_id: recordMatch.template_id });
+    return { kind: AIVerdict.RECORD_TEMPLATE, template: recordMatch };
+  }
+
+  // Try to match against rubbish templates
+  const rubbishMatch = templateRegistry.matchRubbishTemplate(req.unknown_line);
+  if (rubbishMatch) {
+    console.log("ai_classifier_rubbish_match", { job_id: req.job_id, template_id: rubbishMatch.template_id });
+    return { kind: AIVerdict.RUBBISH_SIGNATURE, template: rubbishMatch };
+  }
+
+  // No local match found, fall back to Vertex AI
+  console.log("ai_classifier_fallback_to_ai", { job_id: req.job_id, reason: "no_local_template_match" });
+  
   const userPrompt = buildUserPrompt(req);
   try {
     const raw = await callVertexAI(userPrompt);
-    const kindStr = raw.kind || "uncertain";
+    let kindStr = raw.kind || "uncertain";
+    
+    // Handle structure names (csv, json, etc.) as record-template
+    const structureNames = ["csv", "json", "kv", "fixed", "regex"];
+    if (structureNames.includes(kindStr)) {
+      kindStr = "record-template";
+    }
+    
     if (kindStr === "uncertain") return { kind: AIVerdict.UNCERTAIN };
     const tmpl = buildTemplateFromRaw(raw, kindStr, req.unknown_line);
     if (!tmpl) return { kind: AIVerdict.UNCERTAIN };
