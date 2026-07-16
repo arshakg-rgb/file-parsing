@@ -10,7 +10,6 @@ import NodeStreamZip from "node-stream-zip";
 import { extract as extractTar } from "tar";
 import Seven from "node-7z";
 import { once } from "node:events";
-import { RARExtractor } from "unrar-async";
 import { settings } from "../../shared/config.js";
 import { parseGcsUrl as parseS3Url, objectSize, readFull, putObject, listObjects, copyObject, gcsClient } from "../../shared/gcsUtils.js";
 import { fetchUrlStream } from "./ssrf_guard.js";
@@ -370,40 +369,90 @@ async function extractRar(
   batchId: string,
   password?: string
 ): Promise<Record<string, any>[]> {
+  // Use CLI-based extraction for memory efficiency (same approach as extractArchiveToS3)
   const tmp = await withTempFile(raw, ".rar");
-  const extractor = await RARExtractor.fromFile(tmp, { password: password || undefined });
-  const result = await extractor.extract();
+  const { spawn } = await import('child_process');
   const out: Record<string, any>[] = [];
   let totalUncompressed = 0;
-  const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2GB per file limit for very large files
-  const MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024; // 10GB total limit
+  const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
+  const MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024;
   
-  for await (const { fileHeader, extraction } of result.files) {
-    if (!extraction) continue;
-    
-    // Skip files that are too large individually
-    if (fileHeader.unpSize > MAX_FILE_SIZE) {
-      console.log("rar_skip_large_file", { jobId, name: fileHeader.name, size: fileHeader.unpSize, maxSize: MAX_FILE_SIZE });
-      continue;
+  try {
+    // List archive contents to get file info
+    const listArgs = ['l', '-v', tmp];
+    if (password) {
+      listArgs.push('-p' + password);
     }
     
-    // Check if adding this file would exceed total limit
-    if (totalUncompressed + fileHeader.unpSize > MAX_TOTAL_UNCOMPRESSED) {
-      console.log("rar_skip_total_limit", { jobId, name: fileHeader.name, size: fileHeader.unpSize, currentTotal: totalUncompressed, maxTotal: MAX_TOTAL_UNCOMPRESSED });
-      continue;
+    const listProcess = spawn('unrar', listArgs);
+    let listOutput = '';
+    
+    listProcess.stdout.on('data', (data) => {
+      listOutput += data.toString();
+    });
+    
+    await new Promise<void>((resolve, reject) => {
+      listProcess.on('close', (code) => code === 0 ? resolve() : reject(new Error(`unrar list failed with code ${code}`)));
+      listProcess.on('error', reject);
+    });
+    
+    // Parse list output to get file information
+    const lines = listOutput.split('\n');
+    const files: Array<{ name: string; size: number }> = [];
+    
+    for (const line of lines) {
+      const match = line.match(/^\s*(\d+)\s+\d+\s+\d+%\s+(.+)$/);
+      if (match) {
+        const size = parseInt(match[1], 10);
+        const name = match[2].trim();
+        files.push({ name, size });
+      }
     }
     
-    const chunks: Buffer[] = [];
-    for await (const chunk of extraction) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    // Extract each file using CLI
+    for (const file of files) {
+      if (file.size > MAX_FILE_SIZE) {
+        console.log("rar_skip_large_file", { jobId, name: file.name, size: file.size, maxSize: MAX_FILE_SIZE });
+        continue;
+      }
+      
+      if (totalUncompressed + file.size > MAX_TOTAL_UNCOMPRESSED) {
+        console.log("rar_skip_total_limit", { jobId, name: file.name, size: file.size, currentTotal: totalUncompressed, maxTotal: MAX_TOTAL_UNCOMPRESSED });
+        continue;
+      }
+      
+      const extractArgs = ['p', '-inul', tmp, file.name];
+      if (password) {
+        extractArgs.push('-p' + password);
+      }
+      
+      const extractProcess = spawn('unrar', extractArgs);
+      const chunks: Buffer[] = [];
+      
+      extractProcess.stdout.on('data', (chunk) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      
+      await new Promise<void>((resolve, reject) => {
+        extractProcess.on('close', (code) => {
+          if (code !== 0) {
+            reject(new Error(`unrar extraction failed with code ${code}`));
+          } else {
+            resolve();
+          }
+        });
+        extractProcess.on('error', reject);
+      });
+      
+      const data = Buffer.concat(chunks);
+      totalUncompressed += data.length;
+      checkRatio(compressedSize, totalUncompressed);
+      const [url, size] = await storeEntry(jobId, file.name, data);
+      out.push(makeEntryEvent(jobId, batchId, url, file.name, size, fieldSpec));
     }
-    const data = Buffer.concat(chunks);
-    totalUncompressed += data.length;
-    checkRatio(compressedSize, totalUncompressed);
-    const [url, size] = await storeEntry(jobId, fileHeader.name, data);
-    out.push(makeEntryEvent(jobId, batchId, url, fileHeader.name, size, fieldSpec));
+  } finally {
+    await fs.unlink(tmp).catch(() => {});
   }
-  extractor.close();
-  await fs.unlink(tmp).catch(() => {}); // temp file cleanup
+  
   return out;
 }
