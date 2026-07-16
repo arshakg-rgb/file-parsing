@@ -77,6 +77,21 @@ router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => 
   }
 });
 
+router.get("/jobs/stuck", async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const thresholdMinutes = parseInt(req.query.minutes as string) || 15;
+    const result = await pool.query<ParseJobRow>(
+      `SELECT job_id, status, timings, error, created_at FROM parse_jobs
+       WHERE status NOT IN ('done', 'failed', 'partial', 'held')
+       AND updated_at < NOW() - INTERVAL '${thresholdMinutes} minutes'
+       ORDER BY updated_at ASC`
+    );
+    res.json({ stuck_jobs: result.rows, count: result.rows.length, threshold_minutes: thresholdMinutes });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/jobs/:job_id", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const result = await pool.query<ParseJobRow>("SELECT * FROM parse_jobs WHERE job_id = $1", [req.params.job_id]);
@@ -167,21 +182,6 @@ router.post("/jobs/:job_id/fail", async (req: Request, res: Response, next: Next
       [reason || "manually_failed", req.params.job_id]
     );
     res.status(204).send();
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.get("/jobs/stuck", async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const thresholdMinutes = parseInt(req.query.minutes as string) || 15;
-    const result = await pool.query<ParseJobRow>(
-      `SELECT job_id, status, timings, error, created_at FROM parse_jobs
-       WHERE status NOT IN ('done', 'failed', 'partial', 'held')
-       AND updated_at < NOW() - INTERVAL '${thresholdMinutes} minutes'
-       ORDER BY updated_at ASC`
-    );
-    res.json({ stuck_jobs: result.rows, count: result.rows.length, threshold_minutes: thresholdMinutes });
   } catch (err) {
     next(err);
   }
