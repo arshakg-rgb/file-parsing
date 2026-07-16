@@ -10,6 +10,7 @@ substitutions:
   _LOAD_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/load:latest
   _REPORT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/report:latest
   _RETRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/retry:latest
+  _ARCHIVE_ENTRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/archive-entry-consumer:latest
 
 steps:
   # Step 1: Load secrets into environment file
@@ -31,6 +32,8 @@ steps:
         echo "LOKI_HOST=$(gcloud secrets versions access latest --secret=FILE_LOKI_HOST)" >> .env
         echo "LOKI_USERNAME=$(gcloud secrets versions access latest --secret=FILE_LOKI_USERNAME)" >> .env
         echo "LOKI_PASSWORD=$(gcloud secrets versions access latest --secret=FILE_LOKI_PASSWORD)" >> .env
+        echo "ARCHIVE_ENTRY_QUEUE_URL=$(gcloud secrets versions access latest --secret=FILE_ARCHIVE_ENTRY_QUEUE_URL)" >> .env
+        echo "LARGE_FILE_THRESHOLD_BYTES=524288000" >> .env
 
   # Step 2: Use Node.js v20 to install and build
   - name: node:20
@@ -40,6 +43,14 @@ steps:
       - |
         npm install
         npm run build
+
+  # Step 2.5: Run database migration
+  - name: node:20
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        npm run migrate
 
   # Step 3: Build and push Docker images
   - name: 'gcr.io/cloud-builders/docker'
@@ -89,6 +100,12 @@ steps:
 
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', '$_RETRY_IMAGE']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', 'Dockerfile.archive-entry', '-t', '$_ARCHIVE_ENTRY_IMAGE', '.']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_ARCHIVE_ENTRY_IMAGE']
 
   # Step 4: Deploy to Cloud Run
   # Each service: (1) strip any conflicting plain env vars, (2) strip any conflicting
@@ -168,7 +185,7 @@ steps:
           --no-cpu-throttling \
           --execution-environment gen2 \
           --session-affinity true \
-          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,RAR_TEMP_MOUNT=/mnt/scratch \
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,RAR_TEMP_MOUNT=/mnt/scratch,ARCHIVE_ENTRY_QUEUE_URL=pubsub://projects/data-etl-499916/topics/fpp-archive-entry,LARGE_FILE_THRESHOLD_BYTES=524288000 \
           --add-volume name=rar-temp,type=cloud-storage,bucket=datalead-osint \
           --add-volume-mount volume=rar-temp,mount-path=/mnt/scratch \
           --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
@@ -371,6 +388,25 @@ steps:
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
           --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
 
+  # Deploy archive_entry_consumer as Cloud Run Job (not Service) to escape 3600s timeout
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        gcloud run jobs deploy archive-entry-consumer \
+          --image $_ARCHIVE_ENTRY_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
+          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
+          --memory 2Gi \
+          --cpu 1 \
+          --max-retries 3 \
+          --timeout 7200s \
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,ARCHIVE_ENTRY_QUEUE_URL=pubsub://projects/data-etl-499916/topics/fpp-archive-entry,LARGE_FILE_THRESHOLD_BYTES=524288000 \
+          --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+
 images:
   - $_JOB_IMAGE
   - $_INGEST_IMAGE
@@ -380,3 +416,4 @@ images:
   - $_LOAD_IMAGE
   - $_REPORT_IMAGE
   - $_RETRY_IMAGE
+  - $_ARCHIVE_ENTRY_IMAGE
