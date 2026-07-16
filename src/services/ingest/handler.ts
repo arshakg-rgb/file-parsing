@@ -2,7 +2,7 @@ import { settings } from "../../shared/config.js";
 import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js";
 import { JobStatus, SourceType, IngestMessage } from "../../shared/models/job.js";
 import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "../../shared/queueUtils.js";
-import { parseGcsUrl, objectSize, readRange } from "../../shared/gcsUtils.js";
+import { parseGcsUrl, objectSize, readRange, copyObject } from "../../shared/gcsUtils.js";
 import { getJob, pool, waitForDb } from "../../shared/db.js";
 import { detectArchiveType, extractArchiveToS3, fetchUrlToS3, listS3Prefix, BombError } from "./normalizer.js";
 import { SSRFError } from "./ssrf_guard.js";
@@ -142,6 +142,16 @@ async function resolveSource(msg: IngestMessage): Promise<{ s3Url: string; size:
     const [bucket, key] = parseGcsUrl(msg.source_ref);
     logger.debug("upload_source_debug", { job_id: msg.job_id, bucket, key, source_ref: msg.source_ref });
     const size = await objectSize(bucket, key);
+    
+    // Copy from uploads to ingested bucket for upload jobs
+    if (msg.source_type === SourceType.UPLOAD && bucket === settings.DATA_BUCKET && key.startsWith("uploads/")) {
+      const dstKey = key.replace("uploads/", "ingested/");
+      await copyObject(bucket, key, bucket, dstKey);
+      const ingestedUrl = `gs://${bucket}/${dstKey}`;
+      logger.info("upload_copied_to_ingested", { job_id: msg.job_id, source_ref: msg.source_ref, ingested_url: ingestedUrl });
+      return { s3Url: ingestedUrl, size };
+    }
+    
     return { s3Url: msg.source_ref, size };
   }
   throw new Error(`Unknown source_type: ${msg.source_type}`);
