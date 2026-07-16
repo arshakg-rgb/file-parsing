@@ -9,13 +9,31 @@ import { gcsClient, parseGcsUrl, readFull, objectSize, putObject } from "../../s
 import { settings } from "../../shared/config.js";
 import { getJob, pool } from "../../shared/db.js";
 
+// Recursive BigInt sanitizer to handle nested structures
+function sanitizeBigInt(value: any): any {
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(sanitizeBigInt);
+  }
+  if (value !== null && typeof value === "object") {
+    const result: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value)) {
+      result[k] = sanitizeBigInt(v);
+    }
+    return result;
+  }
+  return value;
+}
+
 function buildSchema(rows: Record<string, any>[]): any {
   const schemaObj: any = {};
   for (const row of rows) {
     for (const [k, v] of Object.entries(row)) {
       if (!schemaObj[k]) {
         // Handle BigInt values by converting to number for type checking
-        const value = typeof v === "bigint" ? Number(v) : v;
+        const value = sanitizeBigInt(v);
         const type = value === null || value === undefined ? "UTF8" :
                     typeof value === "boolean" ? "BOOLEAN" :
                     typeof value === "number" ? (Number.isInteger(value) && Number.isSafeInteger(value) ? "INT64" : "DOUBLE") :
@@ -82,12 +100,7 @@ export async function finalizeOutput(
       const schema = buildSchema(rows);
       const writer = await ParquetWriter.openFile(schema, tempFile);
       for (const row of rows) {
-        // Convert BigInt values to numbers for parquet compatibility
-        const processedRow: Record<string, any> = {};
-        for (const [k, v] of Object.entries(row)) {
-          processedRow[k] = typeof v === "bigint" ? Number(v) : v;
-        }
-        await writer.appendRow(processedRow);
+        await writer.appendRow(sanitizeBigInt(row));
       }
       await writer.close();
 
@@ -120,8 +133,11 @@ function groupByTemplate(paths: string[]): Map<string, string[]> {
   const groups = new Map<string, string[]>();
   for (const p of paths) {
     const [, key] = parseGcsUrl(p);
-    const segments = key.split("/");
-    const templateId = segments.length >= 2 ? segments[segments.length - 2] : "unknown";
+    const filename = key.split("/").pop() || "";
+    // Extract templateId from filename: <jobId>-<templateId>-<timestamp>.parquet
+    const parts = filename.split("-");
+    // Template ID is the second part (after jobId)
+    const templateId = parts.length >= 2 ? parts[1] : "unknown";
     if (!groups.has(templateId)) groups.set(templateId, []);
     groups.get(templateId)!.push(p);
   }
@@ -146,12 +162,7 @@ async function readAllRows(paths: string[]): Promise<Record<string, any>[]> {
     const cursor = reader.getCursor();
     let row: any;
     while ((row = await cursor.next())) {
-      // Convert BigInt values to numbers for compatibility
-      const processedRow: Record<string, any> = {};
-      for (const [k, v] of Object.entries(row)) {
-        processedRow[k] = typeof v === "bigint" ? Number(v) : v;
-      }
-      rows.push(processedRow);
+      rows.push(sanitizeBigInt(row));
     }
     await reader.close();
   }
@@ -189,9 +200,7 @@ async function backfillLineNumbers(jobId: string, mergedPaths: string[]): Promis
       let row: any;
       while ((row = await cursor.next())) {
         if (row._byte_offset !== undefined && row._byte_offset !== null) {
-          // Convert BigInt to number for offset comparison
-          const offset = typeof row._byte_offset === "bigint" ? Number(row._byte_offset) : row._byte_offset;
-          targetOffsets.add(offset);
+          targetOffsets.add(Number(sanitizeBigInt(row._byte_offset)));
         }
       }
       await reader.close();
@@ -272,12 +281,7 @@ async function backfillLineNumbers(jobId: string, mergedPaths: string[]): Promis
       const rows: Record<string, any>[] = [];
       let row: any;
       while ((row = await cursor.next())) {
-        // Convert BigInt values to numbers for compatibility
-        const processedRow: Record<string, any> = {};
-        for (const [k, v] of Object.entries(row)) {
-          processedRow[k] = typeof v === "bigint" ? Number(v) : v;
-        }
-        rows.push(processedRow);
+        rows.push(sanitizeBigInt(row));
       }
       await reader.close();
 
@@ -294,12 +298,7 @@ async function backfillLineNumbers(jobId: string, mergedPaths: string[]): Promis
         const tempFile = path.join(os.tmpdir(), `${randomUUID()}.parquet`);
         const writer = await ParquetWriter.openFile(buildSchema(rows), tempFile);
         for (const r of rows) {
-          // Convert BigInt values to numbers for parquet compatibility
-          const processedRow: Record<string, any> = {};
-          for (const [k, v] of Object.entries(r)) {
-            processedRow[k] = typeof v === "bigint" ? Number(v) : v;
-          }
-          await writer.appendRow(processedRow);
+          await writer.appendRow(sanitizeBigInt(r));
         }
         await writer.close();
 
