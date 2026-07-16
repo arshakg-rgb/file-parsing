@@ -181,11 +181,27 @@ export async function extractArchiveToS3(
       console.log("rar_list_parsing", { jobId, lineCount: lines.length, sampleOutput: listOutput.substring(0, 500) });
       
       for (const line of lines) {
-        const match = line.match(/^\s*(\d+)\s+\d+\s+\d+%\s+(.+)$/);
+        // Try multiple regex patterns to handle different unrar output formats
+        // Pattern 1: Standard unrar format: "  12345678  90123456  78%  filename.ext"
+        let match = line.match(/^\s*(\d+)\s+\d+\s+\d+%\s+(.+)$/);
+        
+        // Pattern 2: Alternative format without percentage: "  12345678  90123456  filename.ext"
+        if (!match) {
+          match = line.match(/^\s*(\d+)\s+\d+\s+(.+)$/);
+        }
+        
+        // Pattern 3: Simple format: "  12345678  filename.ext"
+        if (!match) {
+          match = line.match(/^\s*(\d+)\s+(.+)$/);
+        }
+        
         if (match) {
           const size = parseInt(match[1], 10);
           const name = match[2].trim();
-          files.push({ name, size });
+          // Skip header lines and empty names
+          if (name && !name.includes('---') && name.length > 0) {
+            files.push({ name, size });
+          }
         }
       }
       
