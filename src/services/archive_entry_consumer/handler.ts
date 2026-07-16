@@ -31,12 +31,6 @@ interface ArchiveEntryMessage {
   archive_type: string;
 }
 
-// Deterministic entry ID based on jobId + entryName for idempotency
-function generateEntryId(jobId: string, entryName: string): string {
-  const hash = crypto.createHash("sha256").update(`${jobId}:${entryName}`).digest("hex");
-  return hash.substring(0, 36); // First 36 chars for UUID format
-}
-
 async function extractSingleRarEntry(
   jobId: string,
   archiveS3Url: string,
@@ -67,7 +61,9 @@ async function extractSingleRarEntry(
   
   try {
     // Extract single entry using unrar
-    const entryKey = `archive/${jobId}/${entryName}`;
+    // Use different path for async extraction to avoid conflicts with synchronous path
+    const safeEntryName = entryName.replace(/[#\s]+/g, "_");
+    const entryKey = `ingested/${jobId}/entries/${safeEntryName}`;
     const entryFile = gcsClient().bucket(bucket).file(entryKey);
     const writeStream = entryFile.createWriteStream();
     
@@ -197,10 +193,11 @@ async function handleArchiveEntry(msg: ArchiveEntryMessage, attempt: number): Pr
         }
       }
     } else {
-      // Retry with delay
+      // Retry with delay - let Pub/Sub redeliver instead of blocking
       logger.info("archive_entry_retry_scheduled", { job_id, entry_name, attempt, delay_ms: RETRY_DELAY_MS });
-      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
-      await handleArchiveEntry(msg, attempt + 1);
+      // Don't retry via recursion - let Pub/Sub's own retry/backoff redeliver the message
+      // This avoids blocking the consumer loop and prevents duplicate delivery
+      throw error; // This will cause the message to be nacked and redelivered by Pub/Sub
     }
   }
 }
