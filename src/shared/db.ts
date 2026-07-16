@@ -12,10 +12,10 @@ export const pool = new Pool({
 
 /**
  * Wait for database connection to succeed (Cloud SQL proxy race condition guard).
- * Retries with exponential backoff up to 120 seconds.
+ * Retries with exponential backoff up to 300 seconds (5 minutes).
  */
 export async function waitForDb(): Promise<void> {
-  const maxAttempts = 24; // 24 * 5s = 120s max for cold starts
+  const maxAttempts = 60; // 60 * 5s = 300s max for cold starts and connection recovery
   let attempt = 0;
   while (attempt < maxAttempts) {
     try {
