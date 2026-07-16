@@ -146,6 +146,7 @@ async function resolveSource(msg: IngestMessage): Promise<{ s3Url: string; size:
     // Copy from uploads to ingested bucket for upload jobs
     if (msg.source_type === SourceType.UPLOAD && bucket === settings.DATA_BUCKET && key.startsWith("uploads/")) {
       const dstKey = key.replace("uploads/", "ingested/");
+      
       try {
         await copyObject(bucket, key, bucket, dstKey);
         const ingestedUrl = `gs://${bucket}/${dstKey}`;
