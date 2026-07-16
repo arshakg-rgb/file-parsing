@@ -109,7 +109,9 @@ If uncertain:
 {"kind": "uncertain"}`;
 
 function buildUserPrompt(req: ClassifyRequest): string {
-  return `Target fields to extract: ${req.field_spec.join(", ")}\n\nUnknown line:\n${req.unknown_line}\n\nSurrounding context lines:\n${req.context_lines?.join("\n") || "(none)"}`;
+  return `Target fields to extract: ${req.field_spec.join(", ")}\n\nUnknown line to classify:\n${req.unknown_line}\n\nSurrounding context lines:\n${req.context_lines?.join("\n") || "(none)"}
+
+IMPORTANT: You must respond with a template definition (kind, template.field_map, etc.) as specified in the system prompt. Do NOT extract the data from this line - create a reusable template that can parse this line and similar lines.`;
 }
 
 function extractJson(text: string): any {
