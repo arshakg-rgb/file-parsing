@@ -2,8 +2,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install unrar for RAR extraction
-RUN apk add --no-cache unrar
+# Install unrar for RAR extraction (from community repository)
+RUN apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/community unrar
 
 # Install dependencies
 COPY package*.json ./
