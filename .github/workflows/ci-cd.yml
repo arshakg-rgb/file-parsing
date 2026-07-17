@@ -7,9 +7,13 @@ name: CI/CD Pipeline
 # deploy". cloudbuild.yaml has the correct service names, Artifact Registry images, secrets,
 # Cloud SQL, and the fast-test service subset. Submitting it keeps a single source of truth.
 
+# Real deploys run via the Cloud Build TRIGGER on this repo (it runs cloudbuild.yaml on push
+# and succeeds). This workflow is kept only as a manual fallback — it does NOT run on push,
+# so it no longer produces a red "failed" run on every push. It still requires the GCP
+# Workload Identity secrets (GCP_WORKLOAD_IDENTITY_PROVIDER / GCP_SERVICE_ACCOUNT_EMAIL) to
+# be configured before it can actually submit a build.
 on:
-  push:
-    branches: [ main ]
+  workflow_dispatch: {}
 
 env:
   GCP_PROJECT_ID: data-etl-499916
