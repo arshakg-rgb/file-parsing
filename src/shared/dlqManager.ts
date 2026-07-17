@@ -40,7 +40,7 @@ export class DLQManager {
     rawBytes: string,
     failureClass: FailureClass,
     error: string
-  ): Promise<string> {
+  ): Promise<string | null> {
     const dlqId = crypto.randomUUID();
     
     // Use ON CONFLICT DO NOTHING to prevent duplicate entries on restart
@@ -55,7 +55,7 @@ export class DLQManager {
     
     // If no row was returned, it means a duplicate already exists
     if (result.rows.length === 0) {
-      logger.info("dlq_entry_duplicate_skipped", { job_id: jobId, line_no, byte_offset: byteOffset });
+      logger.info("dlq_entry_duplicate_skipped", { job_id: jobId, line_no: lineNo, byte_offset: byteOffset });
       return null; // Indicate this was a duplicate
     }
     
