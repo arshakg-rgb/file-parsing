@@ -14,8 +14,13 @@ import { markPendingEntryCompleted, markPendingEntryFailed, markPendingEntryProc
 import { createLogger } from "../../shared/logger.js";
 import { metrics } from "../../shared/metrics.js";
 import { detectArchiveType, extractArchiveToS3, BombError } from "../ingest/normalizer.js";
+import { startHealthCheckServer } from "../../shared/health.js";
 
 const logger = createLogger("archive-entry-consumer");
+
+if (process.env.HEALTH_CHECK_PORT) {
+  startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
+}
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 5 * 60 * 1000; // 5 minutes between retries
