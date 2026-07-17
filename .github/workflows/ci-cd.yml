@@ -1,73 +1,21 @@
 name: CI/CD Pipeline
 
+# Deploy by delegating to the authoritative Cloud Build config (cloudbuild.yaml).
+# The previous version did its own docker build + `gcloud run deploy` with UNDERSCORE
+# service names (stream_parser, detect_bootstrap) which are invalid Cloud Run names, so it
+# never actually updated the live (hyphen-named) services — the code appeared to "never
+# deploy". cloudbuild.yaml has the correct service names, Artifact Registry images, secrets,
+# Cloud SQL, and the fast-test service subset. Submitting it keeps a single source of truth.
+
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 env:
-  NODE_VERSION: '20'
   GCP_PROJECT_ID: data-etl-499916
-  GCP_REGION: us-central1
-  IMAGE_PREFIX: gcr.io/data-etl-499916
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Run TypeScript build
-        run: npm run build
-      
-      - name: Run tests
-        run: npm test || echo "No tests configured"
-      
-      - name: Build Docker images
-        run: |
-          docker build -f Dockerfile.ingest -t ${IMAGE_PREFIX}/ingest:latest .
-          docker build -f Dockerfile.detect -t ${IMAGE_PREFIX}/detect_bootstrap:latest .
-          docker build -f Dockerfile.stream -t ${IMAGE_PREFIX}/stream_parser:latest .
-          docker build -f Dockerfile.load -t ${IMAGE_PREFIX}/load:latest .
-          docker build -f Dockerfile.report -t ${IMAGE_PREFIX}/report:latest .
-          docker build -f Dockerfile.retry -t ${IMAGE_PREFIX}/retry:latest .
-      
-      - name: Authenticate to GCP
-        id: auth
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
-      
-      - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ env.GCP_PROJECT_ID }}
-      
-      - name: Configure Docker for GCR
-        run: gcloud auth configure-docker
-      
-      - name: Push Docker images
-        run: |
-          docker push ${IMAGE_PREFIX}/ingest:latest
-          docker push ${IMAGE_PREFIX}/detect_bootstrap:latest
-          docker push ${IMAGE_PREFIX}/stream_parser:latest
-          docker push ${IMAGE_PREFIX}/load:latest
-          docker push ${IMAGE_PREFIX}/report:latest
-          docker push ${IMAGE_PREFIX}/retry:latest
-
   deploy:
-    needs: build
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     permissions:
@@ -75,37 +23,17 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Authenticate to GCP
-        id: auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
-      
+
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
-      
-      - name: Deploy to Cloud Run
-        run: |
-          for service in ingest detect_bootstrap stream_parser load report retry; do
-            gcloud run deploy ${service} \
-              --image=${IMAGE_PREFIX}/${service}:latest \
-              --platform=managed \
-              --region=${{ env.GCP_REGION }} \
-              --allow-unauthenticated \
-              --memory=512Mi \
-              --cpu=1 \
-              --timeout=3600s \
-              --set-env-vars=DATABASE_URL=${{ secrets.DATABASE_URL }} \
-              --set-env-vars=DATA_BUCKET=${{ secrets.DATA_BUCKET }} \
-              --set-env-vars=QUEUE_BACKEND=pubsub \
-              --set-env-vars=GCP_PROJECT_ID=${{ env.GCP_PROJECT_ID }} \
-              --set-env-vars=FIRESTORE_DATABASE_ID=file-parsing-db \
-              --set-env-vars=TEMPLATE_COLLECTION=file-parsing-templates \
-              --set-env-vars=BEDROCK_MODEL_ID=${{ secrets.BEDROCK_MODEL_ID }} \
-              --set-env-vars=HEALTH_CHECK_PORT=8080 \
-              --project=${{ env.GCP_PROJECT_ID }}
-          done
+
+      - name: Submit Cloud Build (authoritative build + deploy)
+        run: gcloud builds submit --config cloudbuild.yaml --project "$GCP_PROJECT_ID" .
