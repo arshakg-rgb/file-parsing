@@ -3,6 +3,8 @@ import { InstantiationError } from "../../../errors/InstantiationError.js";
 import { receiveMessages, deleteMessage } from "../../../shared/queueUtils.js";
 import Config from "../../../config/system-config/Config.js";
 
+function Enforce(): void {}
+
 const config = Config.getInstance();
 
 export class JobServiceImpl implements IJobService {
@@ -78,4 +80,3 @@ export class JobServiceImpl implements IJobService {
   }
 }
 
-function Enforce(): void {}

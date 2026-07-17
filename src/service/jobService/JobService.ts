@@ -1,6 +1,8 @@
 import { IJobService, JobEvent, JobServiceConfig } from "./io/IJobService.js";
 import { InstantiationError } from "../../errors/InstantiationError.js";
 
+function Enforce(): void {}
+
 export class JobService implements IJobService {
   private static instance: JobService;
   private config: JobServiceConfig;
@@ -53,4 +55,3 @@ export class JobService implements IJobService {
   }
 }
 
-function Enforce(): void {}

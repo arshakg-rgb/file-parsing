@@ -30,10 +30,10 @@ class QueueService extends ServiceManager {
   }
 
   public static getInstance(): QueueService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new QueueService(Enforce);
+    if (!QueueService.instance) {
+      QueueService.instance = new QueueService(Enforce);
     }
-    return ServiceManager.instance as QueueService;
+    return QueueService.instance;
   }
 
   private isRetryable(err: any): boolean {

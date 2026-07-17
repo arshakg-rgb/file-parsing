@@ -6,7 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { randomUUID, createHash } from "crypto";
 import { ParquetSchema, ParquetWriter } from "@dsnp/parquetjs";
 import Config from "../config/system-config/Config.js";
-import ServiceManager from "../config/ServiceManager.js";
+import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
 import { createLogger } from "./logger.js";
@@ -48,7 +48,6 @@ class ParquetOutputService extends ServiceManager {
   }
 }
 
-function Enforce(): void {}
 
 export interface OutputRow {
   [key: string]: any;

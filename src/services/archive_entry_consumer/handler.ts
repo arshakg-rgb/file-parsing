@@ -6,7 +6,7 @@ import os from "os";
 import path from "path";
 import { spawn } from "child_process";
 import Config from "../../config/system-config/Config.js";
-import ServiceManager from "../../config/ServiceManager.js";
+import ServiceManager, { Enforce } from "../../config/ServiceManager.js";
 import { InstantiationError } from "../../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../../utils/cache/FirestoreCacheUtils.js";
 import { receiveMessages, deleteMessage, publishEvent, sendRaw } from "../../shared/queueUtils.js";
@@ -168,7 +168,6 @@ interface ArchiveEntryMessage {
   nesting_depth?: number;
 }
 
-function Enforce(): void {}
 
 export default ArchiveEntryConsumerService;
 

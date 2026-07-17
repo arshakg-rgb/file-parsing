@@ -1,6 +1,6 @@
 import { TextDecoder } from "node:util";
 import Config from "../config/system-config/Config.js";
-import ServiceManager from "../config/ServiceManager.js";
+import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 
 class EncodingService extends ServiceManager {
@@ -36,10 +36,10 @@ class EncodingService extends ServiceManager {
   }
 
   public static getInstance(): EncodingService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new EncodingService(Enforce);
+    if (!EncodingService.instance) {
+      EncodingService.instance = new EncodingService(Enforce);
     }
-    return ServiceManager.instance as EncodingService;
+    return EncodingService.instance;
   }
 
   public isLikelyUtf8(raw: Buffer): boolean {
@@ -88,8 +88,6 @@ class EncodingService extends ServiceManager {
     return view.toString("latin1");
   }
 }
-
-function Enforce(): void {}
 
 export default EncodingService;
 

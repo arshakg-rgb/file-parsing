@@ -1,5 +1,5 @@
 import Config from "../config/system-config/Config.js";
-import ServiceManager from "../config/ServiceManager.js";
+import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import MySqlManager from "../config/db/MySqlManager.js";
 import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
@@ -183,7 +183,6 @@ class DLQManagerService extends ServiceManager {
   }
 }
 
-function Enforce(): void {}
 
 export default DLQManagerService;
 

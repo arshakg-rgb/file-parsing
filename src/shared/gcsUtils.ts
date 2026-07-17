@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { Storage } from "@google-cloud/storage";
 import Config from "../config/system-config/Config.js";
-import ServiceManager from "../config/ServiceManager.js";
+import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import { createLogger } from "./logger.js";
 import { decode } from "./encoding.js";
@@ -381,7 +381,6 @@ class GcsUtilsService extends ServiceManager {
   }
 }
 
-function Enforce(): void {}
 
 export default GcsUtilsService;
 

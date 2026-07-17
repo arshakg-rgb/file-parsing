@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { GoogleGenAI } from "@google/genai";
 import Config from "../../config/system-config/Config.js";
-import ServiceManager from "../../config/ServiceManager.js";
+import ServiceManager, { Enforce } from "../../config/ServiceManager.js";
 import { InstantiationError } from "../../errors/InstantiationError.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
 
@@ -409,7 +409,6 @@ If rubbish-signature:
 If uncertain:
 {"kind": "uncertain"}`;
 
-function Enforce(): void {}
 
 export default AiClassifierService;
 

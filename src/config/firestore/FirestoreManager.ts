@@ -1,4 +1,4 @@
-import ServiceManager from "../ServiceManager.js";
+import ServiceManager, { Enforce } from "../ServiceManager.js";
 import { InstantiationError } from "../../errors/InstantiationError.js";
 
 class FirestoreManager extends ServiceManager {
@@ -38,6 +38,5 @@ class FirestoreManager extends ServiceManager {
   }
 }
 
-function Enforce(): void {}
 
 export default FirestoreManager;

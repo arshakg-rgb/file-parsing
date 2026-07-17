@@ -1,6 +1,6 @@
 import pg from "pg";
 import Config from "../system-config/Config.js";
-import ServiceManager from "../ServiceManager.js";
+import ServiceManager, { Enforce } from "../ServiceManager.js";
 import { InstantiationError } from "../../errors/InstantiationError.js";
 
 const { Pool } = pg;
@@ -17,10 +17,10 @@ class MySqlManager extends ServiceManager {
   }
 
   public static getInstance(): MySqlManager {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new MySqlManager(Enforce);
+    if (!MySqlManager.instance) {
+      MySqlManager.instance = new MySqlManager(Enforce);
     }
-    return ServiceManager.instance as MySqlManager;
+    return MySqlManager.instance;
   }
 
   private getPool(): pg.Pool {
@@ -314,7 +314,6 @@ class MySqlManager extends ServiceManager {
   }
 }
 
-function Enforce(): void {}
 
 export interface ParseJobRow {
   job_id: string;

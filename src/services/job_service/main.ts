@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from "express";
 import Config from "../../config/system-config/Config.js";
-import ServiceManager from "../../config/ServiceManager.js";
+import ServiceManager, { Enforce } from "../../config/ServiceManager.js";
 import { InstantiationError } from "../../errors/InstantiationError.js";
 import MySqlManager from "../../config/db/MySqlManager.js";
 import { receiveMessages, deleteMessage } from "../../shared/queueUtils.js";
@@ -26,10 +26,10 @@ class JobService extends ServiceManager {
   }
 
   public static getInstance(): JobService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new JobService(Enforce);
+    if (!JobService.instance) {
+      JobService.instance = new JobService(Enforce);
     }
-    return ServiceManager.instance as JobService;
+    return JobService.instance;
   }
 
   private setupApp(): void {
@@ -123,10 +123,5 @@ class JobService extends ServiceManager {
   }
 }
 
-function Enforce(): void {}
-
-// Auto-start the service when this module is loaded
-const jobService = JobService.getInstance();
-jobService.start();
 
 export default JobService;
