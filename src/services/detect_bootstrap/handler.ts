@@ -74,21 +74,21 @@ export function detectEncoding(raw: Buffer): string {
   
   // Map unsupported encodings to supported alternatives
   const encodingMap: Record<string, string> = {
-    'iso-8859-2': 'latin-1',
+    'iso-8859-2': 'iso-8859-1',
     'windows-1252': 'cp1252',
-    'iso-8859-1': 'latin-1',
-    'iso-8859-3': 'latin-1',
-    'iso-8859-4': 'latin-1',
-    'iso-8859-5': 'latin-1',
-    'iso-8859-6': 'latin-1',
-    'iso-8859-7': 'latin-1',
-    'iso-8859-8': 'latin-1',
-    'iso-8859-9': 'latin-1',
-    'iso-8859-10': 'latin-1',
-    'iso-8859-13': 'latin-1',
-    'iso-8859-14': 'latin-1',
-    'iso-8859-15': 'latin-1',
-    'iso-8859-16': 'latin-1',
+    'latin-1': 'iso-8859-1',
+    'iso-8859-3': 'iso-8859-1',
+    'iso-8859-4': 'iso-8859-1',
+    'iso-8859-5': 'iso-8859-1',
+    'iso-8859-6': 'iso-8859-1',
+    'iso-8859-7': 'iso-8859-1',
+    'iso-8859-8': 'iso-8859-1',
+    'iso-8859-9': 'iso-8859-1',
+    'iso-8859-10': 'iso-8859-1',
+    'iso-8859-13': 'iso-8859-1',
+    'iso-8859-14': 'iso-8859-1',
+    'iso-8859-15': 'iso-8859-1',
+    'iso-8859-16': 'iso-8859-1',
   };
   
   return encodingMap[detected.toLowerCase()] || detected;

@@ -14,7 +14,7 @@ if (process.env.HEALTH_CHECK_PORT) {
   startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
 }
 
-const ALT_ENCODINGS = ["utf-8", "latin-1", "cp1252", "iso-8859-1", "iso-8859-2", "utf-16"];
+const ALT_ENCODINGS = ["utf-8", "iso-8859-1", "cp1252", "utf-16"];
 
 export async function handleDlqEntry(msg: DLQMessage): Promise<void> {
   await templateRegistry.loadFromDatabase();

@@ -171,9 +171,9 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
       if (detected.encoding && detected.confidence > 0.9) {
         // Map unsupported encodings to supported alternatives
         const encodingMap: Record<string, string> = {
-          'iso-8859-2': 'latin-1',
+          'iso-8859-2': 'iso-8859-1',
           'windows-1252': 'cp1252',
-          'iso-8859-1': 'latin-1',
+          'latin-1': 'iso-8859-1',
         };
         detectedEncoding = encodingMap[detected.encoding.toLowerCase()] || detected.encoding;
       }
