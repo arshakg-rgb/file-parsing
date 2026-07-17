@@ -22,12 +22,14 @@ export async function purgeDatabase(pool: Pool): Promise<void> {
 }
 
 async function main() {
+  // Parse DATABASE_URL to get connection parameters
+  const dbUrl = new URL(settings.DATABASE_URL);
   const pool = new Pool({
-    host: settings.DB_HOST,
-    port: settings.DB_PORT,
-    database: settings.DB_NAME,
-    user: settings.DB_USER,
-    password: settings.DB_PASSWORD,
+    host: dbUrl.hostname,
+    port: parseInt(dbUrl.port || '5432'),
+    database: dbUrl.pathname.slice(1), // Remove leading slash
+    user: dbUrl.username,
+    password: dbUrl.password,
   });
 
   try {

@@ -15,6 +15,7 @@ import { metrics } from "../../shared/metrics.js";
 import { startHealthCheckServer } from "../../shared/health.js";
 import { waitForDb } from "../../shared/db.js";
 import jschardet from "jschardet";
+import { parseLine, LineFormat } from "../../shared/formatDetector.js";
 
 const logger = createLogger("stream_parser");
 
@@ -217,7 +218,70 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
         console.log("parse_progress", { jobId, lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
       }
 
-      // Classify line using ordered classifier - wrap in try/catch to skip problematic lines
+      // Detect line format first
+      const formatResult = parseLine(line, fieldSpec);
+      
+      // Debug: log first few format detections
+      if (lineNo <= 5) {
+        console.log("format_detection_debug", { jobId, lineNo, format: formatResult.format, has_data: formatResult.data !== null, error: formatResult.error });
+      }
+
+      // Skip binary data
+      if (formatResult.format === LineFormat.BINARY) {
+        console.log("binary_data_skipped", { jobId, lineNo });
+        counts.dropped_rubbish++;
+        continue;
+      }
+
+      // Handle JSON and Twitter user data directly
+      if (formatResult.format === LineFormat.JSON || formatResult.format === LineFormat.TWITTER_USER) {
+        if (formatResult.data) {
+          const sanitizedRow = sanitizeRecord(formatResult.data);
+          const templateId = formatResult.format === LineFormat.JSON ? "json" : "twitter_user";
+          
+          const outputBuffer = outputManager.getBuffer(jobId, templateId);
+          outputBuffer.addRow({
+            ...sanitizedRow,
+            _job_id: jobId,
+            _byte_offset: byteOffset,
+            _byte_length: byteLength,
+            _record_index: recordIndex++,
+            _line_no: lineNo,
+            _template_id: templateId,
+            _template_version: 1,
+            _checksum: "",
+            _parsed_at: new Date(),
+            _part_id: "auto",
+          });
+          
+          try {
+            await traceSystem.createTrace({
+              s3_url: msg.s3_url,
+              byte_offset: byteOffset,
+              byte_length: byteLength,
+              record_index: recordIndex,
+              line_no: lineNo,
+              job_id: jobId,
+              template_id: templateId,
+              template_version: 1,
+              checksum: "",
+              parsed_at: new Date(),
+              part_id: "auto",
+              row_data: sanitizedRow
+            });
+            counts.parsed++;
+          } catch (traceErr) {
+            console.error("trace_write_failed", { jobId, lineNo, error: traceErr instanceof Error ? traceErr.message : String(traceErr) });
+            counts.dropped_rubbish++;
+          }
+        } else {
+          console.log("format_parse_failed", { jobId, lineNo, format: formatResult.format, error: formatResult.error });
+          counts.dropped_rubbish++;
+        }
+        continue;
+      }
+
+      // For CSV, use the existing classifier
       let result;
       try {
         result = classifier.classify(line, byteOffset, byteLength);
