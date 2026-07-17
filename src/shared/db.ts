@@ -121,7 +121,8 @@ export async function createPendingArchiveEntry(
   const { randomUUID } = await import("crypto");
   await pool.query(
     `INSERT INTO pending_archive_entries (id, job_id, entry_name, entry_size, status)
-     VALUES ($1, $2, $3, $4, 'pending')`,
+     VALUES ($1, $2, $3, $4, 'pending')
+     ON CONFLICT (job_id, entry_name) DO NOTHING`,
     [randomUUID(), jobId, entryName, entrySize]
   );
 }
@@ -309,7 +310,8 @@ export async function createTables(): Promise<void> {
       status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
       error TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (job_id, entry_name)
     );
     CREATE INDEX IF NOT EXISTS ix_pending_entries_job_id ON pending_archive_entries(job_id);
     CREATE INDEX IF NOT EXISTS ix_pending_entries_status ON pending_archive_entries(status);

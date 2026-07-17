@@ -12,6 +12,7 @@ import Seven from "node-7z";
 import { once } from "node:events";
 import { settings } from "../../shared/config.js";
 import { parseGcsUrl as parseS3Url, objectSize, readFull, readRange, putObject, listObjects, copyObject, gcsClient } from "../../shared/gcsUtils.js";
+import { pool } from "../../shared/db.js";
 import { fetchUrlStream } from "./ssrf_guard.js";
 import { sendRaw } from "../../shared/queueUtils.js";
 
@@ -229,17 +230,30 @@ export async function extractArchiveToS3(
         // This allows files > 2GB to be processed asynchronously instead of being skipped
         if (file.size > settings.LARGE_FILE_THRESHOLD_BYTES) {
           console.log("rar_route_to_async", { jobId, name: file.name, size: file.size, threshold: settings.LARGE_FILE_THRESHOLD_BYTES });
-          await sendRaw(settings.ARCHIVE_ENTRY_QUEUE_URL, {
-            job_id: jobId,
-            batchId: batchId,
-            archive_s3_url: s3Url,
-            entry_name: file.name,
-            entry_size: file.size,
-            field_spec: fieldSpec,
-            password: password || undefined,
-            archive_type: "rar",
-            nesting_depth: _depth,
-          });
+          
+          // Check if this entry already exists in pending_archive_entries to avoid duplicate queue messages
+          // This provides idempotency when jobs are retried due to Cloud Rollout SIGTERM
+          const existingEntry = await pool.query(
+            `SELECT id FROM pending_archive_entries WHERE job_id = $1 AND entry_name = $2`,
+            [jobId, file.name]
+          );
+          
+          if (existingEntry.rows.length === 0) {
+            await sendRaw(settings.ARCHIVE_ENTRY_QUEUE_URL, {
+              job_id: jobId,
+              batchId: batchId,
+              archive_s3_url: s3Url,
+              entry_name: file.name,
+              entry_size: file.size,
+              field_spec: fieldSpec,
+              password: password || undefined,
+              archive_type: "rar",
+              nesting_depth: _depth,
+            });
+          } else {
+            console.log("rar_skip_duplicate_queue_message", { jobId, name: file.name });
+          }
+          
           // Track as pending entry for job status
           out.push({ parent_job_id: jobId, batch_id: batchId, entry_s3_url: null, entry_name: file.name, entry_size: file.size, field_spec: fieldSpec, pending: true });
           continue;
