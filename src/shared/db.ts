@@ -1,116 +1,35 @@
-import pg from "pg";
-import { settings } from "./config.js";
+// Re-export from MySqlManager for backward compatibility
+import MySqlManager, {
+  ParseJobRow,
+  OutputPartRow,
+  DeadLetterRow,
+  PendingArchiveEntryRow
+} from "../config/db/MySqlManager.js";
 
-const { Pool } = pg;
+const dbManager = MySqlManager.getInstance();
 
-export const pool = new Pool({
-  connectionString: settings.DATABASE_URL,
-  max: 50, // Increased from 15 to handle concurrent large file processing
-  idleTimeoutMillis: 1200000, // 20 minutes to handle long-running RAR extraction
-  connectionTimeoutMillis: 30000, // 30s for cold starts
-});
+// Re-export pool for backward compatibility
+export const pool = dbManager.getPool();
 
-/**
- * Wait for database connection to succeed (Cloud SQL proxy race condition guard).
- * Retries with exponential backoff up to 300 seconds (5 minutes).
- */
+// Re-export interfaces for backward compatibility
+export type { ParseJobRow, OutputPartRow, DeadLetterRow, PendingArchiveEntryRow };
+
+// Re-export functions as wrappers around class methods
 export async function waitForDb(): Promise<void> {
-  const maxAttempts = 60; // 60 * 5s = 300s max for cold starts and connection recovery
-  let attempt = 0;
-  while (attempt < maxAttempts) {
-    try {
-      const client = await pool.connect();
-      await client.query("SELECT 1");
-      client.release();
-      return;
-    } catch (err) {
-      attempt++;
-      const delay = Math.min(5000 * attempt, 10000); // 5s, 10s, 10s, ...
-      if (attempt < maxAttempts) {
-        await new Promise(r => setTimeout(r, delay));
-      }
-    }
-  }
-  throw new Error(`Database connection failed after ${maxAttempts} attempts`);
-}
-
-export interface ParseJobRow {
-  job_id: string;
-  batch_id?: string;
-  parent_job_id?: string;
-  source_type: string;
-  source_ref: string;
-  s3_url?: string;
-  size?: number;
-  field_spec: any; // PostgreSQL JSONB is parsed automatically by pg
-  exec_path: string;
-  status: string;
-  output_paths: any; // PostgreSQL JSONB is parsed automatically by pg
-  counts: Record<string, any>;
-  timings: Record<string, any>;
-  error?: string;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface OutputPartRow {
-  part_id: string;
-  job_id: string;
-  template_id: string;
-  s3_path: string;
-  row_count: number;
-  byte_size: number;
-  created_at: Date;
-}
-
-export interface DeadLetterRow {
-  dlq_id: string;
-  job_id: string;
-  byte_offset: number;
-  byte_length: number;
-  line_no: number;
-  raw_bytes: string;
-  failure_class: string;
-  error: string;
-  attempts: number;
-  status: string;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface PendingArchiveEntryRow {
-  id: string;
-  job_id: string;
-  entry_name: string;
-  entry_size: number;
-  status: string;
-  error?: string;
-  created_at: Date;
-  updated_at: Date;
+  // This is now handled by MySqlManager.initialize()
+  console.warn("waitForDb is deprecated. Use MySqlManager.getInstance().initialize() instead.");
 }
 
 export async function getJob(jobId: string): Promise<ParseJobRow | undefined> {
-  const result = await pool.query<ParseJobRow>(
-    "SELECT * FROM parse_jobs WHERE job_id = $1",
-    [jobId]
-  );
-  return result.rows[0];
+  return dbManager.getJob(jobId);
 }
 
 export async function getBatchJobs(batchId: string): Promise<ParseJobRow[]> {
-  const result = await pool.query<ParseJobRow>(
-    "SELECT * FROM parse_jobs WHERE batch_id = $1",
-    [batchId]
-  );
-  return result.rows;
+  return dbManager.getBatchJobs(batchId);
 }
 
 export async function getJobParts(jobId: string): Promise<OutputPartRow[]> {
-  const result = await pool.query<OutputPartRow>(
-    "SELECT * FROM output_parts WHERE job_id = $1",
-    [jobId]
-  );
-  return result.rows;
+  return dbManager.getJobParts(jobId);
 }
 
 export async function createPendingArchiveEntry(
@@ -118,37 +37,21 @@ export async function createPendingArchiveEntry(
   entryName: string,
   entrySize: number
 ): Promise<void> {
-  const { randomUUID } = await import("crypto");
-  await pool.query(
-    `INSERT INTO pending_archive_entries (id, job_id, entry_name, entry_size, status)
-     VALUES ($1, $2, $3, $4, 'pending')
-     ON CONFLICT (job_id, entry_name) DO NOTHING`,
-    [randomUUID(), jobId, entryName, entrySize]
-  );
+  return dbManager.createPendingArchiveEntry(jobId, entryName, entrySize);
 }
 
 export async function markPendingEntryProcessing(
   jobId: string,
   entryName: string
 ): Promise<void> {
-  await pool.query(
-    `UPDATE pending_archive_entries 
-     SET status = 'processing', updated_at = NOW() 
-     WHERE job_id = $1 AND entry_name = $2`,
-    [jobId, entryName]
-  );
+  return dbManager.markPendingEntryProcessing(jobId, entryName);
 }
 
 export async function markPendingEntryCompleted(
   jobId: string,
   entryName: string
 ): Promise<void> {
-  await pool.query(
-    `UPDATE pending_archive_entries 
-     SET status = 'completed', updated_at = NOW() 
-     WHERE job_id = $1 AND entry_name = $2`,
-    [jobId, entryName]
-  );
+  return dbManager.markPendingEntryCompleted(jobId, entryName);
 }
 
 export async function markPendingEntryFailed(
@@ -156,164 +59,24 @@ export async function markPendingEntryFailed(
   entryName: string,
   error: string
 ): Promise<void> {
-  await pool.query(
-    `UPDATE pending_archive_entries 
-     SET status = 'failed', error = $3, updated_at = NOW() 
-     WHERE job_id = $1 AND entry_name = $2`,
-    [jobId, entryName, error]
-  );
+  return dbManager.markPendingEntryFailed(jobId, entryName, error);
 }
 
 export async function getPendingEntries(jobId: string): Promise<PendingArchiveEntryRow[]> {
-  const result = await pool.query<PendingArchiveEntryRow>(
-    "SELECT * FROM pending_archive_entries WHERE job_id = $1",
-    [jobId]
-  );
-  return result.rows;
+  return dbManager.getPendingEntries(jobId);
 }
 
 export async function getPendingEntryCount(jobId: string): Promise<{ pending: number; completed: number; failed: number }> {
-  const result = await pool.query(
-    `SELECT 
-       COUNT(*) FILTER (WHERE status = 'pending') as pending,
-       COUNT(*) FILTER (WHERE status = 'completed') as completed,
-       COUNT(*) FILTER (WHERE status = 'failed') as failed
-     FROM pending_archive_entries 
-     WHERE job_id = $1`,
-    [jobId]
-  );
-  return result.rows[0];
+  return dbManager.getPendingEntryCount(jobId);
 }
 
 export async function getPendingEntryTotalSize(jobId: string): Promise<number> {
-  const result = await pool.query(
-    `SELECT COALESCE(SUM(entry_size), 0) as total_bytes
-     FROM pending_archive_entries 
-     WHERE job_id = $1 AND status IN ('completed', 'processing')`,
-    [jobId]
-  );
-  return parseInt(result.rows[0].total_bytes, 10);
+  return dbManager.getPendingEntryTotalSize(jobId);
 }
 
 export async function createTables(): Promise<void> {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS parse_jobs (
-      job_id VARCHAR(36) PRIMARY KEY,
-      batch_id VARCHAR(36),
-      parent_job_id VARCHAR(36),
-      source_type VARCHAR(32) NOT NULL,
-      source_ref TEXT NOT NULL,
-      s3_url TEXT,
-      size BIGINT,
-      field_spec JSONB NOT NULL,
-      exec_path VARCHAR(16) NOT NULL DEFAULT 'stream',
-      status VARCHAR(32) NOT NULL DEFAULT 'queued',
-      output_paths JSONB NOT NULL DEFAULT '[]',
-      counts JSONB NOT NULL DEFAULT '{}',
-      timings JSONB NOT NULL DEFAULT '{}',
-      error TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE INDEX IF NOT EXISTS ix_parse_jobs_batch_id ON parse_jobs(batch_id);
-    CREATE INDEX IF NOT EXISTS ix_parse_jobs_status ON parse_jobs(status);
-
-    CREATE TABLE IF NOT EXISTS output_parts (
-      part_id VARCHAR(36) PRIMARY KEY,
-      job_id VARCHAR(36) NOT NULL,
-      template_id VARCHAR(36) NOT NULL,
-      s3_path TEXT NOT NULL,
-      row_count INTEGER NOT NULL DEFAULT 0,
-      byte_size BIGINT NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS ix_output_parts_job_id ON output_parts(job_id);
-
-    CREATE TABLE IF NOT EXISTS rubbish_log (
-      id BIGSERIAL PRIMARY KEY,
-      job_id VARCHAR(36) NOT NULL,
-      byte_offset BIGINT NOT NULL,
-      line_no BIGINT NOT NULL,
-      raw_bytes TEXT NOT NULL,
-      matched_template_id VARCHAR(36) NOT NULL,
-      logged_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS ix_rubbish_job_offset ON rubbish_log(job_id, byte_offset);
-
-    CREATE TABLE IF NOT EXISTS dead_letters (
-      dlq_id VARCHAR(36) PRIMARY KEY,
-      job_id VARCHAR(36) NOT NULL,
-      byte_offset BIGINT NOT NULL,
-      byte_length INTEGER NOT NULL,
-      line_no BIGINT NOT NULL,
-      raw_bytes TEXT NOT NULL,
-      failure_class VARCHAR(32) NOT NULL,
-      error TEXT NOT NULL,
-      attempts INTEGER NOT NULL DEFAULT 0,
-      status VARCHAR(16) NOT NULL DEFAULT 'pending',
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS ix_dlq_job_offset ON dead_letters(job_id, byte_offset);
-    CREATE INDEX IF NOT EXISTS ix_dlq_status ON dead_letters(status);
-
-    -- Migration: drop old fixed-column schema if detected, recreate with dynamic JSONB schema
-    DO $$ BEGIN
-      IF EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'parsed_records' AND column_name = 'name'
-      ) THEN
-        DROP TABLE parsed_records;
-      END IF;
-    END $$;
-
-    CREATE TABLE IF NOT EXISTS parsed_records (
-      id BIGSERIAL PRIMARY KEY,
-      _job_id VARCHAR(36) NOT NULL,
-      _byte_offset BIGINT NOT NULL,
-      _byte_length INTEGER NOT NULL,
-      _record_index INTEGER NOT NULL,
-      _line_no BIGINT NOT NULL,
-      _template_id VARCHAR(36) NOT NULL,
-      _template_version INTEGER NOT NULL,
-      _checksum VARCHAR(64) NOT NULL,
-      _parsed_at TIMESTAMPTZ NOT NULL,
-      _part_id VARCHAR(36) NOT NULL,
-      fields JSONB NOT NULL DEFAULT '{}',
-      CONSTRAINT uq_parsed_record_job_offset UNIQUE (_job_id, _byte_offset)
-    );
-    CREATE INDEX IF NOT EXISTS ix_parsed_records_job_id ON parsed_records(_job_id);
-    CREATE INDEX IF NOT EXISTS ix_parsed_records_fields ON parsed_records USING gin(fields);
-
-    CREATE TABLE IF NOT EXISTS templates (
-      template_id VARCHAR(36) PRIMARY KEY,
-      fingerprint VARCHAR(64) NOT NULL UNIQUE,
-      version INTEGER NOT NULL DEFAULT 1,
-      kind VARCHAR(16) NOT NULL CHECK (kind IN ('record', 'rubbish')),
-      field_map JSONB,
-      structure TEXT,
-      length_hint INTEGER,
-      signature TEXT,
-      confidence NUMERIC,
-      source VARCHAR(16) NOT NULL CHECK (source IN ('ai', 'bootstrap', 'user')),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS ix_templates_kind ON templates(kind);
-    CREATE INDEX IF NOT EXISTS ix_templates_fingerprint ON templates(fingerprint);
-
-    CREATE TABLE IF NOT EXISTS pending_archive_entries (
-      id VARCHAR(36) PRIMARY KEY,
-      job_id VARCHAR(36) NOT NULL,
-      entry_name TEXT NOT NULL,
-      entry_size BIGINT NOT NULL,
-      status VARCHAR(16) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
-      error TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      UNIQUE (job_id, entry_name)
-    );
-    CREATE INDEX IF NOT EXISTS ix_pending_entries_job_id ON pending_archive_entries(job_id);
-    CREATE INDEX IF NOT EXISTS ix_pending_entries_status ON pending_archive_entries(status);
-  `);
+  return dbManager.createTables();
 }
+
+// Export the manager class for direct use
+export { default as DatabaseManager } from "../config/db/MySqlManager.js";

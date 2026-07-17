@@ -1,8 +1,9 @@
-import { pool } from "./db.js";
+import Config from "../config/system-config/Config.js";
+import ServiceManager from "../config/ServiceManager.js";
+import { InstantiationError } from "../errors/InstantiationError.js";
+import MySqlManager from "../config/db/MySqlManager.js";
 import { createLogger } from "./logger.js";
 import crypto from "crypto";
-
-const logger = createLogger("trace-system");
 
 export interface TraceRecord {
   s3_url: string;
@@ -16,16 +17,34 @@ export interface TraceRecord {
   template_version: number;
   checksum: string;
   parsed_at: Date;
-  row_data?: Record<string, any>; // Actual parsed row data
+  row_data?: Record<string, any>;
 }
 
-export class TraceSystem {
-  /**
-   * Create atomic trace record for a parsed line
-   */
-  async createTrace(trace: TraceRecord): Promise<void> {
+class TraceSystemService extends ServiceManager {
+  protected static instance: TraceSystemService;
+  private logger: any;
+  private dbManager: MySqlManager;
+
+  private constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
+      throw new InstantiationError("Cannot instantiate TraceSystemService directly. Use getInstance()");
+    }
+    super(enforce);
+    
+    this.logger = createLogger("trace-system");
+    this.dbManager = MySqlManager.getInstance();
+  }
+
+  public static getInstance(): TraceSystemService {
+    if (!ServiceManager.instance) {
+      ServiceManager.instance = new TraceSystemService(Enforce);
+    }
+    return ServiceManager.instance as TraceSystemService;
+  }
+
+  public async createTrace(trace: TraceRecord): Promise<void> {
     try {
-      await pool.query(
+      await this.dbManager.pool.query(
         `INSERT INTO parsed_records 
          (_job_id, _byte_offset, _byte_length, _record_index, _line_no, _template_id, _template_version, _checksum, _parsed_at, _part_id, fields)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -43,18 +62,18 @@ export class TraceSystem {
           trace.part_id,
           JSON.stringify({
             s3_url: trace.s3_url,
-            ...trace.row_data // Store actual parsed row data
+            ...trace.row_data
           })
         ]
       );
       
-      logger.debug("trace_created", { 
+      this.logger.debug("trace_created", { 
         job_id: trace.job_id, 
         byte_offset: trace.byte_offset,
         line_no: trace.line_no 
       });
     } catch (error) {
-      logger.error("trace_creation_error", { 
+      this.logger.error("trace_creation_error", { 
         job_id: trace.job_id, 
         byte_offset: trace.byte_offset, 
         error: String(error) 
@@ -63,10 +82,7 @@ export class TraceSystem {
     }
   }
 
-  /**
-   * Create trace for dropped rubbish line
-   */
-  async logRubbishDrop(
+  public async logRubbishDrop(
     jobId: string,
     byteOffset: number,
     lineNo: number,
@@ -74,20 +90,20 @@ export class TraceSystem {
     matchedTemplateId: string
   ): Promise<void> {
     try {
-      await pool.query(
+      await this.dbManager.pool.query(
         `INSERT INTO rubbish_log (job_id, byte_offset, line_no, raw_bytes, matched_template_id, logged_at)
          VALUES ($1, $2, $3, $4, $5, NOW())`,
         [jobId, byteOffset, lineNo, rawBytes, matchedTemplateId]
       );
       
-      logger.debug("rubbish_logged", { 
+      this.logger.debug("rubbish_logged", { 
         job_id: jobId, 
         byte_offset: byteOffset,
         line_no: lineNo,
         template_id: matchedTemplateId 
       });
     } catch (error) {
-      logger.error("rubbish_log_error", { 
+      this.logger.error("rubbish_log_error", { 
         job_id: jobId, 
         byte_offset: byteOffset, 
         error: String(error) 
@@ -96,11 +112,8 @@ export class TraceSystem {
     }
   }
 
-  /**
-   * Get trace records for a job
-   */
-  async getJobTraces(jobId: string): Promise<TraceRecord[]> {
-    const result = await pool.query(
+  public async getJobTraces(jobId: string): Promise<TraceRecord[]> {
+    const result = await this.dbManager.pool.query(
       `SELECT * FROM parsed_records WHERE _job_id = $1 ORDER BY _byte_offset`,
       [jobId]
     );
@@ -120,11 +133,8 @@ export class TraceSystem {
     }));
   }
 
-  /**
-   * Get rubbish log for a job
-   */
-  async getJobRubbishLog(jobId: string): Promise<any[]> {
-    const result = await pool.query(
+  public async getJobRubbishLog(jobId: string): Promise<any[]> {
+    const result = await this.dbManager.pool.query(
       `SELECT * FROM rubbish_log WHERE job_id = $1 ORDER BY byte_offset`,
       [jobId]
     );
@@ -132,18 +142,12 @@ export class TraceSystem {
     return result.rows;
   }
 
-  /**
-   * Generate checksum for line
-   */
   static generateChecksum(line: string): string {
     return crypto.createHash("sha256").update(line).digest("hex");
   }
 
-  /**
-   * Verify line identity (job_id, byte_offset) for idempotency
-   */
-  async lineExists(jobId: string, byteOffset: number): Promise<boolean> {
-    const result = await pool.query(
+  public async lineExists(jobId: string, byteOffset: number): Promise<boolean> {
+    const result = await this.dbManager.pool.query(
       "SELECT 1 FROM parsed_records WHERE _job_id = $1 AND _byte_offset = $2",
       [jobId, byteOffset]
     );
@@ -151,25 +155,22 @@ export class TraceSystem {
     return result.rows.length > 0;
   }
 
-  /**
-   * Get line count by fate for a job
-   */
-  async getLineFateCounts(jobId: string): Promise<{
+  public async getLineFateCounts(jobId: string): Promise<{
     parsed: number;
     dropped: number;
     failed: number;
   }> {
-    const parsedResult = await pool.query(
+    const parsedResult = await this.dbManager.pool.query(
       "SELECT COUNT(*) as count FROM parsed_records WHERE _job_id = $1",
       [jobId]
     );
     
-    const droppedResult = await pool.query(
+    const droppedResult = await this.dbManager.pool.query(
       "SELECT COUNT(*) as count FROM rubbish_log WHERE job_id = $1",
       [jobId]
     );
     
-    const failedResult = await pool.query(
+    const failedResult = await this.dbManager.pool.query(
       "SELECT COUNT(*) as count FROM dead_letters WHERE job_id = $1",
       [jobId]
     );
@@ -179,5 +180,51 @@ export class TraceSystem {
       dropped: parseInt(droppedResult.rows[0].count),
       failed: parseInt(failedResult.rows[0].count),
     };
+  }
+}
+
+function Enforce(): void {}
+
+export default TraceSystemService;
+
+const traceSystemService = TraceSystemService.getInstance();
+
+export class TraceSystem {
+  async createTrace(trace: TraceRecord): Promise<void> {
+    return traceSystemService.createTrace(trace);
+  }
+
+  async logRubbishDrop(
+    jobId: string,
+    byteOffset: number,
+    lineNo: number,
+    rawBytes: string,
+    matchedTemplateId: string
+  ): Promise<void> {
+    return traceSystemService.logRubbishDrop(jobId, byteOffset, lineNo, rawBytes, matchedTemplateId);
+  }
+
+  async getJobTraces(jobId: string): Promise<TraceRecord[]> {
+    return traceSystemService.getJobTraces(jobId);
+  }
+
+  async getJobRubbishLog(jobId: string): Promise<any[]> {
+    return traceSystemService.getJobRubbishLog(jobId);
+  }
+
+  static generateChecksum(line: string): string {
+    return TraceSystemService.generateChecksum(line);
+  }
+
+  async lineExists(jobId: string, byteOffset: number): Promise<boolean> {
+    return traceSystemService.lineExists(jobId, byteOffset);
+  }
+
+  async getLineFateCounts(jobId: string): Promise<{
+    parsed: number;
+    dropped: number;
+    failed: number;
+  }> {
+    return traceSystemService.getLineFateCounts(jobId);
   }
 }

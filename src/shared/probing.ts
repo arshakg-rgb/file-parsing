@@ -1,9 +1,9 @@
-import { readRange, objectSize } from "./gcsUtils.js";
-import { settings } from "./config.js";
+import Config from "../config/system-config/Config.js";
+import ServiceManager from "../config/ServiceManager.js";
+import { InstantiationError } from "../errors/InstantiationError.js";
+import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
 import { createLogger } from "./logger.js";
 import jschardet from "jschardet";
-
-const logger = createLogger("probing");
 
 export interface ProbeResult {
   offset: number;
@@ -15,54 +15,67 @@ export interface ProbeResult {
   sampleLines: string[];
 }
 
-export class AdaptiveProbing {
-  /**
-   * Calculate optimal probe count based on file size
-   */
-  calculateProbeCount(fileSize: number): number {
-    const sizePerProbe = settings.PROBE_SIZE_PER_COUNT; // 512MB
+class ProbingService extends ServiceManager {
+  protected static instance: ProbingService;
+  private logger: any;
+  private gcsUtils: FirestoreCacheUtils;
+  private readonly PROBE_SIZE_PER_COUNT = 536870912; // 512MB
+  private readonly PROBE_COUNT_MIN = 1;
+  private readonly PROBE_COUNT_MAX = 10;
+  private readonly PROBE_WINDOW_MIN_BYTES = 65536; // 64KB
+  private readonly PROBE_WINDOW_MAX_BYTES = 1048576; // 1MB
+  private readonly PROBE_TARGET_LINES = 150;
+
+  private constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
+      throw new InstantiationError("Cannot instantiate ProbingService directly. Use getInstance()");
+    }
+    super(enforce);
+    
+    this.logger = createLogger("probing");
+    this.gcsUtils = FirestoreCacheUtils.getInstance();
+  }
+
+  public static getInstance(): ProbingService {
+    if (!ServiceManager.instance) {
+      ServiceManager.instance = new ProbingService(Enforce);
+    }
+    return ServiceManager.instance as ProbingService;
+  }
+
+  public calculateProbeCount(fileSize: number): number {
+    const sizePerProbe = this.PROBE_SIZE_PER_COUNT;
     const idealCount = Math.ceil(fileSize / sizePerProbe);
     
-    // Clamp between min and max
     return Math.max(
-      settings.PROBE_COUNT_MIN,
-      Math.min(idealCount, settings.PROBE_COUNT_MAX)
+      this.PROBE_COUNT_MIN,
+      Math.min(idealCount, this.PROBE_COUNT_MAX)
     );
   }
 
-  /**
-   * Calculate optimal probe window size based on row width
-   */
-  calculateProbeWindow(avgRowWidth: number, maxRowWidth: number): number {
-    const minWidth = settings.PROBE_WINDOW_MIN_BYTES; // 64KB
-    const maxWidth = settings.PROBE_WINDOW_MAX_BYTES; // 1MB
-    const targetLines = settings.PROBE_TARGET_LINES; // 150 lines
+  public calculateProbeWindow(avgRowWidth: number, maxRowWidth: number): number {
+    const minWidth = this.PROBE_WINDOW_MIN_BYTES;
+    const maxWidth = this.PROBE_WINDOW_MAX_BYTES;
+    const targetLines = this.PROBE_TARGET_LINES;
     
-    // Calculate window based on row width
     const widthBased = Math.max(avgRowWidth * targetLines, maxRowWidth * 4);
     
-    // Clamp between min and max
     return Math.max(minWidth, Math.min(widthBased, maxWidth));
   }
 
-  /**
-   * Generate probe offsets for a file
-   */
-  generateProbeOffsets(fileSize: number, probeCount: number): number[] {
+  public generateProbeOffsets(fileSize: number, probeCount: number): number[] {
     const offsets: number[] = [];
     
     if (probeCount === 1) {
-      return [0]; // Single probe at start
+      return [0];
     }
     
-    // Even spacing across file
     const step = Math.floor(fileSize / probeCount);
     
     for (let i = 0; i < probeCount; i++) {
       offsets.push(i * step);
     }
     
-    // Always include head and tail
     if (!offsets.includes(0)) {
       offsets.push(0);
     }
@@ -70,32 +83,24 @@ export class AdaptiveProbing {
       offsets.push(fileSize - 1);
     }
     
-    // Sort and deduplicate
     return [...new Set(offsets)].sort((a, b) => a - b);
   }
 
-  /**
-   * Execute a single probe at the given offset
-   */
-  async executeProbe(
+  public async executeProbe(
     bucket: string,
     key: string,
     offset: number,
     fileSize: number
   ): Promise<ProbeResult> {
-    // Calculate probe window size (start with 64KB minimum)
-    let windowSize = settings.PROBE_WINDOW_MIN_BYTES;
+    let windowSize = this.PROBE_WINDOW_MIN_BYTES;
     const endOffset = Math.min(offset + windowSize - 1, fileSize - 1);
     
-    // Read probe data
-    const buffer = await readRange(bucket, key, offset, endOffset);
+    const buffer = await this.gcsUtils.readRange(bucket, key, offset, endOffset);
     const content = buffer.toString('utf-8');
     
-    // Detect encoding
     const detected = jschardet.detect(buffer);
     const encoding = detected.encoding || 'utf-8';
     
-    // Analyze lines
     const lines = content.split('\n').filter(line => line.trim());
     const lineCount = lines.length;
     
@@ -111,15 +116,13 @@ export class AdaptiveProbing {
       };
     }
     
-    // Calculate row widths
     const rowWidths = lines.map(line => line.length);
     const avgRowWidth = rowWidths.reduce((a, b) => a + b, 0) / rowWidths.length;
     const maxRowWidth = Math.max(...rowWidths);
     
-    // Get sample lines (first 10)
     const sampleLines = lines.slice(0, 10);
     
-    logger.info("probe_complete", { 
+    this.logger.info("probe_complete", { 
       offset, 
       window_size: windowSize, 
       line_count: lineCount,
@@ -138,10 +141,7 @@ export class AdaptiveProbing {
     };
   }
 
-  /**
-   * Run adaptive probing on a file
-   */
-  async probeFile(bucket: string, key: string): Promise<{
+  public async probeFile(bucket: string, key: string): Promise<{
     fileSize: number;
     probeCount: number;
     probeResults: ProbeResult[];
@@ -150,11 +150,11 @@ export class AdaptiveProbing {
     avgRowWidth: number;
     maxRowWidth: number;
   }> {
-    const fileSize = await objectSize(bucket, key);
+    const fileSize = await this.gcsUtils.objectSize(bucket, key);
     const probeCount = this.calculateProbeCount(fileSize);
     const offsets = this.generateProbeOffsets(fileSize, probeCount);
     
-    logger.info("probing_start", { 
+    this.logger.info("probing_start", { 
       bucket, 
       key, 
       file_size: fileSize, 
@@ -173,7 +173,6 @@ export class AdaptiveProbing {
       totalAvgRowWidth += result.avgRowWidth;
       totalMaxRowWidth = Math.max(totalMaxRowWidth, result.maxRowWidth);
       
-      // Use encoding from first successful probe
       if (result.encoding !== 'utf-8' && finalEncoding === 'utf-8') {
         finalEncoding = result.encoding;
       }
@@ -183,7 +182,7 @@ export class AdaptiveProbing {
     const maxRowWidth = totalMaxRowWidth;
     const finalWindow = this.calculateProbeWindow(avgRowWidth, maxRowWidth);
     
-    logger.info("probing_complete", { 
+    this.logger.info("probing_complete", { 
       file_size: fileSize,
       final_window: finalWindow,
       encoding: finalEncoding,
@@ -202,10 +201,7 @@ export class AdaptiveProbing {
     };
   }
 
-  /**
-   * Analyze probe results to determine file characteristics
-   */
-  analyzeProbes(probeResults: ProbeResult[]): {
+  public analyzeProbes(probeResults: ProbeResult[]): {
     isHomogeneous: boolean;
     likelyHasEmbeddedNewlines: boolean;
     likelyHasQuotedFields: boolean;
@@ -220,7 +216,6 @@ export class AdaptiveProbing {
       };
     }
     
-    // Check for consistency across probes
     const firstSample = probeResults[0].sampleLines;
     let consistentStructure = true;
     let hasQuotes = false;
@@ -230,23 +225,18 @@ export class AdaptiveProbing {
     
     for (const result of probeResults) {
       for (const line of result.sampleLines) {
-        // Check for quotes
         if (line.includes('"')) hasQuotes = true;
         
-        // Check for delimiters
         if (line.includes(',')) hasCommas = true;
         if (line.includes('\t')) hasTabs = true;
         if (line.includes('|')) hasPipes = true;
         
-        // Check for embedded newlines (quoted fields with newlines)
         if ((line.match(/"/g) || []).length % 2 !== 0) {
-          // Odd number of quotes suggests embedded newline
           consistentStructure = false;
         }
       }
     }
     
-    // Determine likely delimiter
     let suggestedDelimiter = ',';
     if (hasTabs && !hasCommas) {
       suggestedDelimiter = '\t';
@@ -260,5 +250,55 @@ export class AdaptiveProbing {
       likelyHasQuotedFields: hasQuotes,
       suggestedDelimiter,
     };
+  }
+}
+
+function Enforce(): void {}
+
+export default ProbingService;
+
+const probingService = ProbingService.getInstance();
+
+export class AdaptiveProbing {
+  calculateProbeCount(fileSize: number): number {
+    return probingService.calculateProbeCount(fileSize);
+  }
+
+  calculateProbeWindow(avgRowWidth: number, maxRowWidth: number): number {
+    return probingService.calculateProbeWindow(avgRowWidth, maxRowWidth);
+  }
+
+  generateProbeOffsets(fileSize: number, probeCount: number): number[] {
+    return probingService.generateProbeOffsets(fileSize, probeCount);
+  }
+
+  async executeProbe(
+    bucket: string,
+    key: string,
+    offset: number,
+    fileSize: number
+  ): Promise<ProbeResult> {
+    return probingService.executeProbe(bucket, key, offset, fileSize);
+  }
+
+  async probeFile(bucket: string, key: string): Promise<{
+    fileSize: number;
+    probeCount: number;
+    probeResults: ProbeResult[];
+    finalWindow: number;
+    encoding: string;
+    avgRowWidth: number;
+    maxRowWidth: number;
+  }> {
+    return probingService.probeFile(bucket, key);
+  }
+
+  analyzeProbes(probeResults: ProbeResult[]): {
+    isHomogeneous: boolean;
+    likelyHasEmbeddedNewlines: boolean;
+    likelyHasQuotedFields: boolean;
+    suggestedDelimiter: string;
+  } {
+    return probingService.analyzeProbes(probeResults);
   }
 }

@@ -1,9 +1,10 @@
-import { readRange } from "./gcsUtils.js";
-import { pool } from "./db.js";
+import Config from "../config/system-config/Config.js";
+import ServiceManager from "../config/ServiceManager.js";
+import { InstantiationError } from "../errors/InstantiationError.js";
+import MySqlManager from "../config/db/MySqlManager.js";
+import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
 import { createLogger } from "./logger.js";
 import crypto from "crypto";
-
-const logger = createLogger("dlq-manager");
 
 export interface DeadLetterEntry {
   dlq_id: string;
@@ -28,11 +29,32 @@ export enum FailureClass {
   EXTRACTION_ERROR = "extraction_error",
 }
 
-export class DLQManager {
-  /**
-   * Add entry to dead letter queue
-   */
-  async addEntry(
+class DLQManagerService extends ServiceManager {
+  protected static instance: DLQManagerService;
+  private logger: any;
+  private dbManager: MySqlManager;
+  private gcsUtils: FirestoreCacheUtils;
+  private readonly MAX_RETRY_ATTEMPTS = 2;
+
+  private constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
+      throw new InstantiationError("Cannot instantiate DLQManagerService directly. Use getInstance()");
+    }
+    super(enforce);
+    
+    this.logger = createLogger("dlq-manager");
+    this.dbManager = MySqlManager.getInstance();
+    this.gcsUtils = FirestoreCacheUtils.getInstance();
+  }
+
+  public static getInstance(): DLQManagerService {
+    if (!ServiceManager.instance) {
+      ServiceManager.instance = new DLQManagerService(Enforce);
+    }
+    return ServiceManager.instance as DLQManagerService;
+  }
+
+  public async addEntry(
     jobId: string,
     byteOffset: number,
     byteLength: number,
@@ -43,9 +65,7 @@ export class DLQManager {
   ): Promise<string | null> {
     const dlqId = crypto.randomUUID();
     
-    // Use ON CONFLICT DO NOTHING to prevent duplicate entries on restart
-    // Unique constraint on (job_id, line_no) ensures idempotency
-    const result = await pool.query(
+    const result = await this.dbManager.pool.query(
       `INSERT INTO dead_letters (dlq_id, job_id, byte_offset, byte_length, line_no, raw_bytes, failure_class, error, attempts, status, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
        ON CONFLICT (job_id, line_no) DO NOTHING
@@ -53,127 +73,97 @@ export class DLQManager {
       [dlqId, jobId, byteOffset, byteLength, lineNo, rawBytes, failureClass, error, 0, "pending"]
     );
     
-    // If no row was returned, it means a duplicate already exists
     if (result.rows.length === 0) {
-      logger.info("dlq_entry_duplicate_skipped", { job_id: jobId, line_no: lineNo, byte_offset: byteOffset });
-      return null; // Indicate this was a duplicate
+      this.logger.info("dlq_entry_duplicate_skipped", { job_id: jobId, line_no: lineNo, byte_offset: byteOffset });
+      return null;
     }
     
-    logger.info("dlq_entry_added", { dlq_id: dlqId, job_id: jobId, failure_class: failureClass });
+    this.logger.info("dlq_entry_added", { dlq_id: dlqId, job_id: jobId, failure_class: failureClass });
     return dlqId;
   }
 
-  /**
-   * Fetch failed line by byte range for retry
-   */
-  async fetchFailedLine(dlqEntry: DeadLetterEntry, s3Url: string): Promise<string> {
+  public async fetchFailedLine(dlqEntry: DeadLetterEntry, s3Url: string): Promise<string> {
     try {
-      const [bucket, key] = this.parseGcsUrl(s3Url);
-      const buffer = await readRange(bucket, key, dlqEntry.byte_offset, dlqEntry.byte_offset + dlqEntry.byte_length - 1);
+      const [bucket, key] = this.gcsUtils.parseGcsUrl(s3Url);
+      const buffer = await this.gcsUtils.readRange(bucket, key, dlqEntry.byte_offset, dlqEntry.byte_offset + dlqEntry.byte_length - 1);
       return buffer.toString('utf-8');
     } catch (error) {
-      logger.error("dlq_fetch_error", { dlq_id: dlqEntry.dlq_id, error: String(error) });
+      this.logger.error("dlq_fetch_error", { dlq_id: dlqEntry.dlq_id, error: String(error) });
       throw error;
     }
   }
 
-  /**
-   * Retry dead letter entry
-   */
-  async retryEntry(dlqId: string, s3Url: string): Promise<boolean> {
-    const result = await pool.query<DeadLetterEntry>(
+  public async retryEntry(dlqId: string, s3Url: string): Promise<boolean> {
+    const result = await this.dbManager.pool.query<DeadLetterEntry>(
       "SELECT * FROM dead_letters WHERE dlq_id = $1",
       [dlqId]
     );
     
     const entry = result.rows[0];
     if (!entry) {
-      logger.warn("dlq_entry_not_found", { dlq_id: dlqId });
+      this.logger.warn("dlq_entry_not_found", { dlq_id: dlqId });
       return false;
     }
 
-    // Check retry limits
-    if (entry.attempts >= 2) {
+    if (entry.attempts >= this.MAX_RETRY_ATTEMPTS) {
       await this.markForReview(dlqId);
-      logger.info("dlq_max_attempts_reached", { dlq_id: dlqId });
+      this.logger.info("dlq_max_attempts_reached", { dlq_id: dlqId });
       return false;
     }
 
-    // Increment attempts
-    await pool.query(
+    await this.dbManager.pool.query(
       "UPDATE dead_letters SET attempts = attempts + 1, status = 'retry', updated_at = NOW() WHERE dlq_id = $1",
       [dlqId]
     );
 
-    // Fetch the failed line
     const line = await this.fetchFailedLine(entry, s3Url);
     
-    logger.info("dlq_retry_attempt", { dlq_id: dlqId, attempt: entry.attempts + 1 });
+    this.logger.info("dlq_retry_attempt", { dlq_id: dlqId, attempt: entry.attempts + 1 });
     
-    // Return the line for reprocessing
-    // In production, this would publish to retry queue
     return true;
   }
 
-  /**
-   * Mark entry for human review
-   */
-  async markForReview(dlqId: string): Promise<void> {
-    await pool.query(
+  public async markForReview(dlqId: string): Promise<void> {
+    await this.dbManager.pool.query(
       "UPDATE dead_letters SET status = 'review', updated_at = NOW() WHERE dlq_id = $1",
       [dlqId]
     );
-    logger.info("dlq_marked_review", { dlq_id: dlqId });
+    this.logger.info("dlq_marked_review", { dlq_id: dlqId });
   }
 
-  /**
-   * Mark entry as resolved
-   */
-  async markResolved(dlqId: string): Promise<void> {
-    await pool.query(
+  public async markResolved(dlqId: string): Promise<void> {
+    await this.dbManager.pool.query(
       "UPDATE dead_letters SET status = 'resolved', updated_at = NOW() WHERE dlq_id = $1",
       [dlqId]
     );
-    logger.info("dlq_resolved", { dlq_id: dlqId });
+    this.logger.info("dlq_resolved", { dlq_id: dlqId });
   }
 
-  /**
-   * Get pending entries for a job
-   */
-  async getPendingEntries(jobId: string): Promise<DeadLetterEntry[]> {
-    const result = await pool.query<DeadLetterEntry>(
+  public async getPendingEntries(jobId: string): Promise<DeadLetterEntry[]> {
+    const result = await this.dbManager.pool.query<DeadLetterEntry>(
       "SELECT * FROM dead_letters WHERE job_id = $1 AND status = 'pending' ORDER BY byte_offset",
       [jobId]
     );
     return result.rows;
   }
 
-  /**
-   * Get retry entries for a job
-   */
-  async getRetryEntries(jobId: string): Promise<DeadLetterEntry[]> {
-    const result = await pool.query<DeadLetterEntry>(
+  public async getRetryEntries(jobId: string): Promise<DeadLetterEntry[]> {
+    const result = await this.dbManager.pool.query<DeadLetterEntry>(
       "SELECT * FROM dead_letters WHERE job_id = $1 AND status = 'retry' ORDER BY byte_offset",
       [jobId]
     );
     return result.rows;
   }
 
-  /**
-   * Get review entries for a job
-   */
-  async getReviewEntries(jobId: string): Promise<DeadLetterEntry[]> {
-    const result = await pool.query<DeadLetterEntry>(
+  public async getReviewEntries(jobId: string): Promise<DeadLetterEntry[]> {
+    const result = await this.dbManager.pool.query<DeadLetterEntry>(
       "SELECT * FROM dead_letters WHERE job_id = $1 AND status = 'review' ORDER BY byte_offset",
       [jobId]
     );
     return result.rows;
   }
 
-  /**
-   * Batch retry for a job
-   */
-  async batchRetryJob(jobId: string, s3Url: string): Promise<{ success: number; failed: number }> {
+  public async batchRetryJob(jobId: string, s3Url: string): Promise<{ success: number; failed: number }> {
     const entries = await this.getPendingEntries(jobId);
     let success = 0;
     let failed = 0;
@@ -183,21 +173,64 @@ export class DLQManager {
         await this.retryEntry(entry.dlq_id, s3Url);
         success++;
       } catch (error) {
-        logger.error("dlq_batch_retry_error", { dlq_id: entry.dlq_id, error: String(error) });
+        this.logger.error("dlq_batch_retry_error", { dlq_id: entry.dlq_id, error: String(error) });
         failed++;
       }
     }
 
-    logger.info("dlq_batch_retry_complete", { job_id: jobId, success, failed });
+    this.logger.info("dlq_batch_retry_complete", { job_id: jobId, success, failed });
     return { success, failed };
   }
+}
 
-  private parseGcsUrl(url: string): [string, string] {
-    const prefix = url.startsWith("gs://") ? "gs://" : url.startsWith("s3://") ? "s3://" : null;
-    if (!prefix) throw new Error(`Expected gs:// URL, got: ${url}`);
-    const rest = url.slice(prefix.length);
-    const slash = rest.indexOf("/");
-    if (slash === -1) return [rest, ""];
-    return [rest.slice(0, slash), rest.slice(slash + 1)];
+function Enforce(): void {}
+
+export default DLQManagerService;
+
+const dlqManagerService = DLQManagerService.getInstance();
+
+export class DLQManager {
+  async addEntry(
+    jobId: string,
+    byteOffset: number,
+    byteLength: number,
+    lineNo: number,
+    rawBytes: string,
+    failureClass: FailureClass,
+    error: string
+  ): Promise<string | null> {
+    return dlqManagerService.addEntry(jobId, byteOffset, byteLength, lineNo, rawBytes, failureClass, error);
+  }
+
+  async fetchFailedLine(dlqEntry: DeadLetterEntry, s3Url: string): Promise<string> {
+    return dlqManagerService.fetchFailedLine(dlqEntry, s3Url);
+  }
+
+  async retryEntry(dlqId: string, s3Url: string): Promise<boolean> {
+    return dlqManagerService.retryEntry(dlqId, s3Url);
+  }
+
+  async markForReview(dlqId: string): Promise<void> {
+    return dlqManagerService.markForReview(dlqId);
+  }
+
+  async markResolved(dlqId: string): Promise<void> {
+    return dlqManagerService.markResolved(dlqId);
+  }
+
+  async getPendingEntries(jobId: string): Promise<DeadLetterEntry[]> {
+    return dlqManagerService.getPendingEntries(jobId);
+  }
+
+  async getRetryEntries(jobId: string): Promise<DeadLetterEntry[]> {
+    return dlqManagerService.getRetryEntries(jobId);
+  }
+
+  async getReviewEntries(jobId: string): Promise<DeadLetterEntry[]> {
+    return dlqManagerService.getReviewEntries(jobId);
+  }
+
+  async batchRetryJob(jobId: string, s3Url: string): Promise<{ success: number; failed: number }> {
+    return dlqManagerService.batchRetryJob(jobId, s3Url);
   }
 }

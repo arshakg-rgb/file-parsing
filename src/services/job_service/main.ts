@@ -1,90 +1,128 @@
 import express, { Request, Response, NextFunction } from "express";
-import { settings } from "../../shared/config.js";
+import Config from "../../config/system-config/Config.js";
+import ServiceManager from "../../config/ServiceManager.js";
+import { InstantiationError } from "../../errors/InstantiationError.js";
+import MySqlManager from "../../config/db/MySqlManager.js";
 import { receiveMessages, deleteMessage } from "../../shared/queueUtils.js";
 import { JobEvent, EventType } from "../../shared/models/events.js";
 import { handleEvent } from "./stateMachine.js";
 import { router } from "./router.js";
-import { pool, createTables, waitForDb } from "../../shared/db.js";
+import { createTables } from "../../shared/db.js";
 
-const app = express();
-app.use(express.json());
-app.use("/v1", router);
+class JobService extends ServiceManager {
+  protected static instance: JobService;
+  private app: express.Express;
+  private dbManager: MySqlManager;
 
-app.get("/health", (_req: Request, res: Response) => {
-  res.json({ status: "healthy", timestamp: new Date().toISOString() });
-});
+  private constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
+      throw new InstantiationError("Cannot instantiate JobService directly. Use getInstance()");
+    }
+    super(enforce);
+    
+    this.app = express();
+    this.dbManager = MySqlManager.getInstance();
+    this.setupApp();
+  }
 
-app.get("/health/db", async (_req: Request, res: Response) => {
-  try {
-    await pool.query("SELECT 1");
-    res.json({ status: "healthy", database: "connected", timestamp: new Date().toISOString() });
-  } catch (err) {
-    res.status(500).json({ 
-      status: "unhealthy", 
-      database: "disconnected",
-      timestamp: new Date().toISOString(),
-      error: err instanceof Error ? err.message : String(err)
+  public static getInstance(): JobService {
+    if (!ServiceManager.instance) {
+      ServiceManager.instance = new JobService(Enforce);
+    }
+    return ServiceManager.instance as JobService;
+  }
+
+  private setupApp(): void {
+    this.app.use(express.json());
+    this.app.use("/v1", router);
+
+    this.app.get("/health", (_req: Request, res: Response) => {
+      res.json({ status: "healthy", timestamp: new Date().toISOString() });
+    });
+
+    this.app.get("/health/db", async (_req: Request, res: Response) => {
+      try {
+        await this.dbManager.pool.query("SELECT 1");
+        res.json({ status: "healthy", database: "connected", timestamp: new Date().toISOString() });
+      } catch (err) {
+        res.status(500).json({ 
+          status: "unhealthy", 
+          database: "disconnected",
+          timestamp: new Date().toISOString(),
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    });
+
+    this.app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+      console.error("error", err);
+      res.status(500).json({ detail: err.message });
     });
   }
-});
 
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error("error", err);
-  res.status(500).json({ detail: err.message });
-});
-
-async function eventConsumerLoop(): Promise<void> {
-  while (true) {
-    try {
-      const messages = await receiveMessages<JobEvent>(
-        settings.JOB_EVENTS_QUEUE_URL,
-        (body) => JSON.parse(body) as JobEvent,
-        10,
-        5
-      );
-      for (const { payload, receiptHandle } of messages) {
-        try {
-          await handleEvent(payload);
-          await deleteMessage(settings.JOB_EVENTS_QUEUE_URL, receiptHandle);
-        } catch (exc) {
-          const errorStr = String(exc);
-          // Ack bad messages to prevent infinite retry loop
-          if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition"))) {
-            console.error("event_processing_error_ack", { error: errorStr, body: payload, action: "ack_to_prevent_retry" });
-            await deleteMessage(settings.JOB_EVENTS_QUEUE_URL, receiptHandle);
-          } else {
-            console.error("event_processing_error", { error: errorStr, body: payload });
+  public async eventConsumerLoop(): Promise<void> {
+    const config = this.getConfig();
+    while (true) {
+      try {
+        const messages = await receiveMessages<JobEvent>(
+          config.settings.JOB_EVENTS_QUEUE_URL,
+          (body) => JSON.parse(body) as JobEvent,
+          10,
+          5
+        );
+        for (const { payload, receiptHandle } of messages) {
+          try {
+            await handleEvent(payload);
+            await deleteMessage(config.settings.JOB_EVENTS_QUEUE_URL, receiptHandle);
+          } catch (exc) {
+            const errorStr = String(exc);
+            if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition"))) {
+              console.error("event_processing_error_ack", { error: errorStr, body: payload, action: "ack_to_prevent_retry" });
+              await deleteMessage(config.settings.JOB_EVENTS_QUEUE_URL, receiptHandle);
+            } else {
+              console.error("event_processing_error", { error: errorStr, body: payload });
+            }
           }
         }
+      } catch (exc) {
+        console.error("event_consumer_loop_error", { error: String(exc) });
+        await new Promise((r) => setTimeout(r, 5000));
       }
-    } catch (exc) {
-      console.error("event_consumer_loop_error", { error: String(exc) });
-      await new Promise((r) => setTimeout(r, 5000));
     }
   }
-}
 
-const PORT = process.env.PORT || 8000;
+  public async initializeDatabase(): Promise<void> {
+    try {
+      console.log("Running database migration...");
+      await this.dbManager.initialize();
+      await createTables();
+      console.log("Database migration completed successfully");
+    } catch (err) {
+      console.error("Database migration failed:", err);
+      throw err;
+    }
+  }
 
-async function initializeDatabase(): Promise<void> {
-  try {
-    console.log("Running database migration...");
-    await waitForDb(); // Wait for Cloud SQL proxy to be ready
-    await createTables();
-    console.log("Database migration completed successfully");
-  } catch (err) {
-    console.error("Database migration failed:", err);
-    throw err;
+  public start(): void {
+    const config = this.getConfig();
+    const PORT = process.env.PORT || 8000;
+    this.app.listen(PORT, async () => {
+      console.log(`Job Service listening on port ${PORT}`);
+      try {
+        await this.initializeDatabase();
+        this.eventConsumerLoop();
+      } catch (err) {
+        console.error("Failed to initialize database:", err);
+        process.exit(1);
+      }
+    });
   }
 }
 
-app.listen(PORT, async () => {
-  console.log(`Job Service listening on port ${PORT}`);
-  try {
-    await initializeDatabase();
-    eventConsumerLoop();
-  } catch (err) {
-    console.error("Failed to initialize database:", err);
-    process.exit(1);
-  }
-});
+function Enforce(): void {}
+
+export default JobService;
+
+// Backward compatibility - start the service
+const jobService = JobService.getInstance();
+jobService.start();

@@ -1,74 +1,110 @@
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
+import Config from "../config/system-config/Config.js";
+import ServiceManager from "../config/ServiceManager.js";
+import { InstantiationError } from "../errors/InstantiationError.js";
 
-let secretsClient: SecretsManagerClient | null = null;
+class SecretsService extends ServiceManager {
+  protected static instance: SecretsService;
+  private secretsClient: SecretsManagerClient | null = null;
 
-function getSecretsClient(): SecretsManagerClient {
-  if (!secretsClient) {
-    const region = process.env.AWS_REGION || "us-east-1";
-    const endpoint = process.env.AWS_ENDPOINT;
-    secretsClient = new SecretsManagerClient({
-      region,
-      ...(endpoint ? { endpoint } : {}),
-    });
-  }
-  return secretsClient;
-}
-
-export async function getSecret(secretName: string): Promise<string | null> {
-  // First check environment variable (fallback)
-  const envVar = secretName.toUpperCase().replace(/-/g, "_");
-  if (process.env[envVar]) {
-    return process.env[envVar];
+  private constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
+      throw new InstantiationError("Cannot instantiate SecretsService directly. Use getInstance()");
+    }
+    super(enforce);
   }
 
-  // Try AWS Secrets Manager
-  try {
-    const client = getSecretsClient();
-    const response = await client.send(
-      new GetSecretValueCommand({ SecretId: secretName })
-    );
-    
-    if (response.SecretString) {
-      return response.SecretString;
+  public static getInstance(): SecretsService {
+    if (!ServiceManager.instance) {
+      ServiceManager.instance = new SecretsService(Enforce);
     }
-    
-    if (response.SecretBinary) {
-      return Buffer.from(response.SecretBinary).toString("utf-8");
+    return ServiceManager.instance as SecretsService;
+  }
+
+  private getSecretsClient(): SecretsManagerClient {
+    if (!this.secretsClient) {
+      const region = process.env.AWS_REGION || "us-east-1";
+      const endpoint = process.env.AWS_ENDPOINT;
+      this.secretsClient = new SecretsManagerClient({
+        region,
+        ...(endpoint ? { endpoint } : {}),
+      });
     }
+    return this.secretsClient;
+  }
+
+  public async getSecret(secretName: string): Promise<string | null> {
+    const envVar = secretName.toUpperCase().replace(/-/g, "_");
+    if (process.env[envVar]) {
+      return process.env[envVar];
+    }
+
+    try {
+      const client = this.getSecretsClient();
+      const response = await client.send(
+        new GetSecretValueCommand({ SecretId: secretName })
+      );
     
-    return null;
-  } catch (err: any) {
-    if (err.name === "ResourceNotFoundException") {
+      if (response.SecretString) {
+        return response.SecretString;
+      }
+    
+      if (response.SecretBinary) {
+        return Buffer.from(response.SecretBinary).toString("utf-8");
+      }
+    
       return null;
+    } catch (err: any) {
+      if (err.name === "ResourceNotFoundException") {
+        return null;
+      }
+      throw new Error(`Failed to fetch secret ${secretName}: ${err.message}`);
     }
-    throw new Error(`Failed to fetch secret ${secretName}: ${err.message}`);
   }
-}
 
-export async function getSecretJson<T = Record<string, any>>(secretName: string): Promise<T | null> {
-  const secret = await getSecret(secretName);
-  if (!secret) return null;
+  public async getSecretJson<T = Record<string, any>>(secretName: string): Promise<T | null> {
+    const secret = await this.getSecret(secretName);
+    if (!secret) return null;
   
-  try {
-    return JSON.parse(secret) as T;
-  } catch (err) {
-    throw new Error(`Failed to parse secret ${secretName} as JSON: ${err}`);
+    try {
+      return JSON.parse(secret) as T;
+    } catch (err) {
+      throw new Error(`Failed to parse secret ${secretName} as JSON: ${err}`);
+    }
   }
-}
 
-export async function loadAllSecrets(): Promise<void> {
-  const secretMappings: Record<string, string> = {
-    DATABASE_URL: "database-url",
-    FIRESTORE_CREDENTIALS: "firestore-credentials",
-    BEDROCK_API_KEY: "bedrock-api-key",
-  };
+  public async loadAllSecrets(): Promise<void> {
+    const secretMappings: Record<string, string> = {
+      DATABASE_URL: "database-url",
+      FIRESTORE_CREDENTIALS: "firestore-credentials",
+      BEDROCK_API_KEY: "bedrock-api-key",
+    };
   
-  for (const [envKey, secretName] of Object.entries(secretMappings)) {
-    if (!process.env[envKey]) {
-      const secret = await getSecret(secretName);
-      if (secret) {
-        process.env[envKey] = secret;
+    for (const [envKey, secretName] of Object.entries(secretMappings)) {
+      if (!process.env[envKey]) {
+        const secret = await this.getSecret(secretName);
+        if (secret) {
+          process.env[envKey] = secret;
+        }
       }
     }
   }
+}
+
+function Enforce(): void {}
+
+export default SecretsService;
+
+const secretsService = SecretsService.getInstance();
+
+export async function getSecret(secretName: string): Promise<string | null> {
+  return secretsService.getSecret(secretName);
+}
+
+export async function getSecretJson<T = Record<string, any>>(secretName: string): Promise<T | null> {
+  return secretsService.getSecretJson<T>(secretName);
+}
+
+export async function loadAllSecrets(): Promise<void> {
+  return secretsService.loadAllSecrets();
 }

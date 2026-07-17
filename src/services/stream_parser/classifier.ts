@@ -230,8 +230,8 @@ export class LineClassifier {
       return Object.keys(obj).length > 0 ? obj : null;
     }
     if (rec.structure === "csv") {
-      const delim = rec.field_map && Object.values(rec.field_map)[0]?.locator?.startsWith("index:") 
-        ? Object.values(rec.field_map)[0].locator.replace("index:", "") 
+      const delim = rec.field_map && Object.values(rec.field_map)[0]?.locator?.startsWith("index:")
+        ? Object.values(rec.field_map)[0].locator.replace("index:", "")
         : ",";
       const quote = '"';
       return parseCsvLine(line, delim, quote);
@@ -458,7 +458,7 @@ function parseCsvLine(line: string, delim: string, quoteChar: string = '"'): str
     if (quote && c === quote) {
       if (inQuote && next === quote) {
         current += quote;
-        i++; // skip escaped quote
+        i++;
       } else {
         inQuote = !inQuote;
       }

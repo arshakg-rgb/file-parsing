@@ -5,11 +5,50 @@ import { createReadStream } from "fs";
 import { pipeline } from "node:stream/promises";
 import { randomUUID, createHash } from "crypto";
 import { ParquetSchema, ParquetWriter } from "@dsnp/parquetjs";
-import { settings } from "./config.js";
-import { putObject } from "./gcsUtils.js";
+import Config from "../config/system-config/Config.js";
+import ServiceManager from "../config/ServiceManager.js";
+import { InstantiationError } from "../errors/InstantiationError.js";
+import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
 import { createLogger } from "./logger.js";
 
-const logger = createLogger("parquet-writer");
+class ParquetOutputService extends ServiceManager {
+  protected static instance: ParquetOutputService;
+  private logger: any;
+  private gcsUtils: FirestoreCacheUtils;
+  private FLUSH_LINE_THRESHOLD: number;
+
+  private constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
+      throw new InstantiationError("Cannot instantiate ParquetOutputService directly. Use getInstance()");
+    }
+    super(enforce);
+    
+    this.logger = createLogger("parquet-writer");
+    this.gcsUtils = FirestoreCacheUtils.getInstance();
+    this.FLUSH_LINE_THRESHOLD = 1000;
+  }
+
+  public static getInstance(): ParquetOutputService {
+    if (!ServiceManager.instance) {
+      ServiceManager.instance = new ParquetOutputService(Enforce);
+    }
+    return ServiceManager.instance as ParquetOutputService;
+  }
+
+  public getLogger(): any {
+    return this.logger;
+  }
+
+  public getGcsUtils(): FirestoreCacheUtils {
+    return this.gcsUtils;
+  }
+
+  public getFlushLineThreshold(): number {
+    return this.FLUSH_LINE_THRESHOLD;
+  }
+}
+
+function Enforce(): void {}
 
 export interface OutputRow {
   [key: string]: any;
@@ -32,7 +71,6 @@ function buildSchema(rows: Record<string, any>[]): ParquetSchema {
   for (const row of rows) {
     for (const [k, v] of Object.entries(row)) {
       if (!schemaObj[k]) {
-        // All fields optional so sparse rows never throw "missing required field"
         schemaObj[k] = { type: typeForValue(v), optional: true };
       }
     }
@@ -45,22 +83,21 @@ export class OutputBuffer {
   private templateId: string;
   private partId: string;
   private jobId: string;
-  private readonly FLUSH_LINE_THRESHOLD = 1000; // Flush after exactly 1000 lines
+  private service: ParquetOutputService;
   private flushPromise: Promise<string | null> | null = null;
-  private flushCounter = 0; // Counter to ensure unique partId for each flush
+  private flushCounter = 0;
 
   constructor(jobId: string, templateId: string) {
     this.jobId = jobId;
     this.templateId = templateId;
     this.partId = `${jobId}-${templateId}-${Date.now()}`;
+    this.service = ParquetOutputService.getInstance();
   }
 
   addRow(row: OutputRow): void {
     this.rows.push(row);
     
-    // Flush after exactly 1000 lines - do not await to avoid blocking
-    // But we need to handle the case where flush is already in progress
-    if (this.rows.length >= this.FLUSH_LINE_THRESHOLD && !this.flushPromise) {
+    if (this.rows.length >= this.service.getFlushLineThreshold() && !this.flushPromise) {
       this.flushPromise = this.flush().finally(() => {
         this.flushPromise = null;
       });
@@ -72,15 +109,12 @@ export class OutputBuffer {
       return null;
     }
 
-    // CRITICAL: Snapshot and clear rows atomically BEFORE any async work
-    // This prevents rows added during flush from being silently dropped
     const rowsToFlush = this.rows;
-    this.rows = []; // New array immediately - addRow() calls after this point are safe
+    this.rows = [];
 
-    // Generate unique partId for this flush to avoid race conditions
     const flushPartId = `${this.partId}-${this.flushCounter++}`;
     
-    logger.info("parquet_flush", { 
+    this.service.getLogger().info("parquet_flush", { 
       part_id: flushPartId, 
       row_count: rowsToFlush.length,
       template_id: this.templateId 
@@ -98,14 +132,15 @@ export class OutputBuffer {
       await writer.close();
 
       const buffer = await fs.readFile(tempFile);
-      const gcsPath = `gs://${settings.DATA_BUCKET}/output/${flushPartId}.parquet`;
-      await putObject(settings.DATA_BUCKET, `output/${flushPartId}.parquet`, buffer);
+      const config = Config.getInstance();
+      const gcsPath = `gs://${config.settings.DATA_BUCKET}/output/${flushPartId}.parquet`;
+      await this.service.getGcsUtils().putObject(config.settings.DATA_BUCKET, `output/${flushPartId}.parquet`, buffer);
 
       await fs.unlink(tempFile).catch(() => {});
 
       return gcsPath;
     } catch (error) {
-      logger.error("parquet_flush_error", { part_id: flushPartId, error: String(error) });
+      this.service.getLogger().error("parquet_flush_error", { part_id: flushPartId, error: String(error) });
       throw error;
     }
   }
@@ -126,7 +161,7 @@ export class OutputBuffer {
 }
 
 export class OutputManager {
-  private buffers = new Map<string, OutputBuffer>(); // templateId -> buffer
+  private buffers = new Map<string, OutputBuffer>();
 
   getBuffer(jobId: string, templateId: string): OutputBuffer {
     const key = `${jobId}-${templateId}`;
@@ -139,8 +174,6 @@ export class OutputManager {
   async flushAll(): Promise<string[]> {
     const paths: string[] = [];
     
-    // Wait for any pending flushes to complete before clearing buffers
-    // This prevents race conditions when flushAll() is called while a threshold flush is in progress
     for (const buffer of this.buffers.values()) {
       await buffer.waitForPendingFlush();
       const path = await buffer.flush();

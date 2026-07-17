@@ -1,8 +1,8 @@
-import { pool } from "./db.js";
-import { settings } from "./config.js";
+import Config from "../config/system-config/Config.js";
+import ServiceManager from "../config/ServiceManager.js";
+import { InstantiationError } from "../errors/InstantiationError.js";
+import MySqlManager from "../config/db/MySqlManager.js";
 import { createLogger } from "./logger.js";
-
-const logger = createLogger("quality-gate");
 
 export interface QualityMetrics {
   totalLines: number;
@@ -12,15 +12,32 @@ export interface QualityMetrics {
   failedLineRatio: number;
 }
 
-export class QualityGate {
-  private readonly FAILED_LINE_RATIO_THRESHOLD = settings.FAILED_LINE_RATIO_THRESHOLD;
+class QualityGateService extends ServiceManager {
+  protected static instance: QualityGateService;
+  private logger: any;
+  private dbManager: MySqlManager;
+  private readonly FAILED_LINE_RATIO_THRESHOLD: number;
 
-  /**
-   * Calculate quality metrics for a job
-   */
-  async calculateMetrics(jobId: string): Promise<QualityMetrics> {
-    // Get job details
-    const jobResult = await pool.query(
+  private constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
+      throw new InstantiationError("Cannot instantiate QualityGateService directly. Use getInstance()");
+    }
+    super(enforce);
+    
+    this.logger = createLogger("quality-gate");
+    this.dbManager = MySqlManager.getInstance();
+    this.FAILED_LINE_RATIO_THRESHOLD = 0.1;
+  }
+
+  public static getInstance(): QualityGateService {
+    if (!ServiceManager.instance) {
+      ServiceManager.instance = new QualityGateService(Enforce);
+    }
+    return ServiceManager.instance as QualityGateService;
+  }
+
+  public async calculateMetrics(jobId: string): Promise<QualityMetrics> {
+    const jobResult = await this.dbManager.pool.query(
       "SELECT counts FROM parse_jobs WHERE job_id = $1",
       [jobId]
     );
@@ -43,13 +60,10 @@ export class QualityGate {
     };
   }
 
-  /**
-   * Check if job passes quality gate
-   */
-  async passesQualityGate(jobId: string): Promise<{ passes: boolean; reason?: string }> {
+  public async passesQualityGate(jobId: string): Promise<{ passes: boolean; reason?: string }> {
     const metrics = await this.calculateMetrics(jobId);
     
-    logger.info("quality_gate_check", { 
+    this.logger.info("quality_gate_check", { 
       job_id: jobId, 
       failed_line_ratio: metrics.failedLineRatio,
       threshold: this.FAILED_LINE_RATIO_THRESHOLD 
@@ -65,33 +79,27 @@ export class QualityGate {
     return { passes: true };
   }
 
-  /**
-   * Apply quality gate and update job status
-   */
-  async applyQualityGate(jobId: string): Promise<void> {
+  public async applyQualityGate(jobId: string): Promise<void> {
     const { passes, reason } = await this.passesQualityGate(jobId);
     
     if (!passes) {
-      await pool.query(
+      await this.dbManager.pool.query(
         "UPDATE parse_jobs SET status = 'held', error = $1 WHERE job_id = $2",
         [reason, jobId]
       );
-      logger.warn("quality_gate_failed", { job_id: jobId, reason });
+      this.logger.warn("quality_gate_failed", { job_id: jobId, reason });
     } else {
-      logger.info("quality_gate_passed", { job_id: jobId });
+      this.logger.info("quality_gate_passed", { job_id: jobId });
     }
   }
 
-  /**
-   * Get quality gate statistics for a batch
-   */
-  async getBatchQualityStats(batchId: string): Promise<{
+  public async getBatchQualityStats(batchId: string): Promise<{
     totalJobs: number;
     passedJobs: number;
     heldJobs: number;
     failedJobs: number;
   }> {
-    const result = await pool.query(
+    const result = await this.dbManager.pool.query(
       `SELECT 
         COUNT(*) as total_jobs,
         COUNT(*) FILTER (WHERE status = 'done') as passed_jobs,
@@ -108,5 +116,36 @@ export class QualityGate {
       heldJobs: parseInt(result.rows[0].held_jobs),
       failedJobs: parseInt(result.rows[0].failed_jobs),
     };
+  }
+}
+
+function Enforce(): void {}
+
+export default QualityGateService;
+
+const qualityGateService = QualityGateService.getInstance();
+
+export class QualityGate {
+  private readonly FAILED_LINE_RATIO_THRESHOLD = 0.1;
+
+  async calculateMetrics(jobId: string): Promise<QualityMetrics> {
+    return qualityGateService.calculateMetrics(jobId);
+  }
+
+  async passesQualityGate(jobId: string): Promise<{ passes: boolean; reason?: string }> {
+    return qualityGateService.passesQualityGate(jobId);
+  }
+
+  async applyQualityGate(jobId: string): Promise<void> {
+    return qualityGateService.applyQualityGate(jobId);
+  }
+
+  async getBatchQualityStats(batchId: string): Promise<{
+    totalJobs: number;
+    passedJobs: number;
+    heldJobs: number;
+    failedJobs: number;
+  }> {
+    return qualityGateService.getBatchQualityStats(batchId);
   }
 }

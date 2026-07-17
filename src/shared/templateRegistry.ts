@@ -1,5 +1,8 @@
 import crypto from "crypto";
-import { pool } from "./db.js";
+import Config from "../config/system-config/Config.js";
+import ServiceManager from "../config/ServiceManager.js";
+import { InstantiationError } from "../errors/InstantiationError.js";
+import MySqlManager from "../config/db/MySqlManager.js";
 
 export interface RecordTemplate {
   template_id: string;
@@ -25,49 +28,55 @@ export interface RubbishTemplate {
 export type Template = RecordTemplate | RubbishTemplate;
 export type TemplateKind = "record" | "rubbish";
 
-export class TemplateRegistry {
+function Enforce(): void {}
+
+export class TemplateRegistryService extends ServiceManager {
+  protected static instance: TemplateRegistryService;
   private recordCache = new Map<string, RecordTemplate>();
   private rubbishCache = new Map<string, RubbishTemplate>();
   private matchRateHistory: number[] = [];
   private readonly MATCH_RATE_WINDOW = 1000;
   private readonly MATCH_RATE_FLOOR = 0.1;
+  private dbManager: MySqlManager;
 
-  /**
-   * Generate fingerprint from line content
-   */
+  private constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
+      throw new InstantiationError("Cannot instantiate TemplateRegistryService directly. Use getInstance()");
+    }
+    super(enforce);
+    
+    this.dbManager = MySqlManager.getInstance();
+  }
+
+  public static getInstance(): TemplateRegistryService {
+    if (!ServiceManager.instance) {
+      ServiceManager.instance = new TemplateRegistryService(Enforce);
+    }
+    return ServiceManager.instance as TemplateRegistryService;
+  }
+
   static generateFingerprint(line: string): string {
-    // Normalize line for fingerprinting
     const normalized = line.trim().toLowerCase();
     return crypto.createHash("sha256").update(normalized).digest("hex");
   }
 
-  /**
-   * Generate fingerprint from field structure
-   */
   static generateStructureFingerprint(fields: string[]): string {
     return crypto.createHash("sha256").update(fields.join(",")).digest("hex");
   }
 
-  /**
-   * Check if line matches length gate
-   */
   static passesLengthGate(line: string, fieldSpec: string[]): boolean {
     const lineLength = line.length;
     if (lineLength === 0) return false;
     
-    // Basic length validation - line should be reasonable for the field count
     const fieldCount = fieldSpec.length;
-    const minExpectedLength = fieldCount * 2; // Minimum 2 chars per field
-    const maxExpectedLength = fieldCount * 1000; // Maximum 1000 chars per field
+    const minExpectedLength = fieldCount * 2;
+    const maxExpectedLength = fieldCount * 1000;
     
     return lineLength >= minExpectedLength && lineLength <= maxExpectedLength;
   }
 
-  /**
-   * Try to match against record templates
-   */
   matchRecordTemplate(line: string, fieldSpec: string[]): RecordTemplate | null {
-    const fingerprint = TemplateRegistry.generateFingerprint(line);
+    const fingerprint = TemplateRegistryService.generateFingerprint(line);
     const template = this.recordCache.get(fingerprint);
     
     if (template) {
@@ -79,14 +88,10 @@ export class TemplateRegistry {
     return null;
   }
 
-  /**
-   * Try to match against rubbish templates (high confidence only)
-   */
   matchRubbishTemplate(line: string): RubbishTemplate | null {
-    const fingerprint = TemplateRegistry.generateFingerprint(line);
+    const fingerprint = TemplateRegistryService.generateFingerprint(line);
     const template = this.rubbishCache.get(fingerprint);
     
-    // Only return high-confidence rubbish matches
     if (template && template.confidence > 0.9) {
       this.updateMatchRate(true);
       return template;
@@ -96,23 +101,14 @@ export class TemplateRegistry {
     return null;
   }
 
-  /**
-   * Add record template to cache
-   */
   addRecordTemplate(template: RecordTemplate): void {
     this.recordCache.set(template.fingerprint, template);
   }
 
-  /**
-   * Add rubbish template to cache
-   */
   addRubbishTemplate(template: RubbishTemplate): void {
     this.rubbishCache.set(template.fingerprint, template);
   }
 
-  /**
-   * Update match rate for AI cost bounding
-   */
   private updateMatchRate(matched: boolean): void {
     this.matchRateHistory.push(matched ? 1 : 0);
     if (this.matchRateHistory.length > this.MATCH_RATE_WINDOW) {
@@ -120,25 +116,16 @@ export class TemplateRegistry {
     }
   }
 
-  /**
-   * Get current match rate
-   */
   getMatchRate(): number {
     if (this.matchRateHistory.length === 0) return 1.0;
     const sum = this.matchRateHistory.reduce((a, b) => a + b, 0);
     return sum / this.matchRateHistory.length;
   }
 
-  /**
-   * Check if match rate has collapsed (AI cost bounding)
-   */
   hasMatchRateCollapsed(): boolean {
     return this.getMatchRate() < this.MATCH_RATE_FLOOR;
   }
 
-  /**
-   * Get template by fingerprint
-   */
   getByFingerprint(fingerprint: string): Template | null {
     const record = this.recordCache.get(fingerprint);
     if (record) return record;
@@ -147,32 +134,21 @@ export class TemplateRegistry {
     return null;
   }
 
-  /**
-   * Get all record templates
-   */
   getAllRecordTemplates(): RecordTemplate[] {
     return Array.from(this.recordCache.values());
   }
 
-  /**
-   * Get all rubbish templates
-   */
   getAllRubbishTemplates(): RubbishTemplate[] {
     return Array.from(this.rubbishCache.values());
   }
 
-  /**
-   * Load templates from database
-   */
   async loadFromDatabase(): Promise<void> {
     try {
-      // Load record templates
-      const recordResult = await pool.query(
+      const recordResult = await this.dbManager.pool.query(
         "SELECT * FROM templates WHERE kind = 'record'"
       );
       
       for (const row of recordResult.rows) {
-        // Handle field_map - check if it's already an object or needs parsing
         let fieldMap;
         if (typeof row.field_map === 'string') {
           fieldMap = JSON.parse(row.field_map);
@@ -194,8 +170,7 @@ export class TemplateRegistry {
         });
       }
 
-      // Load rubbish templates
-      const rubbishResult = await pool.query(
+      const rubbishResult = await this.dbManager.pool.query(
         "SELECT * FROM templates WHERE kind = 'rubbish'"
       );
       
@@ -215,14 +190,11 @@ export class TemplateRegistry {
     }
   }
 
-  /**
-   * Save template to database
-   */
   async saveTemplate(template: Template, kind: TemplateKind): Promise<void> {
     try {
       if (kind === "record") {
         const recordTemplate = template as RecordTemplate;
-        await pool.query(
+        await this.dbManager.pool.query(
           `INSERT INTO templates (template_id, fingerprint, version, field_map, structure, length_hint, kind, source, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            ON CONFLICT (fingerprint) DO UPDATE SET
@@ -244,7 +216,7 @@ export class TemplateRegistry {
         );
       } else {
         const rubbishTemplate = template as RubbishTemplate;
-        await pool.query(
+        await this.dbManager.pool.query(
           `INSERT INTO templates (template_id, fingerprint, version, signature, confidence, kind, source, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            ON CONFLICT (fingerprint) DO UPDATE SET
@@ -269,5 +241,4 @@ export class TemplateRegistry {
   }
 }
 
-// Global registry instance
-export const templateRegistry = new TemplateRegistry();
+export const templateRegistry = TemplateRegistryService.getInstance();

@@ -1,11 +1,12 @@
+import Config from "../config/system-config/Config.js";
+import ServiceManager from "../config/ServiceManager.js";
+import { InstantiationError } from "../errors/InstantiationError.js";
 import { createLogger } from "./logger.js";
-
-const logger = createLogger("format_detector");
 
 export enum LineFormat {
   CSV = "csv",
   JSON = "json",
-  TWITTER_USER = "twitter_user",
+  TEXT = "text",
   BINARY = "binary",
   UNKNOWN = "unknown"
 }
@@ -16,150 +17,154 @@ export interface ParsedLine {
   error?: string;
 }
 
-/**
- * Detect the format of a line
- */
-export function detectLineFormat(line: string): LineFormat {
-  const trimmed = line.trim();
-  
-  // Skip empty lines
-  if (!trimmed) {
-    return LineFormat.UNKNOWN;
+class FormatDetectorService extends ServiceManager {
+  protected static instance: FormatDetectorService;
+  private logger: any;
+
+  private constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
+      throw new InstantiationError("Cannot instantiate FormatDetectorService directly. Use getInstance()");
+    }
+    super(enforce);
+    
+    this.logger = createLogger("format_detector");
   }
-  
-  // Check for binary/corrupted data (high ratio of non-printable characters)
-  const nonPrintableCount = (trimmed.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g) || []).length;
-  const nonPrintableRatio = nonPrintableCount / trimmed.length;
-  if (nonPrintableRatio > 0.3) {
-    return LineFormat.BINARY;
+
+  public static getInstance(): FormatDetectorService {
+    if (!ServiceManager.instance) {
+      ServiceManager.instance = new FormatDetectorService(Enforce);
+    }
+    return ServiceManager.instance as FormatDetectorService;
   }
-  
-  // Check for JSON (starts with {)
-  if (trimmed.startsWith("{")) {
+
+  public detectLineFormat(line: string): LineFormat {
+    const trimmed = line.trim();
+    
+    if (!trimmed) {
+      return LineFormat.UNKNOWN;
+    }
+    
+    const nonPrintableCount = (trimmed.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g) || []).length;
+    const nonPrintableRatio = nonPrintableCount / trimmed.length;
+    if (nonPrintableRatio > 0.3) {
+      return LineFormat.BINARY;
+    }
+    
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        JSON.parse(trimmed);
+        return LineFormat.JSON;
+      } catch {
+      }
+    }
+    
+    return LineFormat.TEXT;
+  }
+
+  public parseTwitterUserLine(line: string): Record<string, any> | null {
     try {
-      JSON.parse(trimmed);
-      return LineFormat.JSON;
-    } catch {
-      // Invalid JSON, fall through to other formats
+      const data: Record<string, any> = {};
+      
+      const emailMatch = line.match(/Email:\s*([^\s-]+)/);
+      if (emailMatch) data.email = emailMatch[1];
+      
+      const nameMatch = line.match(/Name:\s*([^-]+)-/);
+      if (nameMatch) data.name = nameMatch[1].trim();
+      
+      const screenNameMatch = line.match(/ScreenName:\s*([^-]+)-/);
+      if (screenNameMatch) data.screen_name = screenNameMatch[1].trim();
+      
+      const followersMatch = line.match(/Followers:\s*(\d+)/);
+      if (followersMatch) data.followers_count = parseInt(followersMatch[1], 10);
+      
+      const createdAtMatch = line.match(/Created At:\s*(.+)$/);
+      if (createdAtMatch) data.created_at = createdAtMatch[1].trim();
+      
+      return data;
+    } catch (error) {
+      this.logger.warn("twitter_user_parse_failed", { line, error: String(error) });
+      return null;
     }
   }
-  
-  // Check for Twitter user data format
-  // Pattern: "Email: xxx - Name: xxx - ScreenName: xxx - Followers: xxx - Created At: xxx"
-  if (trimmed.includes("Email:") && trimmed.includes("ScreenName:") && trimmed.includes("Followers:")) {
-    return LineFormat.TWITTER_USER;
-  }
-  
-  // Check for CSV (contains commas and quotes, or just commas)
-  if (trimmed.includes(",") || trimmed.includes('"')) {
-    return LineFormat.CSV;
-  }
-  
-  // Default to CSV for simple text lines
-  return LineFormat.CSV;
-}
 
-/**
- * Parse Twitter user data line
- * Format: "Email: xxx - Name: xxx - ScreenName: xxx - Followers: xxx - Created At: xxx"
- */
-export function parseTwitterUserLine(line: string): Record<string, any> | null {
-  try {
-    const data: Record<string, any> = {};
-    
-    // Extract Email
-    const emailMatch = line.match(/Email:\s*([^\s-]+)/);
-    if (emailMatch) data.email = emailMatch[1];
-    
-    // Extract Name
-    const nameMatch = line.match(/Name:\s*([^-]+)-/);
-    if (nameMatch) data.name = nameMatch[1].trim();
-    
-    // Extract ScreenName
-    const screenNameMatch = line.match(/ScreenName:\s*([^-]+)-/);
-    if (screenNameMatch) data.screen_name = screenNameMatch[1].trim();
-    
-    // Extract Followers
-    const followersMatch = line.match(/Followers:\s*(\d+)/);
-    if (followersMatch) data.followers_count = parseInt(followersMatch[1], 10);
-    
-    // Extract Created At
-    const createdAtMatch = line.match(/Created At:\s*(.+)$/);
-    if (createdAtMatch) data.created_at = createdAtMatch[1].trim();
-    
-    return data;
-  } catch (error) {
-    logger.warn("twitter_user_parse_failed", { line, error: String(error) });
-    return null;
+  public parseJsonLine(line: string): Record<string, any> | null {
+    try {
+      const parsed = JSON.parse(line);
+      return parsed;
+    } catch (error) {
+      this.logger.warn("json_parse_failed", { line, error: String(error) });
+      return null;
+    }
   }
-}
 
-/**
- * Parse JSON line
- */
-export function parseJsonLine(line: string): Record<string, any> | null {
-  try {
-    const parsed = JSON.parse(line);
-    return parsed;
-  } catch (error) {
-    logger.warn("json_parse_failed", { line, error: String(error) });
-    return null;
-  }
-}
-
-/**
- * Parse CSV line (simple implementation)
- */
-export function parseCsvLine(line: string, fieldSpec?: string[]): Record<string, any> | null {
-  try {
-    // Simple CSV split by comma
-    const parts = line.split(",");
-    const data: Record<string, any> = {};
-    
-    if (fieldSpec && fieldSpec.length > 0) {
-      // Use field spec to name fields
-      for (let i = 0; i < fieldSpec.length; i++) {
-        const fieldName = fieldSpec[i];
-        if (i < parts.length) {
-          data[fieldName] = parts[i].trim().replace(/^"|"$/g, ''); // Remove quotes
-        } else {
-          data[fieldName] = null;
+  public parseCsvLine(line: string, fieldSpec?: string[]): Record<string, any> | null {
+    try {
+      const parts = line.split(",");
+      const data: Record<string, any> = {};
+      
+      if (fieldSpec && fieldSpec.length > 0) {
+        for (let i = 0; i < fieldSpec.length; i++) {
+          const fieldName = fieldSpec[i];
+          if (i < parts.length) {
+            data[fieldName] = parts[i].trim().replace(/^"|"$/g, '');
+          } else {
+            data[fieldName] = null;
+          }
+        }
+      } else {
+        for (let i = 0; i < parts.length; i++) {
+          data[`field_${i}`] = parts[i].trim().replace(/^"|"$/g, '');
         }
       }
-    } else {
-      // Auto-generate field names
-      for (let i = 0; i < parts.length; i++) {
-        data[`field_${i}`] = parts[i].trim().replace(/^"|"$/g, '');
-      }
+      
+      return data;
+    } catch (error) {
+      this.logger.warn("csv_parse_failed", { line, error: String(error) });
+      return null;
     }
+  }
+
+  public parseLine(line: string, fieldSpec?: string[]): ParsedLine {
+    const format = this.detectLineFormat(line);
     
-    return data;
-  } catch (error) {
-    logger.warn("csv_parse_failed", { line, error: String(error) });
-    return null;
+    switch (format) {
+      case LineFormat.BINARY:
+        return { format, data: null, error: "Binary data skipped" };
+      
+      case LineFormat.JSON:
+        return { format, data: this.parseJsonLine(line) };
+      
+      case LineFormat.TEXT:
+        return { format, data: null };
+      
+      default:
+        return { format, data: null, error: "Unknown format" };
+    }
   }
 }
 
-/**
- * Main parser function - detects format and parses accordingly
- */
+function Enforce(): void {}
+
+export default FormatDetectorService;
+
+const formatDetectorService = FormatDetectorService.getInstance();
+
+export function detectLineFormat(line: string): LineFormat {
+  return formatDetectorService.detectLineFormat(line);
+}
+
+export function parseTwitterUserLine(line: string): Record<string, any> | null {
+  return formatDetectorService.parseTwitterUserLine(line);
+}
+
+export function parseJsonLine(line: string): Record<string, any> | null {
+  return formatDetectorService.parseJsonLine(line);
+}
+
+export function parseCsvLine(line: string, fieldSpec?: string[]): Record<string, any> | null {
+  return formatDetectorService.parseCsvLine(line, fieldSpec);
+}
+
 export function parseLine(line: string, fieldSpec?: string[]): ParsedLine {
-  const format = detectLineFormat(line);
-  
-  switch (format) {
-    case LineFormat.BINARY:
-      return { format, data: null, error: "Binary data skipped" };
-    
-    case LineFormat.JSON:
-      return { format, data: parseJsonLine(line) };
-    
-    case LineFormat.TWITTER_USER:
-      return { format, data: parseTwitterUserLine(line) };
-    
-    case LineFormat.CSV:
-      return { format, data: parseCsvLine(line, fieldSpec) };
-    
-    default:
-      return { format, data: null, error: "Unknown format" };
-  }
+  return formatDetectorService.parseLine(line, fieldSpec);
 }
