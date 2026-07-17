@@ -46,6 +46,8 @@ export class OutputBuffer {
   private partId: string;
   private jobId: string;
   private readonly FLUSH_LINE_THRESHOLD = 1000; // Flush after exactly 1000 lines
+  private flushPromise: Promise<string | null> | null = null;
+  private flushCounter = 0; // Counter to ensure unique partId for each flush
 
   constructor(jobId: string, templateId: string) {
     this.jobId = jobId;
@@ -56,9 +58,12 @@ export class OutputBuffer {
   addRow(row: OutputRow): void {
     this.rows.push(row);
     
-    // Flush after exactly 1000 lines
-    if (this.rows.length >= this.FLUSH_LINE_THRESHOLD) {
-      this.flush();
+    // Flush after exactly 1000 lines - do not await to avoid blocking
+    // But we need to handle the case where flush is already in progress
+    if (this.rows.length >= this.FLUSH_LINE_THRESHOLD && !this.flushPromise) {
+      this.flushPromise = this.flush().finally(() => {
+        this.flushPromise = null;
+      });
     }
   }
 
@@ -67,15 +72,18 @@ export class OutputBuffer {
       return null;
     }
 
+    // Generate unique partId for this flush to avoid race conditions
+    const flushPartId = `${this.partId}-${this.flushCounter++}`;
+    
     logger.info("parquet_flush", { 
-      part_id: this.partId, 
+      part_id: flushPartId, 
       row_count: this.rows.length,
       template_id: this.templateId 
     });
 
     try {
       const schema = buildSchema(this.rows);
-      const tempFile = path.join(os.tmpdir(), `${this.partId}.parquet`);
+      const tempFile = path.join(os.tmpdir(), `${flushPartId}.parquet`);
       const writer = await ParquetWriter.openFile(schema, tempFile);
       
       for (const row of this.rows) {
@@ -85,8 +93,8 @@ export class OutputBuffer {
       await writer.close();
 
       const buffer = await fs.readFile(tempFile);
-      const gcsPath = `gs://${settings.DATA_BUCKET}/output/${this.partId}.parquet`;
-      await putObject(settings.DATA_BUCKET, `output/${this.partId}.parquet`, buffer);
+      const gcsPath = `gs://${settings.DATA_BUCKET}/output/${flushPartId}.parquet`;
+      await putObject(settings.DATA_BUCKET, `output/${flushPartId}.parquet`, buffer);
 
       await fs.unlink(tempFile).catch(() => {});
 
@@ -94,7 +102,7 @@ export class OutputBuffer {
 
       return gcsPath;
     } catch (error) {
-      logger.error("parquet_flush_error", { part_id: this.partId, error: String(error) });
+      logger.error("parquet_flush_error", { part_id: flushPartId, error: String(error) });
       throw error;
     }
   }
@@ -122,6 +130,7 @@ export class OutputManager {
   async flushAll(): Promise<string[]> {
     const paths: string[] = [];
     
+    // Wait for any pending flushes to complete before clearing buffers
     for (const buffer of this.buffers.values()) {
       const path = await buffer.flush();
       if (path) {
