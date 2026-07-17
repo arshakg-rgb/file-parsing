@@ -174,8 +174,15 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
         console.log("parse_progress", { jobId, lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
       }
 
-      // Classify line using ordered classifier
-      const result = classifier.classify(line, byteOffset, byteLength);
+      // Classify line using ordered classifier - wrap in try/catch to skip problematic lines
+      let result;
+      try {
+        result = classifier.classify(line, byteOffset, byteLength);
+      } catch (lineError) {
+        console.error("line_classification_failed", { jobId, lineNo, error: lineError instanceof Error ? lineError.message : String(lineError) });
+        counts.dropped_rubbish++;
+        continue; // Skip this line and continue with next
+      }
 
       switch (result.verdict) {
         case "parsed":
