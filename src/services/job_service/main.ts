@@ -106,16 +106,19 @@ class JobService extends ServiceManager {
   public start(): void {
     const config = this.getConfig();
     const PORT = process.env.PORT || 8080;
-    this.app.listen(PORT, async () => {
+    
+    // Start listening immediately for health checks
+    this.app.listen(PORT, () => {
       console.log(`Job Service listening on port ${PORT}`);
-      try {
-        await this.initializeDatabase();
-        this.eventConsumerLoop();
-      } catch (err) {
-        console.error("Failed to initialize database:", err);
-        // Don't exit - keep server running even if DB init fails
-        console.error("Server will continue running without database connectivity");
-      }
+    });
+    
+    // Initialize database and start consumer loop in background
+    this.initializeDatabase().then(() => {
+      console.log("Database initialized successfully");
+      this.eventConsumerLoop();
+    }).catch((err) => {
+      console.error("Failed to initialize database:", err);
+      console.error("Server will continue running without database connectivity");
     });
   }
 }
