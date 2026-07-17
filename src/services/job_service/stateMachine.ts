@@ -122,7 +122,7 @@ async function createChildJob(event: JobEvent): Promise<void> {
   await pool.query(
     `INSERT INTO parse_jobs
       (job_id, batch_id, parent_job_id, source_type, source_ref, s3_url, size, field_spec, exec_path, status, output_paths, counts, timings, error, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, '{}'::text[]), $9, $10, $11, $12, $13, $14, NOW(), NOW())`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, '[]'::jsonb), $9, $10, $11, $12, $13, $14, NOW(), NOW())`,
     [
       childId,
       data.batch_id,
