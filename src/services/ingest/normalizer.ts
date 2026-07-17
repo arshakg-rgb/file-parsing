@@ -302,25 +302,36 @@ export async function extractArchiveToS3(
           const entryUrl = `gs://${bucket}/${entryKey}`;
           
           // Detect if extracted file is itself an archive (nested archive handling)
-          const header = await readRange(bucket, entryKey, 0, 511);
-          const detectedArchiveType = detectArchiveType(header);
+          let detectedArchiveType: string | null = null;
+          try {
+            const header = await readRange(bucket, entryKey, 0, 511);
+            detectedArchiveType = detectArchiveType(header);
+          } catch (err) {
+            console.error("nested_detection_failed", { jobId, name: file.name, error: err instanceof Error ? err.message : String(err) });
+          }
           
           if (detectedArchiveType && _depth < settings.ARCHIVE_MAX_NESTING_DEPTH) {
             console.log("rar_nested_archive_detected_sync", { jobId, name: file.name, detected_type: detectedArchiveType, depth: _depth });
-            // Extract nested archive recursively
-            const nestedEntries = await extractArchiveToS3(
-              jobId,
-              entryUrl,
-              detectedArchiveType,
-              fieldSpec,
-              batchId,
-              password,
-              _depth + 1
-            );
-            // Delete intermediate nested archive file
-            await gcsClient().bucket(bucket).file(entryKey).delete();
-            // Add nested entries to output
-            out.push(...nestedEntries);
+            try {
+              // Extract nested archive recursively
+              const nestedEntries = await extractArchiveToS3(
+                jobId,
+                entryUrl,
+                detectedArchiveType,
+                fieldSpec,
+                batchId,
+                password,
+                _depth + 1
+              );
+              // Delete intermediate nested archive file
+              await gcsClient().bucket(bucket).file(entryKey).delete();
+              // Add nested entries to output
+              out.push(...nestedEntries);
+            } catch (err) {
+              console.error("nested_extraction_failed", { jobId, name: file.name, error: err instanceof Error ? err.message : String(err) });
+              // Fall back to treating the file as a normal non-nested entry
+              out.push(makeEntryEvent(jobId, batchId, entryUrl, file.name, file.size, fieldSpec));
+            }
           } else {
             out.push(makeEntryEvent(jobId, batchId, entryUrl, file.name, file.size, fieldSpec));
           }
