@@ -332,14 +332,16 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
     metrics.increment("parse.error", 1);
     emit(jobId, EventType.ERROR_OCCURRED, { error: String(exc) });
   } finally {
-    // Best-effort flush to preserve partial progress even on fatal errors
-    try {
-      const outputPaths = await outputManager.flushAll();
-      if (fatal && outputPaths.length > 0) {
-        logger.warn("partial_flush_on_fatal", { job_id: jobId, output_paths: outputPaths.length });
+    // Best-effort flush to preserve partial progress only on fatal errors
+    if (fatal) {
+      try {
+        const outputPaths = await outputManager.flushAll();
+        if (outputPaths.length > 0) {
+          logger.warn("partial_flush_on_fatal", { job_id: jobId, output_paths: outputPaths.length });
+        }
+      } catch (flushErr) {
+        logger.error("flush_failed", { job_id: jobId, error: String(flushErr) });
       }
-    } catch (flushErr) {
-      logger.error("flush_failed", { job_id: jobId, error: String(flushErr) });
     }
     
     if (fatal) {
