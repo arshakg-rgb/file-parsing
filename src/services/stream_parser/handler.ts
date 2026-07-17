@@ -293,7 +293,7 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
           // Add to DLQ for retry - wrap in try/catch
           const failureClass = result.failure_class || FailureClass.UNCERTAIN;
           try {
-            await dlqManager.addEntry(
+            const dlqId = await dlqManager.addEntry(
               jobId,
               byteOffset,
               byteLength,
@@ -302,8 +302,10 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
               failureClass,
               result.failure_class || "Uncertain classification"
             );
-            if (!counts.failed_by_class[failureClass]) counts.failed_by_class[failureClass] = 0;
-            counts.failed_by_class[failureClass]++;
+            if (dlqId) {
+              if (!counts.failed_by_class[failureClass]) counts.failed_by_class[failureClass] = 0;
+              counts.failed_by_class[failureClass]++;
+            }
           } catch (dlqErr) {
             console.error("dlq_add_failed", { jobId, lineNo, error: dlqErr instanceof Error ? dlqErr.message : String(dlqErr) });
             counts.dropped_rubbish++;

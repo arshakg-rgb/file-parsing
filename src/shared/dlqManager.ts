@@ -43,11 +43,21 @@ export class DLQManager {
   ): Promise<string> {
     const dlqId = crypto.randomUUID();
     
-    await pool.query(
+    // Use ON CONFLICT DO NOTHING to prevent duplicate entries on restart
+    // Unique constraint on (job_id, line_no) ensures idempotency
+    const result = await pool.query(
       `INSERT INTO dead_letters (dlq_id, job_id, byte_offset, byte_length, line_no, raw_bytes, failure_class, error, attempts, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+       ON CONFLICT (job_id, line_no) DO NOTHING
+       RETURNING dlq_id`,
       [dlqId, jobId, byteOffset, byteLength, lineNo, rawBytes, failureClass, error, 0, "pending"]
     );
+    
+    // If no row was returned, it means a duplicate already exists
+    if (result.rows.length === 0) {
+      logger.info("dlq_entry_duplicate_skipped", { job_id: jobId, line_no, byte_offset: byteOffset });
+      return null; // Indicate this was a duplicate
+    }
     
     logger.info("dlq_entry_added", { dlq_id: dlqId, job_id: jobId, failure_class: failureClass });
     return dlqId;
