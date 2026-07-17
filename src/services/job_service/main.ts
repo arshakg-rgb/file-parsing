@@ -113,7 +113,8 @@ class JobService extends ServiceManager {
         this.eventConsumerLoop();
       } catch (err) {
         console.error("Failed to initialize database:", err);
-        process.exit(1);
+        // Don't exit - keep server running even if DB init fails
+        console.error("Server will continue running without database connectivity");
       }
     });
   }
