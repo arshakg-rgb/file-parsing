@@ -30,31 +30,24 @@ function sanitizeForPg(str: string): string {
 }
 
 /**
+ * Sanitize any value recursively - single source of truth for type handling
+ */
+function sanitizeValue(value: any): any {
+  if (typeof value === 'string') return sanitizeForPg(value);
+  if (Array.isArray(value)) return value.map(sanitizeValue);
+  if (value instanceof Date) return value;
+  if (typeof value === 'object' && value !== null) return sanitizeRecord(value);
+  return value;
+}
+
+/**
  * Sanitize all string values in a record recursively
  * Handles nested objects, arrays, and Date objects correctly
  */
 function sanitizeRecord(record: Record<string, any>): Record<string, any> {
   const sanitized: Record<string, any> = {};
   for (const [key, value] of Object.entries(record)) {
-    if (typeof value === 'string') {
-      sanitized[key] = sanitizeForPg(value);
-    } else if (Array.isArray(value)) {
-      // Handle arrays by mapping over elements recursively
-      sanitized[key] = value.map(item => 
-        typeof item === 'string' ? sanitizeForPg(item) :
-        typeof item === 'object' && item !== null ? sanitizeRecord(item) :
-        item
-      );
-    } else if (value instanceof Date) {
-      // Preserve Date objects as-is
-      sanitized[key] = value;
-    } else if (typeof value === 'object' && value !== null) {
-      // Handle nested objects recursively
-      sanitized[key] = sanitizeRecord(value);
-    } else {
-      // Primitives (number, boolean, null, undefined) pass through
-      sanitized[key] = value;
-    }
+    sanitized[key] = sanitizeValue(value);
   }
   return sanitized;
 }
