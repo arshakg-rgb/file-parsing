@@ -151,7 +151,22 @@ async function resolveSource(msg: IngestMessage): Promise<{ s3Url: string; size:
   } else if ([SourceType.UPLOAD, SourceType.ARCHIVE_ENTRY].includes(msg.source_type)) {
     const [bucket, key] = parseGcsUrl(msg.source_ref);
     logger.debug("upload_source_debug", { job_id: msg.job_id, bucket, key, source_ref: msg.source_ref });
-    const size = await objectSize(bucket, key);
+    
+    // Retry objectSize check for GCS consistency
+    let size = 0;
+    let attempts = 0;
+    const maxAttempts = 5;
+    while (attempts < maxAttempts) {
+      try {
+        size = await objectSize(bucket, key);
+        break;
+      } catch (err) {
+        attempts++;
+        if (attempts >= maxAttempts) throw err;
+        logger.warn("upload_size_check_retry", { job_id: msg.job_id, attempt: attempts, error: String(err) });
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    }
     
     // Copy from uploads to ingested bucket for upload jobs
     if (msg.source_type === SourceType.UPLOAD && bucket === settings.DATA_BUCKET && key.startsWith("uploads/")) {

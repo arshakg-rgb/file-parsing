@@ -127,6 +127,23 @@ async function extractSingleRarEntry(
 async function handleArchiveEntry(msg: ArchiveEntryMessage, attempt: number): Promise<void> {
   const { job_id, batch_id, archive_s3_url, entry_name, entry_size, field_spec, password, archive_type, nesting_depth = 0 } = msg;
   
+  // Idempotency check: if entry is already completed, skip processing
+  const existingEntry = await pool.query(
+    "SELECT status FROM pending_archive_entries WHERE job_id = $1 AND entry_name = $2",
+    [job_id, entry_name]
+  );
+  const existingStatus = existingEntry.rows[0]?.status;
+  
+  if (existingStatus === "completed") {
+    logger.info("archive_entry_already_completed", { job_id, entry_name });
+    return;
+  }
+  
+  if (existingStatus === "failed") {
+    logger.info("archive_entry_already_failed", { job_id, entry_name });
+    return;
+  }
+  
   logger.info("archive_entry_processing_start", { job_id, entry_name, entry_size, attempt, nesting_depth });
   metrics.increment("archive_entry.processing", 1, { attempt: attempt.toString() });
   
@@ -295,12 +312,18 @@ export async function consumerLoop(): Promise<void> {
           for (const { payload, receiptHandle } of jobMessages) {
             try {
               await handleArchiveEntry(payload, 1);
+              // Only delete message on success to prevent redelivery on ack failure
               await deleteMessage(settings.ARCHIVE_ENTRY_QUEUE_URL, receiptHandle);
             } catch (exc) {
               logger.error("archive_entry_consumer_message_failed", { job_id: payload.job_id, entry_name: payload.entry_name }, exc instanceof Error ? exc : new Error(String(exc)));
               metrics.increment("archive_entry.message_error", 1);
-              // Ack to prevent infinite retry loop for bad messages
-              await deleteMessage(settings.ARCHIVE_ENTRY_QUEUE_URL, receiptHandle);
+              // Don't delete message on failure - let it retry for transient errors
+              // But check if this is a permanent error that should be acked
+              const errorStr = String(exc);
+              if (errorStr.includes("max retries exhausted") || errorStr.includes("exceeds maximum")) {
+                // Permanent error - ack to prevent infinite retry
+                await deleteMessage(settings.ARCHIVE_ENTRY_QUEUE_URL, receiptHandle);
+              }
             }
           }
         });
