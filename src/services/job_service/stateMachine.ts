@@ -131,7 +131,7 @@ async function createChildJob(event: JobEvent): Promise<void> {
       data.entry_name,
       data.entry_s3_url,
       data.entry_size,
-      fieldSpec,
+      typeof fieldSpec === "string" ? fieldSpec : JSON.stringify(fieldSpec),
       "stream",
       JobStatus.QUEUED,
       JSON.stringify([]),
