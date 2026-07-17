@@ -158,6 +158,9 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
   let avgRowWidth = 0;
   let maxRowWidth = 0;
 
+  // Fallback encodings to try if initial detection fails
+  const FALLBACK_ENCODINGS = ["utf-8", "latin-1", "cp1252", "iso-8859-1", "iso-8859-2", "utf-16"];
+
   // Execute probes to detect encoding and row characteristics
   for (const offset of probeOffsets) {
     const endOffset = Math.min(offset + settings.PROBE_WINDOW_MIN_BYTES - 1, fileSize - 1);
@@ -165,7 +168,13 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
       const buffer = await readRange(bucket, key, offset, endOffset);
       const detected = jschardet.detect(buffer);
       if (detected.encoding && detected.confidence > 0.9) {
-        detectedEncoding = detected.encoding;
+        // Map unsupported encodings to supported alternatives
+        const encodingMap: Record<string, string> = {
+          'iso-8859-2': 'latin-1',
+          'windows-1252': 'cp1252',
+          'iso-8859-1': 'latin-1',
+        };
+        detectedEncoding = encodingMap[detected.encoding.toLowerCase()] || detected.encoding;
       }
       
       // Analyze row widths

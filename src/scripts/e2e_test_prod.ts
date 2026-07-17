@@ -13,11 +13,15 @@ const TEST_CSV = `email,name,surname,phone
 john.doe@example.com,John,Doe,555-1234
 jane.smith@example.com,Jane,Smith,555-5678`;
 
-async function createJob(fieldSpec: string[]): Promise<{ job_id: string; presigned_put_url: string }> {
+async function createJobFromGCS(gcsUrl: string, fieldSpec: string[]): Promise<{ job_id: string }> {
   const response = await fetch(`${JOB_SERVICE_URL}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_type: "upload", field_spec: JSON.stringify(fieldSpec) }),
+    body: JSON.stringify({ 
+      source_type: "s3", 
+      source_ref: gcsUrl,
+      field_spec: JSON.stringify(fieldSpec) 
+    }),
   });
 
   if (!response.ok) {
@@ -25,8 +29,8 @@ async function createJob(fieldSpec: string[]): Promise<{ job_id: string; presign
     throw new Error(`Failed to create job: ${response.status} ${response.statusText} - ${errorText}`);
   }
 
-  const data = await response.json() as { job_id: string; presigned_put_url: string };
-  console.log(`Presigned URL: ${data.presigned_put_url}`);
+  const data = await response.json() as { job_id: string };
+  console.log(`Job created: ${data.job_id}`);
   return data;
 }
 
@@ -59,20 +63,18 @@ async function main() {
   console.log("Starting production end-to-end test...");
 
   try {
-    // Create job
-    console.log("Creating job...");
-    const { job_id, presigned_put_url } = await createJob(["email", "name", "surname", "phone"]);
+    // GCS URL for the large file
+    const GCS_URL = "https://storage.googleapis.com/datalead-osint/archive/0fd825b9-824c-4d4e-b261-3182475c48c2/CSV samples/first-PassengerDetails.csv";
+    
+    // Create job from GCS
+    console.log("Creating job from GCS...");
+    const { job_id } = await createJobFromGCS(GCS_URL, ["field1", "field2", "field3"]);
     console.log(`Job created: ${job_id}`);
-
-    // Upload file
-    console.log("Uploading test file...");
-    const uploadStatus = await uploadFile(presigned_put_url, TEST_CSV);
-    console.log(`File uploaded: HTTP ${uploadStatus}`);
 
     // Poll job status
     console.log("Polling job status (every 5s)...");
     let attempts = 0;
-    const maxAttempts = 60; // 5 minutes max
+    const maxAttempts = 120; // 10 minutes max for large file
 
     while (attempts < maxAttempts) {
       attempts++;

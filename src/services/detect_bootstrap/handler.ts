@@ -70,7 +70,28 @@ export function computeProbeOffsets(fileSize: number, windowSize: number): numbe
 
 export function detectEncoding(raw: Buffer): string {
   const result = jschardet.detect(raw.slice(0, 65536));
-  return result.encoding || "utf-8";
+  const detected = result.encoding || "utf-8";
+  
+  // Map unsupported encodings to supported alternatives
+  const encodingMap: Record<string, string> = {
+    'iso-8859-2': 'latin-1',
+    'windows-1252': 'cp1252',
+    'iso-8859-1': 'latin-1',
+    'iso-8859-3': 'latin-1',
+    'iso-8859-4': 'latin-1',
+    'iso-8859-5': 'latin-1',
+    'iso-8859-6': 'latin-1',
+    'iso-8859-7': 'latin-1',
+    'iso-8859-8': 'latin-1',
+    'iso-8859-9': 'latin-1',
+    'iso-8859-10': 'latin-1',
+    'iso-8859-13': 'latin-1',
+    'iso-8859-14': 'latin-1',
+    'iso-8859-15': 'latin-1',
+    'iso-8859-16': 'latin-1',
+  };
+  
+  return encodingMap[detected.toLowerCase()] || detected;
 }
 
 export function measureRowWidth(raw: Buffer, encoding: string): [number, number] {
