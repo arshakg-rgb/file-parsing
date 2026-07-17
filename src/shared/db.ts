@@ -9,7 +9,7 @@ import MySqlManager, {
 const dbManager = MySqlManager.getInstance();
 
 // Re-export pool for backward compatibility
-export const pool = dbManager.getPool();
+export const pool = dbManager.pool;
 
 // Re-export interfaces for backward compatibility
 export type { ParseJobRow, OutputPartRow, DeadLetterRow, PendingArchiveEntryRow };

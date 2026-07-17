@@ -126,7 +126,3 @@ class JobService extends ServiceManager {
 function Enforce(): void {}
 
 export default JobService;
-
-// Backward compatibility - start the service
-const jobService = JobService.getInstance();
-jobService.start();

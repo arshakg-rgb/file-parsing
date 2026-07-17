@@ -7,21 +7,13 @@ const { Pool } = pg;
 
 class MySqlManager extends ServiceManager {
   protected static instance: MySqlManager;
-  public pool: pg.Pool;
+  private _pool: pg.Pool | null = null;
 
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate MySqlManager directly. Use getInstance()");
     }
     super(enforce);
-    
-    const config = Config.getInstance();
-    this.pool = new Pool({
-      connectionString: config.settings.DATABASE_URL,
-      max: 50, // Increased from 15 to handle concurrent large file processing
-      idleTimeoutMillis: 1200000, // 20 minutes to handle long-running RAR extraction
-      connectionTimeoutMillis: 30000, // 30s for cold starts
-    });
   }
 
   public static getInstance(): MySqlManager {
@@ -29,6 +21,23 @@ class MySqlManager extends ServiceManager {
       ServiceManager.instance = new MySqlManager(Enforce);
     }
     return ServiceManager.instance as MySqlManager;
+  }
+
+  private getPool(): pg.Pool {
+    if (!this._pool) {
+      const config = Config.getInstance();
+      this._pool = new Pool({
+        connectionString: config.settings.DATABASE_URL,
+        max: 50,
+        idleTimeoutMillis: 1200000,
+        connectionTimeoutMillis: 30000,
+      });
+    }
+    return this._pool;
+  }
+
+  public get pool(): pg.Pool {
+    return this.getPool();
   }
 
   public async initialize(): Promise<void> {
@@ -40,10 +49,6 @@ class MySqlManager extends ServiceManager {
   public async shutdown(): Promise<void> {
     console.log("Shutting down MySqlManager...");
     await this.pool.end();
-  }
-
-  public getPool(): pg.Pool {
-    return this.pool;
   }
 
   public get sequelize() {

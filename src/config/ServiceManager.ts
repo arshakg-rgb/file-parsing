@@ -69,4 +69,6 @@ class ServiceManager {
 
 function Enforce(): void {}
 
+export { Enforce };
+
 export default ServiceManager;
