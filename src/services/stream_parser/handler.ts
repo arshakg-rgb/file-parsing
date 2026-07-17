@@ -18,6 +18,34 @@ import jschardet from "jschardet";
 
 const logger = createLogger("stream_parser");
 
+/**
+ * Sanitize text for PostgreSQL storage
+ * - Strip null bytes (Postgres text/JSON columns reject \u0000)
+ * - Escape lone/invalid \u sequences that aren't valid unicode
+ */
+function sanitizeForPg(str: string): string {
+  return str
+    .replace(/\u0000/g, '')
+    .replace(/\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
+}
+
+/**
+ * Sanitize all string values in a record recursively
+ */
+function sanitizeRecord(record: Record<string, any>): Record<string, any> {
+  const sanitized: Record<string, any> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (typeof value === 'string') {
+      sanitized[key] = sanitizeForPg(value);
+    } else if (typeof value === 'object' && value !== null) {
+      sanitized[key] = sanitizeRecord(value);
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+}
+
 // AI Rate Limiter
 class AIRateLimiter {
   private requests: number[] = [];
@@ -186,10 +214,13 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
 
       switch (result.verdict) {
         case "parsed":
+          // Sanitize row data before storage
+          const sanitizedRow = sanitizeRecord(result.row || {});
+          
           // Add to output buffer
           const outputBuffer = outputManager.getBuffer(jobId, result.template_id || "default");
           outputBuffer.addRow({
-            ...result.row,
+            ...sanitizedRow,
             _job_id: jobId,
             _byte_offset: byteOffset,
             _byte_length: byteLength,
@@ -202,50 +233,70 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
             _part_id: "auto",
           });
           
-          // Create trace record
-          await traceSystem.createTrace({
-            s3_url: msg.s3_url,
-            byte_offset: byteOffset,
-            byte_length: byteLength,
-            record_index: recordIndex,
-            line_no: lineNo,
-            job_id: jobId,
-            template_id: result.template_id || "default",
-            template_version: result.template_version || 1,
-            checksum: "",
-            parsed_at: new Date(),
-            part_id: "auto",
-            row_data: result.row // Store actual parsed row data
-          });
-          
-          counts.parsed++;
+          // Create trace record - wrap in try/catch
+          try {
+            await traceSystem.createTrace({
+              s3_url: msg.s3_url,
+              byte_offset: byteOffset,
+              byte_length: byteLength,
+              record_index: recordIndex,
+              line_no: lineNo,
+              job_id: jobId,
+              template_id: result.template_id || "default",
+              template_version: result.template_version || 1,
+              checksum: "",
+              parsed_at: new Date(),
+              part_id: "auto",
+              row_data: sanitizedRow // Store sanitized row data
+            });
+            counts.parsed++;
+          } catch (traceErr) {
+            console.error("trace_write_failed", { jobId, lineNo, error: traceErr instanceof Error ? traceErr.message : String(traceErr) });
+            counts.dropped_rubbish++;
+          }
           break;
 
         case "rubbish":
-          counts.dropped_rubbish++;
-          await traceSystem.logRubbishDrop(
-            jobId,
-            byteOffset,
-            lineNo,
-            line,
-            result.template_id || "unknown"
-          );
+          // Sanitize line before storage
+          const sanitizedLine = sanitizeForPg(line);
+          
+          try {
+            await traceSystem.logRubbishDrop(
+              jobId,
+              byteOffset,
+              lineNo,
+              sanitizedLine,
+              result.template_id || "unknown"
+            );
+            counts.dropped_rubbish++;
+          } catch (rubbishErr) {
+            console.error("rubbish_log_failed", { jobId, lineNo, error: rubbishErr instanceof Error ? rubbishErr.message : String(rubbishErr) });
+            counts.dropped_rubbish++;
+          }
           break;
 
         case "uncertain":
-          // Add to DLQ for retry
+          // Sanitize line before storage
+          const sanitizedUncertainLine = sanitizeForPg(line);
+          
+          // Add to DLQ for retry - wrap in try/catch
           const failureClass = result.failure_class || FailureClass.UNCERTAIN;
-          await dlqManager.addEntry(
-            jobId,
-            byteOffset,
-            byteLength,
-            lineNo,
-            line,
-            failureClass,
-            result.failure_class || "Uncertain classification"
-          );
-          if (!counts.failed_by_class[failureClass]) counts.failed_by_class[failureClass] = 0;
-          counts.failed_by_class[failureClass]++;
+          try {
+            await dlqManager.addEntry(
+              jobId,
+              byteOffset,
+              byteLength,
+              lineNo,
+              sanitizedUncertainLine,
+              failureClass,
+              result.failure_class || "Uncertain classification"
+            );
+            if (!counts.failed_by_class[failureClass]) counts.failed_by_class[failureClass] = 0;
+            counts.failed_by_class[failureClass]++;
+          } catch (dlqErr) {
+            console.error("dlq_add_failed", { jobId, lineNo, error: dlqErr instanceof Error ? dlqErr.message : String(dlqErr) });
+            counts.dropped_rubbish++;
+          }
           break;
       }
     }
@@ -281,6 +332,16 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
     metrics.increment("parse.error", 1);
     emit(jobId, EventType.ERROR_OCCURRED, { error: String(exc) });
   } finally {
+    // Best-effort flush to preserve partial progress even on fatal errors
+    try {
+      const outputPaths = await outputManager.flushAll();
+      if (fatal && outputPaths.length > 0) {
+        logger.warn("partial_flush_on_fatal", { job_id: jobId, output_paths: outputPaths.length });
+      }
+    } catch (flushErr) {
+      logger.error("flush_failed", { job_id: jobId, error: String(flushErr) });
+    }
+    
     if (fatal) {
       emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.FAILED, error: String(fatal) });
     }
