@@ -72,21 +72,26 @@ export class OutputBuffer {
       return null;
     }
 
+    // CRITICAL: Snapshot and clear rows atomically BEFORE any async work
+    // This prevents rows added during flush from being silently dropped
+    const rowsToFlush = this.rows;
+    this.rows = []; // New array immediately - addRow() calls after this point are safe
+
     // Generate unique partId for this flush to avoid race conditions
     const flushPartId = `${this.partId}-${this.flushCounter++}`;
     
     logger.info("parquet_flush", { 
       part_id: flushPartId, 
-      row_count: this.rows.length,
+      row_count: rowsToFlush.length,
       template_id: this.templateId 
     });
 
     try {
-      const schema = buildSchema(this.rows);
+      const schema = buildSchema(rowsToFlush);
       const tempFile = path.join(os.tmpdir(), `${flushPartId}.parquet`);
       const writer = await ParquetWriter.openFile(schema, tempFile);
       
-      for (const row of this.rows) {
+      for (const row of rowsToFlush) {
         await writer.appendRow(row);
       }
       
@@ -98,12 +103,16 @@ export class OutputBuffer {
 
       await fs.unlink(tempFile).catch(() => {});
 
-      this.rows = [];
-
       return gcsPath;
     } catch (error) {
       logger.error("parquet_flush_error", { part_id: flushPartId, error: String(error) });
       throw error;
+    }
+  }
+
+  async waitForPendingFlush(): Promise<void> {
+    if (this.flushPromise) {
+      await this.flushPromise;
     }
   }
 
@@ -131,7 +140,9 @@ export class OutputManager {
     const paths: string[] = [];
     
     // Wait for any pending flushes to complete before clearing buffers
+    // This prevents race conditions when flushAll() is called while a threshold flush is in progress
     for (const buffer of this.buffers.values()) {
+      await buffer.waitForPendingFlush();
       const path = await buffer.flush();
       if (path) {
         paths.push(path);
