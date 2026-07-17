@@ -270,61 +270,66 @@ export async function extractArchiveToS3(
         
         console.log("rar_extracting_file", { jobId, name: file.name, size: file.size });
         
-        const entryKey = `archive/${jobId}/${file.name}`;
-        const entryFile = gcsClient().bucket(bucket).file(entryKey);
-        const writeStream = entryFile.createWriteStream();
-        
-        const extractArgs = ['p', '-inul', tmpPath, file.name];
-        if (password) {
-          extractArgs.push('-p' + password);
-        }
-        
-        const extractProcess = spawn('unrar', extractArgs);
-        
-        // Pipe extraction output directly to GCS with backpressure
-        extractProcess.stdout.pipe(writeStream);
-        
-        await new Promise<void>((resolve, reject) => {
-          writeStream.on('finish', resolve);
-          writeStream.on('error', reject);
-          extractProcess.on('error', reject);
-          extractProcess.on('close', (code) => {
-            if (code !== 0) {
-              reject(new Error(`unrar extraction failed with code ${code}`));
-            } else {
-              resolve();
-            }
+        try {
+          const entryKey = `archive/${jobId}/${file.name}`;
+          const entryFile = gcsClient().bucket(bucket).file(entryKey);
+          const writeStream = entryFile.createWriteStream();
+          
+          const extractArgs = ['p', '-inul', tmpPath, file.name];
+          if (password) {
+            extractArgs.push('-p' + password);
+          }
+          
+          const extractProcess = spawn('unrar', extractArgs);
+          
+          // Pipe extraction output directly to GCS with backpressure
+          extractProcess.stdout.pipe(writeStream);
+          
+          await new Promise<void>((resolve, reject) => {
+            writeStream.on('finish', resolve);
+            writeStream.on('error', reject);
+            extractProcess.on('error', reject);
+            extractProcess.on('close', (code) => {
+              if (code !== 0) {
+                reject(new Error(`unrar extraction failed with code ${code}`));
+              } else {
+                resolve();
+              }
+            });
           });
-        });
-        
-        totalUncompressed += file.size;
-        const entryUrl = `gs://${bucket}/${entryKey}`;
-        
-        // Detect if extracted file is itself an archive (nested archive handling)
-        const header = await readRange(bucket, entryKey, 0, 511);
-        const detectedArchiveType = detectArchiveType(header);
-        
-        if (detectedArchiveType && _depth < settings.ARCHIVE_MAX_NESTING_DEPTH) {
-          console.log("rar_nested_archive_detected_sync", { jobId, name: file.name, detected_type: detectedArchiveType, depth: _depth });
-          // Extract nested archive recursively
-          const nestedEntries = await extractArchiveToS3(
-            jobId,
-            entryUrl,
-            detectedArchiveType,
-            fieldSpec,
-            batchId,
-            password,
-            _depth + 1
-          );
-          // Delete intermediate nested archive file
-          await gcsClient().bucket(bucket).file(entryKey).delete();
-          // Add nested entries to output
-          out.push(...nestedEntries);
-        } else {
-          out.push(makeEntryEvent(jobId, batchId, entryUrl, file.name, file.size, fieldSpec));
+          
+          totalUncompressed += file.size;
+          const entryUrl = `gs://${bucket}/${entryKey}`;
+          
+          // Detect if extracted file is itself an archive (nested archive handling)
+          const header = await readRange(bucket, entryKey, 0, 511);
+          const detectedArchiveType = detectArchiveType(header);
+          
+          if (detectedArchiveType && _depth < settings.ARCHIVE_MAX_NESTING_DEPTH) {
+            console.log("rar_nested_archive_detected_sync", { jobId, name: file.name, detected_type: detectedArchiveType, depth: _depth });
+            // Extract nested archive recursively
+            const nestedEntries = await extractArchiveToS3(
+              jobId,
+              entryUrl,
+              detectedArchiveType,
+              fieldSpec,
+              batchId,
+              password,
+              _depth + 1
+            );
+            // Delete intermediate nested archive file
+            await gcsClient().bucket(bucket).file(entryKey).delete();
+            // Add nested entries to output
+            out.push(...nestedEntries);
+          } else {
+            out.push(makeEntryEvent(jobId, batchId, entryUrl, file.name, file.size, fieldSpec));
+          }
+          
+          console.log("rar_extracted_file", { jobId, name: file.name, size: file.size });
+        } catch (exc) {
+          console.error("rar_extract_file_failed", { jobId, name: file.name, error: exc instanceof Error ? exc.message : String(exc) });
+          // Continue processing remaining files instead of aborting the entire batch
         }
-        
-        console.log("rar_extracted_file", { jobId, name: file.name, size: file.size });
       }
       
       console.log("rar_extraction_complete", { jobId, totalFiles: files.length, totalUncompressed });
