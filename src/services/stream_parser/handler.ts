@@ -98,7 +98,18 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
   metrics.increment("parse.start", 1);
 
   const [bucket, key] = parseGcsUrl(msg.s3_url);
-  const fieldSpec = msg.field_spec;
+  
+  // Parse field_spec if it's a JSON string
+  let fieldSpec: string[] = [];
+  if (typeof msg.field_spec === 'string') {
+    try {
+      fieldSpec = JSON.parse(msg.field_spec);
+    } catch {
+      fieldSpec = [];
+    }
+  } else {
+    fieldSpec = msg.field_spec;
+  }
 
   // Adaptive probing to detect file structure
   const fileSize = msg.size || (await objectSize(bucket, key));

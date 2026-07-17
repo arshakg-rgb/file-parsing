@@ -235,13 +235,17 @@ interface CSVParseResult {
 function tryParseAsCSV(line: string, fieldSpec: string[]): CSVParseResult {
   const delimiters = [",", ";", "\t", "|"];
   
-  console.log("csv_parser_start", { line, fieldSpec, delimiterCount: delimiters.length });
+  // Ensure fieldSpec is an array
+  const fieldSpecArray = Array.isArray(fieldSpec) ? fieldSpec : 
+    (typeof fieldSpec === 'string' ? JSON.parse(fieldSpec) : []);
+  
+  console.log("csv_parser_start", { line, fieldSpec: fieldSpecArray, delimiterCount: delimiters.length });
   
   for (const delimiter of delimiters) {
     const parts = line.split(delimiter);
-    console.log("csv_parser_try_delimiter", { delimiter, partCount: parts.length, expectedCount: fieldSpec.length });
+    console.log("csv_parser_try_delimiter", { delimiter, partCount: parts.length, expectedCount: fieldSpecArray.length });
     
-    if (parts.length === fieldSpec.length) {
+    if (parts.length === fieldSpecArray.length) {
       // Check if all parts are non-empty (basic validation)
       const allNonEmpty = parts.every(part => part.trim().length > 0);
       console.log("csv_parser_validation", { delimiter, allNonEmpty, parts });

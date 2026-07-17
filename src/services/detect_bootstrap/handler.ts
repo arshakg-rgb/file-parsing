@@ -158,9 +158,21 @@ export async function bootstrapJob(msg: ClassifyMessage): Promise<void> {
 
     if (!dataLines.length) continue;
 
+    // Parse field_spec if it's a JSON string
+    let fieldSpecArray: string[] = [];
+    if (typeof msg.field_spec === 'string') {
+      try {
+        fieldSpecArray = JSON.parse(msg.field_spec);
+      } catch {
+        fieldSpecArray = [];
+      }
+    } else {
+      fieldSpecArray = msg.field_spec;
+    }
+
     const req: ClassifyRequest = {
       unknown_line: dataLines[0],
-      field_spec: msg.field_spec,
+      field_spec: fieldSpecArray,
       context_lines: dataLines.slice(1) || [],
       job_id: jobId,
     };
