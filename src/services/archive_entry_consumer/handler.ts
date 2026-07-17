@@ -6,19 +6,21 @@ import os from "os";
 import path from "path";
 import { spawn } from "child_process";
 import { settings } from "../../shared/config.js";
-import { parseGcsUrl, objectSize, readFull, putObject, gcsClient } from "../../shared/gcsUtils.js";
-import { receiveMessages, deleteMessage, publishEvent } from "../../shared/queueUtils.js";
+import { parseGcsUrl, objectSize, readFull, readRange, putObject, gcsClient } from "../../shared/gcsUtils.js";
+import { receiveMessages, deleteMessage, publishEvent, sendRaw } from "../../shared/queueUtils.js";
 import { EventType, makeJobEvent } from "../../shared/models/events.js";
 import { JobStatus } from "../../shared/models/job.js";
-import { markPendingEntryCompleted, markPendingEntryFailed, markPendingEntryProcessing, getPendingEntryCount, getPendingEntryTotalSize, getJob, pool, waitForDb } from "../../shared/db.js";
+import { markPendingEntryCompleted, markPendingEntryFailed, markPendingEntryProcessing, getPendingEntryCount, getPendingEntryTotalSize, getJob, pool, waitForDb, createPendingArchiveEntry } from "../../shared/db.js";
 import { createLogger } from "../../shared/logger.js";
 import { metrics } from "../../shared/metrics.js";
+import { detectArchiveType, extractArchiveToS3, BombError } from "../ingest/normalizer.js";
 
 const logger = createLogger("archive-entry-consumer");
 
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 5 * 60 * 1000; // 5 minutes between retries
 const MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024; // 10GB total limit per job
+const CONCURRENT_MESSAGES = 3; // Process up to 3 messages concurrently
 
 interface ArchiveEntryMessage {
   job_id: string;
@@ -29,6 +31,7 @@ interface ArchiveEntryMessage {
   field_spec: string[];
   password?: string;
   archive_type: string;
+  nesting_depth?: number; // Track archive nesting depth
 }
 
 async function extractSingleRarEntry(
@@ -117,15 +120,20 @@ async function extractSingleRarEntry(
 }
 
 async function handleArchiveEntry(msg: ArchiveEntryMessage, attempt: number): Promise<void> {
-  const { job_id, batch_id, archive_s3_url, entry_name, entry_size, field_spec, password, archive_type } = msg;
+  const { job_id, batch_id, archive_s3_url, entry_name, entry_size, field_spec, password, archive_type, nesting_depth = 0 } = msg;
   
-  logger.info("archive_entry_processing_start", { job_id, entry_name, entry_size, attempt });
+  logger.info("archive_entry_processing_start", { job_id, entry_name, entry_size, attempt, nesting_depth });
   metrics.increment("archive_entry.processing", 1, { attempt: attempt.toString() });
   
   
   try {
     if (archive_type !== "rar") {
       throw new Error(`Unsupported archive type: ${archive_type}`);
+    }
+    
+    // Check nesting depth to prevent infinite recursion
+    if (nesting_depth >= settings.ARCHIVE_MAX_NESTING_DEPTH) {
+      throw new Error(`Archive nesting depth ${nesting_depth} exceeds maximum ${settings.ARCHIVE_MAX_NESTING_DEPTH}`);
     }
     
     // Mark as processing BEFORE extraction to close race condition
@@ -139,19 +147,66 @@ async function handleArchiveEntry(msg: ArchiveEntryMessage, attempt: number): Pr
     
     const { s3Url, size } = await extractSingleRarEntry(job_id, archive_s3_url, entry_name, password || undefined, field_spec);
     
-    // Mark entry as completed in database
+    // Detect if extracted file is itself an archive (nested archive handling)
+    const [bucket, key] = parseGcsUrl(s3Url);
+    const header = await readRange(bucket, key, 0, 511);
+    const detectedArchiveType = detectArchiveType(header);
+    
+    if (detectedArchiveType) {
+      logger.info("archive_entry_nested_archive_detected", { job_id, entry_name, detected_type: detectedArchiveType, nesting_depth });
+      metrics.increment("archive_entry.nested_archive", 1, { type: detectedArchiveType });
+      
+      // Extract nested archive recursively
+      const nestedEntries = await extractArchiveToS3(
+        job_id,
+        s3Url,
+        detectedArchiveType,
+        field_spec,
+        batch_id,
+        password,
+        nesting_depth + 1
+      );
+      
+      // Register nested pending entries BEFORE marking parent is completed
+      // This prevents race condition where job gets marked DONE before children are registered
+      for (const nestedEntry of nestedEntries) {
+        if (nestedEntry.pending) {
+          await createPendingArchiveEntry(job_id, nestedEntry.entry_name, nestedEntry.entry_size);
+          logger.info("archive_entry_nested_pending", { job_id, entry_name, nested_entry_name: nestedEntry.entry_name });
+        } else {
+          await publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, job_id, "archive-entry-consumer", {
+            parent_job_id: job_id,
+            batch_id: batch_id,
+            entry_s3_url: nestedEntry.entry_s3_url,
+            entry_name: nestedEntry.entry_name,
+            entry_size: nestedEntry.entry_size,
+            field_spec: field_spec || [],
+          }));
+        }
+      }
+      
+      // Delete the intermediate nested archive file after extraction
+      try {
+        await gcsClient().bucket(bucket).file(key).delete();
+        logger.info("archive_entry_nested_archive_deleted", { job_id, entry_name });
+      } catch (deleteError) {
+        logger.warn("archive_entry_nested_archive_delete_failed", { job_id, entry_name, error: String(deleteError) });
+      }
+    } else {
+      // Not an archive - publish ENTRY_DISCOVERED for parsing
+      await publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, job_id, "archive-entry-consumer", {
+        parent_job_id: job_id,
+        batch_id: batch_id,
+        entry_s3_url: s3Url,
+        entry_name: entry_name,
+        entry_size: size,
+        field_spec: field_spec || [],
+      }));
+    }
+    
+    // Mark entry as completed in database (after nested entries are registered)
     await markPendingEntryCompleted(job_id, entry_name);
     logger.info("archive_entry_marked_completed", { job_id, entry_name });
-    
-    // Publish ENTRY_DISCOVERED event
-    await publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, job_id, "archive-entry-consumer", {
-      parent_job_id: job_id,
-      batch_id: batch_id,
-      entry_s3_url: s3Url,
-      entry_name: entry_name,
-      entry_size: size,
-      field_spec: field_spec,
-    }));
     
     logger.info("archive_entry_success", { job_id, entry_name, s3_url: s3Url });
     metrics.increment("archive_entry.success", 1);
@@ -218,16 +273,41 @@ export async function consumerLoop(): Promise<void> {
         );
         logger.info("archive_entry_consumer_messages_received", { count: messages.length });
         
-        for (const { payload, receiptHandle } of messages) {
-          try {
-            await handleArchiveEntry(payload, 1);
-            await deleteMessage(settings.ARCHIVE_ENTRY_QUEUE_URL, receiptHandle);
-          } catch (exc) {
-            logger.error("archive_entry_consumer_message_failed", { job_id: payload.job_id, entry_name: payload.entry_name }, exc instanceof Error ? exc : new Error(String(exc)));
-            metrics.increment("archive_entry.message_error", 1);
-            // Ack to prevent infinite retry loop for bad messages
-            await deleteMessage(settings.ARCHIVE_ENTRY_QUEUE_URL, receiptHandle);
+        // Group messages by job_id to prevent race condition on total-size cap
+        // Entries from same job processed serially, different jobs processed in parallel
+        const messagesByJob = new Map<string, Array<{ payload: ArchiveEntryMessage; receiptHandle: string }>>();
+        for (const msg of messages) {
+          const jobKey = msg.payload.job_id;
+          if (!messagesByJob.has(jobKey)) {
+            messagesByJob.set(jobKey, []);
           }
+          messagesByJob.get(jobKey)!.push(msg);
+        }
+        
+        // Process each job's messages serially, but process different jobs in parallel
+        const jobProcessingPromises = Array.from(messagesByJob.entries()).map(async ([jobId, jobMessages]) => {
+          // Process messages for this job serially to avoid race on total-size cap
+          for (const { payload, receiptHandle } of jobMessages) {
+            try {
+              await handleArchiveEntry(payload, 1);
+              await deleteMessage(settings.ARCHIVE_ENTRY_QUEUE_URL, receiptHandle);
+            } catch (exc) {
+              logger.error("archive_entry_consumer_message_failed", { job_id: payload.job_id, entry_name: payload.entry_name }, exc instanceof Error ? exc : new Error(String(exc)));
+              metrics.increment("archive_entry.message_error", 1);
+              // Ack to prevent infinite retry loop for bad messages
+              await deleteMessage(settings.ARCHIVE_ENTRY_QUEUE_URL, receiptHandle);
+            }
+          }
+        });
+        
+        // Limit concurrency across jobs
+        const jobChunks = [];
+        for (let i = 0; i < jobProcessingPromises.length; i += CONCURRENT_MESSAGES) {
+          jobChunks.push(jobProcessingPromises.slice(i, i + CONCURRENT_MESSAGES));
+        }
+        
+        for (const chunk of jobChunks) {
+          await Promise.allSettled(chunk);
         }
       }
     } catch (dbError) {

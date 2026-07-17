@@ -380,21 +380,38 @@ steps:
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
           --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
 
-  # Deploy archive_entry_consumer as Cloud Run Job (not Service) to escape 3600s timeout
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: bash
     args:
       - -c
       - |
-        gcloud run jobs deploy archive-entry-consumer \
+        gcloud run deploy archive-entry-consumer \
           --image $_ARCHIVE_ENTRY_IMAGE \
           --region $_REGION \
+          --platform managed \
+          --remove-env-vars=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+
+        gcloud run deploy archive-entry-consumer \
+          --image $_ARCHIVE_ENTRY_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --remove-secrets=DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+
+        gcloud run deploy archive-entry-consumer \
+          --image $_ARCHIVE_ENTRY_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-          --set-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
+          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
           --memory 2Gi \
           --cpu 1 \
-          --max-retries 3 \
-          --task-timeout 7200s \
+          --timeout 3600s \
+          --max-instances 5 \
+          --min-instances 1 \
+          --no-cpu-throttling \
+          --execution-environment gen2 \
+          --session-affinity \
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,RAR_TEMP_MOUNT=/mnt/scratch,ARCHIVE_ENTRY_QUEUE_URL=pubsub://projects/data-etl-499916/topics/fpp-archive-entry,LARGE_FILE_THRESHOLD_BYTES=524288000 \
           --add-volume name=rar-temp,type=cloud-storage,bucket=datalead-osint \
           --add-volume-mount volume=rar-temp,mount-path=/mnt/scratch \

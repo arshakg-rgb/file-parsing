@@ -11,7 +11,7 @@ import { extract as extractTar } from "tar";
 import Seven from "node-7z";
 import { once } from "node:events";
 import { settings } from "../../shared/config.js";
-import { parseGcsUrl as parseS3Url, objectSize, readFull, putObject, listObjects, copyObject, gcsClient } from "../../shared/gcsUtils.js";
+import { parseGcsUrl as parseS3Url, objectSize, readFull, readRange, putObject, listObjects, copyObject, gcsClient } from "../../shared/gcsUtils.js";
 import { fetchUrlStream } from "./ssrf_guard.js";
 import { sendRaw } from "../../shared/queueUtils.js";
 
@@ -238,6 +238,7 @@ export async function extractArchiveToS3(
             field_spec: fieldSpec,
             password: password || undefined,
             archive_type: "rar",
+            nesting_depth: _depth,
           });
           // Track as pending entry for job status
           out.push({ parent_job_id: jobId, batch_id: batchId, entry_s3_url: null, entry_name: file.name, entry_size: file.size, field_spec: fieldSpec, pending: true });
@@ -286,7 +287,30 @@ export async function extractArchiveToS3(
         
         totalUncompressed += file.size;
         const entryUrl = `gs://${bucket}/${entryKey}`;
-        out.push(makeEntryEvent(jobId, batchId, entryUrl, file.name, file.size, fieldSpec));
+        
+        // Detect if extracted file is itself an archive (nested archive handling)
+        const header = await readRange(bucket, entryKey, 0, 511);
+        const detectedArchiveType = detectArchiveType(header);
+        
+        if (detectedArchiveType && _depth < settings.ARCHIVE_MAX_NESTING_DEPTH) {
+          console.log("rar_nested_archive_detected_sync", { jobId, name: file.name, detected_type: detectedArchiveType, depth: _depth });
+          // Extract nested archive recursively
+          const nestedEntries = await extractArchiveToS3(
+            jobId,
+            entryUrl,
+            detectedArchiveType,
+            fieldSpec,
+            batchId,
+            password,
+            _depth + 1
+          );
+          // Delete intermediate nested archive file
+          await gcsClient().bucket(bucket).file(entryKey).delete();
+          // Add nested entries to output
+          out.push(...nestedEntries);
+        } else {
+          out.push(makeEntryEvent(jobId, batchId, entryUrl, file.name, file.size, fieldSpec));
+        }
         
         console.log("rar_extracted_file", { jobId, name: file.name, size: file.size });
       }

@@ -134,7 +134,7 @@ async function resolveSource(msg: IngestMessage): Promise<{ s3Url: string; size:
           entry_s3_url: objUrl,
           entry_name: objUrl,
           entry_size: objSize,
-          field_spec: msg.field_spec,
+          field_spec: msg.field_spec || [],
           source_type: SourceType.S3,
         }));
       }
