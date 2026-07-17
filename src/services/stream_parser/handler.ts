@@ -15,7 +15,6 @@ import { metrics } from "../../shared/metrics.js";
 import { startHealthCheckServer } from "../../shared/health.js";
 import { waitForDb } from "../../shared/db.js";
 import jschardet from "jschardet";
-import { parseLine, LineFormat } from "../../shared/formatDetector.js";
 import { normalizeEncoding, isLikelyUtf8 } from "../../shared/encoding.js";
 
 const logger = createLogger("stream_parser");
@@ -217,82 +216,25 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
         console.log("parse_progress", { jobId, lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
       }
 
-      // Detect line format first
-      const formatResult = parseLine(line, fieldSpec);
-      
-      // Debug: log first few format detections
-      if (lineNo <= 5) {
-        console.log("format_detection_debug", { jobId, lineNo, format: formatResult.format, has_data: formatResult.data !== null, error: formatResult.error });
-      }
-
-      // Skip binary data
-      if (formatResult.format === LineFormat.BINARY) {
-        console.log("binary_data_skipped", { jobId, lineNo });
-        counts.dropped_rubbish++;
-        continue;
-      }
-
-      // Handle JSON and Twitter user data directly
-      if (formatResult.format === LineFormat.JSON || formatResult.format === LineFormat.TWITTER_USER) {
-        if (formatResult.data) {
-          const sanitizedRow = sanitizeRecord(formatResult.data);
-          const templateId = formatResult.format === LineFormat.JSON ? "json" : "twitter_user";
-          
-          const outputBuffer = outputManager.getBuffer(jobId, templateId);
-          outputBuffer.addRow({
-            ...sanitizedRow,
-            _job_id: jobId,
-            _byte_offset: byteOffset,
-            _byte_length: byteLength,
-            _record_index: recordIndex++,
-            _line_no: lineNo,
-            _template_id: templateId,
-            _template_version: 1,
-            _checksum: "",
-            _parsed_at: new Date(),
-            _part_id: "auto",
-          });
-          
-          try {
-            await traceSystem.createTrace({
-              s3_url: msg.s3_url,
-              byte_offset: byteOffset,
-              byte_length: byteLength,
-              record_index: recordIndex,
-              line_no: lineNo,
-              job_id: jobId,
-              template_id: templateId,
-              template_version: 1,
-              checksum: "",
-              parsed_at: new Date(),
-              part_id: "auto",
-              row_data: sanitizedRow
-            });
-            counts.parsed++;
-          } catch (traceErr) {
-            console.error("trace_write_failed", { jobId, lineNo, error: traceErr instanceof Error ? traceErr.message : String(traceErr) });
-            counts.dropped_rubbish++;
-          }
-        } else {
-          console.log("format_parse_failed", { jobId, lineNo, format: formatResult.format, error: formatResult.error });
-          counts.dropped_rubbish++;
-        }
-        continue;
-      }
-
-      // For CSV, use the existing classifier
+      // Designed ordered classifier for EVERY line: length/binary gate -> learned record
+      // templates -> structural recognizers (JSON / key-value, field_spec-only) -> rubbish
+      // templates -> validated CSV. Junk is declined, not force-parsed.
       let result;
       try {
         result = classifier.classify(line, byteOffset, byteLength);
-        
-        // Debug: log first few classification results
-        if (lineNo <= 5) {
-          console.log("classification_debug", { jobId, lineNo, verdict: result.verdict, template_id: result.template_id, line_length: line.length });
-        }
       } catch (lineError) {
         console.error("line_classification_failed", { jobId, lineNo, error: lineError instanceof Error ? lineError.message : String(lineError) });
         counts.dropped_rubbish++;
         continue; // Skip this line and continue with next
+      }
+
+      // Unknown lines are dead-lettered (verdict "uncertain"); the retry service performs
+      // AI recovery out-of-band. In-loop synchronous AI is intentionally NOT done here — it
+      // would need the match-rate monitor + AI rate limiter + a per-job call budget (not yet
+      // wired) to avoid unthrottled, serial 30s model calls stalling the parse loop.
+
+      if (lineNo <= 5) {
+        console.log("classification_debug", { jobId, lineNo, verdict: result.verdict, template_id: result.template_id, line_length: line.length });
       }
 
       switch (result.verdict) {
@@ -300,14 +242,15 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
           // Sanitize row data before storage
           const sanitizedRow = sanitizeRecord(result.row || {});
           
-          // Add to output buffer
+          // Add to output buffer (one record index shared by the parquet row and its trace)
+          const idx = recordIndex++;
           const outputBuffer = outputManager.getBuffer(jobId, result.template_id || "default");
           outputBuffer.addRow({
             ...sanitizedRow,
             _job_id: jobId,
             _byte_offset: byteOffset,
             _byte_length: byteLength,
-            _record_index: recordIndex++,
+            _record_index: idx,
             _line_no: lineNo,
             _template_id: result.template_id,
             _template_version: result.template_version ?? 1,
@@ -315,14 +258,14 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
             _parsed_at: new Date(),
             _part_id: "auto",
           });
-          
+
           // Create trace record - wrap in try/catch
           try {
             await traceSystem.createTrace({
               s3_url: msg.s3_url,
               byte_offset: byteOffset,
               byte_length: byteLength,
-              record_index: recordIndex,
+              record_index: idx,
               line_no: lineNo,
               job_id: jobId,
               template_id: result.template_id || "default",

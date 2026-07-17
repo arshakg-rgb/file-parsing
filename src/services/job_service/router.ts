@@ -17,13 +17,24 @@ router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => 
       return;
     }
 
-    // Extract field names from field_spec if it's in the new format
+    // Normalize field_spec into a plain array of field names. Accept: an array; a JSON-array
+    // string ('["email","name"]'); a JSON-object string ('{"fields":[{"name":"email"}]}'); a
+    // { fields: [{name}] } object; or a plain comma-separated string ('email,name').
+    const namesFromArray = (arr: any[]): string[] =>
+      arr.map((f: any) => (typeof f === "string" ? f : f?.name)).filter(Boolean);
     let fieldNames: string[] = [];
     if (field_spec) {
       if (Array.isArray(field_spec)) {
-        fieldNames = field_spec;
+        fieldNames = namesFromArray(field_spec);
+      } else if (typeof field_spec === "string") {
+        const s = field_spec.trim();
+        let parsed: any;
+        try { parsed = JSON.parse(s); } catch { parsed = undefined; }
+        if (Array.isArray(parsed)) fieldNames = namesFromArray(parsed);
+        else if (parsed && Array.isArray(parsed.fields)) fieldNames = namesFromArray(parsed.fields);
+        else if (s) fieldNames = s.split(",").map((x) => x.trim()).filter(Boolean); // plain CSV string
       } else if (field_spec.fields && Array.isArray(field_spec.fields)) {
-        fieldNames = field_spec.fields.map((f: any) => f.name);
+        fieldNames = namesFromArray(field_spec.fields);
       }
     }
 
@@ -68,7 +79,7 @@ router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => 
       job_id: jobId,
       source_type,
       source_ref: source_ref || s3Url,
-      field_spec,
+      field_spec: fieldNames, // normalized array, consistent with the stored spec
       batch_id: batchId,
     });
     console.log("job_queue_message_sent", { job_id: jobId, message_id: messageId });

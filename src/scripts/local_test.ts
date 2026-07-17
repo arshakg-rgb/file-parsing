@@ -700,6 +700,115 @@ check("UTF-8 content round-trips correctly (not mojibake) once detected as utf-8
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 17. Ordered line classifier (design conformance)
+// The stream_parser now routes every line through LineClassifier.classify() in the
+// designed order (length/binary gate -> learned templates -> structural JSON/kv ->
+// rubbish -> validated CSV -> uncertain), extracting ONLY field_spec fields and
+// DECLINING junk/header lines instead of force-parsing them. These cases lock in the
+// fixes an adversarial review surfaced (header misdetection, kv/JSON over-matching,
+// phone false-positives, field_spec parsing).
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log("\n=== 17. Ordered line classifier ===");
+
+const { LineClassifier } = await import("../services/stream_parser/classifier.js");
+const FS = ["email", "name", "phone", "address"];
+const classifyOne = (fields: string[], line: string) =>
+  new LineClassifier("test", fields, [], []).classify(line, 0, line.length);
+
+// --- extraction honors field_spec (only requested fields, others null) ---
+check("twitter key-value line extracts ONLY field_spec fields", () => {
+  const r = classifyOne(FS, "Email: a@b.com - Name: Jane Roe - ScreenName: jr - Followers: 5 - Created At: Mon");
+  assert.equal(r.verdict, "parsed");
+  assert.deepEqual(Object.keys(r.row!).sort(), [...FS].sort());
+  assert.equal(r.row!.email, "a@b.com");
+  assert.equal(r.row!.name, "Jane Roe");
+  assert.equal(r.row!.phone, null);
+});
+check("JSON record extracts ONLY field_spec fields (no screen_name/followers dumped)", () => {
+  const r = classifyOne(FS, '{"id":9,"name":"Aaliyah","screen_name":"x","followers_count":3}');
+  assert.equal(r.verdict, "parsed");
+  assert.deepEqual(Object.keys(r.row!).sort(), [...FS].sort());
+  assert.equal(r.row!.name, "Aaliyah");
+});
+
+// --- header handling: header declined, columns mapped for data rows ---
+check("header row is declined (rubbish), not emitted as data", () => {
+  const r = classifyOne(FS, "id,email,full_name,phone,address");
+  assert.equal(r.verdict, "rubbish");
+  assert.equal(r.template_id, "header");
+});
+check("data rows after a header map to the right columns (all four fields)", () => {
+  const c = new LineClassifier("test", FS, [], []);
+  c.classify("id,email,full_name,phone,address", 0, 0); // header
+  const r = c.classify('7,jane@x.com,Jane Roe,5551234567,"12 Main St"', 0, 0);
+  assert.equal(r.verdict, "parsed");
+  assert.equal(r.template_id, "csv-mapped");
+  assert.deepEqual(r.row, { email: "jane@x.com", name: "Jane Roe", phone: "5551234567", address: "12 Main St" });
+});
+
+// --- junk / ambiguous lines are DECLINED, never force-parsed ---
+check("headerless plain-words first row is NOT mistaken for a header (no data loss)", () => {
+  // "Cell,Berlin": 'Cell' aliases nothing dangerous now; must not become a header map.
+  const r = classifyOne(["phone", "address"], "Cell,Berlin");
+  assert.notEqual(r.template_id, "header");
+  assert.equal(r.verdict, "uncertain");
+});
+check("single 'Name: value' log fragment is declined (needs a strong field or >=2 fields)", () => {
+  assert.equal(classifyOne(["email", "name", "phone"], "Name: Full Name").verdict, "uncertain");
+});
+check("JSON log line whose key only weakly aliases a field is declined", () => {
+  // 'username' no longer aliases 'name'; nothing else matches -> declined.
+  assert.equal(classifyOne(["name"], '{"level":"info","username":"svc-bot","msg":"go"}').verdict, "uncertain");
+});
+check("binary / mostly-nonprintable line is dropped as rubbish", () => {
+  const r = classifyOne(FS, "\x00\x01\x02\x03\x04\x05\x06\x07 garbage");
+  assert.equal(r.verdict, "rubbish");
+  assert.equal(r.template_id, "binary-gate");
+});
+check("empty line is length-gated to rubbish", () => {
+  assert.equal(classifyOne(FS, "   ").template_id, "length-gate");
+});
+
+// --- content-based CSV column identification (headerless) ---
+check("headerless CSV identifies the email column by content, declines rows with none", () => {
+  const withEmail = classifyOne(FS, '1416779,2231849,"OD2667900",GLENN.RAINEY@HOTMAIL.CO.UK,07700900123');
+  assert.equal(withEmail.verdict, "parsed");
+  assert.equal(withEmail.row!.email, "GLENN.RAINEY@HOTMAIL.CO.UK");
+  assert.equal(withEmail.row!.phone, "07700900123"); // 11 digits, not the 7-digit ID
+  const noField = classifyOne(FS, "1416779,2231849,OD2667900,code");
+  assert.equal(noField.verdict, "uncertain");
+});
+check("phone content-match rejects ZIP+4 / year ranges (needs 10-15 digits)", () => {
+  assert.equal(classifyOne(["phone"], "12345-6789,Town").verdict, "uncertain");
+  assert.equal(classifyOne(["phone"], "2020-2021,Town").verdict, "uncertain");
+});
+
+// --- router field_spec normalization (job_service accepts multiple encodings) ---
+check("field_spec normalization: array / JSON-array string / JSON-{fields} string / comma string", () => {
+  const norm = (field_spec: any): string[] => {
+    const namesFromArray = (arr: any[]): string[] => arr.map((f: any) => (typeof f === "string" ? f : f?.name)).filter(Boolean);
+    let fieldNames: string[] = [];
+    if (field_spec) {
+      if (Array.isArray(field_spec)) fieldNames = namesFromArray(field_spec);
+      else if (typeof field_spec === "string") {
+        const s = field_spec.trim();
+        let parsed: any;
+        try { parsed = JSON.parse(s); } catch { parsed = undefined; }
+        if (Array.isArray(parsed)) fieldNames = namesFromArray(parsed);
+        else if (parsed && Array.isArray(parsed.fields)) fieldNames = namesFromArray(parsed.fields);
+        else if (s) fieldNames = s.split(",").map((x) => x.trim()).filter(Boolean);
+      } else if (field_spec.fields && Array.isArray(field_spec.fields)) fieldNames = namesFromArray(field_spec.fields);
+    }
+    return fieldNames;
+  };
+  assert.deepEqual(norm(["email", "name"]), ["email", "name"]);
+  assert.deepEqual(norm('["email","name"]'), ["email", "name"]); // the exact string the client sent
+  assert.deepEqual(norm('{"fields":[{"name":"email"},{"name":"phone"}]}'), ["email", "phone"]);
+  assert.deepEqual(norm("email,name,phone"), ["email", "name", "phone"]);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Summary
 // ─────────────────────────────────────────────────────────────────────────────
 
