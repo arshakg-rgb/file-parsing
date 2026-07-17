@@ -125,4 +125,8 @@ class JobService extends ServiceManager {
 
 function Enforce(): void {}
 
+// Auto-start the service when this module is loaded
+const jobService = JobService.getInstance();
+jobService.start();
+
 export default JobService;
