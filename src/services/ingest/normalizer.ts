@@ -231,21 +231,26 @@ export async function extractArchiveToS3(
         if (file.size > settings.LARGE_FILE_THRESHOLD_BYTES) {
           console.log("rar_route_to_async", { jobId, name: file.name, size: file.size, threshold: settings.LARGE_FILE_THRESHOLD_BYTES });
           
-          // Insert pending entry synchronously BEFORE sendRaw to provide idempotency
-          // This prevents duplicate queue messages when jobs are retried due to Cloud Rollout SIGTERM
-          await createPendingArchiveEntry(jobId, file.name, file.size);
-          
-          await sendRaw(settings.ARCHIVE_ENTRY_QUEUE_URL, {
-            job_id: jobId,
-            batchId: batchId,
-            archive_s3_url: s3Url,
-            entry_name: file.name,
-            entry_size: file.size,
-            field_spec: fieldSpec,
-            password: password || undefined,
-            archive_type: "rar",
-            nesting_depth: _depth,
-          });
+          try {
+            // Insert pending entry synchronously BEFORE sendRaw to provide idempotency
+            // This prevents duplicate queue messages when jobs are retried due to Cloud Rollout SIGTERM
+            await createPendingArchiveEntry(jobId, file.name, file.size);
+            
+            await sendRaw(settings.ARCHIVE_ENTRY_QUEUE_URL, {
+              job_id: jobId,
+              batchId: batchId,
+              archive_s3_url: s3Url,
+              entry_name: file.name,
+              entry_size: file.size,
+              field_spec: fieldSpec,
+              password: password || undefined,
+              archive_type: "rar",
+              nesting_depth: _depth,
+            });
+          } catch (exc) {
+            console.error("rar_route_to_async_failed", { jobId, name: file.name, error: exc instanceof Error ? exc.message : String(exc) });
+            // Continue processing remaining files instead of aborting the entire batch
+          }
           
           // Track as pending entry for job status
           out.push({ parent_job_id: jobId, batch_id: batchId, entry_s3_url: null, entry_name: file.name, entry_size: file.size, field_spec: fieldSpec, pending: true });
