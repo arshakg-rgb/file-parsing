@@ -1,5 +1,9 @@
 options:
   logging: CLOUD_LOGGING_ONLY
+  # _AI_IMAGE/_LOAD_IMAGE/_REPORT_IMAGE/_RETRY_IMAGE/_ARCHIVE_ENTRY_IMAGE are defined below
+  # but currently unused (those services are disabled for fast test builds). ALLOW_LOOSE
+  # stops Cloud Build's "substitution key not matched in the template" error.
+  substitution_option: 'ALLOW_LOOSE'
 substitutions:
   _REGION: us-central1
   _JOB_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/job-service:latest
