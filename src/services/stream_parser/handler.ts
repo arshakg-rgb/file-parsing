@@ -212,6 +212,11 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
       let result;
       try {
         result = classifier.classify(line, byteOffset, byteLength);
+        
+        // Debug: log first few classification results
+        if (lineNo <= 5) {
+          console.log("classification_debug", { jobId, lineNo, verdict: result.verdict, template_id: result.template_id, line_length: line.length });
+        }
       } catch (lineError) {
         console.error("line_classification_failed", { jobId, lineNo, error: lineError instanceof Error ? lineError.message : String(lineError) });
         counts.dropped_rubbish++;
