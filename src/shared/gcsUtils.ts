@@ -277,6 +277,11 @@ export async function* streamLines(
   }
 }
 
+/** Split a complete in-memory buffer into lines using the real scanLines path. For tests. */
+export function splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] {
+  return [...splitBytesToLines(data, 0, encoding, { inQuote: false })];
+}
+
 function* splitBytesToLines(
   data: Buffer,
   baseOffset: number,
@@ -301,6 +306,17 @@ function* scanLines(
   let pos = 0;
   let lineStart = 0;
   let endedAtBoundary = false;
+  let quotedNewlines = 0; // embedded newlines seen inside the current open quote
+
+  // Build a line tuple for [lineStart, endExclusive) and advance lineStart. Offset is
+  // captured before lineStart is mutated.
+  const makeLine = (endExclusive: number): [string, number, number] => {
+    const raw = data.slice(lineStart, endExclusive);
+    const tuple: [string, number, number] = [decode(raw, encoding).replace(/\r\n$|\n$/, ""), dataBase + lineStart, raw.length];
+    lineStart = endExclusive;
+    quotedNewlines = 0;
+    return tuple;
+  };
 
   while (pos < data.length) {
     const b = data[pos];
@@ -321,14 +337,29 @@ function* scanLines(
       continue;
     }
 
-    if (b === NL && !state.inQuote) {
-      const raw = data.slice(lineStart, pos + 1);
-      const lineText = decode(raw, encoding).replace(/\r\n$|\n$/, "");
-      yield [lineText, dataBase + lineStart, raw.length];
-      lineStart = pos + 1;
+    if (b === NL) {
+      if (!state.inQuote) {
+        yield makeLine(pos + 1);
+      } else {
+        // Newline inside a quoted field. Allow a bounded number (embedded newlines in
+        // clean CSV) but recover from an unbalanced/stray quote that would otherwise
+        // swallow the rest of the file: break here and reset the quote state.
+        quotedNewlines++;
+        if (quotedNewlines > settings.MAX_QUOTED_NEWLINES || pos + 1 - lineStart >= settings.MAX_LINE_BYTES) {
+          state.inQuote = false;
+          yield makeLine(pos + 1);
+        }
+      }
     }
 
     pos++;
+
+    // Hard safety cap: force-break a line with no usable terminator (binary blob or a
+    // never-closing quote) so a single line can never exhaust memory.
+    if (pos - lineStart >= settings.MAX_LINE_BYTES) {
+      state.inQuote = false;
+      yield makeLine(pos);
+    }
   }
 
   return { lineStart, endedAtBoundary };

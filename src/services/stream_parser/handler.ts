@@ -6,6 +6,7 @@ import { parseGcsUrl, streamLines, objectSize, readRange } from "../../shared/gc
 import { LineClassifier } from "./classifier.js";
 import { templateRegistry } from "../../shared/templateRegistry.js";
 import { OutputManager } from "../../shared/parquetWriter.js";
+import { CsvOutputWriter } from "../../shared/csvOutputWriter.js";
 import { DLQManager } from "../../shared/dlqManager.js";
 import { TraceSystem } from "../../shared/traceSystem.js";
 import { QualityGate } from "../../shared/qualityGate.js";
@@ -200,6 +201,7 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
   const rubbishTemplates = templateRegistry.getAllRubbishTemplates();
   const classifier = new LineClassifier(jobId, fieldSpec, recordTemplates, rubbishTemplates);
   const outputManager = new OutputManager();
+  const csvWriter = new CsvOutputWriter(jobId, fieldSpec);
   const dlqManager = new DLQManager();
   const traceSystem = new TraceSystem();
   const qualityGate = new QualityGate();
@@ -276,6 +278,7 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
               row_data: sanitizedRow // Store sanitized row data
             });
             counts.parsed++;
+            csvWriter.addRow(sanitizedRow, lineNo); // human-readable CSV mirror (best-effort)
           } catch (traceErr) {
             console.error("trace_write_failed", { jobId, lineNo, error: traceErr instanceof Error ? traceErr.message : String(traceErr) });
             counts.dropped_rubbish++;
@@ -331,6 +334,9 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
 
     // Flush any remaining output
     const outputPaths = await outputManager.flushAll();
+    // Write the human-readable per-job CSV mirror (best-effort; Parquet stays authoritative)
+    const csvOutputPath = await csvWriter.flush();
+    if (csvOutputPath) console.log("csv_output_ready", { jobId, path: csvOutputPath, rows: counts.parsed });
 
     // Apply quality gate
     const qualityCheck = await qualityGate.passesQualityGate(jobId);
@@ -370,8 +376,10 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
       } catch (flushErr) {
         logger.error("flush_failed", { job_id: jobId, error: String(flushErr) });
       }
+      // Release the CSV temp file (no-op if already flushed on the success path).
+      await csvWriter.flush().catch(() => {});
     }
-    
+
     if (fatal) {
       emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.FAILED, error: String(fatal) });
     }

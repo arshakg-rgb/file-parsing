@@ -809,6 +809,48 @@ check("field_spec normalization: array / JSON-array string / JSON-{fields} strin
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 18. Line-splitting recovery + CSV output escaping
+// Regression: a stray/unbalanced " in messy data flipped the quote-aware line reader's
+// inQuote flag and swallowed the rest of the file into one giant "line". With
+// MAX_QUOTED_NEWLINES=0 a newline always ends a line (quotes still protect embedded
+// delimiters within a physical line). Plus the new per-job CSV output writer.
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log("\n=== 18. Line-splitting recovery + CSV output ===");
+
+const { splitAllLines } = await import("../shared/gcsUtils.js");
+const { csvEscapeCell } = await import("../shared/csvOutputWriter.js");
+const splitLines = (s: string) => splitAllLines(Buffer.from(s, "utf-8")).map((t) => t[0]);
+
+check("stray/unbalanced quote does NOT swallow following lines", () => {
+  const out = splitLines('foo,",bar\nbaz,qux\nzip,zap\n');
+  assert.equal(out.length, 3);
+  assert.equal(out[1], "baz,qux");
+  assert.equal(out[2], "zip,zap");
+});
+check("quote still protects an embedded delimiter within a single physical line", () => {
+  const out = splitLines('"a,b",c\nd,e\n');
+  assert.equal(out.length, 2);
+  assert.equal(out[0], '"a,b",c');
+  assert.equal(out[1], "d,e");
+});
+check("messy multi-record data stays one line per record (the reported failure)", () => {
+  const out = splitLines('1416779,OD2667900,",",GLENN@X.COM,",\n1416780,OD2667901,BANDAR,",\n');
+  assert.equal(out.length, 2);
+  assert.ok(out[0].includes("GLENN@X.COM"));
+  assert.ok(out[1].startsWith("1416780"));
+});
+check("csvEscapeCell quotes commas/quotes/newlines and doubles inner quotes", () => {
+  assert.equal(csvEscapeCell("plain"), "plain");
+  assert.equal(csvEscapeCell("a,b"), '"a,b"');
+  assert.equal(csvEscapeCell('he said "hi"'), '"he said ""hi"""');
+  assert.equal(csvEscapeCell("line1\nline2"), '"line1\nline2"');
+  assert.equal(csvEscapeCell(null), "");
+  assert.equal(csvEscapeCell(undefined), "");
+  assert.equal(csvEscapeCell(42), "42");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Summary
 // ─────────────────────────────────────────────────────────────────────────────
 
