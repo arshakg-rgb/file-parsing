@@ -5,6 +5,7 @@ import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js
 import { JobStatus, ClassifyMessage, ParseMessage, SourceType } from "../../shared/models/job.js";
 import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "../../shared/queueUtils.js";
 import { parseGcsUrl, objectSize, readRange } from "../../shared/gcsUtils.js";
+import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "../../shared/encoding.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
 import { createLogger } from "../../shared/logger.js";
 import { metrics } from "../../shared/metrics.js";
@@ -69,42 +70,29 @@ export function computeProbeOffsets(fileSize: number, windowSize: number): numbe
 }
 
 export function detectEncoding(raw: Buffer): string {
+  // Prefer UTF-8 when the bytes actually validate as UTF-8: jschardet frequently
+  // misdetects UTF-8 with a few multibyte chars as ISO-8859-x at low confidence
+  // (e.g. a UTF-8 file guessed as ISO-8859-2 @0.54 → mojibake). Valid UTF-8 with
+  // high-bit bytes is a near-zero false positive.
+  if (isLikelyUtf8(raw.subarray(0, 65536))) return "utf-8";
   const result = jschardet.detect(raw.slice(0, 65536));
-  const detected = result.encoding || "utf-8";
-  
-  // Map unsupported encodings to supported alternatives
-  const encodingMap: Record<string, string> = {
-    'iso-8859-2': 'iso-8859-1',
-    'windows-1252': 'cp1252',
-    'latin-1': 'iso-8859-1',
-    'iso-8859-3': 'iso-8859-1',
-    'iso-8859-4': 'iso-8859-1',
-    'iso-8859-5': 'iso-8859-1',
-    'iso-8859-6': 'iso-8859-1',
-    'iso-8859-7': 'iso-8859-1',
-    'iso-8859-8': 'iso-8859-1',
-    'iso-8859-9': 'iso-8859-1',
-    'iso-8859-10': 'iso-8859-1',
-    'iso-8859-13': 'iso-8859-1',
-    'iso-8859-14': 'iso-8859-1',
-    'iso-8859-15': 'iso-8859-1',
-    'iso-8859-16': 'iso-8859-1',
-  };
-  
-  return encodingMap[detected.toLowerCase()] || detected;
+  // Normalize to a label decode()/Buffer can actually handle. jschardet returns
+  // names like "ISO-8859-1"/"windows-1252"/"latin-1" that Buffer.toString rejects;
+  // decode() handles the rest via TextDecoder, so we keep the label as-is here.
+  return normalizeEncoding(result.encoding);
 }
 
 export function measureRowWidth(raw: Buffer, encoding: string): [number, number] {
-  const text = raw.toString(encoding as BufferEncoding, 0, raw.length) || raw.toString("utf-8", 0, raw.length);
+  const text = decode(raw, encoding);
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (!lines.length) return [256, 512];
-  const sizes = lines.map((l) => Buffer.byteLength(l, encoding as BufferEncoding));
+  const sizes = lines.map((l) => Buffer.byteLength(l, bufferEncodingFor(encoding)));
   const avg = sizes.reduce((a, b) => a + b, 0) / sizes.length;
   return [avg, Math.max(...sizes)];
 }
 
 export function fingerprintProbe(raw: Buffer, encoding: string): string {
-  const text = raw.toString(encoding as BufferEncoding, 0, raw.length) || raw.toString("utf-8", 0, raw.length);
+  const text = decode(raw, encoding);
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (!lines.length) return crypto.createHash("sha256").update("empty").digest("hex").slice(0, 24);
   const first = lines[0];
@@ -232,7 +220,7 @@ export async function bootstrapJob(msg: ClassifyMessage): Promise<void> {
 }
 
 function extractSampleLines(raw: Buffer, encoding: string, n: number): string[] {
-  const text = raw.toString(encoding as BufferEncoding, 0, raw.length) || raw.toString("utf-8", 0, raw.length);
+  const text = decode(raw, encoding);
   return text.split(/\r?\n/).filter((l) => l.trim()).slice(0, n);
 }
 

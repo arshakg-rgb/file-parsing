@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { Storage } from "@google-cloud/storage";
 import { settings } from "./config.js";
+import { decode } from "./encoding.js";
 
 let _storage: Storage | undefined;
 
@@ -271,7 +272,7 @@ export async function* streamLines(
 
   if (remainder.length > 0) {
     const raw = remainder;
-    const lineText = raw.toString(encoding as BufferEncoding).replace(/\r\n$|\n$/, "");
+    const lineText = decode(raw, encoding).replace(/\r\n$|\n$/, "");
     if (lineText) yield [lineText, remainderStart, raw.length];
   }
 }
@@ -286,7 +287,7 @@ function* splitBytesToLines(
 
   if (result.lineStart < data.length) {
     const raw = data.slice(result.lineStart);
-    const text = raw.toString(encoding as BufferEncoding).replace(/\r\n$|\n$/, "");
+    const text = decode(raw, encoding).replace(/\r\n$|\n$/, "");
     if (text) yield [text, baseOffset + result.lineStart, raw.length];
   }
 }
@@ -322,7 +323,7 @@ function* scanLines(
 
     if (b === NL && !state.inQuote) {
       const raw = data.slice(lineStart, pos + 1);
-      const lineText = raw.toString(encoding as BufferEncoding).replace(/\r\n$|\n$/, "");
+      const lineText = decode(raw, encoding).replace(/\r\n$|\n$/, "");
       yield [lineText, dataBase + lineStart, raw.length];
       lineStart = pos + 1;
     }

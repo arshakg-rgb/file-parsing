@@ -645,6 +645,61 @@ check("extractJson handles nested JSON objects", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 16. Encoding normalization / safe decode
+// Regression: jschardet emits labels (latin-1, iso-8859-1, cp1252, windows-1252,
+// iso-8859-2) that Buffer.toString rejects with ERR_UNKNOWN_ENCODING. This crashed
+// detect_bootstrap and stream_parser. Fixed twice incorrectly (latin-1 -> iso-8859-1,
+// both invalid) before decode() routed non-native labels through TextDecoder.
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log("\n=== 16. Encoding normalization / safe decode ===");
+
+const { decode, bufferEncodingFor, normalizeEncoding, isLikelyUtf8 } = await import("../shared/encoding.js");
+
+check("decode never throws for labels that crashed prod (latin-1, iso-8859-1, cp1252, windows-1252, iso-8859-2, unknown)", () => {
+  const raw = Buffer.from([0x48, 0x69, 0xe9, 0x0a]);
+  for (const label of ["latin-1", "iso-8859-1", "cp1252", "windows-1252", "iso-8859-2", "utf-16", "GB2312", "made-up-xyz", "", null as any]) {
+    assert.doesNotThrow(() => decode(raw, label), `decode threw for ${JSON.stringify(label)}`);
+  }
+});
+check("iso-8859-1 decodes 0xE9 to é (the exact label from the reported crash)", () => {
+  assert.equal(decode(Buffer.from([0xe9]), "iso-8859-1"), "é");
+});
+check("windows-1252 decodes smart quotes 0x93/0x94 correctly (not mangled by a latin1 cast)", () => {
+  assert.equal(decode(Buffer.from([0x93, 0x48, 0x69, 0x94]), "windows-1252"), "“Hi”");
+});
+check("iso-8859-2 decodes 0xB1 to ą via TextDecoder (latin1 would give ±)", () => {
+  assert.equal(decode(Buffer.from([0xb1]), "iso-8859-2"), "ą");
+});
+check("bufferEncodingFor always returns a valid Buffer encoding", () => {
+  for (const label of ["latin-1", "iso-8859-1", "cp1252", "windows-1252", "iso-8859-2", "utf-16", "zzz", null as any]) {
+    assert.ok(Buffer.isEncoding(bufferEncodingFor(label)), `invalid for ${JSON.stringify(label)}: ${bufferEncodingFor(label)}`);
+  }
+});
+check("normalizeEncoding defaults empty/null to utf-8", () => {
+  assert.equal(normalizeEncoding(null), "utf-8");
+  assert.equal(normalizeEncoding(""), "utf-8");
+  assert.equal(normalizeEncoding("  ISO-8859-1 "), "iso-8859-1");
+});
+check("isLikelyUtf8: UTF-8 multibyte content is recognized (real file had œæ∆¶Œ≥, misdetected as ISO-8859-2)", () => {
+  assert.equal(isLikelyUtf8(Buffer.from("Name: œæ∆¶Œ≥ - Followers: 7", "utf-8")), true);
+  assert.equal(isLikelyUtf8(Buffer.from("plain ascii only", "utf-8")), true);
+});
+check("isLikelyUtf8: genuine latin-1 (high byte followed by ASCII in the interior) is NOT valid UTF-8", () => {
+  // "café résumé" in latin-1: 0xE9 followed by a space/letter is an invalid UTF-8 sequence.
+  assert.equal(isLikelyUtf8(Buffer.from("café résumé", "latin1")), false);
+  assert.equal(isLikelyUtf8(Buffer.from([0xe9, 0x20, 0x72])), false); // é + " r"
+});
+check("isLikelyUtf8: tolerates a multibyte char truncated at the buffer end (probe-window boundary)", () => {
+  const full = Buffer.from("café", "utf-8");         // é = 0xc3 0xa9
+  assert.equal(isLikelyUtf8(full.subarray(0, full.length - 1)), true); // drop trailing 0xa9
+});
+check("UTF-8 content round-trips correctly (not mojibake) once detected as utf-8", () => {
+  const raw = Buffer.from("Name: œæ∆¶Œ≥", "utf-8");
+  assert.equal(decode(raw, "utf-8"), "Name: œæ∆¶Œ≥");
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Summary
 // ─────────────────────────────────────────────────────────────────────────────
 
