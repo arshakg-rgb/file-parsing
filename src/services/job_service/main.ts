@@ -105,7 +105,7 @@ class JobService extends ServiceManager {
 
   public start(): void {
     const config = this.getConfig();
-    const PORT = process.env.PORT || 8000;
+    const PORT = process.env.PORT || 8080;
     this.app.listen(PORT, async () => {
       console.log(`Job Service listening on port ${PORT}`);
       try {
