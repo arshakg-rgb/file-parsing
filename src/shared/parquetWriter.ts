@@ -45,7 +45,7 @@ export class OutputBuffer {
   private templateId: string;
   private partId: string;
   private jobId: string;
-  private readonly RAM_WATERMARK = settings.RAM_FLUSH_WATERMARK || 20 * 1024 * 1024; // 20MB default
+  private readonly FLUSH_LINE_THRESHOLD = 1000; // Flush after exactly 1000 lines
 
   constructor(jobId: string, templateId: string) {
     this.jobId = jobId;
@@ -56,14 +56,10 @@ export class OutputBuffer {
   addRow(row: OutputRow): void {
     this.rows.push(row);
     
-    // Check RAM watermark
-    if (this.getEstimatedSize() > this.RAM_WATERMARK) {
+    // Flush after exactly 1000 lines
+    if (this.rows.length >= this.FLUSH_LINE_THRESHOLD) {
       this.flush();
     }
-  }
-
-  private getEstimatedSize(): number {
-    return this.rows.reduce((acc, row) => acc + estimateRowBytes(row), 0);
   }
 
   async flush(): Promise<string | null> {
