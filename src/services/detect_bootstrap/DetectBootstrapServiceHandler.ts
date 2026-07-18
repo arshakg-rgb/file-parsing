@@ -107,7 +107,7 @@ export class DetectBootstrapService {
         return resp.template ? { kind: resp.kind as any, template: resp.template as any } : { kind: "uncertain" };
       };
     } else {
-      const { classifyAi } = await import("../ai_classifier/handler.js");
+      const { classifyAi } = await import("../ai_classifier/AiClassifierServiceHandler.js");
       this.classify = async (req: any) => {
         // Convert to the expected format for the AI classifier
         const aiReq = {

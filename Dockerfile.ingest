@@ -33,4 +33,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 EXPOSE 8080
 
-CMD ["node", "dist/services/ingest/handler.js"]
+CMD ["node", "dist/services/ingest/IngestServiceHandler.js"]

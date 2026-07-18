@@ -161,7 +161,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       job_id: this.jobId,
     };
 
-    const handler = await import("../../ai_classifier/handler.js");
+    const handler = await import("../../ai_classifier/AiClassifierServiceHandler.js");
     const resp = await handler.classifyAi(req);
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };

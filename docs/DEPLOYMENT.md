@@ -36,14 +36,14 @@ Common flags on every service: `--allow-unauthenticated` (note: the job API is p
 | Service (Cloud Run name) | Image (`…/file-parsing/<name>:latest`) | Dockerfile | Entry point (`CMD`) | Memory | Notes |
 |---|---|---|---|---|---|
 | `job-service` | `job-service` | `Dockerfile.job` | `dist/services/job_service/main.js` | 512Mi | Public job API |
-| `ingest` | `ingest` | `Dockerfile.ingest` | `dist/services/ingest/handler.js` | 4Gi | gen2, session affinity, GCS bucket `datalead-osint` mounted at `/mnt/scratch` for RAR; bundles `unrar` static binary |
-| `detect-bootstrap` | `detect-bootstrap` | `Dockerfile.detect` | `dist/services/detect_bootstrap/handler.js` | 512Mi | Runs AI in-process |
-| `stream-parser` | `stream-parser` | `Dockerfile.stream` | `dist/services/stream_parser/handler.js` | 1Gi | Runs AI in-process; writes Parquet + per-job CSV output |
+| `ingest` | `ingest` | `Dockerfile.ingest` | `dist/services/ingest/IngestServiceHandler.js` | 4Gi | gen2, session affinity, GCS bucket `datalead-osint` mounted at `/mnt/scratch` for RAR; bundles `unrar` static binary |
+| `detect-bootstrap` | `detect-bootstrap` | `Dockerfile.detect` | `dist/services/detect_bootstrap/DetectBootstrapServiceHandler.js` | 512Mi | Runs AI in-process |
+| `stream-parser` | `stream-parser` | `Dockerfile.stream` | `dist/services/stream_parser/StreamParserServiceHandler.js` | 1Gi | Runs AI in-process; writes Parquet + per-job CSV output |
 | `ai-classifier` | `ai-classifier` | `Dockerfile.ai` | `dist/services/ai_classifier/main.js` | 512Mi | Standalone `/classify` HTTP service — **no callers** (see §4) |
-| `load` | `load` | `Dockerfile.load` | `dist/services/load/handler.js` | 512Mi | Loads parsed output |
-| `report` | `report` | `Dockerfile.report` | `dist/services/report/handler.js` | 512Mi | |
-| `retry` | `retry` | `Dockerfile.retry` | `dist/services/retry/handler.js` | 512Mi | |
-| `archive-entry-consumer` | `archive-entry-consumer` | `Dockerfile.archive-entry` | `dist/services/archive_entry_consumer/handler.js` | 2Gi | gen2, session affinity, same `/mnt/scratch` GCS mount; bundles `unrar` |
+| `load` | `load` | `Dockerfile.load` | `dist/services/load/LoadServiceHandler.js` | 512Mi | Loads parsed output |
+| `report` | `report` | `Dockerfile.report` | `dist/services/report/ReportServiceHandler.js` | 512Mi | |
+| `retry` | `retry` | `Dockerfile.retry` | `dist/services/retry/RetryServiceHandler.js` | 512Mi | |
+| `archive-entry-consumer` | `archive-entry-consumer` | `Dockerfile.archive-entry` | `dist/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.js` | 2Gi | gen2, session affinity, same `/mnt/scratch` GCS mount; bundles `unrar` |
 
 Image variable names in `cloudbuild.yaml`: `_JOB_IMAGE`, `_INGEST_IMAGE`, `_DETECT_IMAGE`, `_STREAM_IMAGE`, `_AI_IMAGE`, `_LOAD_IMAGE`, `_REPORT_IMAGE`, `_RETRY_IMAGE`, `_ARCHIVE_ENTRY_IMAGE`.
 
@@ -84,8 +84,8 @@ The `DISABLED FOR FAST TEST BUILDS` comments are grouped exactly as: (a) `ai-cla
 
 The standalone `ai-classifier` Cloud Run service exposes a `/classify` HTTP endpoint that **has no callers**. AI classification happens **in-process** inside `detect-bootstrap` and `stream-parser` via dynamic import of the same handler code:
 
-- `src/services/detect_bootstrap/handler.ts` → `await import("../ai_classifier/handler.js")` (and `../ai_classifier/mock.js`)
-- `src/services/stream_parser/classifier.ts` → `await import("../ai_classifier/handler.js")`
+- `src/services/detect_bootstrap/DetectBootstrapServiceHandler.ts` → `await import("../ai_classifier/AiClassifierServiceHandler.js")` (and `../ai_classifier/mock.js`)
+- `src/services/stream_parser/classifier.ts` → `await import("../ai_classifier/AiClassifierServiceHandler.js")`
 
 So the classifier library ships **inside** the detect/stream images and runs in the same process — no network hop to a separate service.
 

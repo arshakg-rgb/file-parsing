@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import { settings } from "../../shared/config.js";
 import { ClassifyRequest, TemplateKind } from "../../shared/models/template.js";
-import { classifyAi } from "./handler.js";
+import { classifyAi } from "./AiClassifierServiceHandler.js";
 import { mockClassify } from "./mock.js";
 import { ensureTableExists, listAll, warmCache } from "./templateRegistry.js";
 

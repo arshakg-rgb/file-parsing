@@ -27,4 +27,4 @@ RUN addgroup -g 1001 -S nodejs && \
 
 USER nodejs
 
-CMD ["node", "dist/services/archive_entry_consumer/handler.js"]
+CMD ["node", "dist/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.js"]

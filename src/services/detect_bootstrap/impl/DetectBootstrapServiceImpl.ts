@@ -12,7 +12,7 @@ import { templateRegistry } from "../../../shared/templateRegistry.js";
 import { createLogger } from "../../../utils/logger/logger.js";
 import { metrics } from "../../../utils/response/metrics.js";
 import { startHealthCheckServer } from "../../../utils/response/health.js";
-import { AiClassifierService } from "../../ai_classifier/handler.js";
+import { AiClassifierService } from "../../ai_classifier/AiClassifierServiceHandler.js";
 import { mockClassify } from "../../ai_classifier/mock.js";
 import { DetectBootstrapService } from "../DetectBootstrapService.js";
 import { IDetectBootstrap, ClassifyRequest, ClassifyResponse } from "../io/IDetectBootstrap.js";

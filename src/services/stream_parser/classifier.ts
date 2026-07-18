@@ -171,7 +171,7 @@ export class LineClassifier {
       job_id: this.jobId,
     };
 
-    const { classifyAi } = await import("../ai_classifier/handler.js");
+    const { classifyAi } = await import("../ai_classifier/AiClassifierServiceHandler.js");
     const resp = await classifyAi(req);
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
