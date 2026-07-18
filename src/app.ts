@@ -13,7 +13,8 @@ import { DeprecationMiddleware } from "./middleware/DeprecationMiddleware.js";
 
 const logger: Logger = createLogger("app");
 
-export class App {
+export class App 
+{
   /**
    * The Express application instance.
    * @private
@@ -32,7 +33,8 @@ export class App {
    */
   private serviceManagers: ServiceManager[];
 
-  constructor(...serviceManagers: ServiceManager[]) {
+  constructor(...serviceManagers: ServiceManager[]) 
+{
     this.app = express();
     this.initializeApp();
     this.server = this.createServer();
@@ -42,14 +44,17 @@ export class App {
   /**
    * Starts the Express server and initializes the managers.
    */
-  public async listen(): Promise<void> {
+  public async listen(): Promise<void> 
+{
     const port: number = parseInt(process.env.PORT || process.env.APP_PORT || "3000");
 
-    try {
+    try 
+{
       await this.initializeManagers();
       await ApiRouter.getInstance().initializeVersionedRoutes();
 
-      this.server.listen(port, "0.0.0.0", async (): Promise<void> => {
+      this.server.listen(port, "0.0.0.0", async (): Promise<void> => 
+{
         await MySqlManager.getInstance().sequelize
           .sync({ force: false })
           .then((): void => logger.info("Database & tables created!"))
@@ -62,7 +67,9 @@ export class App {
 
       process.on(Constants.SIGINT, this.shutdown.bind(this));
       process.on(Constants.SIGTERM, this.shutdown.bind(this));
-    } catch (error) {
+    }
+ catch (error) 
+{
       logger.error(`Failed to initialize services or start the server: ${error instanceof Error ? error.message : String(error)}`);
       process.exit(1);
     }
@@ -71,7 +78,8 @@ export class App {
   /**
    * Initializes managers with parallel execution
    */
-  private async initializeManagers(): Promise<void> {
+  private async initializeManagers(): Promise<void> 
+{
     await Promise.all(
       this.serviceManagers.map((manager: ServiceManager): Promise<void> => manager.initialize())
     );
@@ -80,14 +88,16 @@ export class App {
   /**
    * Sets up the middleware for the Express application.
    */
-  private setupMiddlewares(): void {
+  private setupMiddlewares(): void 
+{
     const requestBodyLimit: string = process.env.REQUEST_BODY_LIMIT || "10mb";
 
     this.app.use(CorsUtils.setupCors());
 
     this.app.use(
       bodyParser.json({
-        verify: function (req: any, _res: any, buf: Buffer): void {
+        verify: function (req: any, _res: any, buf: Buffer): void 
+{
           req["rawBody"] = buf;
         },
         limit: requestBodyLimit,
@@ -99,7 +109,8 @@ export class App {
   /**
    * Initializes the Express application.
    */
-  private initializeApp(): void {
+  private initializeApp(): void 
+{
     this.setupMiddlewares();
     this.setupRoutes();
   }
@@ -107,7 +118,8 @@ export class App {
   /**
    * Sets up the routes for the Express application.
    */
-  private setupRoutes(): void {
+  private setupRoutes(): void 
+{
     this.app.use(DeprecationMiddleware.deprecationWarning());
 
     this.app.use(ApiRouter.getInstance().getRouter());
@@ -119,14 +131,16 @@ export class App {
   /**
    * Creates an HTTP server.
    */
-  private createServer(): HttpServer {
+  private createServer(): HttpServer 
+{
     return http.createServer(this.app);
   }
 
   /**
    * Gracefully shuts down the managers and exits the process.
    */
-  private async shutdown(): Promise<void> {
+  private async shutdown(): Promise<void> 
+{
     logger.info("Shutting down gracefully");
     await Promise.all(
       this.serviceManagers.map((serviceManager: ServiceManager): Promise<void> => serviceManager.shutdown())
@@ -137,7 +151,8 @@ export class App {
   /**
    * Gets the Express application instance (for testing purposes).
    */
-  public getApp(): Express {
+  public getApp(): Express 
+{
     return this.app;
   }
 }

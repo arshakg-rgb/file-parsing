@@ -25,9 +25,11 @@ export interface FieldLocator {
   key?: string;
 }
 
-export function validateFieldLocator(loc: FieldLocator): void {
+export function validateFieldLocator(loc: FieldLocator): void 
+{
   const set = [loc.index, loc.regex, loc.key].filter((v) => v !== null && v !== undefined);
-  if (set.length !== 1) {
+  if (set.length !== 1) 
+{
     throw new Error("Exactly one of index, regex, key must be set in FieldLocator");
   }
 }
@@ -61,11 +63,14 @@ export interface Template {
   updated_at: string;
 }
 
-export function validateTemplate(t: Template): void {
-  if (t.kind === TemplateKind.RECORD && !t.record) {
+export function validateTemplate(t: Template): void 
+{
+  if (t.kind === TemplateKind.RECORD && !t.record) 
+{
     throw new Error("Template with kind=record must have record data");
   }
-  if (t.kind === TemplateKind.RUBBISH && !t.rubbish) {
+  if (t.kind === TemplateKind.RUBBISH && !t.rubbish) 
+{
     throw new Error("Template with kind=rubbish must have rubbish data");
   }
 }
@@ -93,7 +98,8 @@ export function makeRecordTemplate(
   record: RecordTemplateData,
   fingerprint: string,
   source: TemplateSource = TemplateSource.AI
-): Template {
+): Template 
+{
   return {
     template_id: randomUUID(),
     kind: TemplateKind.RECORD,
@@ -111,8 +117,10 @@ export function makeRubbishTemplate(
   rubbish: RubbishTemplateData,
   fingerprint: string,
   source: TemplateSource = TemplateSource.AI
-): Template {
-  if (rubbish.confidence < 0.9) {
+): Template 
+{
+  if (rubbish.confidence < 0.9) 
+{
     throw new Error(`Rubbish template confidence ${rubbish.confidence} is below minimum 0.90`);
   }
   return {
@@ -128,10 +136,12 @@ export function makeRubbishTemplate(
   };
 }
 
-export function isRecord(t: Template): boolean {
+export function isRecord(t: Template): boolean 
+{
   return t.kind === TemplateKind.RECORD;
 }
 
-export function isRubbish(t: Template): boolean {
+export function isRubbish(t: Template): boolean 
+{
   return t.kind === TemplateKind.RUBBISH;
 }

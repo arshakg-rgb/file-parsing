@@ -1,4 +1,3 @@
-import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import { createLogger } from "../utils/logger/logger.js";
@@ -17,12 +16,15 @@ export interface ParsedLine {
   error?: string;
 }
 
-class FormatDetectorService extends ServiceManager {
+class FormatDetectorService extends ServiceManager 
+{
   protected static instance: FormatDetectorService;
   private logger: any;
 
-  private constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
+  private constructor(enforce: () => void) 
+{
+    if (enforce !== Enforce) 
+{
       throw new InstantiationError("Cannot instantiate FormatDetectorService directly. Use getInstance()");
     }
     super(enforce);
@@ -30,39 +32,50 @@ class FormatDetectorService extends ServiceManager {
     this.logger = createLogger("format_detector");
   }
 
-  public static getInstance(): FormatDetectorService {
-    if (!FormatDetectorService.instance) {
+  public static getInstance(): FormatDetectorService 
+{
+    if (!FormatDetectorService.instance) 
+{
       FormatDetectorService.instance = new FormatDetectorService(Enforce);
     }
     return FormatDetectorService.instance;
   }
 
-  public detectLineFormat(line: string): LineFormat {
+  public detectLineFormat(line: string): LineFormat 
+{
     const trimmed = line.trim();
     
-    if (!trimmed) {
+    if (!trimmed) 
+{
       return LineFormat.UNKNOWN;
     }
     
     const nonPrintableCount = (trimmed.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g) || []).length;
     const nonPrintableRatio = nonPrintableCount / trimmed.length;
-    if (nonPrintableRatio > 0.3) {
+    if (nonPrintableRatio > 0.3) 
+{
       return LineFormat.BINARY;
     }
     
-    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      try {
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) 
+{
+      try 
+{
         JSON.parse(trimmed);
         return LineFormat.JSON;
-      } catch {
+      }
+ catch 
+{
       }
     }
     
     return LineFormat.TEXT;
   }
 
-  public parseTwitterUserLine(line: string): Record<string, any> | null {
-    try {
+  public parseTwitterUserLine(line: string): Record<string, any> | null 
+{
+    try 
+{
       const data: Record<string, any> = {};
       
       const emailMatch = line.match(/Email:\s*([^\s-]+)/);
@@ -81,53 +94,73 @@ class FormatDetectorService extends ServiceManager {
       if (createdAtMatch) data.created_at = createdAtMatch[1].trim();
       
       return data;
-    } catch (error) {
+    }
+ catch (error) 
+{
       this.logger.warn("twitter_user_parse_failed", { line, error: String(error) });
       return null;
     }
   }
 
-  public parseJsonLine(line: string): Record<string, any> | null {
-    try {
+  public parseJsonLine(line: string): Record<string, any> | null 
+{
+    try 
+{
       const parsed = JSON.parse(line);
       return parsed;
-    } catch (error) {
+    }
+ catch (error) 
+{
       this.logger.warn("json_parse_failed", { line, error: String(error) });
       return null;
     }
   }
 
-  public parseCsvLine(line: string, fieldSpec?: string[]): Record<string, any> | null {
-    try {
+  public parseCsvLine(line: string, fieldSpec?: string[]): Record<string, any> | null 
+{
+    try 
+{
       const parts = line.split(",");
       const data: Record<string, any> = {};
       
-      if (fieldSpec && fieldSpec.length > 0) {
-        for (let i = 0; i < fieldSpec.length; i++) {
+      if (fieldSpec && fieldSpec.length > 0) 
+{
+        for (let i = 0; i < fieldSpec.length; i++) 
+{
           const fieldName = fieldSpec[i];
-          if (i < parts.length) {
+          if (i < parts.length) 
+{
             data[fieldName] = parts[i].trim().replace(/^"|"$/g, "");
-          } else {
+          }
+ else 
+{
             data[fieldName] = null;
           }
         }
-      } else {
-        for (let i = 0; i < parts.length; i++) {
+      }
+ else 
+{
+        for (let i = 0; i < parts.length; i++) 
+{
           data[`field_${i}`] = parts[i].trim().replace(/^"|"$/g, "");
         }
       }
       
       return data;
-    } catch (error) {
+    }
+ catch (error) 
+{
       this.logger.warn("csv_parse_failed", { line, error: String(error) });
       return null;
     }
   }
 
-  public parseLine(line: string, fieldSpec?: string[]): ParsedLine {
+  public parseLine(line: string, fieldSpec?: string[]): ParsedLine 
+{
     const format = this.detectLineFormat(line);
     
-    switch (format) {
+    switch (format) 
+{
       case LineFormat.BINARY:
         return { format, data: null, error: "Binary data skipped" };
       
@@ -148,22 +181,27 @@ export default FormatDetectorService;
 
 const formatDetectorService = FormatDetectorService.getInstance();
 
-export function detectLineFormat(line: string): LineFormat {
+export function detectLineFormat(line: string): LineFormat 
+{
   return formatDetectorService.detectLineFormat(line);
 }
 
-export function parseTwitterUserLine(line: string): Record<string, any> | null {
+export function parseTwitterUserLine(line: string): Record<string, any> | null 
+{
   return formatDetectorService.parseTwitterUserLine(line);
 }
 
-export function parseJsonLine(line: string): Record<string, any> | null {
+export function parseJsonLine(line: string): Record<string, any> | null 
+{
   return formatDetectorService.parseJsonLine(line);
 }
 
-export function parseCsvLine(line: string, fieldSpec?: string[]): Record<string, any> | null {
+export function parseCsvLine(line: string, fieldSpec?: string[]): Record<string, any> | null 
+{
   return formatDetectorService.parseCsvLine(line, fieldSpec);
 }
 
-export function parseLine(line: string, fieldSpec?: string[]): ParsedLine {
+export function parseLine(line: string, fieldSpec?: string[]): ParsedLine 
+{
   return formatDetectorService.parseLine(line, fieldSpec);
 }

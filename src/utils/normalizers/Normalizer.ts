@@ -1,15 +1,3 @@
-// Encoding normalization + safe decoding.
-//
-// jschardet emits IANA/label-style encoding names ("ISO-8859-1", "windows-1252",
-// "latin-1", "ISO-8859-2", ...). Node's Buffer.toString only accepts a tiny set of
-// names (utf8, utf-8, utf16le, ucs2, latin1, binary, ascii, base64, base64url, hex);
-// EVERYTHING else throws `ERR_UNKNOWN_ENCODING`. In particular "latin-1", "iso-8859-1",
-// "cp1252" and "iso-8859-2" are all INVALID Buffer encodings — mapping one to another
-// (as prior fixes did) only changes which invalid name throws.
-//
-// decode() routes native names through Buffer.toString and everything else through
-// TextDecoder (ICU-backed, supports windows-1252/iso-8859-x/utf-16be/... correctly),
-// with a latin1 fallback so it can never throw.
 
 import { TextDecoder } from "node:util";
 
@@ -41,35 +29,45 @@ const NATIVE: Record<string, BufferEncoding> = {
  * Streaming decode tolerates a multibyte sequence truncated at the buffer's end
  * (e.g. a probe window boundary) rather than reporting it as invalid.
  */
-export function isLikelyUtf8(raw: Buffer): boolean {
-  try {
+export function isLikelyUtf8(raw: Buffer): boolean 
+{
+  try 
+{
     new TextDecoder("utf-8", { fatal: true }).decode(raw, { stream: true });
     return true;
-  } catch {
+  }
+ catch 
+{
     return false;
   }
 }
 
 /** Canonical lowercased encoding label; defaults to utf-8 for empty/unknown input. */
-export function normalizeEncoding(label?: string | null): string {
+export function normalizeEncoding(label?: string | null): string 
+{
   if (!label) return "utf-8";
   const trimmed = label.trim().toLowerCase();
   return trimmed || "utf-8";
 }
 
 /** A valid Node BufferEncoding for the label (for Buffer.byteLength); latin1 when non-native. */
-export function bufferEncodingFor(label?: string | null): BufferEncoding {
+export function bufferEncodingFor(label?: string | null): BufferEncoding 
+{
   return NATIVE[normalizeEncoding(label)] ?? "latin1";
 }
 
 const _decoders = new Map<string, TextDecoder | null>();
-function decoderFor(label: string): TextDecoder | null {
+function decoderFor(label: string): TextDecoder | null 
+{
   if (_decoders.has(label)) return _decoders.get(label)!;
   let dec: TextDecoder | null = null;
-  try {
+  try 
+{
     dec = new TextDecoder(label, { fatal: false });
-  } catch {
-    dec = null; // label not supported by this build's ICU
+  }
+ catch 
+{
+    dec = null;
   }
   _decoders.set(label, dec);
   return dec;
@@ -80,16 +78,21 @@ function decoderFor(label: string): TextDecoder | null {
  * Native Node encodings go through Buffer.toString; the rest through TextDecoder;
  * anything unsupported falls back to latin1 (1:1, lossless round-trip of bytes).
  */
-export function decode(raw: Buffer, label?: string | null, start = 0, end = raw.length): string {
+export function decode(raw: Buffer, label?: string | null, start = 0, end = raw.length): string 
+{
   const enc = normalizeEncoding(label);
   const view = start !== 0 || end !== raw.length ? raw.subarray(start, end) : raw;
   const native = NATIVE[enc];
   if (native) return view.toString(native);
   const dec = decoderFor(enc);
-  if (dec) {
-    try {
+  if (dec) 
+{
+    try 
+{
       return dec.decode(view);
-    } catch {
+    }
+ catch 
+{
       /* fall through to latin1 */
     }
   }

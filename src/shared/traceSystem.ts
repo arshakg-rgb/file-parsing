@@ -1,4 +1,3 @@
-import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import MySqlManager from "../config/db/MySqlManager.js";
@@ -20,13 +19,16 @@ export interface TraceRecord {
   row_data?: Record<string, any>;
 }
 
-class TraceSystemService extends ServiceManager {
+class TraceSystemService extends ServiceManager 
+{
   protected static instance: TraceSystemService;
   private logger: any;
   private dbManager: MySqlManager;
 
-  private constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
+  private constructor(enforce: () => void) 
+{
+    if (enforce !== Enforce) 
+{
       throw new InstantiationError("Cannot instantiate TraceSystemService directly. Use getInstance()");
     }
     super(enforce);
@@ -35,15 +37,19 @@ class TraceSystemService extends ServiceManager {
     this.dbManager = MySqlManager.getInstance();
   }
 
-  public static getInstance(): TraceSystemService {
-    if (!TraceSystemService.instance) {
+  public static getInstance(): TraceSystemService 
+{
+    if (!TraceSystemService.instance) 
+{
       TraceSystemService.instance = new TraceSystemService(Enforce);
     }
     return TraceSystemService.instance;
   }
 
-  public async createTrace(trace: TraceRecord): Promise<void> {
-    try {
+  public async createTrace(trace: TraceRecord): Promise<void> 
+{
+    try 
+{
       await this.dbManager.pool.query(
         `INSERT INTO parsed_records 
          (_job_id, _byte_offset, _byte_length, _record_index, _line_no, _template_id, _template_version, _checksum, _parsed_at, _part_id, fields)
@@ -72,7 +78,9 @@ class TraceSystemService extends ServiceManager {
         byte_offset: trace.byte_offset,
         line_no: trace.line_no 
       });
-    } catch (error) {
+    }
+ catch (error) 
+{
       this.logger.error("trace_creation_error", { 
         job_id: trace.job_id, 
         byte_offset: trace.byte_offset, 
@@ -88,8 +96,10 @@ class TraceSystemService extends ServiceManager {
     lineNo: number,
     rawBytes: string,
     matchedTemplateId: string
-  ): Promise<void> {
-    try {
+  ): Promise<void> 
+{
+    try 
+{
       await this.dbManager.pool.query(
         `INSERT INTO rubbish_log (job_id, byte_offset, line_no, raw_bytes, matched_template_id, logged_at)
          VALUES ($1, $2, $3, $4, $5, NOW())`,
@@ -102,7 +112,9 @@ class TraceSystemService extends ServiceManager {
         line_no: lineNo,
         template_id: matchedTemplateId 
       });
-    } catch (error) {
+    }
+ catch (error) 
+{
       this.logger.error("rubbish_log_error", { 
         job_id: jobId, 
         byte_offset: byteOffset, 
@@ -112,7 +124,8 @@ class TraceSystemService extends ServiceManager {
     }
   }
 
-  public async getJobTraces(jobId: string): Promise<TraceRecord[]> {
+  public async getJobTraces(jobId: string): Promise<TraceRecord[]> 
+{
     const result = await this.dbManager.pool.query(
       "SELECT * FROM parsed_records WHERE _job_id = $1 ORDER BY _byte_offset",
       [jobId]
@@ -133,7 +146,8 @@ class TraceSystemService extends ServiceManager {
     }));
   }
 
-  public async getJobRubbishLog(jobId: string): Promise<any[]> {
+  public async getJobRubbishLog(jobId: string): Promise<any[]> 
+{
     const result = await this.dbManager.pool.query(
       "SELECT * FROM rubbish_log WHERE job_id = $1 ORDER BY byte_offset",
       [jobId]
@@ -142,11 +156,13 @@ class TraceSystemService extends ServiceManager {
     return result.rows;
   }
 
-  static generateChecksum(line: string): string {
+  static generateChecksum(line: string): string 
+{
     return crypto.createHash("sha256").update(line).digest("hex");
   }
 
-  public async lineExists(jobId: string, byteOffset: number): Promise<boolean> {
+  public async lineExists(jobId: string, byteOffset: number): Promise<boolean> 
+{
     const result = await this.dbManager.pool.query(
       "SELECT 1 FROM parsed_records WHERE _job_id = $1 AND _byte_offset = $2",
       [jobId, byteOffset]
@@ -159,7 +175,8 @@ class TraceSystemService extends ServiceManager {
     parsed: number;
     dropped: number;
     failed: number;
-  }> {
+  }> 
+{
     const parsedResult = await this.dbManager.pool.query(
       "SELECT COUNT(*) as count FROM parsed_records WHERE _job_id = $1",
       [jobId]
@@ -188,8 +205,10 @@ export default TraceSystemService;
 
 const traceSystemService = TraceSystemService.getInstance();
 
-export class TraceSystem {
-  async createTrace(trace: TraceRecord): Promise<void> {
+export class TraceSystem 
+{
+  async createTrace(trace: TraceRecord): Promise<void> 
+{
     return traceSystemService.createTrace(trace);
   }
 
@@ -199,23 +218,28 @@ export class TraceSystem {
     lineNo: number,
     rawBytes: string,
     matchedTemplateId: string
-  ): Promise<void> {
+  ): Promise<void> 
+{
     return traceSystemService.logRubbishDrop(jobId, byteOffset, lineNo, rawBytes, matchedTemplateId);
   }
 
-  async getJobTraces(jobId: string): Promise<TraceRecord[]> {
+  async getJobTraces(jobId: string): Promise<TraceRecord[]> 
+{
     return traceSystemService.getJobTraces(jobId);
   }
 
-  async getJobRubbishLog(jobId: string): Promise<any[]> {
+  async getJobRubbishLog(jobId: string): Promise<any[]> 
+{
     return traceSystemService.getJobRubbishLog(jobId);
   }
 
-  static generateChecksum(line: string): string {
+  static generateChecksum(line: string): string 
+{
     return TraceSystemService.generateChecksum(line);
   }
 
-  async lineExists(jobId: string, byteOffset: number): Promise<boolean> {
+  async lineExists(jobId: string, byteOffset: number): Promise<boolean> 
+{
     return traceSystemService.lineExists(jobId, byteOffset);
   }
 
@@ -223,7 +247,8 @@ export class TraceSystem {
     parsed: number;
     dropped: number;
     failed: number;
-  }> {
+  }> 
+{
     return traceSystemService.getLineFateCounts(jobId);
   }
 }

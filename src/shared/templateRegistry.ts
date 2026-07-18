@@ -1,5 +1,4 @@
 import crypto from "crypto";
-import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import MySqlManager from "../config/db/MySqlManager.js";
@@ -10,7 +9,7 @@ export interface RecordTemplate {
   version: number;
   field_map: Record<string, { locator: string; type: string }>;
   structure: string;
-  delimiter?: string; // for structure "csv": the field delimiter (defaults to "," when absent)
+  delimiter?: string;
   length_hint: number;
   source: "ai" | "bootstrap" | "user";
   created_at: Date;
@@ -30,19 +29,22 @@ export type Template = RecordTemplate | RubbishTemplate;
 export type TemplateKind = "record" | "rubbish";
 
 
-export class TemplateRegistryService extends ServiceManager {
+export class TemplateRegistryService extends ServiceManager 
+{
   protected static instance: TemplateRegistryService;
   private recordCache = new Map<string, RecordTemplate>();
   private rubbishCache = new Map<string, RubbishTemplate>();
   private matchRateHistory: number[] = [];
   private readonly MATCH_RATE_WINDOW = 1000;
   private readonly MATCH_RATE_FLOOR = 0.1;
-  private readonly LOAD_TTL_MS = 30000; // 30s
+  private readonly LOAD_TTL_MS = 30000;
   private lastLoadedAt = 0;
   private dbManager: MySqlManager;
 
-  private constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
+  private constructor(enforce: () => void) 
+{
+    if (enforce !== Enforce) 
+{
       throw new InstantiationError("Cannot instantiate TemplateRegistryService directly. Use getInstance()");
     }
     super(enforce);
@@ -50,23 +52,28 @@ export class TemplateRegistryService extends ServiceManager {
     this.dbManager = MySqlManager.getInstance();
   }
 
-  public static getInstance(): TemplateRegistryService {
-    if (!TemplateRegistryService.instance) {
+  public static getInstance(): TemplateRegistryService 
+{
+    if (!TemplateRegistryService.instance) 
+{
       TemplateRegistryService.instance = new TemplateRegistryService(Enforce);
     }
     return TemplateRegistryService.instance;
   }
 
-  static generateFingerprint(line: string): string {
+  static generateFingerprint(line: string): string 
+{
     const normalized = line.trim().toLowerCase();
     return crypto.createHash("sha256").update(normalized).digest("hex");
   }
 
-  static generateStructureFingerprint(fields: string[]): string {
+  static generateStructureFingerprint(fields: string[]): string 
+{
     return crypto.createHash("sha256").update(fields.join(",")).digest("hex");
   }
 
-  static passesLengthGate(line: string, fieldSpec: string[]): boolean {
+  static passesLengthGate(line: string, fieldSpec: string[]): boolean 
+{
     const lineLength = line.length;
     if (lineLength === 0) return false;
     
@@ -77,11 +84,13 @@ export class TemplateRegistryService extends ServiceManager {
     return lineLength >= minExpectedLength && lineLength <= maxExpectedLength;
   }
 
-  matchRecordTemplate(line: string, fieldSpec: string[]): RecordTemplate | null {
+  matchRecordTemplate(line: string, fieldSpec: string[]): RecordTemplate | null 
+{
     const fingerprint = TemplateRegistryService.generateFingerprint(line);
     const template = this.recordCache.get(fingerprint);
     
-    if (template) {
+    if (template) 
+{
       this.updateMatchRate(true);
       return template;
     }
@@ -90,11 +99,13 @@ export class TemplateRegistryService extends ServiceManager {
     return null;
   }
 
-  matchRubbishTemplate(line: string): RubbishTemplate | null {
+  matchRubbishTemplate(line: string): RubbishTemplate | null 
+{
     const fingerprint = TemplateRegistryService.generateFingerprint(line);
     const template = this.rubbishCache.get(fingerprint);
     
-    if (template && template.confidence > 0.9) {
+    if (template && template.confidence > 0.9) 
+{
       this.updateMatchRate(true);
       return template;
     }
@@ -103,32 +114,39 @@ export class TemplateRegistryService extends ServiceManager {
     return null;
   }
 
-  addRecordTemplate(template: RecordTemplate): void {
+  addRecordTemplate(template: RecordTemplate): void 
+{
     this.recordCache.set(template.fingerprint, template);
   }
 
-  addRubbishTemplate(template: RubbishTemplate): void {
+  addRubbishTemplate(template: RubbishTemplate): void 
+{
     this.rubbishCache.set(template.fingerprint, template);
   }
 
-  private updateMatchRate(matched: boolean): void {
+  private updateMatchRate(matched: boolean): void 
+{
     this.matchRateHistory.push(matched ? 1 : 0);
-    if (this.matchRateHistory.length > this.MATCH_RATE_WINDOW) {
+    if (this.matchRateHistory.length > this.MATCH_RATE_WINDOW) 
+{
       this.matchRateHistory.shift();
     }
   }
 
-  getMatchRate(): number {
+  getMatchRate(): number 
+{
     if (this.matchRateHistory.length === 0) return 1.0;
     const sum = this.matchRateHistory.reduce((a, b) => a + b, 0);
     return sum / this.matchRateHistory.length;
   }
 
-  hasMatchRateCollapsed(): boolean {
+  hasMatchRateCollapsed(): boolean 
+{
     return this.getMatchRate() < this.MATCH_RATE_FLOOR;
   }
 
-  getByFingerprint(fingerprint: string): Template | null {
+  getByFingerprint(fingerprint: string): Template | null 
+{
     const record = this.recordCache.get(fingerprint);
     if (record) return record;
     const rubbish = this.rubbishCache.get(fingerprint);
@@ -136,30 +154,41 @@ export class TemplateRegistryService extends ServiceManager {
     return null;
   }
 
-  getAllRecordTemplates(): RecordTemplate[] {
+  getAllRecordTemplates(): RecordTemplate[] 
+{
     return Array.from(this.recordCache.values());
   }
 
-  getAllRubbishTemplates(): RubbishTemplate[] {
+  getAllRubbishTemplates(): RubbishTemplate[] 
+{
     return Array.from(this.rubbishCache.values());
   }
 
-  async loadFromDatabase(): Promise<void> {
-    if (Date.now() - this.lastLoadedAt < this.LOAD_TTL_MS) {
+  async loadFromDatabase(): Promise<void> 
+{
+    if (Date.now() - this.lastLoadedAt < this.LOAD_TTL_MS) 
+{
       return;
     }
-    try {
+    try 
+{
       const recordResult = await this.dbManager.pool.query(
         "SELECT * FROM templates WHERE kind = 'record'"
       );
       
-      for (const row of recordResult.rows) {
+      for (const row of recordResult.rows) 
+{
         let fieldMap;
-        if (typeof row.field_map === "string") {
+        if (typeof row.field_map === "string") 
+{
           fieldMap = JSON.parse(row.field_map);
-        } else if (typeof row.field_map === "object" && row.field_map !== null) {
+        }
+ else if (typeof row.field_map === "object" && row.field_map !== null) 
+{
           fieldMap = row.field_map;
-        } else {
+        }
+ else 
+{
           fieldMap = {};
         }
         
@@ -179,7 +208,8 @@ export class TemplateRegistryService extends ServiceManager {
         "SELECT * FROM templates WHERE kind = 'rubbish'"
       );
       
-      for (const row of rubbishResult.rows) {
+      for (const row of rubbishResult.rows) 
+{
         this.rubbishCache.set(row.fingerprint, {
           template_id: row.template_id,
           fingerprint: row.fingerprint,
@@ -191,14 +221,19 @@ export class TemplateRegistryService extends ServiceManager {
         });
       }
       this.lastLoadedAt = Date.now();
-    } catch (error) {
+    }
+ catch (error) 
+{
       console.error("Failed to load templates from database:", error);
     }
   }
 
-  async saveTemplate(template: Template, kind: TemplateKind): Promise<void> {
-    try {
-      if (kind === "record") {
+  async saveTemplate(template: Template, kind: TemplateKind): Promise<void> 
+{
+    try 
+{
+      if (kind === "record") 
+{
         const recordTemplate = template as RecordTemplate;
         await this.dbManager.pool.query(
           `INSERT INTO templates (template_id, fingerprint, version, field_map, structure, length_hint, kind, source, created_at)
@@ -220,7 +255,9 @@ export class TemplateRegistryService extends ServiceManager {
             recordTemplate.created_at,
           ]
         );
-      } else {
+      }
+ else 
+{
         const rubbishTemplate = template as RubbishTemplate;
         await this.dbManager.pool.query(
           `INSERT INTO templates (template_id, fingerprint, version, signature, confidence, kind, source, created_at)
@@ -241,7 +278,9 @@ export class TemplateRegistryService extends ServiceManager {
           ]
         );
       }
-    } catch (error) {
+    }
+ catch (error) 
+{
       console.error("Failed to save template to database:", error);
     }
   }

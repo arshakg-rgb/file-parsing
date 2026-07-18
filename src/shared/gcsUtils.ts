@@ -1,12 +1,12 @@
 import crypto from "crypto";
 import { Storage } from "@google-cloud/storage";
-import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import { createLogger } from "../utils/logger/logger.js";
 import { decode } from "../utils/normalizers/encoding.js";
 
-class GcsUtilsService extends ServiceManager {
+class GcsUtilsService extends ServiceManager 
+{
   protected static instance: GcsUtilsService;
   private logger: any;
   private storage: Storage | null = null;
@@ -17,8 +17,10 @@ class GcsUtilsService extends ServiceManager {
   private readonly MAX_QUOTED_NEWLINES = 100;
   private readonly MAX_LINE_BYTES = 10485760;
 
-  private constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
+  private constructor(enforce: () => void) 
+{
+    if (enforce !== Enforce) 
+{
       throw new InstantiationError("Cannot instantiate GcsUtilsService directly. Use getInstance()");
     }
     super(enforce);
@@ -26,15 +28,19 @@ class GcsUtilsService extends ServiceManager {
     this.logger = createLogger("gcs-utils");
   }
 
-  public static getInstance(): GcsUtilsService {
-    if (!GcsUtilsService.instance) {
+  public static getInstance(): GcsUtilsService 
+{
+    if (!GcsUtilsService.instance) 
+{
       GcsUtilsService.instance = new GcsUtilsService(Enforce);
     }
     return GcsUtilsService.instance;
   }
 
-  public getStorage(): Storage {
-    if (!this.storage) {
+  public getStorage(): Storage 
+{
+    if (!this.storage) 
+{
       const config = this.getConfig();
       this.storage = new Storage({
         projectId: config.settings.GCP_PROJECT_ID,
@@ -46,22 +52,29 @@ class GcsUtilsService extends ServiceManager {
     return this.storage;
   }
 
-  private isRetryable(err: any): boolean {
+  private isRetryable(err: any): boolean 
+{
     if (!err) return false;
     const code = err.code;
     if (typeof code === "number") return code === 429 || code >= 500;
-    if (typeof code === "string") {
+    if (typeof code === "string") 
+{
       return ["ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "ECONNREFUSED", "EPIPE"].includes(code);
     }
     return true;
   }
 
-  private async withRetry<T>(fn: () => Promise<T>, retries = this.GCS_RETRIES, delay = 200): Promise<T> {
+  private async withRetry<T>(fn: () => Promise<T>, retries = this.GCS_RETRIES, delay = 200): Promise<T> 
+{
     let lastErr: any;
-    for (let i = 0; i <= retries; i++) {
-      try {
+    for (let i = 0; i <= retries; i++) 
+{
+      try 
+{
         return await fn();
-      } catch (err) {
+      }
+ catch (err) 
+{
         lastErr = err;
         if (i === retries || !this.isRetryable(err)) throw err;
         const wait = delay * 2 ** i;
@@ -72,25 +85,29 @@ class GcsUtilsService extends ServiceManager {
     throw lastErr;
   }
 
-  private async withTimeout<T>(fn: () => Promise<T>, ms: number): Promise<T> {
+  private async withTimeout<T>(fn: () => Promise<T>, ms: number): Promise<T> 
+{
     return Promise.race([
       fn(),
       new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`GCS timeout after ${ms}ms`)), ms)),
     ]);
   }
 
-  public parseGcsUrl(url: string): [string, string] {
+  public parseGcsUrl(url: string): [string, string] 
+{
     const prefix = url.startsWith("gs://") ? "gs://" : url.startsWith("s3://") ? "s3://" : null;
-    if (!prefix) throw new Error(`Expected gs:// URL, got: ${url}`);
+    if (!prefix) throw new Error(`Expected gs:
     const rest = url.slice(prefix.length);
     const slash = rest.indexOf("/");
     if (slash === -1) return [rest, ""];
     return [rest.slice(0, slash), rest.slice(slash + 1)];
   }
 
-  public async objectSize(bucket: string, key: string): Promise<number> {
+  public async objectSize(bucket: string, key: string): Promise<number> 
+{
     return this.withRetry(
-      () => this.withTimeout(async () => {
+      () => this.withTimeout(async () => 
+{
         const [meta] = await this.getStorage().bucket(bucket).file(key).getMetadata();
         return Number((meta as any).size ?? 0);
       }, this.GCS_TIMEOUT_MS),
@@ -98,12 +115,15 @@ class GcsUtilsService extends ServiceManager {
     );
   }
 
-  public async readRange(bucket: string, key: string, start: number, end: number): Promise<Buffer> {
+  public async readRange(bucket: string, key: string, start: number, end: number): Promise<Buffer> 
+{
     return this.withRetry(
-      () => this.withTimeout(async () => {
+      () => this.withTimeout(async () => 
+{
         const chunks: Buffer[] = [];
         const stream = this.getStorage().bucket(bucket).file(key).createReadStream({ start, end });
-        for await (const chunk of stream) {
+        for await (const chunk of stream) 
+{
           chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         }
         return Buffer.concat(chunks);
@@ -112,9 +132,11 @@ class GcsUtilsService extends ServiceManager {
     );
   }
 
-  public async readFull(bucket: string, key: string): Promise<Buffer> {
+  public async readFull(bucket: string, key: string): Promise<Buffer> 
+{
     return this.withRetry(
-      () => this.withTimeout(async () => {
+      () => this.withTimeout(async () => 
+{
         const [data] = await this.getStorage().bucket(bucket).file(key).download();
         return data;
       }, this.GCS_TIMEOUT_MS),
@@ -127,9 +149,11 @@ class GcsUtilsService extends ServiceManager {
     key: string,
     body: Buffer,
     contentType = "application/octet-stream"
-  ): Promise<void> {
+  ): Promise<void> 
+{
     await this.withRetry(
-      () => this.withTimeout(async () => {
+      () => this.withTimeout(async () => 
+{
         await this.getStorage()
           .bucket(bucket)
           .file(key)
@@ -139,11 +163,13 @@ class GcsUtilsService extends ServiceManager {
     );
   }
 
-  public async putJson(bucket: string, key: string, data: Record<string, unknown>): Promise<void> {
+  public async putJson(bucket: string, key: string, data: Record<string, unknown>): Promise<void> 
+{
     await this.putObject(bucket, key, Buffer.from(JSON.stringify(data, null, 2), "utf-8"), "application/json");
   }
 
-  public async putParquet(bucket: string, key: string, body: Buffer): Promise<void> {
+  public async putParquet(bucket: string, key: string, body: Buffer): Promise<void> 
+{
     await this.putObject(bucket, key, body, "application/octet-stream");
   }
 
@@ -152,21 +178,27 @@ class GcsUtilsService extends ServiceManager {
     srcKey: string,
     dstBucket: string,
     dstKey: string
-  ): Promise<void> {
+  ): Promise<void> 
+{
     const srcFile = this.getStorage().bucket(srcBucket).file(srcKey);
     const [exists] = await srcFile.exists();
-    if (!exists) {
+    if (!exists) 
+{
       throw new Error(`Source file not found: ${srcBucket}/${srcKey}`);
     }
     const [meta] = await srcFile.getMetadata();
     const size = Number((meta as any).size ?? 0);
   
-    if (size > 100 * 1024 * 1024) {
+    if (size > 100 * 1024 * 1024) 
+{
       this.logger.info(`Using streaming copy for large file: ${size} bytes`);
       await this.streamCopy(srcBucket, srcKey, dstBucket, dstKey);
-    } else {
+    }
+ else 
+{
       await this.withRetry(
-        () => this.withTimeout(async () => {
+        () => this.withTimeout(async () => 
+{
           await this.getStorage()
             .bucket(srcBucket)
             .file(srcKey)
@@ -182,12 +214,14 @@ class GcsUtilsService extends ServiceManager {
     srcKey: string,
     dstBucket: string,
     dstKey: string
-  ): Promise<void> {
+  ): Promise<void> 
+{
     const srcFile = this.getStorage().bucket(srcBucket).file(srcKey);
     const dstFile = this.getStorage().bucket(dstBucket).file(dstKey);
   
     const [exists] = await dstFile.exists();
-    if (exists) {
+    if (exists) 
+{
       await dstFile.delete();
     }
   
@@ -197,25 +231,30 @@ class GcsUtilsService extends ServiceManager {
   
     const readStream = srcFile.createReadStream();
   
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => 
+{
       let bytesCopied = 0;
       const startTime = Date.now();
     
-      readStream.on("data", (chunk) => {
+      readStream.on("data", (chunk) => 
+{
         bytesCopied += chunk.length;
         const elapsed = (Date.now() - startTime) / 1000;
         const speed = bytesCopied / elapsed / (1024 * 1024);
-        if (bytesCopied % (100 * 1024 * 1024) === 0) {
+        if (bytesCopied % (100 * 1024 * 1024) === 0) 
+{
           this.logger.debug(`stream_copy_progress: ${bytesCopied / (1024 * 1024)}MB at ${speed.toFixed(2)}MB/s`);
         }
       });
     
       readStream.pipe(writeStream)
-        .on("error", (error) => {
+        .on("error", (error) => 
+{
           this.logger.error("stream_copy_error:", error);
           reject(error);
         })
-        .on("finish", () => {
+        .on("finish", () => 
+{
           const elapsed = (Date.now() - startTime) / 1000;
           this.logger.info(`stream_copy_complete: ${bytesCopied / (1024 * 1024)}MB in ${elapsed.toFixed(2)}s`);
           resolve();
@@ -223,19 +262,23 @@ class GcsUtilsService extends ServiceManager {
     });
   }
 
-  public async listObjects(bucket: string, prefix: string): Promise<[string, number][]> {
+  public async listObjects(bucket: string, prefix: string): Promise<[string, number][]> 
+{
     return this.withRetry(
-      () => this.withTimeout(async () => {
+      () => this.withTimeout(async () => 
+{
         const [files] = await this.getStorage().bucket(bucket).getFiles({ prefix });
-        return files.map((f) => [`gs://${bucket}/${f.name}`, Number((f.metadata as any).size ?? 0)]);
+        return files.map((f) => [`gs:
       }, this.GCS_TIMEOUT_MS),
       this.GCS_RETRIES
     );
   }
 
-  public async presignedPutUrl(bucket: string, key: string, expiresIn = 3600, contentType = "application/octet-stream"): Promise<string> {
+  public async presignedPutUrl(bucket: string, key: string, expiresIn = 3600, contentType = "application/octet-stream"): Promise<string> 
+{
     return this.withRetry(
-      () => this.withTimeout(async () => {
+      () => this.withTimeout(async () => 
+{
         const [url] = await this.getStorage()
           .bucket(bucket)
           .file(key)
@@ -255,14 +298,16 @@ class GcsUtilsService extends ServiceManager {
     key: string,
     chunkSize = this.FETCH_CHUNK_SIZE,
     encoding = "utf-8"
-  ): AsyncGenerator<[string, number, number]> {
+  ): AsyncGenerator<[string, number, number]> 
+{
     const config = this.getConfig();
     const total = await this.objectSize(bucket, key);
     this.logger.debug("streamLines_start", { bucket, key, total, threshold: config.settings.SMALL_FILE_SINGLE_GET_THRESHOLD });
 
     const state: { inQuote: boolean } = { inQuote: false };
 
-    if (total <= config.settings.SMALL_FILE_SINGLE_GET_THRESHOLD) {
+    if (total <= config.settings.SMALL_FILE_SINGLE_GET_THRESHOLD) 
+{
       this.logger.debug("streamLines_using_single_get", { total });
       const data = await this.readFull(bucket, key);
       this.logger.debug("streamLines_download_complete", { size: data.length });
@@ -274,7 +319,8 @@ class GcsUtilsService extends ServiceManager {
     let remainder = Buffer.alloc(0);
     let remainderStart = 0;
 
-    while (fetchOffset < total) {
+    while (fetchOffset < total) 
+{
       const end = Math.min(fetchOffset + chunkSize - 1, total - 1);
       const chunk = await this.readRange(bucket, key, fetchOffset, end);
       const data = Buffer.concat([remainder, chunk]);
@@ -286,14 +332,16 @@ class GcsUtilsService extends ServiceManager {
       fetchOffset += chunk.length;
     }
 
-    if (remainder.length > 0) {
+    if (remainder.length > 0) 
+{
       const raw = remainder;
       const lineText = decode(raw, encoding).replace(/\r\n$|\n$/, "");
       if (lineText) yield [lineText, remainderStart, raw.length];
     }
   }
 
-  public splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] {
+  public splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] 
+{
     return [...this.splitBytesToLines(data, 0, encoding, { inQuote: false })];
   }
 
@@ -302,10 +350,12 @@ class GcsUtilsService extends ServiceManager {
     baseOffset: number,
     encoding: string,
     state: { inQuote: boolean }
-  ): Generator<[string, number, number]> {
+  ): Generator<[string, number, number]> 
+{
     const result = yield* this.scanLines(data, baseOffset, encoding, state);
 
-    if (result.lineStart < data.length) {
+    if (result.lineStart < data.length) 
+{
       const raw = data.slice(result.lineStart);
       const text = decode(raw, encoding).replace(/\r\n$|\n$/, "");
       if (text) yield [text, baseOffset + result.lineStart, raw.length];
@@ -317,17 +367,18 @@ class GcsUtilsService extends ServiceManager {
     dataBase: number,
     encoding: string,
     state: { inQuote: boolean }
-  ): Generator<[string, number, number], { lineStart: number; endedAtBoundary: boolean }, void> {
+  ): Generator<[string, number, number], { lineStart: number; endedAtBoundary: boolean }, void> 
+{
     const config = this.getConfig();
     const NL = 0x0a;
-    const CR = 0x0d;
     const QUOTE = 0x22;
     let pos = 0;
     let lineStart = 0;
     let endedAtBoundary = false;
     let quotedNewlines = 0;
 
-    const makeLine = (endExclusive: number): [string, number, number] => {
+    const makeLine = (endExclusive: number): [string, number, number] => 
+{
       const raw = data.slice(lineStart, endExclusive);
       const tuple: [string, number, number] = [decode(raw, encoding).replace(/\r\n$|\n$/, ""), dataBase + lineStart, raw.length];
       lineStart = endExclusive;
@@ -335,15 +386,20 @@ class GcsUtilsService extends ServiceManager {
       return tuple;
     };
 
-    while (pos < data.length) {
+    while (pos < data.length) 
+{
       const b = data[pos];
-      if (b === QUOTE) {
-        if (state.inQuote) {
-          if (pos + 1 === data.length) {
+      if (b === QUOTE) 
+{
+        if (state.inQuote) 
+{
+          if (pos + 1 === data.length) 
+{
             endedAtBoundary = true;
             break;
           }
-          if (data[pos + 1] === QUOTE) {
+          if (data[pos + 1] === QUOTE) 
+{
             pos += 2;
             continue;
           }
@@ -353,12 +409,17 @@ class GcsUtilsService extends ServiceManager {
         continue;
       }
 
-      if (b === NL) {
-        if (!state.inQuote) {
+      if (b === NL) 
+{
+        if (!state.inQuote) 
+{
           yield makeLine(pos + 1);
-        } else {
+        }
+ else 
+{
           quotedNewlines++;
-          if (quotedNewlines > config.settings.MAX_QUOTED_NEWLINES || pos + 1 - lineStart >= config.settings.MAX_LINE_BYTES) {
+          if (quotedNewlines > config.settings.MAX_QUOTED_NEWLINES || pos + 1 - lineStart >= config.settings.MAX_LINE_BYTES) 
+{
             state.inQuote = false;
             yield makeLine(pos + 1);
           }
@@ -367,7 +428,8 @@ class GcsUtilsService extends ServiceManager {
 
       pos++;
 
-      if (pos - lineStart >= config.settings.MAX_LINE_BYTES) {
+      if (pos - lineStart >= config.settings.MAX_LINE_BYTES) 
+{
         state.inQuote = false;
         yield makeLine(pos);
       }
@@ -376,7 +438,8 @@ class GcsUtilsService extends ServiceManager {
     return { lineStart, endedAtBoundary };
   }
 
-  public sha256Hex(data: Buffer): string {
+  public sha256Hex(data: Buffer): string 
+{
     return crypto.createHash("sha256").update(data).digest("hex");
   }
 }
@@ -386,23 +449,28 @@ export default GcsUtilsService;
 
 const gcsUtilsService = GcsUtilsService.getInstance();
 
-export function gcsClient(): Storage {
+export function _gcsClient(): Storage 
+{
   return gcsUtilsService.getStorage();
 }
 
-export function parseGcsUrl(url: string): [string, string] {
+export function parseGcsUrl(url: string): [string, string] 
+{
   return gcsUtilsService.parseGcsUrl(url);
 }
 
-export function objectSize(bucket: string, key: string): Promise<number> {
+export function objectSize(bucket: string, key: string): Promise<number> 
+{
   return gcsUtilsService.objectSize(bucket, key);
 }
 
-export function readRange(bucket: string, key: string, start: number, end: number): Promise<Buffer> {
+export function readRange(bucket: string, key: string, start: number, end: number): Promise<Buffer> 
+{
   return gcsUtilsService.readRange(bucket, key, start, end);
 }
 
-export function readFull(bucket: string, key: string): Promise<Buffer> {
+export function readFull(bucket: string, key: string): Promise<Buffer> 
+{
   return gcsUtilsService.readFull(bucket, key);
 }
 
@@ -411,15 +479,18 @@ export function putObject(
   key: string,
   body: Buffer,
   contentType = "application/octet-stream"
-): Promise<void> {
+): Promise<void> 
+{
   return gcsUtilsService.putObject(bucket, key, body, contentType);
 }
 
-export function putJson(bucket: string, key: string, data: Record<string, unknown>): Promise<void> {
+export function putJson(bucket: string, key: string, data: Record<string, unknown>): Promise<void> 
+{
   return gcsUtilsService.putJson(bucket, key, data);
 }
 
-export function putParquet(bucket: string, key: string, body: Buffer): Promise<void> {
+export function putParquet(bucket: string, key: string, body: Buffer): Promise<void> 
+{
   return gcsUtilsService.putParquet(bucket, key, body);
 }
 
@@ -428,15 +499,18 @@ export function copyObject(
   srcKey: string,
   dstBucket: string,
   dstKey: string
-): Promise<void> {
+): Promise<void> 
+{
   return gcsUtilsService.copyObject(srcBucket, srcKey, dstBucket, dstKey);
 }
 
-export function listObjects(bucket: string, prefix: string): Promise<[string, number][]> {
+export function listObjects(bucket: string, prefix: string): Promise<[string, number][]> 
+{
   return gcsUtilsService.listObjects(bucket, prefix);
 }
 
-export function presignedPutUrl(bucket: string, key: string, expiresIn = 3600, contentType = "application/octet-stream"): Promise<string> {
+export function presignedPutUrl(bucket: string, key: string, expiresIn = 3600, contentType = "application/octet-stream"): Promise<string> 
+{
   return gcsUtilsService.presignedPutUrl(bucket, key, expiresIn, contentType);
 }
 
@@ -445,15 +519,18 @@ export async function* streamLines(
   key: string,
   chunkSize = 1048576,
   encoding = "utf-8"
-): AsyncGenerator<[string, number, number]> {
+): AsyncGenerator<[string, number, number]> 
+{
   yield* gcsUtilsService.streamLines(bucket, key, chunkSize, encoding);
 }
 
-export function splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] {
+export function splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] 
+{
   return gcsUtilsService.splitAllLines(data, encoding);
 }
 
-export function sha256Hex(data: Buffer): string {
+export function sha256Hex(data: Buffer): string 
+{
   return gcsUtilsService.sha256Hex(data);
 }
 

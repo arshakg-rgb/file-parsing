@@ -1,4 +1,4 @@
-import { templateRegistry, RecordTemplate, RubbishTemplate, TemplateKind } from "./templateRegistry.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "./templateRegistry.js";
 import { createLogger } from "../utils/logger/logger.js";
 
 const logger = createLogger("classifier");
@@ -17,23 +17,28 @@ export interface ClassificationResult {
   reason?: string;
 }
 
-export class LineClassifier {
-  constructor(private registry: typeof templateRegistry) {}
+export class LineClassifier 
+{
+  constructor(private registry: typeof templateRegistry) 
+{}
 
   async classifyLine(
     line: string,
     fieldSpec: string[],
     byteOffset: number,
     lineNo: number
-  ): Promise<ClassificationResult> {
+  ): Promise<ClassificationResult> 
+{
     const registryClass = this.registry.constructor as any;
-    if (!registryClass.passesLengthGate(line, fieldSpec)) {
+    if (!registryClass.passesLengthGate(line, fieldSpec)) 
+{
       logger.debug("line_dropped_length", { byte_offset: byteOffset, line_no: lineNo });
       return { fate: LineFate.DROPPED_LENGTH, reason: "Failed length gate" };
     }
 
     const recordTemplate = this.registry.matchRecordTemplate(line, fieldSpec);
-    if (recordTemplate) {
+    if (recordTemplate) 
+{
       const extractedFields = this.extractFields(line, fieldSpec, recordTemplate);
       logger.debug("line_parsed_template", { 
         template_id: recordTemplate.template_id, 
@@ -48,7 +53,8 @@ export class LineClassifier {
     }
 
     const rubbishTemplate = this.registry.matchRubbishTemplate(line);
-    if (rubbishTemplate) {
+    if (rubbishTemplate) 
+{
       logger.debug("line_dropped_rubbish", { 
         template_id: rubbishTemplate.template_id, 
         byte_offset: byteOffset, 
@@ -72,15 +78,20 @@ export class LineClassifier {
     line: string, 
     fieldSpec: string[], 
     template: RecordTemplate
-  ): Record<string, any> {
+  ): Record<string, any> 
+{
     const fields: Record<string, any> = {};
     const parts = line.split(",");
     
-    for (let i = 0; i < fieldSpec.length; i++) {
+    for (let i = 0; i < fieldSpec.length; i++) 
+{
       const fieldName = fieldSpec[i];
-      if (i < parts.length) {
+      if (i < parts.length) 
+{
         fields[fieldName] = parts[i].trim();
-      } else {
+      }
+ else 
+{
         fields[fieldName] = null;
       }
     }
@@ -88,7 +99,8 @@ export class LineClassifier {
     return fields;
   }
 
-  hasMatchRateCollapsed(): boolean {
+  hasMatchRateCollapsed(): boolean 
+{
     return this.registry.hasMatchRateCollapsed();
   }
 }

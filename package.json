@@ -64,6 +64,8 @@
     "@typescript-eslint/eslint-plugin": "^8.64.0",
     "@typescript-eslint/parser": "^8.64.0",
     "eslint": "^10.7.0",
+    "eslint-plugin-unused-imports": "^4.4.1",
+    "ts-morph": "^28.0.0",
     "tsx": "^4.15.0",
     "typescript": "^5.4.5"
   }

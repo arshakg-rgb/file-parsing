@@ -1,4 +1,4 @@
-import { FailureClass } from "../../../shared/models/job.js";
+import { _FailureClass } from "../../../shared/models/job.js";
 import { RecordTemplate, RubbishTemplate } from "../../../shared/templateRegistry.js";
 
 export interface ClassifyRequest {
@@ -18,7 +18,7 @@ export interface ClassifyResult {
   row?: Record<string, any>;
   template_id?: string;
   template_version?: number;
-  failure_class?: FailureClass;
+  failure_class?: _FailureClass;
 }
 
 export interface IClassifier {

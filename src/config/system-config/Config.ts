@@ -3,33 +3,36 @@ import path from "path";
 import { IAppConfig } from "./io/IAppConfig.js";
 import { IDatabaseConfig } from "./io/IDatabaseConfig.js";
 
-// Load local .env.local first (project-specific overrides take priority)
 dotenv.config({ path: path.resolve(".env.local") });
-// Fall back to sibling Python project's env for shared infra settings
 dotenv.config({ path: path.resolve("../file-parsing-pipeline/.env.local") });
 
-function getNumber(name: string, fallback: number): number {
+function getNumber(name: string, fallback: number): number 
+{
   const v = process.env[name];
   return v !== undefined ? Number(v) : fallback;
 }
 
-function getString(name: string, fallback: string): string {
+function getString(name: string, fallback: string): string 
+{
   return process.env[name] ?? fallback;
 }
 
-function getOptionalString(name: string): string | undefined {
+function getOptionalString(name: string): string | undefined 
+{
   const v = process.env[name];
   return v === "" ? undefined : v;
 }
 
-class Config {
+class Config 
+{
   private static instance: Config;
   private _appConfig: IAppConfig;
   private _commonConfig: any;
   private _authConfig: any;
   private _databaseConfig: IDatabaseConfig;
 
-  private constructor() {
+  private constructor() 
+{
     this._appConfig = {
       name: getString("APP_NAME", "file-parsing-pipeline"),
       version: getString("APP_VERSION", "1.0.0"),
@@ -57,31 +60,37 @@ class Config {
     };
   }
 
-  public static getInstance(): Config {
-    if (!Config.instance) {
+  public static getInstance(): Config 
+{
+    if (!Config.instance) 
+{
       Config.instance = new Config();
     }
     return Config.instance;
   }
 
-  public get appConfig(): IAppConfig {
+  public get appConfig(): IAppConfig 
+{
     return this._appConfig;
   }
 
-  public get commonConfig(): any {
+  public get commonConfig(): any 
+{
     return this._commonConfig;
   }
 
-  public get authConfig(): any {
+  public get authConfig(): any 
+{
     return this._authConfig;
   }
 
-  public get databaseConfig(): IDatabaseConfig {
+  public get databaseConfig(): IDatabaseConfig 
+{
     return this._databaseConfig;
   }
 
-  // Legacy settings support
-  public get settings() {
+  public get settings() 
+{
     return {
       GCP_PROJECT_ID: getString("GCP_PROJECT_ID", "data-etl-499916"),
       GOOGLE_APPLICATION_CREDENTIALS: getOptionalString("GOOGLE_APPLICATION_CREDENTIALS"),

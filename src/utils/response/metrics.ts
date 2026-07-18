@@ -1,27 +1,33 @@
-export class Metrics {
+export class Metrics 
+{
   private counters: Map<string, number> = new Map();
   private gauges: Map<string, number> = new Map();
   private histograms: Map<string, number[]> = new Map();
 
-  increment(name: string, value = 1, tags: Record<string, string> = {}): void {
+  increment(name: string, value = 1, tags: Record<string, string> = {}): void 
+{
     const key = this.key(name, tags);
     this.counters.set(key, (this.counters.get(key) || 0) + value);
   }
 
-  set(name: string, value: number, tags: Record<string, string> = {}): void {
+  set(name: string, value: number, tags: Record<string, string> = {}): void 
+{
     const key = this.key(name, tags);
     this.gauges.set(key, value);
   }
 
-  observe(name: string, value: number, tags: Record<string, string> = {}): void {
+  observe(name: string, value: number, tags: Record<string, string> = {}): void 
+{
     const key = this.key(name, tags);
-    if (!this.histograms.has(key)) {
+    if (!this.histograms.has(key)) 
+{
       this.histograms.set(key, []);
     }
     this.histograms.get(key)!.push(value);
   }
 
-  private key(name: string, tags: Record<string, string>): string {
+  private key(name: string, tags: Record<string, string>): string 
+{
     const tagStr = Object.entries(tags)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([k, v]) => `${k}=${v}`)
@@ -29,25 +35,30 @@ export class Metrics {
     return tagStr ? `${name},${tagStr}` : name;
   }
 
-  getCounter(name: string, tags: Record<string, string> = {}): number {
+  getCounter(name: string, tags: Record<string, string> = {}): number 
+{
     return this.counters.get(this.key(name, tags)) || 0;
   }
 
-  getGauge(name: string, tags: Record<string, string> = {}): number | undefined {
+  getGauge(name: string, tags: Record<string, string> = {}): number | undefined 
+{
     return this.gauges.get(this.key(name, tags));
   }
 
-  getHistogram(name: string, tags: Record<string, string> = {}): number[] {
+  getHistogram(name: string, tags: Record<string, string> = {}): number[] 
+{
     return this.histograms.get(this.key(name, tags)) || [];
   }
 
-  reset(): void {
+  reset(): void 
+{
     this.counters.clear();
     this.gauges.clear();
     this.histograms.clear();
   }
 
-  toJSON(): Record<string, any> {
+  toJSON(): Record<string, any> 
+{
     return {
       counters: Object.fromEntries(this.counters),
       gauges: Object.fromEntries(this.gauges),

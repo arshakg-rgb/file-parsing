@@ -5,14 +5,17 @@ import ArchiveEntryConsumerServiceImpl from "./impl/ArchiveEntryConsumerServiceI
  * Legacy ArchiveEntryConsumerService class - now a thin wrapper around ArchiveEntryConsumerServiceImpl
  * This maintains backward compatibility while using the new service pattern
  */
-export class ArchiveEntryConsumerService implements IArchiveEntryConsumer {
+export class ArchiveEntryConsumerService implements IArchiveEntryConsumer 
+{
   private service: ArchiveEntryConsumerServiceImpl;
 
-  constructor() {
+  constructor() 
+{
     this.service = ArchiveEntryConsumerServiceImpl.getInstance();
   }
 
-  async processEntry(req: ArchiveEntryRequest): Promise<ArchiveEntryResponse> {
+  async processEntry(req: ArchiveEntryRequest): Promise<ArchiveEntryResponse> 
+{
     return this.service.processEntry(req);
   }
 
@@ -22,16 +25,15 @@ export class ArchiveEntryConsumerService implements IArchiveEntryConsumer {
     entryName: string,
     password: string | undefined,
     fieldSpec: string[]
-  ): Promise<{ s3Url: string; size: number }> {
+  ): Promise<{ s3Url: string; size: number }> 
+{
     return this.service.extractSingleRarEntry(jobId, archiveS3Url, entryName, password, fieldSpec);
   }
 }
 
-// Re-export the new service for direct use
 export { default as ArchiveEntryConsumerServiceImpl } from "./impl/ArchiveEntryConsumerServiceImpl.js";
 export { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryResponse } from "./io/IArchiveEntryConsumer.js";
 
-// Backward compatibility wrappers
 const archiveService = new ArchiveEntryConsumerService();
 
 export async function extractSingleRarEntry(
@@ -40,7 +42,8 @@ export async function extractSingleRarEntry(
   entryName: string,
   password: string | undefined,
   fieldSpec: string[]
-): Promise<{ s3Url: string; size: number }> {
+): Promise<{ s3Url: string; size: number }> 
+{
   return archiveService.extractSingleRarEntry(jobId, archiveS3Url, entryName, password, fieldSpec);
 }
 

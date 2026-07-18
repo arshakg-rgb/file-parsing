@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 import { CustomError } from "../errors/CustomError.js";
 
-export function error404Handler(req: Request, res: Response): void {
+export function error404Handler(req: Request, res: Response): void 
+{
   res.status(404).json({
     error: {
       message: "Resource not found",
@@ -17,10 +18,12 @@ export function errorPageHandler(
   req: Request,
   res: Response,
   next: NextFunction
-): void {
+): void 
+{
   console.error("Error:", err);
 
-  if (err instanceof CustomError) {
+  if (err instanceof CustomError) 
+{
     res.status(err.statusCode).json({
       error: {
         message: err.message,
@@ -28,7 +31,9 @@ export function errorPageHandler(
         details: err.details,
       },
     });
-  } else {
+  }
+ else 
+{
     res.status(500).json({
       error: {
         message: "Internal server error",

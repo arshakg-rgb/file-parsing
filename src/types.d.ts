@@ -48,7 +48,8 @@ declare module "unrar-async" {
     debug?: boolean;
   }
 
-  export class RARExtractor {
+  export class RARExtractor 
+{
     static fromFile(path: string, options?: RARExtractorOptions): Promise<RARExtractor>;
     static fromBuffer(buffer: Uint8Array, options?: RARExtractorOptions): Promise<RARExtractor>;
     extract(options?: RARExtractorOptions): Promise<ExtractResult<Readable>>;
@@ -66,7 +67,8 @@ declare module "node-stream-zip" {
     isDirectory: boolean;
   }
 
-  class AsyncStreamZip {
+  class AsyncStreamZip 
+{
     constructor(options: StreamZipOptions);
     entries(): Promise<Record<string, AsyncEntry>>;
     entryData(name: string): Promise<Buffer>;

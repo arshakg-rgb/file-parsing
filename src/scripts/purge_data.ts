@@ -4,14 +4,13 @@ import { createLogger } from "../utils/logger/logger.js";
 
 const logger = createLogger("purge-data");
 
-export async function purgeDatabase(pool: Pool): Promise<void> {
+export async function purgeDatabase(pool: Pool): Promise<void> 
+{
   logger.info("Starting database purge...");
   
-  // Delete all jobs - this will cascade to output_parts, rubbish_log, dead_letters
   const result = await pool.query("DELETE FROM parse_jobs");
   logger.info(`Deleted ${result.rowCount} jobs from parse_jobs`);
   
-  // Verify cascade worked
   const outputCount = await pool.query("SELECT COUNT(*) FROM output_parts");
   const rubbishCount = await pool.query("SELECT COUNT(*) FROM rubbish_log");
   const dlqCount = await pool.query("SELECT COUNT(*) FROM dead_letters");
@@ -21,8 +20,8 @@ export async function purgeDatabase(pool: Pool): Promise<void> {
   logger.info("Database purge complete");
 }
 
-async function main() {
-  // Parse DATABASE_URL to get connection parameters
+async function main() 
+{
   const dbUrl = new URL(settings.DATABASE_URL);
   const pool = new Pool({
     host: dbUrl.hostname,
@@ -32,9 +31,12 @@ async function main() {
     password: dbUrl.password,
   });
 
-  try {
+  try 
+{
     await purgeDatabase(pool);
-  } finally {
+  }
+ finally 
+{
     await pool.end();
   }
 }
