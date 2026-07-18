@@ -212,6 +212,7 @@ export async function bootstrapJob(msg: ClassifyMessage): Promise<void> {
     s3_url: msg.s3_url,
     size: fileSize,
     field_spec: msg.field_spec,
+    column_map: msg.column_map,
     seed_template_ids: seedTemplateIds,
   };
   console.log("detect_sending_to_parse", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL });

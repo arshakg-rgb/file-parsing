@@ -95,6 +95,7 @@ export async function handleIngest(msg: IngestMessage): Promise<void> {
       s3_url: s3Url,
       size,
       field_spec: msg.field_spec,
+      column_map: msg.column_map,
     });
     logger.info("ingest_forwarded_to_classify", { job_id: jobId, s3_url: s3Url });
     metrics.increment("ingest.forwarded", 1, { target: "classify" });

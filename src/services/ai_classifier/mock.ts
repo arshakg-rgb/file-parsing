@@ -36,6 +36,7 @@ export function mockClassify(req: ClassifyRequest): ClassifyResponse {
         version: 1,
         field_map: fieldMap,
         structure: "csv",
+        delimiter: delim,
         length_hint: Math.floor(line.length / 2),
         source: "ai" as const,
         created_at: new Date(),

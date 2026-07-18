@@ -199,7 +199,8 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
 
   const recordTemplates = templateRegistry.getAllRecordTemplates();
   const rubbishTemplates = templateRegistry.getAllRubbishTemplates();
-  const classifier = new LineClassifier(jobId, fieldSpec, recordTemplates, rubbishTemplates);
+  const columnMap = (msg as any).column_map || undefined;
+  const classifier = new LineClassifier(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap);
   const outputManager = new OutputManager();
   const csvWriter = new CsvOutputWriter(jobId, fieldSpec);
   const dlqManager = new DLQManager();
@@ -210,6 +211,16 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
   let lineNo = 0;
   let recordIndex = 0;
   let fatal: any = null;
+
+  // Inline AI (design step 4): when the local ordered classifier can't decide, ask the model
+  // once, cache its verdict as a template, and reuse it locally thereafter. Bounded per job.
+  const aiMode = settings.AI_INLINE_MODE; // "off" | "mock" | "live"
+  const aiEnabled = aiMode === "mock" || aiMode === "live";
+  const aiBudget = settings.MAX_AI_CALLS_PER_JOB;
+  let aiCalls = 0;
+  let aiLocalRecoveries = 0; // unknowns the AI resolved (record or rubbish)
+  let aiBudgetFlagged = false;
+  const recentLines: string[] = []; // small context window for the model
 
   try {
     for await (const [line, byteOffset, byteLength] of streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding)) {
@@ -230,10 +241,32 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
         continue; // Skip this line and continue with next
       }
 
-      // Unknown lines are dead-lettered (verdict "uncertain"); the retry service performs
-      // AI recovery out-of-band. In-loop synchronous AI is intentionally NOT done here — it
-      // would need the match-rate monitor + AI rate limiter + a per-job call budget (not yet
-      // wired) to avoid unthrottled, serial 30s model calls stalling the parse loop.
+      // Design step 4: a line the local classifier can't place (verdict "uncertain") is sent
+      // to the AI ONCE — it returns a record template (parse it), a rubbish signature (drop it),
+      // or "uncertain" (dead-letter for human review). The verdict is cached as a template so the
+      // next matching line is handled locally with no further AI call. Bounded by a per-job
+      // budget; when exhausted the file is flagged and remaining unknowns dead-letter as before.
+      if (result.verdict === "uncertain" && aiEnabled) {
+        if (aiCalls < aiBudget) {
+          aiCalls++;
+          try {
+            const aiResult = await classifier.classifyWithTimeout(line, recentLines.slice(-3), settings.AI_CLASSIFY_TIMEOUT_MS);
+            if (aiResult.verdict !== "uncertain") {
+              aiLocalRecoveries++;
+              result = aiResult;
+            }
+          } catch (aiErr) {
+            console.error("inline_ai_failed", { jobId, lineNo, error: aiErr instanceof Error ? aiErr.message : String(aiErr) });
+          }
+        } else if (!aiBudgetFlagged) {
+          aiBudgetFlagged = true;
+          console.log("ai_budget_exhausted", { jobId, lineNo, ai_calls: aiCalls, budget: aiBudget, note: "file flagged; remaining unknowns dead-lettered" });
+        }
+      }
+
+      // Keep a small rolling context window for the model (bounded memory).
+      recentLines.push(line);
+      if (recentLines.length > 5) recentLines.shift();
 
       if (lineNo <= 5) {
         console.log("classification_debug", { jobId, lineNo, verdict: result.verdict, template_id: result.template_id, line_length: line.length });
@@ -243,7 +276,15 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
         case "parsed":
           // Sanitize row data before storage
           const sanitizedRow = sanitizeRecord(result.row || {});
-          
+
+          // Write-time guard: never emit a row whose email/phone is populated but invalid, no
+          // matter which template produced it. Learned/AI templates can occasionally force junk
+          // (e.g. a binary line) into a field; this choke-point drops it as rubbish.
+          if (!classifier.rowStrongFieldsOk(sanitizedRow)) {
+            counts.dropped_rubbish++;
+            break;
+          }
+
           // Add to output buffer (one record index shared by the parquet row and its trace)
           const idx = recordIndex++;
           const outputBuffer = outputManager.getBuffer(jobId, result.template_id || "default");

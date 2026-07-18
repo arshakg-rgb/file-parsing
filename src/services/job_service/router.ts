@@ -11,7 +11,25 @@ export const router = Router({ mergeParams: true });
 
 router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { source_type, source_ref, field_spec, batch_id } = req.body;
+    const { source_type, source_ref, field_spec, batch_id, column_map } = req.body;
+
+    // Optional explicit column map for headerless fixed-column files: { field: index | [indices] }.
+    // Accept a JSON string or object; keep only numeric indices so a bad payload can't inject junk.
+    let columnMap: Record<string, number | number[]> | undefined;
+    if (column_map) {
+      const raw = typeof column_map === "string" ? (() => { try { return JSON.parse(column_map); } catch { return undefined; } })() : column_map;
+      if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+        const cleaned: Record<string, number | number[]> = {};
+        for (const [k, v] of Object.entries(raw)) {
+          if (typeof v === "number" && Number.isInteger(v) && v >= 0) cleaned[k] = v;
+          else if (Array.isArray(v)) {
+            const idxs = v.filter((n: any) => typeof n === "number" && Number.isInteger(n) && n >= 0);
+            if (idxs.length) cleaned[k] = idxs;
+          }
+        }
+        if (Object.keys(cleaned).length) columnMap = cleaned;
+      }
+    }
     if ([SourceType.S3, SourceType.URL].includes(source_type) && !source_ref) {
       res.status(400).json({ detail: "source_ref is required for s3 and url sources" });
       return;
@@ -80,6 +98,7 @@ router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => 
       source_type,
       source_ref: source_ref || s3Url,
       field_spec: fieldNames, // normalized array, consistent with the stored spec
+      column_map: columnMap,
       batch_id: batchId,
     });
     console.log("job_queue_message_sent", { job_id: jobId, message_id: messageId });

@@ -274,6 +274,7 @@ function createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: str
     version: 1,
     field_map: fieldMap,
     structure: "csv",
+    delimiter,
     length_hint: line.length,
     source: "ai" as const,
     created_at: new Date()
@@ -325,9 +326,24 @@ export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse
     return { kind: AIVerdict.RUBBISH_SIGNATURE, template: rubbishMatch };
   }
 
+  // Step 5a: Mock mode — deterministic classifier, zero model cost. Used to validate the
+  // inline-AI flow (learning + caching + budget) before switching to the real model.
+  if (settings.AI_INLINE_MODE === "mock" || settings.BEDROCK_MODEL_ID === "mock") {
+    const { mockClassify } = await import("./mock.js");
+    const resp = mockClassify(req) as ClassifyResponse;
+    if (resp.template) {
+      const isRecord = "field_map" in (resp.template as any);
+      await templateRegistry.saveTemplate(resp.template as any, isRecord ? "record" : "rubbish");
+      if (isRecord) templateRegistry.addRecordTemplate(resp.template as RecordTemplate);
+      else templateRegistry.addRubbishTemplate(resp.template as RubbishTemplate);
+      console.log("ai_classified_mock", { job_id: req.job_id, kind: resp.kind, template_id: resp.template.template_id });
+    }
+    return resp;
+  }
+
   // Step 5: No local match found, fall back to Vertex AI
   console.log("ai_classifier_fallback_to_ai", { job_id: req.job_id, reason: "no_local_template_match" });
-  
+
   const userPrompt = buildUserPrompt(req);
   try {
     const raw = await callVertexAI(userPrompt);

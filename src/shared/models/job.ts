@@ -179,11 +179,20 @@ export interface TraceRecord {
   parsed_at: string;
 }
 
+/**
+ * Optional explicit column layout for headerless, fixed-column delimited files.
+ * Maps a field_spec name to a 0-based column index, or an array of indices whose
+ * non-empty cells are joined (e.g. a multi-column address). Threaded from job creation
+ * through to the parser, which trusts it for delimited lines instead of guessing.
+ */
+export type ColumnMap = Record<string, number | number[]>;
+
 export interface IngestMessage {
   job_id: string;
   source_type: SourceType;
   source_ref: string;
   field_spec: string[];
+  column_map?: ColumnMap;
   batch_id?: string;
   password?: string;
 }
@@ -193,6 +202,7 @@ export interface ClassifyMessage {
   s3_url: string;
   size: number;
   field_spec: string[];
+  column_map?: ColumnMap;
 }
 
 export interface ParseMessage {
@@ -200,6 +210,7 @@ export interface ParseMessage {
   s3_url: string;
   size: number;
   field_spec: string[];
+  column_map?: ColumnMap;
   seed_template_ids: string[];
 }
 

@@ -1,5 +1,5 @@
 import { settings } from "../../shared/config.js";
-import { FailureClass } from "../../shared/models/job.js";
+import { FailureClass, ColumnMap } from "../../shared/models/job.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
 import { safeRegex, safeRegexTest } from "../../shared/safeRegex.js";
 
@@ -36,6 +36,7 @@ export class LineClassifier {
   private rubbishTemplates: RubbishTemplate[];
   private aiCache: Map<string, RecordTemplate | RubbishTemplate>;
   private headerMap: Record<string, number> | null = null;
+  private columnMap: ColumnMap | null = null;
   private firstLine = true;
 
   // Common column/key synonyms so field_spec names match real-world headers and JSON keys.
@@ -50,12 +51,14 @@ export class LineClassifier {
     jobId: string,
     fieldSpec: string[],
     recordTemplates: RecordTemplate[],
-    rubbishTemplates: RubbishTemplate[]
+    rubbishTemplates: RubbishTemplate[],
+    columnMap?: ColumnMap | null
   ) {
     this.jobId = jobId;
     this.fieldSpec = fieldSpec;
     this.recordTemplates = recordTemplates;
     this.rubbishTemplates = rubbishTemplates;
+    this.columnMap = columnMap && Object.keys(columnMap).length > 0 ? columnMap : null;
     this.aiCache = new Map();
   }
 
@@ -82,6 +85,15 @@ export class LineClassifier {
         this.headerMap = hdr;
         return { verdict: "rubbish", template_id: "header" };
       }
+    }
+
+    // 1c. Client-supplied explicit column map (headerless fixed-column files). Authoritative
+    // for delimited rows: it wins over learned templates. It only accepts a line whose mapped
+    // email/phone column actually validates, so kv/JSON/binary lines decline here and fall
+    // through to the structural/content recognizers below.
+    if (this.columnMap) {
+      const mapped = this.applyColumnMap(line);
+      if (mapped) return { verdict: "parsed", row: this.coerce(mapped), template_id: "csv-column-map" };
     }
 
     const fp = quickFingerprint(line);
@@ -165,6 +177,16 @@ export class LineClassifier {
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
     }
     this.aiCache.set(fp, resp.template);
+    // Learn the template into the local stores so the NEXT matching line is recognized with no
+    // AI call (design: "cached as a template and reused" — good OR junk each cost one AI call
+    // in their lifetime). aiCache handles identical lines; the template lists generalize across
+    // differently-fingerprinted lines of the same pattern.
+    const t: any = resp.template;
+    if ("field_map" in t && !this.recordTemplates.some((r) => r.template_id === t.template_id)) {
+      this.recordTemplates.push(t);
+    } else if ("signature" in t && !this.rubbishTemplates.some((r) => r.template_id === t.template_id)) {
+      this.rubbishTemplates.push(t);
+    }
     return this.toResult(line, resp.template);
   }
 
@@ -176,6 +198,21 @@ export class LineClassifier {
         setTimeout(() => resolve({ verdict: "uncertain", failure_class: FailureClass.UNCERTAIN }), timeoutMs)
       ),
     ]);
+  }
+
+  /**
+   * Write-time guard: false if any strongly-typed field (email/phone) is populated but does not
+   * validate — the fingerprint of a junk row produced by a mismapped learned/AI template. Called
+   * at the emit point so no path (local template, AI, column map) can leak junk into email/phone.
+   */
+  rowStrongFieldsOk(row: Record<string, any>): boolean {
+    for (const field of this.fieldSpec) {
+      const nf = this.normalizeKey(field);
+      if (nf !== "email" && nf !== "phone") continue;
+      const v = row[field];
+      if (v !== undefined && v !== null && String(v).trim() !== "" && !this.validateField(field, v)) return false;
+    }
+    return true;
   }
 
   private toResult(line: string, tmpl: RecordTemplate | RubbishTemplate): ClassifyResult {
@@ -198,6 +235,8 @@ export class LineClassifier {
 
     const row: Record<string, any> = {};
     let presentCount = 0;
+    let strongPresent = 0; // strongly-typed fields (email/phone) that got a value
+    let strongValid = 0;   // ...of those, how many actually validate
     for (const field of this.fieldSpec) {
       const loc = rec.field_map[field];
       if (!loc) {
@@ -206,9 +245,21 @@ export class LineClassifier {
       }
       const value = this.applyLocator(line, parsed, loc.locator);
       if (value !== undefined) presentCount++;
+      const nf = this.normalizeKey(field);
+      if ((nf === "email" || nf === "phone") && value !== undefined && value !== null && String(value).trim() !== "") {
+        strongPresent++;
+        if (this.validateField(field, value)) strongValid++;
+      }
       row[field] = value;
     }
-    return presentCount > 0 ? row : null;
+    if (presentCount === 0) return null;
+    // Reject a template whose strongly-typed field(s) were populated but none validate — the
+    // signature of a positional/mismapped template applied to the wrong line (e.g. a CSV
+    // template reused across files that puts a bare id or a whole "Label: value" line into
+    // email). Decline so the line falls through to the structural/content recognizers instead
+    // of being force-parsed into garbage.
+    if (strongPresent > 0 && strongValid === 0) return null;
+    return row;
   }
 
   private parseStructure(line: string, rec: RecordTemplate): string | any[] | Record<string, any> | null {
@@ -230,9 +281,10 @@ export class LineClassifier {
       return Object.keys(obj).length > 0 ? obj : null;
     }
     if (rec.structure === "csv") {
-      const delim = rec.field_map && Object.values(rec.field_map)[0]?.locator?.startsWith("index:") 
-        ? Object.values(rec.field_map)[0].locator.replace("index:", "") 
-        : ",";
+      // The delimiter is a property of the template, not something to reverse-engineer from a
+      // field locator. The old code did `"index:0".replace("index:","")` -> "0", which split
+      // every line on the digit 0. Use the template's stored delimiter, defaulting to comma.
+      const delim = (rec as any).delimiter || ",";
       const quote = '"';
       return parseCsvLine(line, delim, quote);
     }
@@ -263,7 +315,10 @@ export class LineClassifier {
     const v = String(value).trim();
     if (v === "") return false;
     const nf = this.normalizeKey(field);
-    if (nf === "email") return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);
+    // Sane email chars only. The old `[^@\s]+@[^@\s]+\.[^@\s]+` accepted control/binary bytes,
+    // so a garbage line containing an '@' and a '.' validated as an email. The local part allows
+    // the common RFC punctuation (incl. '=', e.g. nabilah==6172@…) but no control/space/high bytes.
+    if (nf === "email") return /^[A-Za-z0-9._%+=\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/.test(v);
     if (nf === "phone") {
       if (v.includes("@")) return false;
       const digits = v.replace(/\D/g, "");
@@ -367,6 +422,49 @@ export class LineClassifier {
     }
     const need = Math.max(2, Math.ceil(this.fieldSpec.length / 2));
     return matched >= need ? map : null;
+  }
+
+  /**
+   * Extract fields from a delimited line using the client's explicit column map. A field maps
+   * to a single 0-based column, or an array of columns whose non-empty cells are joined (e.g. a
+   * multi-column address). Accepts only when a mapped strongly-typed field (email/phone) is
+   * present AND validates — so this authoritative path fires on the intended fixed-column rows
+   * and declines everything else (kv / JSON / binary), which then falls through to the normal flow.
+   */
+  private applyColumnMap(line: string): Record<string, any> | null {
+    const map = this.columnMap!;
+    const parts = this.splitBestDelimited(line);
+    if (!parts) return null;
+
+    const row: Record<string, any> = {};
+    let present = 0;
+    let strongPresent = 0;
+    let strongValid = 0;
+    for (const field of this.fieldSpec) {
+      const spec = map[field];
+      let value: any = null;
+      if (typeof spec === "number") {
+        value = spec < parts.length ? parts[spec] : null;
+      } else if (Array.isArray(spec)) {
+        const cells = spec.map((i) => (i < parts.length ? String(parts[i] ?? "").trim() : "")).filter((c) => c !== "");
+        value = cells.length ? cells.join(", ") : null;
+      }
+      if (value !== null && String(value).trim() !== "") {
+        row[field] = value;
+        present++;
+        const nf = this.normalizeKey(field);
+        if (nf === "email" || nf === "phone") {
+          strongPresent++;
+          if (this.validateField(field, value)) strongValid++;
+        }
+      } else {
+        row[field] = null;
+      }
+    }
+    // Require a mapped email/phone column to be present and valid — the signal that this line
+    // really is one of the fixed-column rows the map was written for.
+    if (present === 0 || strongPresent === 0 || strongValid === 0) return null;
+    return row;
   }
 
   private parseDelimitedRecord(line: string): Record<string, any> | null {

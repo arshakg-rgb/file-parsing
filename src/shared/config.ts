@@ -60,6 +60,13 @@ export const settings = {
   AI_RATE_LIMIT_RPM: getNumber("AI_RATE_LIMIT_RPM", 60), // 60 requests per minute
   AI_RATE_LIMIT_BURST: getNumber("AI_RATE_LIMIT_BURST", 10), // Burst of 10 requests
   AI_CLASSIFY_TIMEOUT_MS: getNumber("AI_CLASSIFY_TIMEOUT_MS", 30000), // 30 s per AI probe call
+  // Inline AI classification of unknown lines during the streaming parse (design step 4).
+  //   "off"  — never call AI in the loop; unknown lines go straight to dead-letter (legacy).
+  //   "mock" — use the deterministic mock classifier (zero cost) to validate the flow.
+  //   "live" — call the real model.
+  AI_INLINE_MODE: getString("AI_INLINE_MODE", "off"),
+  // Hard cap on AI calls per job so a pathological file can't run up unbounded cost/latency.
+  MAX_AI_CALLS_PER_JOB: getNumber("MAX_AI_CALLS_PER_JOB", 50),
 
   // ---- Vertex AI ----
   VERTEX_MODEL: getString("VERTEX_MODEL", "gemini-2.5-flash"),
