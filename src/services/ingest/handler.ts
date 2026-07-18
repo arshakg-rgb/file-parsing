@@ -1,6 +1,7 @@
 import Config from "../../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../../config/ServiceManager.js";
 import { InstantiationError } from "../../errors/InstantiationError.js";
+import { PasswordError } from "../../errors/PasswordError.js";
 import FirestoreCacheUtils from "../../utils/cache/FirestoreCacheUtils.js";
 import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js";
 import { JobStatus, SourceType, IngestMessage } from "../../shared/models/job.js";
@@ -40,10 +41,10 @@ class IngestService extends ServiceManager {
   }
 
   public static getInstance(): IngestService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new IngestService(Enforce);
+    if (!IngestService.instance) {
+      IngestService.instance = new IngestService(Enforce);
     }
-    return ServiceManager.instance as IngestService;
+    return IngestService.instance;
   }
 
   public getLogger(): any {
@@ -329,13 +330,6 @@ class IngestService extends ServiceManager {
         await new Promise(r => setTimeout(r, 5000));
       }
     }
-  }
-}
-
-class PasswordError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "PasswordError";
   }
 }
 
