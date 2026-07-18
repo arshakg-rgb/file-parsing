@@ -8,15 +8,13 @@ import { ParquetSchema, ParquetWriter } from "@dsnp/parquetjs";
 import { settings } from "../../shared/config.js";
 import { OutputPart } from "../../shared/models/job.js";
 import { pool } from "../../shared/db.js";
-import { _gcsClient, putObject } from "../../shared/gcsUtils.js";
+import { gcsClient, putObject } from "../../shared/gcsUtils.js";
 
-function estimateRowBytes(row: Record<string, any>): number 
-{
+function estimateRowBytes(row: Record<string, any>): number {
   return Object.values(row).reduce((acc, v) => acc + (v === null ? 4 : String(v).length), 0) + Object.keys(row).length * 16;
 }
 
-export class ParquetWriterPool 
-{
+export class ParquetWriterPool {
   private jobId: string;
   private bucket: string;
   private outputPrefix: string;
@@ -27,8 +25,7 @@ export class ParquetWriterPool
   private totalRows: number;
   private flushPromise: Promise<OutputPart[]> | null;
 
-  constructor(jobId: string, bucket: string, outputPrefix: string, watermarkBytes = settings.RAM_FLUSH_WATERMARK) 
-{
+  constructor(jobId: string, bucket: string, outputPrefix: string, watermarkBytes = settings.RAM_FLUSH_WATERMARK) {
     this.jobId = jobId;
     this.bucket = bucket;
     this.outputPrefix = outputPrefix.replace(/\/$/, "");
@@ -48,10 +45,8 @@ export class ParquetWriterPool
     byteLength: number,
     lineNo: number,
     rawLine: string
-  ): void 
-{
-    if (typeof rawLine !== "string") 
-{
+  ): void {
+    if (typeof rawLine !== "string") {
       console.error("parquet_write_invalid_rawline", { jobId: this.jobId, rawLineType: typeof rawLine, byteOffset, lineNo });
       return;
     }
@@ -76,63 +71,51 @@ export class ParquetWriterPool
     this.totalRows += 1;
   }
 
-  async flush(): Promise<OutputPart[]> 
-{
-    if (this.flushPromise) 
-{
+  async flush(): Promise<OutputPart[]> {
+    if (this.flushPromise) {
       await this.flushPromise;
     }
     this.flushPromise = this.doFlush();
-    try 
-{
+    try {
       return await this.flushPromise;
-    }
- finally 
-{
+    } finally {
       this.flushPromise = null;
     }
   }
 
-  private async doFlush(): Promise<OutputPart[]> 
-{
+  private async doFlush(): Promise<OutputPart[]> {
     const toFlush = this.buffers;
     this.buffers = {};
     this.bufferBytes = 0;
     const flushed: OutputPart[] = [];
     const failed: { [templateId: string]: Record<string, any>[] } = {};
 
-    for (const [templateId, rows] of Object.entries(toFlush)) 
-{
+    for (const [templateId, rows] of Object.entries(toFlush)) {
       if (!rows.length) continue;
-      try 
-{
+      try {
         const part = await this.writePart(templateId, rows);
         this.parts.push(part);
         flushed.push(part);
-      }
- catch (err) 
-{
+      } catch (err) {
         console.error("parquet_writePart_failed", { jobId: this.jobId, templateId, error: String(err) });
         failed[templateId] = rows;
       }
     }
 
-    for (const [templateId, rows] of Object.entries(failed)) 
-{
+    // Re-queue failed rows so they are retried on the next flush.
+    for (const [templateId, rows] of Object.entries(failed)) {
       const existing = this.buffers[templateId] || [];
       this.buffers[templateId] = [...rows, ...existing];
       for (const r of rows) this.bufferBytes += estimateRowBytes(r);
     }
 
-    if (Object.keys(failed).length > 0) 
-{
+    if (Object.keys(failed).length > 0) {
       throw new Error(`Parquet flush failed for ${Object.keys(failed).length} templates`);
     }
     return flushed;
   }
 
-  private async writePart(templateId: string, rows: Record<string, any>[]): Promise<OutputPart> 
-{
+  private async writePart(templateId: string, rows: Record<string, any>[]): Promise<OutputPart> {
     const partId = randomUUID();
     for (const r of rows) r._part_id = partId;
 
@@ -140,85 +123,71 @@ export class ParquetWriterPool
     const tempFile = path.join(os.tmpdir(), `${partId}.parquet`);
     const writer = await ParquetWriter.openFile(schema, tempFile);
     let i = 0;
-    for (const row of rows) 
-{
+    for (const row of rows) {
       await writer.appendRow(row);
       i += 1;
-      if (i % 5000 === 0) 
-{
+      if (i % 5000 === 0) {
         await new Promise((resolve) => setImmediate(resolve));
       }
     }
     await writer.close();
 
     const s3Key = `${this.outputPrefix}/parts/${templateId}/${partId}.parquet`;
-    const uploadStream = _gcsClient().bucket(this.bucket).file(s3Key).createWriteStream({ contentType: "application/octet-stream" });
+    const uploadStream = gcsClient().bucket(this.bucket).file(s3Key).createWriteStream({ contentType: "application/octet-stream" });
     const readStream = createReadStream(tempFile);
     const fileStat = await fs.stat(tempFile);
 
-    try 
-{
+    try {
       await pipeline(readStream, uploadStream);
-    }
- finally 
-{
-      await fs.unlink(tempFile).catch(() => 
-{});
+    } finally {
+      await fs.unlink(tempFile).catch(() => {});
     }
 
     const part: OutputPart = {
       part_id: partId,
       job_id: this.jobId,
       template_id: templateId,
-      s3_path: `s3:
+      s3_path: `s3://${this.bucket}/${s3Key}`,
       row_count: rows.length,
       byte_size: fileStat.size,
       created_at: new Date().toISOString(),
     };
 
-    try 
-{
+    try {
       await pool.query(
         `INSERT INTO output_parts (part_id, job_id, template_id, s3_path, row_count, byte_size, created_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (part_id) DO NOTHING`,
         [partId, this.jobId, templateId, part.s3_path, rows.length, fileStat.size, new Date()]
       );
-    }
- catch (e) 
-{
+    } catch (e) {
       console.error("output_parts_insert_failed", { jobId: this.jobId, partId, error: String(e) });
     }
 
     return part;
   }
 
-  get bufferedRows(): number 
-{
+  get bufferedRows(): number {
     return Object.values(this.buffers).reduce((a, b) => a + b.length, 0);
   }
 
-  get bufferedBytes(): number 
-{
+  get bufferedBytes(): number {
     return this.bufferBytes;
   }
 
-  get allPartPaths(): string[] 
-{
+  get allPartPaths(): string[] {
     return this.parts.map((p) => p.s3_path);
   }
 }
 
-export class RubbishLogWriter 
-{
+export class RubbishLogWriter {
   private jobId: string;
   private bucket: string;
   private s3Key: string;
   private buffer: string[];
   private count: number;
 
-  constructor(jobId: string, bucket: string, outputPrefix: string) 
-{
+  constructor(jobId: string, bucket: string, outputPrefix: string) {
     this.jobId = jobId;
     this.bucket = bucket;
     this.s3Key = `${outputPrefix.replace(/\/$/, "")}/rubbish_log/${jobId}.ndjson`;
@@ -226,8 +195,7 @@ export class RubbishLogWriter
     this.count = 0;
   }
 
-  write(byteOffset: number, lineNo: number, rawLine: string, templateId: string): void 
-{
+  write(byteOffset: number, lineNo: number, rawLine: string, templateId: string): void {
     this.buffer.push(
       JSON.stringify({
         job_id: this.jobId,
@@ -240,36 +208,31 @@ export class RubbishLogWriter
     this.count += 1;
   }
 
-  async flush(): Promise<string | null> 
-{
+  async flush(): Promise<string | null> {
     if (!this.buffer.length) return null;
     const body = Buffer.from(this.buffer.join("\n"));
     await putObject(this.bucket, this.s3Key, body, "application/x-ndjson");
     this.buffer = [];
-    return `s3:
+    return `s3://${this.bucket}/${this.s3Key}`;
   }
 
-  getCounter(): number 
-{
+  getCounter(): number {
     return this.count;
   }
 }
 
-export class DLQWriter 
-{
+export class DLQWriter {
   private jobId: string;
   private count: number;
 
-  constructor(jobId: string) 
-{
+  constructor(jobId: string) {
     this.jobId = jobId;
     this.count = 0;
   }
 
-  async write(byteOffset: number, byteLength: number, lineNo: number, rawLine: string, failureClass: string, error: string): Promise<void> 
-{
+  async write(byteOffset: number, byteLength: number, lineNo: number, rawLine: string, failureClass: string, error: string): Promise<void> {
     const { sendMessage } = await import("../../shared/queueUtils.js");
-    const { _FailureClassFailureClass_FailureClass } = await import("../../shared/models/job.js");
+    const { FailureClass } = await import("../../shared/models/job.js");
     const dlqId = randomUUID();
     const rawBytes = Buffer.from(rawLine.replace(/\0/g, ""), "utf-8").toString("base64");
     await pool.query(
@@ -299,21 +262,17 @@ export class DLQWriter
     this.count += 1;
   }
 
-  getCounter(): number 
-{
+  getCounter(): number {
     return this.count;
   }
 }
 
-export function buildSchema(rows: Record<string, any>[]): ParquetSchema 
-{
+export function buildSchema(rows: Record<string, any>[]): ParquetSchema {
   const schemaObj: any = {};
-  for (const row of rows) 
-{
-    for (const [k, v] of Object.entries(row)) 
-{
-      if (!schemaObj[k]) 
-{
+  for (const row of rows) {
+    for (const [k, v] of Object.entries(row)) {
+      if (!schemaObj[k]) {
+        // All fields optional so sparse rows never throw "missing required field"
         schemaObj[k] = { type: typeForValue(v), optional: true };
       }
     }
@@ -321,8 +280,7 @@ export function buildSchema(rows: Record<string, any>[]): ParquetSchema
   return new ParquetSchema(schemaObj);
 }
 
-function typeForValue(v: any): string 
-{
+function typeForValue(v: any): string {
   if (v === null || v === undefined) return "UTF8";
   if (typeof v === "boolean") return "BOOLEAN";
   if (typeof v === "number") return Number.isInteger(v) && Number.isSafeInteger(v) ? "INT64" : "DOUBLE";

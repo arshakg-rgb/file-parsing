@@ -1,8 +1,8 @@
 import crypto from "crypto";
 import jschardet from "jschardet";
 import { settings } from "../../shared/config.js";
-import { EventType, makeJobEvent } from "../../shared/models/events.js";
-import { JobStatus, ClassifyMessage, ParseMessage } from "../../shared/models/job.js";
+import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js";
+import { JobStatus, ClassifyMessage, ParseMessage, SourceType } from "../../shared/models/job.js";
 import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "../../shared/queueUtils.js";
 import { parseGcsUrl, objectSize, readRange } from "../../shared/gcsUtils.js";
 import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "../../utils/normalizers/encoding.js";
@@ -44,15 +44,16 @@ interface ClassifyResponse {
  * 
  * @class DetectBootstrapService
  */
-export class DetectBootstrapService 
-{
+export class DetectBootstrapService {
   private static instance: DetectBootstrapService;
   
+  // Instance state
   private running: boolean = false;
   private totalBootstraps: number = 0;
   private totalProbes: number = 0;
   private totalTemplatesCreated: number = 0;
   
+  // Statistics
   private stats = {
     csvDetected: 0,
     jsonDetected: 0,
@@ -64,30 +65,30 @@ export class DetectBootstrapService
     cacheMisses: 0
   };
   
+  // Dependencies (injected)
   private logger = createLogger("detect_bootstrap");
   
+  // Lazy loaded classifier
   private classify: ((req: any) => Promise<any>) | null = null;
   
   /**
    * Private constructor for singleton pattern
    */
-  private constructor() 
-{
-    if (process.env.HEALTH_CHECK_PORT) 
-{
+  private constructor() {
+    // Initialize health check server if port is configured
+    if (process.env.HEALTH_CHECK_PORT) {
       startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
     
+    // Initialize classifier lazily
     this.initializeClassifier();
   }
   
   /**
    * Get singleton instance
    */
-  static getInstance(): DetectBootstrapService 
-{
-    if (!DetectBootstrapService.instance) 
-{
+  static getInstance(): DetectBootstrapService {
+    if (!DetectBootstrapService.instance) {
       DetectBootstrapService.instance = new DetectBootstrapService();
     }
     return DetectBootstrapService.instance;
@@ -96,24 +97,19 @@ export class DetectBootstrapService
   /**
    * Initialize the classifier based on configuration
    */
-  private async initializeClassifier(): Promise<void> 
-{
+  private async initializeClassifier(): Promise<void> {
     if (this.classify) return;
     
-    if (settings.BEDROCK_MODEL_ID === "mock") 
-{
+    if (settings.BEDROCK_MODEL_ID === "mock") {
       const { mockClassify } = await import("../ai_classifier/mock.js");
-      this.classify = async (req: any) => 
-{
+      this.classify = async (req: any) => {
         const resp = await mockClassify(req);
         return resp.template ? { kind: resp.kind as any, template: resp.template as any } : { kind: "uncertain" };
       };
-    }
- else 
-{
+    } else {
       const { classifyAi } = await import("../ai_classifier/handler.js");
-      this.classify = async (req: any) => 
-{
+      this.classify = async (req: any) => {
+        // Convert to the expected format for the AI classifier
         const aiReq = {
           ...req,
           context_lines: req.context_lines || []
@@ -126,8 +122,7 @@ export class DetectBootstrapService
   /**
    * Initialize the service
    */
-  async initialize(): Promise<void> 
-{
+  async initialize(): Promise<void> {
     await waitForDb();
     await templateRegistry.loadFromDatabase();
     await this.initializeClassifier();
@@ -137,10 +132,8 @@ export class DetectBootstrapService
   /**
    * Start the consumer loop
    */
-  async start(): Promise<void> 
-{
-    if (this.running) 
-{
+  async start(): Promise<void> {
+    if (this.running) {
       this.logger.warn("detect_bootstrap_already_running");
       return;
     }
@@ -155,8 +148,7 @@ export class DetectBootstrapService
   /**
    * Stop the service gracefully
    */
-  async stop(): Promise<void> 
-{
+  async stop(): Promise<void> {
     this.running = false;
     this.logger.info("detect_bootstrap_stopping");
   }
@@ -164,8 +156,7 @@ export class DetectBootstrapService
   /**
    * Get service statistics
    */
-  getStats() 
-{
+  getStats() {
     return {
       ...this.stats,
       totalBootstraps: this.totalBootstraps,
@@ -181,8 +172,7 @@ export class DetectBootstrapService
    * @param eventType - Type of event to emit
    * @param data - Event payload data
    */
-  private emit(jobId: string, eventType: EventType, data: Record<string, any>): void 
-{
+  private emit(jobId: string, eventType: EventType, data: Record<string, any>): void {
     publishEvent(makeJobEvent(eventType, jobId, "detect_bootstrap", data));
   }
 
@@ -193,8 +183,7 @@ export class DetectBootstrapService
    * @param maxRowBytes - Maximum row size in bytes
    * @returns Optimal window size in bytes
    */
-  private computeWindowSize(avgRowBytes: number, maxRowBytes: number): number 
-{
+  private computeWindowSize(avgRowBytes: number, maxRowBytes: number): number {
     return Math.min(
       settings.PROBE_WINDOW_MAX_BYTES,
       Math.max(settings.PROBE_WINDOW_MIN_BYTES, settings.PROBE_TARGET_LINES * avgRowBytes, 4 * maxRowBytes)
@@ -208,8 +197,7 @@ export class DetectBootstrapService
    * @param windowSize - Size of each probe window
    * @returns Array of byte offsets to probe
    */
-  private computeProbeOffsets(fileSize: number, windowSize: number): number[] 
-{
+  private computeProbeOffsets(fileSize: number, windowSize: number): number[] {
     const count = Math.max(settings.PROBE_COUNT_MIN, Math.min(settings.PROBE_COUNT_MAX, Math.floor(fileSize / settings.PROBE_SIZE_PER_COUNT)));
     if (fileSize <= windowSize) return [0];
     const offsets = Array.from({ length: count }, (_, i) => Math.floor(i * ((fileSize - windowSize) / (count - 1))));
@@ -226,12 +214,18 @@ export class DetectBootstrapService
    * @param raw - Raw file bytes
    * @returns Detected encoding label
    */
-  private detectEncoding(raw: Buffer): string 
-{
+  private detectEncoding(raw: Buffer): string {
     this.stats.encodingDetections++;
     
+    // Prefer UTF-8 when the bytes actually validate as UTF-8: jschardet frequently
+    // misdetects UTF-8 with a few multibyte chars as ISO-8859-x at low confidence
+    // (e.g. a UTF-8 file guessed as ISO-8859-2 @0.54 → mojibake). Valid UTF-8 with
+    // high-bit bytes is a near-zero false positive.
     if (isLikelyUtf8(raw.subarray(0, 65536))) return "utf-8";
     const result = jschardet.detect(raw.slice(0, 65536));
+    // Normalize to a label decode()/Buffer can actually handle. jschardet returns
+    // names like "ISO-8859-1"/"windows-1252"/"latin-1" that Buffer.toString rejects;
+    // decode() handles the rest via TextDecoder, so we keep the label as-is here.
     return normalizeEncoding(result.encoding);
   }
 
@@ -242,8 +236,7 @@ export class DetectBootstrapService
    * @param encoding - File encoding
    * @returns Tuple of [average row bytes, maximum row bytes]
    */
-  private measureRowWidth(raw: Buffer, encoding: string): [number, number] 
-{
+  private measureRowWidth(raw: Buffer, encoding: string): [number, number] {
     const text = decode(raw, encoding);
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
     if (!lines.length) return [256, 512];
@@ -259,33 +252,26 @@ export class DetectBootstrapService
    * @param encoding - File encoding
    * @returns SHA256 hash truncated to 24 characters
    */
-  private fingerprintProbe(raw: Buffer, encoding: string): string 
-{
+  private fingerprintProbe(raw: Buffer, encoding: string): string {
     const text = decode(raw, encoding);
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
     if (!lines.length) return crypto.createHash("sha256").update("empty").digest("hex").slice(0, 24);
     const first = lines[0];
-    for (const delim of [",", ";", "\t", "|"]) 
-{
+    for (const delim of [",", ";", "\t", "|"]) {
       const parts = first.split(delim);
-      if (parts.length > 1) 
-{
+      if (parts.length > 1) {
         this.stats.csvDetected++;
         return crypto.createHash("sha256").update(`csv|${delim}|${parts.length}|${encoding}`).digest("hex").slice(0, 24);
       }
     }
-    try 
-{
+    try {
       const parsed = JSON.parse(first);
-      if (typeof parsed === "object" && parsed !== null) 
-{
+      if (typeof parsed === "object" && parsed !== null) {
         this.stats.jsonDetected++;
         const keys = Object.keys(parsed).sort().join(",");
         return crypto.createHash("sha256").update(`json|${keys}`).digest("hex").slice(0, 24);
       }
-    }
- catch 
-{}
+    } catch {}
     this.stats.textDetected++;
     return crypto.createHash("sha256").update(`text|${first.length}|${encoding}`).digest("hex").slice(0, 24);
   }
@@ -298,8 +284,7 @@ export class DetectBootstrapService
    * @param n - Maximum number of lines to extract
    @returns Array of non-empty lines
    */
-  private extractSampleLines(raw: Buffer, encoding: string, n: number): string[] 
-{
+  private extractSampleLines(raw: Buffer, encoding: string, n: number): string[] {
     const text = decode(raw, encoding);
     return text.split(/\r?\n/).filter((l) => l.trim()).slice(0, n);
   }
@@ -318,8 +303,7 @@ export class DetectBootstrapService
    * @param msg - Classify message containing job details
    * @throws Error if bootstrapping fails
    */
-  async bootstrapJob(msg: ClassifyMessage): Promise<void> 
-{
+  async bootstrapJob(msg: ClassifyMessage): Promise<void> {
     const bootstrapStartTime = Date.now();
     this.totalBootstraps++;
     
@@ -346,13 +330,11 @@ export class DetectBootstrapService
     const seen = new Set<string>();
     const seedTemplateIds: string[] = [];
 
-    for (const offset of offsets) 
-{
+    for (const offset of offsets) {
       const end = Math.min(offset + windowSize - 1, fileSize - 1);
       const probeRaw = await readRange(bucket, key, offset, end);
       const fp = this.fingerprintProbe(probeRaw, encoding);
-      if (seen.has(fp)) 
-{
+      if (seen.has(fp)) {
         this.stats.cacheHits++;
         continue;
       }
@@ -360,8 +342,7 @@ export class DetectBootstrapService
       this.stats.cacheMisses++;
 
       const existing = templateRegistry.getByFingerprint(fp);
-      if (existing) 
-{
+      if (existing) {
         seedTemplateIds.push(existing.template_id);
         continue;
       }
@@ -369,6 +350,7 @@ export class DetectBootstrapService
       const sampleLines = this.extractSampleLines(probeRaw, encoding, 10);
       if (!sampleLines.length) continue;
 
+      // Skip header lines for CSV files - use actual data lines for classification
       let dataLines = sampleLines;
       const firstLine = sampleLines[0];
       const hasHeader = /^[a-zA-Z_][a-zA-Z0-9_]*(,[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine) ||
@@ -377,8 +359,7 @@ export class DetectBootstrapService
       
       console.log("detect_header_check", { job_id: jobId, firstLine, hasHeader, sampleLinesCount: sampleLines.length });
       
-      if (hasHeader && sampleLines.length > 1) 
-{
+      if (hasHeader && sampleLines.length > 1) {
         this.stats.headerSkips++;
         dataLines = sampleLines.slice(1);
         console.log("detect_header_skipped", { job_id: jobId, dataLinesCount: dataLines.length });
@@ -386,20 +367,15 @@ export class DetectBootstrapService
 
       if (!dataLines.length) continue;
 
+      // Parse field_spec if it's a JSON string
       let fieldSpecArray: string[] = [];
-      if (typeof msg.field_spec === "string") 
-{
-        try 
-{
+      if (typeof msg.field_spec === "string") {
+        try {
           fieldSpecArray = JSON.parse(msg.field_spec);
-        }
- catch 
-{
+        } catch {
           fieldSpecArray = [];
         }
-      }
- else 
-{
+      } else {
         fieldSpecArray = msg.field_spec;
       }
 
@@ -411,22 +387,18 @@ export class DetectBootstrapService
       };
       console.log("detect_classify_request", { job_id: jobId, unknown_line: dataLines[0], contextLinesCount: dataLines.slice(1).length });
       let resp: ClassifyResponse;
-      try 
-{
+      try {
         const aiTimeout = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error("ai_classify_timeout")), settings.AI_CLASSIFY_TIMEOUT_MS)
         );
         resp = await Promise.race([this.classify!(req), aiTimeout]);
-      }
- catch (aiErr) 
-{
+      } catch (aiErr) {
         this.stats.aiTimeouts++;
         this.logger.warn("seed_classify_skipped", { job_id: jobId, fingerprint: fp, error: String(aiErr) });
         metrics.increment("detect.ai_timeout", 1);
         continue;
       }
-      if (resp.template) 
-{
+      if (resp.template) {
         this.totalTemplatesCreated++;
         seedTemplateIds.push(resp.template.template_id);
         this.logger.info("seed_template_created", { job_id: jobId, kind: resp.kind, template_id: resp.template.template_id, fingerprint: fp });
@@ -453,13 +425,10 @@ export class DetectBootstrapService
       seed_template_ids: seedTemplateIds,
     };
     console.log("detect_sending_to_parse", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL });
-    try 
-{
+    try {
       await sendRaw(settings.PARSE_QUEUE_URL, parseMsg);
       console.log("detect_parse_message_sent", { job_id: jobId });
-    }
- catch (sendErr) 
-{
+    } catch (sendErr) {
       this.logger.error("detect_send_to_parse_failed", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL }, sendErr instanceof Error ? sendErr : new Error(String(sendErr)));
       throw sendErr;
     }
@@ -473,29 +442,23 @@ export class DetectBootstrapService
    * 
    * @throws Error if database connection fails
    */
-  private async consumerLoop(): Promise<void> 
-{
+  private async consumerLoop(): Promise<void> {
     await waitForDb();
     await templateRegistry.loadFromDatabase();
     this.logger.info("detect_bootstrap_consumer_started");
     
-    while (this.running) 
-{
+    while (this.running) {
       const messages = await receiveMessages<ClassifyMessage>(
         settings.CLASSIFY_QUEUE_URL,
         (body) => JSON.parse(body) as ClassifyMessage,
         1
       );
       
-      for (const { payload, receiptHandle } of messages) 
-{
-        try 
-{
+      for (const { payload, receiptHandle } of messages) {
+        try {
           await this.bootstrapJob(payload);
           await deleteMessage(settings.CLASSIFY_QUEUE_URL, receiptHandle);
-        }
- catch (exc) 
-{
+        } catch (exc) {
           const errMsg = String(exc);
           this.logger.error("detect_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
           metrics.increment("detect.error", 1);
@@ -509,15 +472,16 @@ export class DetectBootstrapService
   }
 }
 
+// Backward compatibility: export singleton instance and function wrappers
 const detectBootstrapService = DetectBootstrapService.getInstance();
 
-export async function bootstrapJob(msg: ClassifyMessage): Promise<void> 
-{
+// Backward compatibility wrappers
+export async function bootstrapJob(msg: ClassifyMessage): Promise<void> {
   return detectBootstrapService.bootstrapJob(msg);
 }
 
-detectBootstrapService.start().catch(err => 
-{
+// Auto-start the service when module is loaded
+detectBootstrapService.start().catch(err => {
   console.error("detect_bootstrap_start_failed", { error: String(err) });
   process.exit(1);
 });

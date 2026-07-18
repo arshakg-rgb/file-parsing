@@ -15,31 +15,22 @@ const TOPICS = [
   "fpp-job-events",
 ];
 
-async function ensureTopic(pubsub: PubSub, name: string): Promise<void> 
-{
-  try 
-{
+async function ensureTopic(pubsub: PubSub, name: string): Promise<void> {
+  try {
     await pubsub.createTopic({ name: `projects/${settings.GCP_PROJECT_ID}/topics/${name}`, messageRetentionDuration: { seconds: 604800 } });
     console.log(`Created topic: ${name}`);
-  }
- catch (err: any) 
-{
-    if (err.code === 6) 
-{
+  } catch (err: any) {
+    if (err.code === 6) {
       console.log(`Topic already exists: ${name}`);
-    }
- else 
-{
+    } else {
       throw err;
     }
   }
 }
 
-async function ensureSubscription(pubsub: PubSub, topicName: string): Promise<void> 
-{
+async function ensureSubscription(pubsub: PubSub, topicName: string): Promise<void> {
   const subName = `${topicName}-sub`;
-  try 
-{
+  try {
     await pubsub.createSubscription(
       `projects/${settings.GCP_PROJECT_ID}/topics/${topicName}`,
       `projects/${settings.GCP_PROJECT_ID}/subscriptions/${subName}`,
@@ -53,22 +44,16 @@ async function ensureSubscription(pubsub: PubSub, topicName: string): Promise<vo
       }
     );
     console.log(`Created subscription: ${subName}`);
-  }
- catch (err: any) 
-{
-    if (err.code === 6) 
-{
+  } catch (err: any) {
+    if (err.code === 6) {
       console.log(`Subscription already exists: ${subName}`);
-    }
- else 
-{
+    } else {
       throw err;
     }
   }
 }
 
-async function main() 
-{
+async function main() {
   const pubsub = new PubSub({
     projectId: settings.GCP_PROJECT_ID,
     ...(settings.GOOGLE_APPLICATION_CREDENTIALS
@@ -78,8 +63,7 @@ async function main()
 
   console.log(`Setting up Pub/Sub for project: ${settings.GCP_PROJECT_ID}`);
 
-  for (const topic of TOPICS) 
-{
+  for (const topic of TOPICS) {
     await ensureTopic(pubsub, topic);
     await ensureSubscription(pubsub, topic);
   }
@@ -87,7 +71,4 @@ async function main()
   console.log("Done");
 }
 
-main().catch((e) => 
-{
- console.error(e); process.exit(1); 
-});
+main().catch((e) => { console.error(e); process.exit(1); });

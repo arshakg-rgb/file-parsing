@@ -1,45 +1,40 @@
 import ServiceManager, { Enforce } from "../ServiceManager.js";
 import { InstantiationError } from "../../errors/InstantiationError.js";
 
-class FirestoreManager extends ServiceManager 
-{
+class FirestoreManager extends ServiceManager {
   protected static instance: FirestoreManager;
   private firestore: any;
 
-  protected constructor(enforce: () => void) 
-{
-    if (enforce !== Enforce) 
-{
+  protected constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate FirestoreManager directly. Use getInstance()");
     }
     super(enforce);
   }
 
-  public static getInstance(): FirestoreManager 
-{
-    if (!FirestoreManager.instance) 
-{
+  public static getInstance(): FirestoreManager {
+    if (!FirestoreManager.instance) {
       FirestoreManager.instance = new FirestoreManager(Enforce);
     }
     return FirestoreManager.instance;
   }
 
-  public async initialize(): Promise<void> 
-{
+  public async initialize(): Promise<void> {
     console.log("Initializing FirestoreManager...");
+    // Firestore initialization will be done here
+    // const { Firestore } = await import("@google-cloud/firestore");
+    // this.firestore = new Firestore();
     console.log("FirestoreManager initialized");
   }
 
-  public async shutdown(): Promise<void> 
-{
+  public async shutdown(): Promise<void> {
     console.log("Shutting down FirestoreManager...");
-    if (this.firestore) 
-{
+    if (this.firestore) {
+      // await this.firestore.terminate();
     }
   }
 
-  public getFirestore(): any 
-{
+  public getFirestore(): any {
     return this.firestore;
   }
 }

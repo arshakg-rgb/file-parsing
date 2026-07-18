@@ -1,6 +1,9 @@
 import os from "os";
 import path from "path";
 import fs from "fs/promises";
+import { createReadStream } from "fs";
+import { pipeline } from "node:stream/promises";
+import { randomUUID, createHash } from "crypto";
 import { ParquetSchema, ParquetWriter } from "@dsnp/parquetjs";
 import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
@@ -8,17 +11,14 @@ import { InstantiationError } from "../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
 import { createLogger } from "../utils/logger/logger.js";
 
-class ParquetOutputService extends ServiceManager 
-{
+class ParquetOutputService extends ServiceManager {
   protected static instance: ParquetOutputService;
   private logger: any;
   private gcsUtils: FirestoreCacheUtils;
   private FLUSH_LINE_THRESHOLD: number;
 
-  private constructor(enforce: () => void) 
-{
-    if (enforce !== Enforce) 
-{
+  private constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate ParquetOutputService directly. Use getInstance()");
     }
     super(enforce);
@@ -28,27 +28,22 @@ class ParquetOutputService extends ServiceManager
     this.FLUSH_LINE_THRESHOLD = 1000;
   }
 
-  public static getInstance(): ParquetOutputService 
-{
-    if (!ParquetOutputService.instance) 
-{
+  public static getInstance(): ParquetOutputService {
+    if (!ParquetOutputService.instance) {
       ParquetOutputService.instance = new ParquetOutputService(Enforce);
     }
     return ParquetOutputService.instance;
   }
 
-  public getLogger(): any 
-{
+  public getLogger(): any {
     return this.logger;
   }
 
-  public getGcsUtils(): FirestoreCacheUtils 
-{
+  public getGcsUtils(): FirestoreCacheUtils {
     return this.gcsUtils;
   }
 
-  public getFlushLineThreshold(): number 
-{
+  public getFlushLineThreshold(): number {
     return this.FLUSH_LINE_THRESHOLD;
   }
 }
@@ -58,13 +53,11 @@ export interface OutputRow {
   [key: string]: any;
 }
 
-function estimateRowBytes(row: Record<string, any>): number 
-{
+function estimateRowBytes(row: Record<string, any>): number {
   return Object.values(row).reduce((acc, v) => acc + (v === null ? 4 : String(v).length), 0) + Object.keys(row).length * 16;
 }
 
-function typeForValue(v: any): string 
-{
+function typeForValue(v: any): string {
   if (v === null || v === undefined) return "UTF8";
   if (typeof v === "boolean") return "BOOLEAN";
   if (typeof v === "number") return Number.isInteger(v) && Number.isSafeInteger(v) ? "INT64" : "DOUBLE";
@@ -72,15 +65,11 @@ function typeForValue(v: any): string
   return "UTF8";
 }
 
-function buildSchema(rows: Record<string, any>[]): ParquetSchema 
-{
+function buildSchema(rows: Record<string, any>[]): ParquetSchema {
   const schemaObj: any = {};
-  for (const row of rows) 
-{
-    for (const [k, v] of Object.entries(row)) 
-{
-      if (!schemaObj[k]) 
-{
+  for (const row of rows) {
+    for (const [k, v] of Object.entries(row)) {
+      if (!schemaObj[k]) {
         schemaObj[k] = { type: typeForValue(v), optional: true };
       }
     }
@@ -88,8 +77,7 @@ function buildSchema(rows: Record<string, any>[]): ParquetSchema
   return new ParquetSchema(schemaObj);
 }
 
-export class OutputBuffer 
-{
+export class OutputBuffer {
   private rows: OutputRow[] = [];
   private templateId: string;
   private partId: string;
@@ -98,31 +86,25 @@ export class OutputBuffer
   private flushPromise: Promise<string | null> | null = null;
   private flushCounter = 0;
 
-  constructor(jobId: string, templateId: string) 
-{
+  constructor(jobId: string, templateId: string) {
     this.jobId = jobId;
     this.templateId = templateId;
     this.partId = `${jobId}-${templateId}-${Date.now()}`;
     this.service = ParquetOutputService.getInstance();
   }
 
-  addRow(row: OutputRow): void 
-{
+  addRow(row: OutputRow): void {
     this.rows.push(row);
     
-    if (this.rows.length >= this.service.getFlushLineThreshold() && !this.flushPromise) 
-{
-      this.flushPromise = this.flush().finally(() => 
-{
+    if (this.rows.length >= this.service.getFlushLineThreshold() && !this.flushPromise) {
+      this.flushPromise = this.flush().finally(() => {
         this.flushPromise = null;
       });
     }
   }
 
-  async flush(): Promise<string | null> 
-{
-    if (this.rows.length === 0) 
-{
+  async flush(): Promise<string | null> {
+    if (this.rows.length === 0) {
       return null;
     }
 
@@ -137,14 +119,12 @@ export class OutputBuffer
       template_id: this.templateId 
     });
 
-    try 
-{
+    try {
       const schema = buildSchema(rowsToFlush);
       const tempFile = path.join(os.tmpdir(), `${flushPartId}.parquet`);
       const writer = await ParquetWriter.openFile(schema, tempFile);
       
-      for (const row of rowsToFlush) 
-{
+      for (const row of rowsToFlush) {
         await writer.appendRow(row);
       }
       
@@ -152,64 +132,51 @@ export class OutputBuffer
 
       const buffer = await fs.readFile(tempFile);
       const config = Config.getInstance();
-      const gcsPath = `gs:
+      const gcsPath = `gs://${config.settings.DATA_BUCKET}/output/${flushPartId}.parquet`;
       await this.service.getGcsUtils().putObject(config.settings.DATA_BUCKET, `output/${flushPartId}.parquet`, buffer);
 
-      await fs.unlink(tempFile).catch(() => 
-{});
+      await fs.unlink(tempFile).catch(() => {});
 
       return gcsPath;
-    }
- catch (error) 
-{
+    } catch (error) {
       this.service.getLogger().error("parquet_flush_error", { part_id: flushPartId, error: String(error) });
       throw error;
     }
   }
 
-  async waitForPendingFlush(): Promise<void> 
-{
-    if (this.flushPromise) 
-{
+  async waitForPendingFlush(): Promise<void> {
+    if (this.flushPromise) {
       await this.flushPromise;
     }
   }
 
-  getPartId(): string 
-{
+  getPartId(): string {
     return this.partId;
   }
 
-  getRowCount(): number 
-{
+  getRowCount(): number {
     return this.rows.length;
   }
 }
 
-export class OutputManager 
-{
+export class OutputManager {
   private buffers = new Map<string, OutputBuffer>();
 
-  getBuffer(jobId: string, templateId: string): OutputBuffer 
-{
+  getBuffer(jobId: string, templateId: string): OutputBuffer {
     const key = `${jobId}-${templateId}`;
-    if (!this.buffers.has(key)) 
-{
+    if (!this.buffers.has(key)) {
       this.buffers.set(key, new OutputBuffer(jobId, templateId));
     }
     return this.buffers.get(key)!;
   }
 
-  async flushAll(): Promise<string[]> 
-{
+  async flushAll(): Promise<string[]> {
     const paths: string[] = [];
     
-    for (const buffer of this.buffers.values()) 
-{
+    for (const buffer of this.buffers.values()) {
       await buffer.waitForPendingFlush();
       const path = await buffer.flush();
-      if (path) 
-{
+      if (path) {
         paths.push(path);
       }
     }
@@ -218,12 +185,10 @@ export class OutputManager
     return paths;
   }
 
-  async flushTemplate(jobId: string, templateId: string): Promise<string | null> 
-{
+  async flushTemplate(jobId: string, templateId: string): Promise<string | null> {
     const key = `${jobId}-${templateId}`;
     const buffer = this.buffers.get(key);
-    if (buffer) 
-{
+    if (buffer) {
       const path = await buffer.flush();
       this.buffers.delete(key);
       return path;

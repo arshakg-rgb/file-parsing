@@ -2,13 +2,14 @@ import { randomUUID } from "crypto";
 import { SourceType } from "../../enum/SourceType.js";
 import { ExecPath } from "../../enum/ExecPath.js";
 import { JobStatus } from "../../enum/JobStatus.js";
-import { _FailureClass } from "../../enum/FailureClass.js";
+import { FailureClass } from "../../enum/FailureClass.js";
 import { DLQStatus } from "../../enum/DLQStatus.js";
 
+// Re-export enums for backward compatibility
 export { SourceType } from "../../enum/SourceType.js";
 export { ExecPath } from "../../enum/ExecPath.js";
 export { JobStatus } from "../../enum/JobStatus.js";
-export { _FailureClass } from "../../enum/FailureClass.js";
+export { FailureClass } from "../../enum/FailureClass.js";
 export { DLQStatus } from "../../enum/DLQStatus.js";
 
 export const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
@@ -41,8 +42,7 @@ export interface JobCounts {
   rubbish_log_path?: string;
 }
 
-export function totalFailed(counts: JobCounts): number 
-{
+export function totalFailed(counts: JobCounts): number {
   return Object.values(counts.failed_by_class).reduce((a, b) => a + b, 0);
 }
 
@@ -76,8 +76,7 @@ export interface ParseJob {
   updated_at: string;
 }
 
-export function defaultParseJob(): ParseJob 
-{
+export function defaultParseJob(): ParseJob {
   const now = new Date().toISOString();
   return {
     job_id: randomUUID(),
@@ -94,13 +93,11 @@ export function defaultParseJob(): ParseJob
   };
 }
 
-export function canTransitionTo(current: JobStatus, next: JobStatus): boolean 
-{
+export function canTransitionTo(current: JobStatus, next: JobStatus): boolean {
   return VALID_TRANSITIONS[current]?.includes(next) ?? false;
 }
 
-export function isTerminal(status: JobStatus): boolean 
-{
+export function isTerminal(status: JobStatus): boolean {
   return TERMINAL_STATUSES.has(status);
 }
 
@@ -130,7 +127,7 @@ export interface DeadLetterEntry {
   byte_length: number;
   line_no: number;
   raw_bytes: string;
-  failure_class: _FailureClass;
+  failure_class: FailureClass;
   error: string;
   attempts: number;
   status: DLQStatus;
@@ -194,7 +191,7 @@ export interface DLQMessage {
   byte_length: number;
   line_no: number;
   raw_bytes: string;
-  failure_class: _FailureClass;
+  failure_class: FailureClass;
   error: string;
   attempts: number;
   status?: string;

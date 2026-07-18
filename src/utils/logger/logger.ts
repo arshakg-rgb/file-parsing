@@ -5,19 +5,16 @@ export interface LogContext {
   [key: string]: any;
 }
 
-export class Logger 
-{
+export class Logger {
   private service: string;
   private lokiEnabled: boolean;
 
-  constructor(service: string) 
-{
+  constructor(service: string) {
     this.service = service;
     this.lokiEnabled = !!(settings.LOKI_HOST && settings.LOKI_USERNAME && settings.LOKI_PASSWORD);
   }
 
-  private format(level: string, message: string, context: LogContext = {}): string 
-{
+  private format(level: string, message: string, context: LogContext = {}): string {
     const logEntry = {
       timestamp: new Date().toISOString(),
       level,
@@ -28,16 +25,14 @@ export class Logger
     return JSON.stringify(logEntry);
   }
 
-  private async sendToLoki(level: string, message: string, context: LogContext = {}): Promise<void> 
-{
-    if (!this.lokiEnabled) 
-{
+  private async sendToLoki(level: string, message: string, context: LogContext = {}): Promise<void> {
+    if (!this.lokiEnabled) {
       return;
     }
 
-    try 
-{
-      const timestamp = Date.now() * 1000000;
+    try {
+      // Loki expects nanosecond timestamps
+      const timestamp = Date.now() * 1000000; // Convert to nanoseconds
       
       const logEntry = {
         streams: [
@@ -64,38 +59,31 @@ export class Logger
           "Authorization": `Basic ${btoa(`${settings.LOKI_USERNAME}:${settings.LOKI_PASSWORD}`)}`,
         },
         body: JSON.stringify(logEntry),
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(10000), // 10 second timeout
       });
 
-      if (!response.ok) 
-{
+      if (!response.ok) {
         console.error("loki_send_failed", { status: response.status, statusText: response.statusText });
       }
-    }
- catch (error) 
-{
+    } catch (error) {
+      // Silently fail Loki errors to avoid disrupting application
       console.error("loki_send_error", { error: String(error) });
     }
   }
 
-  info(message: string, context: LogContext = {}): void 
-{
+  info(message: string, context: LogContext = {}): void {
     const formatted = this.format("info", message, context);
     console.log(formatted);
-    this.sendToLoki("info", message, context).catch(() => 
-{});
+    this.sendToLoki("info", message, context).catch(() => {});
   }
 
-  warn(message: string, context: LogContext = {}): void 
-{
+  warn(message: string, context: LogContext = {}): void {
     const formatted = this.format("warn", message, context);
     console.warn(formatted);
-    this.sendToLoki("warn", message, context).catch(() => 
-{});
+    this.sendToLoki("warn", message, context).catch(() => {});
   }
 
-  error(message: string, context: LogContext = {}, error?: Error): void 
-{
+  error(message: string, context: LogContext = {}, error?: Error): void {
     const entry = this.format("error", message, {
       ...context,
       ...(error ? { error: error.message, stack: error.stack } : {}),
@@ -104,23 +92,18 @@ export class Logger
     this.sendToLoki("error", message, {
       ...context,
       ...(error ? { error: error.message, stack: error.stack } : {}),
-    }).catch(() => 
-{});
+    }).catch(() => {});
   }
 
-  debug(message: string, context: LogContext = {}): void 
-{
-    if (process.env.LOG_LEVEL === "debug") 
-{
+  debug(message: string, context: LogContext = {}): void {
+    if (process.env.LOG_LEVEL === "debug") {
       const formatted = this.format("debug", message, context);
       console.log(formatted);
-      this.sendToLoki("debug", message, context).catch(() => 
-{});
+      this.sendToLoki("debug", message, context).catch(() => {});
     }
   }
 }
 
-export function createLogger(service: string): Logger 
-{
+export function createLogger(service: string): Logger {
   return new Logger(service);
 }

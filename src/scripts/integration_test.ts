@@ -21,22 +21,19 @@ const SAMPLE_CSV = `id,name,email,created_at
 4,Alice Williams,alice@example.com,2024-01-18
 5,Charlie Brown,charlie@example.com,2024-01-19`;
 
-async function getQueueUrl(queueName: string): Promise<string> 
-{
+async function getQueueUrl(queueName: string): Promise<string> {
   const resp = await sqs.send(new GetQueueUrlCommand({ QueueName: queueName }));
   return resp.QueueUrl || "";
 }
 
-async function uploadTestFile(): Promise<string> 
-{
+async function uploadTestFile(): Promise<string> {
   const key = `test/integration-${randomUUID()}.csv`;
   await s3.send(new PutObjectCommand({ Bucket: DATA_BUCKET, Key: key, Body: SAMPLE_CSV }));
-  console.log(`Uploaded test file: s3:
+  console.log(`Uploaded test file: s3://${DATA_BUCKET}/${key}`);
   return key;
 }
 
-async function sendIngestMessage(s3Key: string): Promise<string> 
-{
+async function sendIngestMessage(s3Key: string): Promise<string> {
   const queueUrl = await getQueueUrl(INGEST_QUEUE);
   const jobId = randomUUID();
   const message = {
@@ -55,24 +52,20 @@ async function sendIngestMessage(s3Key: string): Promise<string>
   return jobId;
 }
 
-async function waitForReport(jobId: string, timeoutMs = 120000): Promise<any> 
-{
+async function waitForReport(jobId: string, timeoutMs = 120000): Promise<any> {
   const queueUrl = await getQueueUrl(REPORT_QUEUE);
   const startTime = Date.now();
   
-  while (Date.now() - startTime < timeoutMs) 
-{
+  while (Date.now() - startTime < timeoutMs) {
     const resp = await sqs.send(new ReceiveMessageCommand({
       QueueUrl: queueUrl,
       MaxNumberOfMessages: 10,
       WaitTimeSeconds: 5,
     }));
     
-    for (const msg of resp.Messages || []) 
-{
+    for (const msg of resp.Messages || []) {
       const body = JSON.parse(msg.Body!);
-      if (body.job_id === jobId) 
-{
+      if (body.job_id === jobId) {
         await sqs.send(new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: msg.ReceiptHandle! }));
         return body;
       }
@@ -84,11 +77,9 @@ async function waitForReport(jobId: string, timeoutMs = 120000): Promise<any>
   throw new Error(`Timeout waiting for report for job ${jobId}`);
 }
 
-async function verifyOutput(jobId: string): Promise<void> 
-{
+async function verifyOutput(jobId: string): Promise<void> {
   const reportKey = `reports/${jobId}/report.json`;
-  try 
-{
+  try {
     const resp = await s3.send(new GetObjectCommand({ Bucket: DATA_BUCKET, Key: reportKey }));
     const report = JSON.parse(await resp.Body!.transformToString());
     
@@ -100,43 +91,34 @@ async function verifyOutput(jobId: string): Promise<void>
       output_parts: report.output_parts.length,
     });
     
-    if (report.counts.parsed !== 5) 
-{
+    if (report.counts.parsed !== 5) {
       throw new Error(`Expected 5 parsed rows, got ${report.counts.parsed}`);
     }
     
-    if (report.counts.failed_total !== 0) 
-{
+    if (report.counts.failed_total !== 0) {
       throw new Error(`Expected 0 failed rows, got ${report.counts.failed_total}`);
     }
     
-    if (report.output_parts.length === 0) 
-{
+    if (report.output_parts.length === 0) {
       throw new Error("Expected at least one output part");
     }
     
     console.log("Integration test PASSED");
-  }
- catch (err) 
-{
+  } catch (err) {
     console.error("Integration test FAILED:", err);
     throw err;
   }
 }
 
-async function runIntegrationTest(): Promise<void> 
-{
+async function runIntegrationTest(): Promise<void> {
   console.log("Starting integration test...");
   
-  try 
-{
+  try {
     const s3Key = await uploadTestFile();
     const jobId = await sendIngestMessage(s3Key);
-    const _report = await waitForReport(jobId);
+    const report = await waitForReport(jobId);
     await verifyOutput(jobId);
-  }
- catch (err) 
-{
+  } catch (err) {
     console.error("Integration test error:", err);
     process.exit(1);
   }

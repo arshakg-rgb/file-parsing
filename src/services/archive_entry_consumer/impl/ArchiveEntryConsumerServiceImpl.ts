@@ -4,16 +4,16 @@ import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
 import path from "path";
 import { spawn } from "child_process";
+import Config from "../../../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
 import { InstantiationError } from "../../../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../../../utils/cache/FirestoreCacheUtils.js";
 import { createLogger } from "../../../utils/logger/logger.js";
 import { startHealthCheckServer } from "../../../utils/response/health.js";
 import { ArchiveEntryConsumerService } from "../ArchiveEntryConsumerService.js";
-import { ArchiveEntryRequest, ArchiveEntryResponse } from "../io/IArchiveEntryConsumer.js";
+import { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryResponse } from "../io/IArchiveEntryConsumer.js";
 
-class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveEntryConsumerService 
-{
+class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveEntryConsumerService {
   protected static instance: ArchiveEntryConsumerServiceImpl;
   private logger: any;
   private gcsUtils: FirestoreCacheUtils;
@@ -24,10 +24,8 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
   private MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024;
   private CONCURRENT_MESSAGES = 3;
 
-  protected constructor(enforce: () => void) 
-{
-    if (enforce !== Enforce) 
-{
+  protected constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate ArchiveEntryConsumerServiceImpl directly. Use getInstance()");
     }
     super(enforce);
@@ -37,34 +35,30 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
     this.passwordCache = new Map<string, Buffer>();
     this.passwordAttempts = new Map<string, number>();
     
-    if (process.env.HEALTH_CHECK_PORT) 
-{
+    if (process.env.HEALTH_CHECK_PORT) {
       startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
   }
 
-  public static getInstance(): ArchiveEntryConsumerServiceImpl 
-{
-    if (!ArchiveEntryConsumerServiceImpl.instance) 
-{
+  public static getInstance(): ArchiveEntryConsumerServiceImpl {
+    if (!ArchiveEntryConsumerServiceImpl.instance) {
       ArchiveEntryConsumerServiceImpl.instance = new ArchiveEntryConsumerServiceImpl(Enforce);
     }
     return ArchiveEntryConsumerServiceImpl.instance;
   }
 
-  public getLogger(): any 
-{
+  public getLogger(): any {
     return this.logger;
   }
 
-  public getGcsUtils(): FirestoreCacheUtils 
-{
+  public getGcsUtils(): FirestoreCacheUtils {
     return this.gcsUtils;
   }
 
-  public async processEntry(req: ArchiveEntryRequest): Promise<ArchiveEntryResponse> 
-{
-    const _result = await this.extractSingleRarEntry(
+  public async processEntry(req: ArchiveEntryRequest): Promise<ArchiveEntryResponse> {
+    // This is a placeholder - the actual implementation would be more complex
+    // For now, we'll just delegate to the existing extractSingleRarEntry method
+    const result = await this.extractSingleRarEntry(
       req.job_id,
       req.s3_url,
       req.entry_path,
@@ -83,40 +77,37 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
     entryName: string,
     password: string | undefined,
     fieldSpec: string[]
-  ): Promise<{ s3Url: string; size: number }> 
-{
+  ): Promise<{ s3Url: string; size: number }> {
     const [bucket, archiveKey] = this.gcsUtils.parseGcsUrl(archiveS3Url);
     const mountPath = process.env.RAR_TEMP_MOUNT || "/mnt/scratch";
     const tmpPath = path.join(mountPath, `${crypto.randomUUID()}.rar`);
   
     this.logger.info("archive_entry_download_start", { job_id: jobId, archive_s3_url: archiveS3Url, tmp_path: tmpPath });
   
+    // Download archive to local mount
     const fileStream = this.gcsUtils.getStorage().bucket(bucket).file(archiveKey).createReadStream();
     const writeStream = createWriteStream(tmpPath);
   
-    fileStream.on("error", (err) => 
-{
+    fileStream.on("error", (err) => {
       this.logger.error("archive_entry_download_stream_error", { job_id: jobId, error: err.message });
     });
   
-    writeStream.on("error", (err) => 
-{
+    writeStream.on("error", (err) => {
       this.logger.error("archive_entry_download_write_error", { job_id: jobId, error: err.message });
     });
   
     await pipeline(fileStream, writeStream);
     this.logger.info("archive_entry_download_complete", { job_id: jobId, tmp_path: tmpPath });
   
-    try 
-{
+    try {
+      // Extract single entry using unrar
       const safeEntryName = entryName.replace(/[#\s]+/g, "_");
       const entryKey = `ingested/${jobId}/entries/${safeEntryName}`;
       const entryFile = this.gcsUtils.getStorage().bucket(bucket).file(entryKey);
       const writeStream = entryFile.createWriteStream();
       
       const extractArgs = ["p", "-inul", tmpPath, entryName];
-      if (password) 
-{
+      if (password) {
         extractArgs.push("-p" + password);
       }
       
@@ -125,35 +116,28 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
       
       extractProcess.stdout.pipe(writeStream);
       
+      // Capture stderr for debugging
       let stderrOutput = "";
-      extractProcess.stderr.on("data", (data) => 
-{
+      extractProcess.stderr.on("data", (data) => {
         stderrOutput += data.toString();
         this.logger.error("archive_entry_extract_stderr", { job_id: jobId, entry_name: entryName, stderr: data.toString() });
       });
       
-      await new Promise<void>((resolve, reject) => 
-{
+      await new Promise<void>((resolve, reject) => {
         writeStream.on("finish", resolve);
-        writeStream.on("error", (err) => 
-{
+        writeStream.on("error", (err) => {
           this.logger.error("archive_entry_extract_write_error", { job_id: jobId, entry_name: entryName, error: err.message });
           reject(err);
         });
-        extractProcess.on("error", (err) => 
-{
+        extractProcess.on("error", (err) => {
           this.logger.error("archive_entry_extract_spawn_error", { job_id: jobId, entry_name: entryName, error: err.message });
           reject(err);
         });
-        extractProcess.on("close", (code) => 
-{
-          if (code !== 0) 
-{
+        extractProcess.on("close", (code) => {
+          if (code !== 0) {
             this.logger.error("archive_entry_extract_failed", { job_id: jobId, entry_name: entryName, code, stderr: stderrOutput });
             reject(new Error(`unrar extraction failed with code ${code}: ${stderrOutput}`));
-          }
- else 
-{
+          } else {
             resolve();
           }
         });
@@ -161,21 +145,18 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
       
       this.logger.info("archive_entry_extract_complete", { job_id: jobId, entry_name: entryName });
       
+      // Get the size of the extracted file
       const [meta] = await entryFile.getMetadata();
       const size = Number((meta as any).size ?? 0);
       
-      const s3Url = `gs:
+      const s3Url = `gs://${bucket}/${entryKey}`;
       return { s3Url, size };
-    }
- finally 
-{
-      try 
-{
+    } finally {
+      // Clean up temporary archive file
+      try {
         await fs.unlink(tmpPath);
         this.logger.info("archive_entry_cleanup", { job_id: jobId, tmp_path: tmpPath });
-      }
- catch (err) 
-{
+      } catch (err) {
         this.logger.warn("archive_entry_cleanup_failed", { job_id: jobId, error: String(err) });
       }
     }

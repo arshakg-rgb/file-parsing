@@ -1,5 +1,7 @@
+// All storage is now on Google Cloud Storage.
+// This shim re-exports from gcsUtils.ts so all existing imports continue to compile unchanged.
 export {
-  _gcsClient as s3Client,
+  gcsClient as s3Client,
   parseGcsUrl as parseS3Url,
   objectSize,
   readRange,

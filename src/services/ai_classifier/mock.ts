@@ -13,23 +13,18 @@ interface ClassifyResponse {
   template?: RecordTemplate | RubbishTemplate;
 }
 
-function mockFingerprint(line: string): string 
-{
+function mockFingerprint(line: string): string {
   return crypto.createHash("sha256").update(line).digest("hex").slice(0, 24);
 }
 
-export function mockClassify(req: ClassifyRequest): ClassifyResponse 
-{
+export function mockClassify(req: ClassifyRequest): ClassifyResponse {
   const line = req.unknown_line;
 
-  for (const delim of [",", ";", "\t", "|"]) 
-{
+  for (const delim of [",", ";", "\t", "|"]) {
     const parts = line.split(delim);
-    if (parts.length >= 3) 
-{
+    if (parts.length >= 3) {
       const fieldMap: Record<string, { locator: string; type: string }> = {};
-      for (let i = 0; i < req.field_spec.length; i++) 
-{
+      for (let i = 0; i < req.field_spec.length; i++) {
         fieldMap[req.field_spec[i]] = {
           locator: `index:${Math.min(i, parts.length - 1)}`,
           type: "string"
@@ -50,8 +45,7 @@ export function mockClassify(req: ClassifyRequest): ClassifyResponse
     }
   }
 
-  if (/^(ERROR|WARNING|DEBUG|INFO|TRACE)/.test(line)) 
-{
+  if (/^(ERROR|WARNING|DEBUG|INFO|TRACE)/.test(line)) {
     const tmpl: RubbishTemplate = {
       template_id: crypto.randomUUID(),
       fingerprint: mockFingerprint(line),

@@ -5,41 +5,35 @@ import JobServiceImpl from "./impl/JobServiceImpl.js";
  * Legacy JobService class - now a thin wrapper around JobServiceImpl
  * This maintains backward compatibility while using the new service pattern
  */
-export class JobService implements IJobService 
-{
+export class JobService implements IJobService {
   private service: JobServiceImpl;
 
-  constructor() 
-{
+  constructor() {
     this.service = JobServiceImpl.getInstance();
   }
 
-  async processJob(req: JobRequest): Promise<JobResponse> 
-{
+  async processJob(req: JobRequest): Promise<JobResponse> {
     return this.service.processJob(req);
   }
 
-  async start(): Promise<void> 
-{
+  async start(): Promise<void> {
     return this.service.start();
   }
 
-  async stop(): Promise<void> 
-{
+  async stop(): Promise<void> {
     return this.service.stop();
   }
 
-  eventConsumerLoop(): Promise<void> 
-{
+  eventConsumerLoop(): Promise<void> {
     return this.service.eventConsumerLoop();
   }
 
-  initializeDatabase(): Promise<void> 
-{
+  initializeDatabase(): Promise<void> {
     return this.service.initializeDatabase();
   }
 }
 
+// Re-export the new service for direct use
 export { default as JobServiceImpl } from "./impl/JobServiceImpl.js";
 export { IJobService, JobRequest, JobResponse } from "./io/IJobService.js";
 

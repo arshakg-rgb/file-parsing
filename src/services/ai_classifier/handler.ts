@@ -7,27 +7,26 @@ import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/
  * Extract JSON from a string that may be wrapped in markdown code fences
  * or contain explanatory text around the JSON object.
  */
-function extractJsonFromMarkdown(raw: string): string 
-{
+function extractJsonFromMarkdown(raw: string): string {
   const trimmed = raw.trim();
 
+  // Match fenced code blocks marked as json
   const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
-  if (fenceMatch) 
-{
+  if (fenceMatch) {
     return fenceMatch[1].trim();
   }
 
+  // Find the first { and last } to extract a JSON object
   const firstBrace = trimmed.indexOf("{");
   const lastBrace = trimmed.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) 
-{
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
     return trimmed.slice(firstBrace, lastBrace + 1);
   }
 
+  // Find the first [ and last ]
   const firstBracket = trimmed.indexOf("[");
   const lastBracket = trimmed.lastIndexOf("]");
-  if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) 
-{
+  if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
     return trimmed.slice(firstBracket, lastBracket + 1);
   }
 
@@ -93,10 +92,10 @@ interface CSVParseResult {
  * 
  * @class AiClassifierService
  */
-export class AiClassifierService 
-{
+export class AiClassifierService {
   private static instance: AiClassifierService;
   
+  // Instance state
   private running: boolean = false;
   private totalClassifications: number = 0;
   private cacheHits: number = 0;
@@ -110,17 +109,15 @@ export class AiClassifierService
   /**
    * Private constructor for singleton pattern
    */
-  private constructor() 
-{
+  private constructor() {
+    // Initialization happens in initialize() method
   }
   
   /**
    * Get singleton instance
    */
-  static getInstance(): AiClassifierService 
-{
-    if (!AiClassifierService.instance) 
-{
+  static getInstance(): AiClassifierService {
+    if (!AiClassifierService.instance) {
       AiClassifierService.instance = new AiClassifierService();
     }
     return AiClassifierService.instance;
@@ -129,8 +126,7 @@ export class AiClassifierService
   /**
    * Initialize the service
    */
-  async initialize(): Promise<void> 
-{
+  async initialize(): Promise<void> {
     await templateRegistry.loadFromDatabase();
     console.log("ai_classifier_initialized");
   }
@@ -138,10 +134,8 @@ export class AiClassifierService
   /**
    * Start the service
    */
-  async start(): Promise<void> 
-{
-    if (this.running) 
-{
+  async start(): Promise<void> {
+    if (this.running) {
       console.warn("ai_classifier_already_running");
       return;
     }
@@ -154,8 +148,7 @@ export class AiClassifierService
   /**
    * Stop the service gracefully
    */
-  async stop(): Promise<void> 
-{
+  async stop(): Promise<void> {
     this.running = false;
     console.log("ai_classifier_stopped");
   }
@@ -163,8 +156,7 @@ export class AiClassifierService
   /**
    * Get service statistics
    */
-  getStats() 
-{
+  getStats() {
     return {
       totalClassifications: this.totalClassifications,
       cacheHits: this.cacheHits,
@@ -183,10 +175,8 @@ export class AiClassifierService
    * @returns The response text from the model
    * @throws Error if the API call fails
    */
-  private getGenAIClient(): GoogleGenAI 
-{
-    if (!this.genAIClient) 
-{
+  private getGenAIClient(): GoogleGenAI {
+    if (!this.genAIClient) {
       this.genAIClient = new GoogleGenAI({
         vertexai: true,
         project: settings.GCP_PROJECT_ID || "data-etl-499916",
@@ -196,8 +186,7 @@ export class AiClassifierService
     return this.genAIClient;
   }
 
-  private async askVertexAI(prompt: string, timeoutMs: number = 30000): Promise<string> 
-{
+  private async askVertexAI(prompt: string, timeoutMs: number = 30000): Promise<string> {
     const MODEL = settings.VERTEX_MODEL || "gemini-2.5-flash";
     const ai = this.getGenAIClient();
 
@@ -291,27 +280,25 @@ If uncertain:
    * @param fieldSpec - Expected field specification
    * @returns Parse result with success status and delimiter
    */
-  private tryParseAsCSV(line: string, fieldSpec: string[]): CSVParseResult 
-{
+  private tryParseAsCSV(line: string, fieldSpec: string[]): CSVParseResult {
     const delimiters = [",", ";", "\t", "|"];
     
+    // Ensure fieldSpec is an array
     const fieldSpecArray = Array.isArray(fieldSpec) ? fieldSpec : 
       (typeof fieldSpec === "string" ? JSON.parse(fieldSpec) : []);
     
     console.log("csv_parser_start", { line, fieldSpec: fieldSpecArray, delimiterCount: delimiters.length });
     
-    for (const delimiter of delimiters) 
-{
+    for (const delimiter of delimiters) {
       const parts = line.split(delimiter);
       console.log("csv_parser_try_delimiter", { delimiter, partCount: parts.length, expectedCount: fieldSpecArray.length });
       
-      if (parts.length === fieldSpecArray.length) 
-{
+      if (parts.length === fieldSpecArray.length) {
+        // Check if all parts are non-empty (basic validation)
         const allNonEmpty = parts.every(part => part.trim().length > 0);
         console.log("csv_parser_validation", { delimiter, allNonEmpty, parts });
         
-        if (allNonEmpty) 
-{
+        if (allNonEmpty) {
           console.log("csv_parser_success", { delimiter, fields: parts });
           this.csvParseSuccesses++;
           return { success: true, delimiter, fields: parts };
@@ -332,12 +319,10 @@ If uncertain:
    * @param delimiter - The delimiter that matched
    * @returns Template object
    */
-  private createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: string): any 
-{
+  private createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: string): any {
     const fieldMap: Record<string, { locator: string; type: string }> = {};
     
-    fieldSpec.forEach((field, index) => 
-{
+    fieldSpec.forEach((field, index) => {
       fieldMap[field] = { locator: `index:${index}`, type: "string" };
     });
     
@@ -370,34 +355,27 @@ If uncertain:
    * @param tmpl - Template to validate
    * @returns True if template can parse the line, false otherwise
    */
-  private async validateTemplate(req: ClassifyRequest, tmpl: RecordTemplate): Promise<boolean> 
-{
-    try 
-{
+  private async validateTemplate(req: ClassifyRequest, tmpl: RecordTemplate): Promise<boolean> {
+    try {
+      // Basic validation: ensure template can extract fields from the line
       const line = req.unknown_line;
       const fieldMap = tmpl.field_map;
       
-      if (tmpl.structure === "csv") 
-{
+      // Simple validation: check if we can at least parse the structure
+      if (tmpl.structure === "csv") {
         const parts = line.split(",");
         return parts.length >= Object.keys(fieldMap).length;
       }
-      if (tmpl.structure === "json") 
-{
-        try 
-{
+      if (tmpl.structure === "json") {
+        try {
           const parsed = JSON.parse(line);
           return typeof parsed === "object" && parsed !== null;
-        }
- catch 
-{
+        } catch {
           return false;
         }
       }
       return true;
-    }
- catch (err) 
-{
+    } catch (err) {
       console.warn("template_validation_error", { job_id: req.job_id, error: String(err) });
       return false;
     }
@@ -417,26 +395,26 @@ If uncertain:
    * @param req - Classification request
    * @returns Classification response with template if successful
    */
-  async classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> 
-{
+  async classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> {
     this.totalClassifications++;
     
     await templateRegistry.loadFromDatabase();
 
+    // Step 1: Try CSV parsing with common delimiters before template matching
     const csvResult = this.tryParseAsCSV(req.unknown_line, req.field_spec);
-    if (csvResult.success) 
-{
+    if (csvResult.success) {
       console.log("ai_classifier_csv_parse_success", { job_id: req.job_id, delimiter: csvResult.delimiter });
+      // Create a template from the CSV parse result
       const template = this.createTemplateFromCSV(req.unknown_line, req.field_spec, csvResult.delimiter);
       await templateRegistry.saveTemplate(template, "record");
       templateRegistry.addRecordTemplate(template);
       return { kind: AIVerdict.RECORD_TEMPLATE, template };
     }
 
+    // Step 2: Try to match by fingerprint (fast path)
     const lineFp = this.quickFingerprint(req.unknown_line);
     const existing = templateRegistry.getByFingerprint(lineFp);
-    if (existing) 
-{
+    if (existing) {
       this.cacheHits++;
       const kind = (existing as RecordTemplate).field_map ? AIVerdict.RECORD_TEMPLATE : AIVerdict.RUBBISH_SIGNATURE;
       return { kind, template: existing };
@@ -444,27 +422,27 @@ If uncertain:
     
     this.cacheMisses++;
 
+    // Step 3: Try to match against existing record templates by attempting to parse
     const recordMatch = templateRegistry.matchRecordTemplate(req.unknown_line, req.field_spec);
-    if (recordMatch) 
-{
+    if (recordMatch) {
       console.log("ai_classifier_local_match", { job_id: req.job_id, template_id: recordMatch.template_id });
       return { kind: AIVerdict.RECORD_TEMPLATE, template: recordMatch };
     }
 
+    // Step 4: Try to match against rubbish templates
     const rubbishMatch = templateRegistry.matchRubbishTemplate(req.unknown_line);
-    if (rubbishMatch) 
-{
+    if (rubbishMatch) {
       console.log("ai_classifier_rubbish_match", { job_id: req.job_id, template_id: rubbishMatch.template_id });
       return { kind: AIVerdict.RUBBISH_SIGNATURE, template: rubbishMatch };
     }
 
-    if (settings.AI_INLINE_MODE === "mock" || settings.BEDROCK_MODEL_ID === "mock") 
-{
+    // Step 5a: Mock mode — deterministic classifier, zero model cost. Used to validate the
+    // inline-AI flow (learning + caching + budget) before switching to the real model.
+    if (settings.AI_INLINE_MODE === "mock" || settings.BEDROCK_MODEL_ID === "mock") {
       this.mockClassifications++;
       const { mockClassify } = await import("./mock.js");
       const resp = mockClassify(req) as ClassifyResponse;
-      if (resp.template) 
-{
+      if (resp.template) {
         const isRecord = "field_map" in (resp.template as any);
         await templateRegistry.saveTemplate(resp.template as any, isRecord ? "record" : "rubbish");
         if (isRecord) templateRegistry.addRecordTemplate(resp.template as RecordTemplate);
@@ -474,19 +452,19 @@ If uncertain:
       return resp;
     }
 
+    // Step 5: No local match found, fall back to Vertex AI
     console.log("ai_classifier_fallback_to_ai", { job_id: req.job_id, reason: "no_local_template_match" });
 
     const userPrompt = this.buildUserPrompt(req);
-    try 
-{
+    try {
       this.vertexAiCalls++;
       const rawText = await this.askVertexAI(userPrompt);
       const raw = JSON.parse(extractJsonFromMarkdown(rawText));
       let kindStr = raw.kind || "uncertain";
       
+      // Handle structure names (csv, json, etc.) as record-template
       const structureNames = ["csv", "json", "kv", "fixed", "regex"];
-      if (structureNames.includes(kindStr)) 
-{
+      if (structureNames.includes(kindStr)) {
         kindStr = "record-template";
       }
       
@@ -494,6 +472,7 @@ If uncertain:
       const tmpl = this.buildTemplateFromRaw(raw, kindStr, req.unknown_line);
       if (!tmpl) return { kind: AIVerdict.UNCERTAIN };
       
+      // Save to database and cache
       const kind = kindStr === "record-template" ? "record" : "rubbish";
       await templateRegistry.saveTemplate(tmpl, kind);
       templateRegistry.addRecordTemplate(tmpl as RecordTemplate);
@@ -501,9 +480,7 @@ If uncertain:
       const verdict = kindStr === "record-template" ? AIVerdict.RECORD_TEMPLATE : AIVerdict.RUBBISH_SIGNATURE;
       console.log("ai_classified", { job_id: req.job_id, verdict, template_id: tmpl.template_id, fingerprint: tmpl.fingerprint });
       return { kind: verdict, template: tmpl };
-    }
- catch (err) 
-{
+    } catch (err) {
       console.error("vertex_ai_call_failed", { job_id: req.job_id, error: String(err) });
       return { kind: AIVerdict.UNCERTAIN };
     }
@@ -514,8 +491,7 @@ If uncertain:
    * @param line - The line to fingerprint
    * @returns Fingerprint hash
    */
-  private quickFingerprint(line: string): string 
-{
+  private quickFingerprint(line: string): string {
     return crypto.createHash("md5").update(line).digest("hex");
   }
 
@@ -524,8 +500,7 @@ If uncertain:
    * @param req - Classification request
    * @returns Formatted prompt string
    */
-  private buildUserPrompt(req: ClassifyRequest): string 
-{
+  private buildUserPrompt(req: ClassifyRequest): string {
     return `${this.SYSTEM_PROMPT}
 
 Unknown line: ${req.unknown_line}
@@ -540,10 +515,8 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
    * @param line - Original line
    * @returns Template object or null
    */
-  private buildTemplateFromRaw(raw: any, kind: string, line: string): any 
-{
-    try 
-{
+  private buildTemplateFromRaw(raw: any, kind: string, line: string): any {
+    try {
       const template = raw.template;
       if (!template) return null;
       
@@ -555,19 +528,19 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
         source: "ai" as const,
         created_at: new Date()
       };
-    }
- catch 
-{
+    } catch {
       return null;
     }
   }
 }
 
+// Backward compatibility: export singleton instance and function wrappers
 const aiClassifierService = AiClassifierService.getInstance();
 
-export async function classifyAi(req: any): Promise<any> 
-{
+// Backward compatibility wrappers
+export async function classifyAi(req: any): Promise<any> {
   return aiClassifierService.classifyAi(req);
 }
 
+// Export interfaces for external use
 export type { ClassifyRequest, ClassifyResponse, FieldLocator, CSVParseResult };

@@ -1,7 +1,8 @@
+import Config from "../../../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
 import { InstantiationError } from "../../../errors/InstantiationError.js";
 import MySqlManager from "../../../config/db/MySqlManager.js";
-import { DLQMessage, _FailureClass, LoadMessage } from "../../../shared/models/job.js";
+import { DLQMessage, DLQStatus, FailureClass, JobStatus, LoadMessage } from "../../../shared/models/job.js";
 import { receiveMessages, deleteMessage, sendMessage } from "../../../shared/queueUtils.js";
 import { ClassifyResult, LineClassifier } from "../../stream_parser/classifier.js";
 import { templateRegistry } from "../../../shared/templateRegistry.js";
@@ -9,19 +10,16 @@ import { createLogger } from "../../../utils/logger/logger.js";
 import { metrics } from "../../../utils/response/metrics.js";
 import { startHealthCheckServer } from "../../../utils/response/health.js";
 import { RetryService } from "../RetryService.js";
-import { RetryRequest, RetryResponse } from "../io/IRetry.js";
+import { IRetry, RetryRequest, RetryResponse } from "../io/IRetry.js";
 
-class RetryServiceImpl extends ServiceManager implements RetryService 
-{
+class RetryServiceImpl extends ServiceManager implements RetryService {
   protected static instance: RetryServiceImpl;
   private logger: any;
   private dbManager: MySqlManager;
   private ALT_ENCODINGS = ["utf-8", "iso-8859-1", "cp1252", "utf-16"];
 
-  protected constructor(enforce: () => void) 
-{
-    if (enforce !== Enforce) 
-{
+  protected constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate RetryServiceImpl directly. Use getInstance()");
     }
     super(enforce);
@@ -29,38 +27,32 @@ class RetryServiceImpl extends ServiceManager implements RetryService
     this.logger = createLogger("retry");
     this.dbManager = MySqlManager.getInstance();
     
-    if (process.env.HEALTH_CHECK_PORT) 
-{
+    if (process.env.HEALTH_CHECK_PORT) {
       startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
   }
 
-  public static getInstance(): RetryServiceImpl 
-{
-    if (!RetryServiceImpl.instance) 
-{
+  public static getInstance(): RetryServiceImpl {
+    if (!RetryServiceImpl.instance) {
       RetryServiceImpl.instance = new RetryServiceImpl(Enforce);
     }
     return RetryServiceImpl.instance;
   }
 
-  public getLogger(): any 
-{
+  public getLogger(): any {
     return this.logger;
   }
 
-  public getDbManager(): MySqlManager 
-{
+  public getDbManager(): MySqlManager {
     return this.dbManager;
   }
 
-  public async processRetry(req: RetryRequest): Promise<RetryResponse> 
-{
+  public async processRetry(req: RetryRequest): Promise<RetryResponse> {
+    // Placeholder implementation
     return { success: true };
   }
 
-  public async handleDlqEntry(msg: DLQMessage): Promise<void> 
-{
+  public async handleDlqEntry(msg: DLQMessage): Promise<void> {
     await templateRegistry.loadFromDatabase();
 
     this.logger.info("retry_attempt", {
@@ -71,19 +63,16 @@ class RetryServiceImpl extends ServiceManager implements RetryService
     });
     metrics.increment("retry.attempt", 1, { failure_class: msg.failure_class });
 
-    if (msg.dlq_id) 
-{
+    if (msg.dlq_id) {
       const row = await this.getDeadLetter(msg.dlq_id);
-      if (!row || row.status !== "pending") 
-{
+      if (!row || row.status !== "pending") {
         this.logger.debug("retry_skip_non_pending", { dlq_id: msg.dlq_id, status: row?.status });
         return;
       }
     }
 
     const config = this.getConfig();
-    if (msg.attempts >= config.settings.RETRY_MAX_ATTEMPTS) 
-{
+    if (msg.attempts >= config.settings.RETRY_MAX_ATTEMPTS) {
       await this.markForReview(msg);
       return;
     }
@@ -91,62 +80,45 @@ class RetryServiceImpl extends ServiceManager implements RetryService
     const rawBytes = Buffer.from(msg.raw_bytes, "base64");
     let recovered: ClassifyResult | null = null;
 
-    if (msg.failure_class === _FailureClass.ENCODING_ERROR) 
-{
+    if (msg.failure_class === FailureClass.ENCODING_ERROR) {
       recovered = await this.retryEncoding(rawBytes, msg);
-    }
- else if ([_FailureClass.TRANSFORM_ERROR, _FailureClass.EXTRACTION_ERROR].includes(msg.failure_class)) 
-{
+    } else if ([FailureClass.TRANSFORM_ERROR, FailureClass.EXTRACTION_ERROR].includes(msg.failure_class)) {
       recovered = await this.retryAfterTemplateUpdate(rawBytes, msg);
-    }
- else if (msg.failure_class === _FailureClass.TYPE_MISMATCH) 
-{
+    } else if (msg.failure_class === FailureClass.TYPE_MISMATCH) {
       recovered = await this.retryBroadCoercion(rawBytes, msg);
-    }
- else if (msg.failure_class === _FailureClass.UNCERTAIN) 
-{
+    } else if (msg.failure_class === FailureClass.UNCERTAIN) {
       await this.markForReview(msg);
       return;
     }
 
-    if (recovered && recovered.verdict === "parsed" && recovered.row) 
-{
+    if (recovered && recovered.verdict === "parsed" && recovered.row) {
       await this.emitRecovered(msg, recovered);
       this.logger.info("line_recovered", { job_id: msg.job_id, byte_offset: msg.byte_offset });
       metrics.increment("retry.recovered", 1, { failure_class: msg.failure_class });
-    }
- else 
-{
+    } else {
       const delay = msg.attempts >= 1 ? config.settings.RETRY_DELAYED_DELAY_SECONDS : 0;
       await this.reEnqueue(msg, delay);
     }
   }
 
-  private async retryEncoding(rawBytes: Buffer, msg: DLQMessage): Promise<ClassifyResult | null> 
-{
-    for (const enc of this.ALT_ENCODINGS) 
-{
-      try 
-{
+  private async retryEncoding(rawBytes: Buffer, msg: DLQMessage): Promise<ClassifyResult | null> {
+    for (const enc of this.ALT_ENCODINGS) {
+      try {
         const line = new TextDecoder(enc, { fatal: true }).decode(rawBytes);
         return await this.classifyLine(line, msg);
-      }
- catch 
-{
+      } catch {
         continue;
       }
     }
     return null;
   }
 
-  private async retryAfterTemplateUpdate(rawBytes: Buffer, msg: DLQMessage): Promise<ClassifyResult | null> 
-{
+  private async retryAfterTemplateUpdate(rawBytes: Buffer, msg: DLQMessage): Promise<ClassifyResult | null> {
     const line = rawBytes.toString("utf-8", 0, rawBytes.length);
     return await this.classifyLine(line, msg);
   }
 
-  private async retryBroadCoercion(rawBytes: Buffer, msg: DLQMessage): Promise<ClassifyResult | null> 
-{
+  private async retryBroadCoercion(rawBytes: Buffer, msg: DLQMessage): Promise<ClassifyResult | null> {
     const line = rawBytes.toString("utf-8", 0, rawBytes.length);
     const result = await this.classifyLine(line, msg);
     if (result && result.verdict === "parsed") return result;
@@ -154,8 +126,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService
     return { verdict: "parsed", row: Object.fromEntries(fieldSpec.map((f) => [f, null])), template_id: "coerced" };
   }
 
-  private async classifyLine(line: string, msg: DLQMessage): Promise<ClassifyResult | null> 
-{
+  private async classifyLine(line: string, msg: DLQMessage): Promise<ClassifyResult | null> {
     const fieldSpec = await this.getFieldSpec(msg.job_id);
     const recordTemplates = templateRegistry.getAllRecordTemplates();
     const rubbishTemplates = templateRegistry.getAllRubbishTemplates();
@@ -173,33 +144,28 @@ class RetryServiceImpl extends ServiceManager implements RetryService
     return null;
   }
 
-  private async getFieldSpec(jobId: string): Promise<string[]> 
-{
+  private async getFieldSpec(jobId: string): Promise<string[]> {
     const result = await this.dbManager.pool.query<{ field_spec: string[] }>("SELECT field_spec FROM parse_jobs WHERE job_id = $1", [jobId]);
     return result.rows[0]?.field_spec || [];
   }
 
-  private async getDeadLetter(dlqId: string): Promise<any> 
-{
+  private async getDeadLetter(dlqId: string): Promise<any> {
     const result = await this.dbManager.pool.query("SELECT dlq_id, status FROM dead_letters WHERE dlq_id = $1", [dlqId]);
     return result.rows[0];
   }
 
-  private async updateDeadLetterStatus(dlqId: string | undefined, status: string, attempts?: number): Promise<void> 
-{
+  private async updateDeadLetterStatus(dlqId: string | undefined, status: string, attempts?: number): Promise<void> {
     if (!dlqId) return;
     const fields = ["status = $2", "updated_at = NOW()"];
     const values: any[] = [dlqId, status];
-    if (attempts !== undefined) 
-{
+    if (attempts !== undefined) {
       fields.push("attempts = $3");
       values.push(attempts);
     }
     await this.dbManager.pool.query(`UPDATE dead_letters SET ${fields.join(", ")} WHERE dlq_id = $1`, values);
   }
 
-  private async markForReview(msg: DLQMessage): Promise<void> 
-{
+  private async markForReview(msg: DLQMessage): Promise<void> {
     await this.updateDeadLetterStatus(msg.dlq_id, "review");
     this.logger.warn("line_marked_for_review", {
       job_id: msg.job_id,
@@ -210,8 +176,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService
     metrics.increment("retry.marked_for_review", 1, { failure_class: msg.failure_class });
   }
 
-  private async emitRecovered(msg: DLQMessage, result: ClassifyResult): Promise<void> 
-{
+  private async emitRecovered(msg: DLQMessage, result: ClassifyResult): Promise<void> {
     await this.updateDeadLetterStatus(msg.dlq_id, "recovered");
     const loadMsg: LoadMessage = {
       job_id: msg.job_id,
@@ -226,8 +191,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService
     await sendMessage(config.settings.LOAD_QUEUE_URL, loadMsg, 0, msg.job_id);
   }
 
-  private async reEnqueue(msg: DLQMessage, delaySeconds: number): Promise<void> 
-{
+  private async reEnqueue(msg: DLQMessage, delaySeconds: number): Promise<void> {
     const nextAttempts = msg.attempts + 1;
     await this.updateDeadLetterStatus(msg.dlq_id, "pending", nextAttempts);
     const updated: DLQMessage = { ...msg, attempts: nextAttempts, status: "pending" };
@@ -241,36 +205,27 @@ class RetryServiceImpl extends ServiceManager implements RetryService
     metrics.increment("retry.re_enqueued", 1);
   }
 
-  public async consumerLoop(): Promise<void> 
-{
+  public async consumerLoop(): Promise<void> {
     await this.dbManager.initialize();
     this.logger.info("retry_consumer_started");
     const config = this.getConfig();
-    while (true) 
-{
+    while (true) {
       const messages = await receiveMessages<DLQMessage>(
         config.settings.DLQ_QUEUE_URL,
         (body) => JSON.parse(body) as DLQMessage,
         10
       );
-      for (const { payload, receiptHandle } of messages) 
-{
-        try 
-{
+      for (const { payload, receiptHandle } of messages) {
+        try {
           await this.handleDlqEntry(payload);
           await deleteMessage(config.settings.DLQ_QUEUE_URL, receiptHandle);
-        }
- catch (exc) 
-{
+        } catch (exc) {
           const errorStr = String(exc);
-          if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition"))) 
-{
+          if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition"))) {
             this.logger.error("retry_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
             metrics.increment("retry.error_ack", 1);
             await deleteMessage(config.settings.DLQ_QUEUE_URL, receiptHandle);
-          }
- else 
-{
+          } else {
             this.logger.error("retry_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
             metrics.increment("retry.error", 1);
           }

@@ -24,8 +24,7 @@ export function makeJobEvent(
   job_id: string,
   source_service: string,
   data: Record<string, any> = {}
-): JobEvent 
-{
+): JobEvent {
   return {
     event_id: randomUUID(),
     event_type,

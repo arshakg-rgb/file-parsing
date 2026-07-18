@@ -1,8 +1,9 @@
+import Config from "../../../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
 import { InstantiationError } from "../../../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../../../utils/cache/FirestoreCacheUtils.js";
 import MySqlManager from "../../../config/db/MySqlManager.js";
-import { EventType, makeJobEvent } from "../../../shared/models/events.js";
+import { EventType, JobEvent, makeJobEvent } from "../../../shared/models/events.js";
 import { JobStatus, ReportMessage, JobCounts } from "../../../shared/models/job.js";
 import { receiveMessages, deleteMessage, publishEvent } from "../../../shared/queueUtils.js";
 import { QualityGate } from "../../../shared/qualityGate.js";
@@ -10,19 +11,16 @@ import { createLogger } from "../../../utils/logger/logger.js";
 import { metrics } from "../../../utils/response/metrics.js";
 import { startHealthCheckServer } from "../../../utils/response/health.js";
 import { ReportService } from "../ReportService.js";
-import { ReportRequest, ReportResponse } from "../io/IReport.js";
+import { IReport, ReportRequest, ReportResponse } from "../io/IReport.js";
 
-class ReportServiceImpl extends ServiceManager implements ReportService 
-{
+class ReportServiceImpl extends ServiceManager implements ReportService {
   protected static instance: ReportServiceImpl;
   private logger: any;
   private gcsUtils: FirestoreCacheUtils;
   private dbManager: MySqlManager;
 
-  protected constructor(enforce: () => void) 
-{
-    if (enforce !== Enforce) 
-{
+  protected constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate ReportServiceImpl directly. Use getInstance()");
     }
     super(enforce);
@@ -31,60 +29,50 @@ class ReportServiceImpl extends ServiceManager implements ReportService
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.dbManager = MySqlManager.getInstance();
     
-    if (process.env.HEALTH_CHECK_PORT) 
-{
+    if (process.env.HEALTH_CHECK_PORT) {
       startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
   }
 
-  public static getInstance(): ReportServiceImpl 
-{
-    if (!ReportServiceImpl.instance) 
-{
+  public static getInstance(): ReportServiceImpl {
+    if (!ReportServiceImpl.instance) {
       ReportServiceImpl.instance = new ReportServiceImpl(Enforce);
     }
     return ReportServiceImpl.instance;
   }
 
-  public getLogger(): any 
-{
+  public getLogger(): any {
     return this.logger;
   }
 
-  public getGcsUtils(): FirestoreCacheUtils 
-{
+  public getGcsUtils(): FirestoreCacheUtils {
     return this.gcsUtils;
   }
 
-  public getDbManager(): MySqlManager 
-{
+  public getDbManager(): MySqlManager {
     return this.dbManager;
   }
 
-  public async processReport(req: ReportRequest): Promise<ReportResponse> 
-{
+  public async processReport(req: ReportRequest): Promise<ReportResponse> {
+    // Placeholder implementation
     return { success: true };
   }
 
-  private emit(jobId: string, eventType: EventType, data: Record<string, any>) 
-{
+  private emit(jobId: string, eventType: EventType, data: Record<string, any>) {
     publishEvent(makeJobEvent(eventType, jobId, "report", data));
   }
 
-  private totalFailed(counts: JobCounts): number 
-{
+  private totalFailed(counts: JobCounts): number {
     return Object.values(counts.failed_by_class || {}).reduce((a, b) => a + b, 0);
   }
 
-  public async generateReport(msg: ReportMessage): Promise<void> 
-{
+  public async generateReport(msg: ReportMessage): Promise<void> {
     const jobId = msg.job_id;
     this.logger.info("report_start", { job_id: jobId, status: msg.status });
     metrics.increment("report.start", 1, { status: msg.status });
 
     const jobRow = await this.dbManager.getJob(jobId);
-    if (!jobRow) 
-{
+    if (!jobRow) {
       throw new Error(`Job ${jobId} not found`);
     }
     const parts = await this.getParts(jobId);
@@ -134,13 +122,11 @@ class ReportServiceImpl extends ServiceManager implements ReportService
     this.logger.info("report_written", { job_id: jobId, s3_key: reportKey, quality_passed: qualityCheck.passes });
     metrics.increment("report.generated", 1);
 
-    if (batchSiblings.length && jobRow.batch_id) 
-{
+    if (batchSiblings.length && jobRow.batch_id) {
       const allTerminal = batchSiblings.every((j) =>
         [JobStatus.DONE, JobStatus.PARTIAL, JobStatus.HELD, JobStatus.FAILED].includes(j.status as JobStatus)
       );
-      if (allTerminal) 
-{
+      if (allTerminal) {
         await this.writeBatchRollup(jobRow.batch_id, batchSiblings);
       }
     }
@@ -148,26 +134,22 @@ class ReportServiceImpl extends ServiceManager implements ReportService
     this.emit(jobId, EventType.REPORTING_COMPLETED, { counts: msg.counts });
   }
 
-  private async getJob(jobId: string): Promise<any> 
-{
+  private async getJob(jobId: string): Promise<any> {
     const result = await this.dbManager.pool.query("SELECT * FROM parse_jobs WHERE job_id = $1", [jobId]);
     return result.rows[0];
   }
 
-  private async getParts(jobId: string): Promise<any[]> 
-{
+  private async getParts(jobId: string): Promise<any[]> {
     const result = await this.dbManager.pool.query("SELECT * FROM output_parts WHERE job_id = $1", [jobId]);
     return result.rows;
   }
 
-  private async getBatchJobs(batchId: string): Promise<any[]> 
-{
+  private async getBatchJobs(batchId: string): Promise<any[]> {
     const result = await this.dbManager.pool.query("SELECT * FROM parse_jobs WHERE batch_id = $1", [batchId]);
     return result.rows;
   }
 
-  private async writeBatchRollup(batchId: string, jobs: any[]): Promise<void> 
-{
+  private async writeBatchRollup(batchId: string, jobs: any[]): Promise<void> {
     const rollup = {
       batch_id: batchId,
       generated_at: new Date().toISOString(),
@@ -186,36 +168,27 @@ class ReportServiceImpl extends ServiceManager implements ReportService
     metrics.increment("report.batch_rollup", 1);
   }
 
-  public async consumerLoop(): Promise<void> 
-{
+  public async consumerLoop(): Promise<void> {
     await this.dbManager.initialize();
     this.logger.info("report_consumer_started");
     const config = this.getConfig();
-    while (true) 
-{
+    while (true) {
       const messages = await receiveMessages<ReportMessage>(
         config.settings.REPORT_QUEUE_URL,
         (body) => JSON.parse(body) as ReportMessage,
         5
       );
-      for (const { payload, receiptHandle } of messages) 
-{
-        try 
-{
+      for (const { payload, receiptHandle } of messages) {
+        try {
           await this.generateReport(payload);
           await deleteMessage(config.settings.REPORT_QUEUE_URL, receiptHandle);
-        }
- catch (exc) 
-{
+        } catch (exc) {
           const errorStr = String(exc);
-          if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition"))) 
-{
+          if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition"))) {
             this.logger.error("report_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
             metrics.increment("report.error_ack", 1);
             await deleteMessage(config.settings.REPORT_QUEUE_URL, receiptHandle);
-          }
- else 
-{
+          } else {
             this.logger.error("report_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
             metrics.increment("report.error", 1);
           }

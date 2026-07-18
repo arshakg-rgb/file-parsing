@@ -1,23 +1,20 @@
 import { pool, ParseJobRow } from "../../shared/db.js";
-import { JobStatus, VALID_TRANSITIONS, isTerminal } from "../../shared/models/job.js";
+import { JobStatus, JobStatus as JS, VALID_TRANSITIONS, isTerminal } from "../../shared/models/job.js";
 import { EventType, JobEvent, ParsingCompletedData } from "../../shared/models/events.js";
-import { sendRaw } from "../../shared/queueUtils.js";
+import { sendRaw, publishEvent } from "../../shared/queueUtils.js";
 import { settings } from "../../shared/config.js";
 import { randomUUID } from "crypto";
 import { SourceType } from "../../shared/models/job.js";
 import { finalizeOutput } from "./finalize.js";
 
-export class TransitionError extends Error 
-{
-  constructor(message: string) 
-{
+export class TransitionError extends Error {
+  constructor(message: string) {
     super(message);
     this.name = "TransitionError";
   }
 }
 
-export async function getJob(jobId: string): Promise<ParseJobRow | undefined> 
-{
+export async function getJob(jobId: string): Promise<ParseJobRow | undefined> {
   const result = await pool.query<ParseJobRow>("SELECT * FROM parse_jobs WHERE job_id = $1", [jobId]);
   return result.rows[0];
 }
@@ -27,14 +24,12 @@ export async function transition(
   newStatus: JobStatus,
   error?: string,
   extraFields: Record<string, any> = {}
-): Promise<ParseJobRow> 
-{
+): Promise<ParseJobRow> {
   const row = await getJob(jobId);
   if (!row) throw new TransitionError(`Job ${jobId} not found`);
 
   const current = row.status as JobStatus;
-  if (!VALID_TRANSITIONS[current]?.includes(newStatus)) 
-{
+  if (!VALID_TRANSITIONS[current]?.includes(newStatus)) {
     throw new TransitionError(`Job ${jobId}: cannot transition ${current} → ${newStatus}`);
   }
 
@@ -48,12 +43,10 @@ export async function transition(
   };
 
   const timings = { ...(row.timings || {}) };
-  if (timingMap[newStatus]) 
-{
+  if (timingMap[newStatus]) {
     timings[timingMap[newStatus]] = new Date().toISOString();
   }
-  if (isTerminal(newStatus)) 
-{
+  if (isTerminal(newStatus)) {
     timings["completed_at"] = new Date().toISOString();
   }
 
@@ -65,20 +58,17 @@ export async function transition(
   if (error) updates.error = error;
   Object.assign(updates, extraFields);
 
-  if (updates.field_spec && typeof updates.field_spec !== "string") 
-{
+  // JSON.stringify JSONB fields for PostgreSQL
+  if (updates.field_spec && typeof updates.field_spec !== "string") {
     updates.field_spec = JSON.stringify(updates.field_spec);
   }
-  if (updates.output_paths && typeof updates.output_paths !== "string") 
-{
+  if (updates.output_paths && typeof updates.output_paths !== "string") {
     updates.output_paths = JSON.stringify(updates.output_paths);
   }
-  if (updates.counts && typeof updates.counts !== "string") 
-{
+  if (updates.counts && typeof updates.counts !== "string") {
     updates.counts = JSON.stringify(updates.counts);
   }
-  if (updates.timings && typeof updates.timings !== "string") 
-{
+  if (updates.timings && typeof updates.timings !== "string") {
     updates.timings = JSON.stringify(updates.timings);
   }
 
@@ -90,25 +80,17 @@ export async function transition(
   return (await getJob(jobId))!;
 }
 
-export async function handleEvent(event: JobEvent): Promise<void> 
-{
+export async function handleEvent(event: JobEvent): Promise<void> {
   const etype = event.event_type;
 
-  if (etype === EventType.JOB_STATUS_CHANGED) 
-{
+  if (etype === EventType.JOB_STATUS_CHANGED) {
     const newStatus = event.data.new_status as JobStatus;
     await transition(event.job_id, newStatus, event.data.error);
-  }
- else if (etype === EventType.ENTRY_DISCOVERED) 
-{
+  } else if (etype === EventType.ENTRY_DISCOVERED) {
     await createChildJob(event);
-  }
- else if (etype === EventType.PARSING_COMPLETED) 
-{
+  } else if (etype === EventType.PARSING_COMPLETED) {
     await onParsingCompleted(event);
-  }
- else if (etype === EventType.LOADING_COMPLETED) 
-{
+  } else if (etype === EventType.LOADING_COMPLETED) {
     const row = await getJob(event.job_id);
     await transition(event.job_id, JobStatus.REPORTING, undefined, { counts: row?.counts });
     await sendRaw(settings.REPORT_QUEUE_URL, {
@@ -119,25 +101,22 @@ export async function handleEvent(event: JobEvent): Promise<void>
       rubbish_log_path: (row?.timings as any)?._rubbish_log_path ?? null,
       dlq_count: (row?.timings as any)?._dlq_count ?? 0,
     });
-  }
- else if (etype === EventType.REPORTING_COMPLETED) 
-{
+  } else if (etype === EventType.REPORTING_COMPLETED) {
     const row = await getJob(event.job_id);
+    // Use counts from event data if available, otherwise use database
     const counts = event.data.counts || row?.counts;
     await transition(event.job_id, JobStatus.DONE, undefined, { counts });
-  }
- else if (etype === EventType.ERROR_OCCURRED) 
-{
+  } else if (etype === EventType.ERROR_OCCURRED) {
     await transition(event.job_id, JobStatus.FAILED, event.data.error);
   }
 }
 
-async function createChildJob(event: JobEvent): Promise<void> 
-{
+async function createChildJob(event: JobEvent): Promise<void> {
   const data = event.data;
   const now = new Date().toISOString();
   const childId = randomUUID();
 
+  // Ensure field_spec is never null - fallback to empty array
   const fieldSpec = data.field_spec || [];
 
   await pool.query(
@@ -172,14 +151,12 @@ async function createChildJob(event: JobEvent): Promise<void>
   console.log("child_job_created", { parent: data.parent_job_id, child: childId });
 }
 
-async function onParsingCompleted(event: JobEvent): Promise<void> 
-{
+async function onParsingCompleted(event: JobEvent): Promise<void> {
   const data = event.data as ParsingCompletedData;
   console.log("parsing_completed_received", { job_id: event.job_id, parsed: data.parsed, dropped: data.dropped_rubbish, failed: data.failed, part_count: data.part_s3_paths.length });
   
   const row = await getJob(event.job_id);
-  if (!row) 
-{
+  if (!row) {
     console.error("job_not_found", { job_id: event.job_id });
     return;
   }
@@ -188,6 +165,7 @@ async function onParsingCompleted(event: JobEvent): Promise<void>
   counts.parsed = data.parsed;
   counts.dropped_rubbish = data.dropped_rubbish;
 
+  // Stash rubbish_log_path and dlq_count in timings so the report step can read them later
   const timings = {
     ...(row.timings || {}),
     _rubbish_log_path: data.rubbish_log_path ?? null,
@@ -200,15 +178,14 @@ async function onParsingCompleted(event: JobEvent): Promise<void>
   console.log("transitioning_to_finalizing", { job_id: event.job_id, failed_ratio: failedRatio });
   await transition(event.job_id, JobStatus.FINALIZING, undefined, { counts, timings });
 
+  // Merge parts by template, backfill line numbers, and produce a final set of paths.
   console.log("starting_finalization", { job_id: event.job_id, part_paths: data.part_s3_paths });
   
-  try 
-{
+  try {
     const finalizeResult = await finalizeOutput(event.job_id, data.part_s3_paths, settings.DATA_BUCKET);
     console.log("finalization_result", { job_id: event.job_id, failed: finalizeResult.failed, paths_count: finalizeResult.paths.length, error: finalizeResult.error });
     
-    if (finalizeResult.failed) 
-{
+    if (finalizeResult.failed) {
       console.error("finalize_failed", { job_id: event.job_id, error: finalizeResult.error });
       await transition(event.job_id, JobStatus.FAILED, finalizeResult.error || "finalize_failed");
       return;
@@ -217,22 +194,21 @@ async function onParsingCompleted(event: JobEvent): Promise<void>
 
     console.log("finalize_complete", { job_id: event.job_id, merged_paths_count: mergedPaths.length, merged_paths: mergedPaths });
 
-    if (failedRatio > settings.FAILED_LINE_RATIO_THRESHOLD) 
-{
+    if (failedRatio > settings.FAILED_LINE_RATIO_THRESHOLD) {
       console.warn("quality_gate_held", { job_id: event.job_id, failed_ratio: failedRatio, threshold: settings.FAILED_LINE_RATIO_THRESHOLD });
       await transition(event.job_id, JobStatus.HELD, undefined, { output_paths: mergedPaths });
       return;
     }
 
-    if (mergedPaths.length === 0 && data.parsed > 0) 
-{
+    // If no output paths but we have parsed data, this is likely a template issue
+    if (mergedPaths.length === 0 && data.parsed > 0) {
       console.warn("no_output_paths_with_parsed_data", { job_id: event.job_id, parsed: data.parsed, part_paths: data.part_s3_paths });
       await transition(event.job_id, JobStatus.FAILED, "No output files generated despite parsed data");
       return;
     }
 
-    if (mergedPaths.length === 0 && data.parsed === 0) 
-{
+    // If no output paths and no parsed data, complete successfully
+    if (mergedPaths.length === 0 && data.parsed === 0) {
       console.info("no_output_no_data", { job_id: event.job_id });
       await transition(event.job_id, JobStatus.DONE, undefined, { output_paths: [] });
       return;
@@ -246,9 +222,7 @@ async function onParsingCompleted(event: JobEvent): Promise<void>
       field_spec: Array.isArray(row.field_spec) ? row.field_spec : [],
     });
     console.log("loading_message_sent", { job_id: event.job_id });
-  }
- catch (error) 
-{
+  } catch (error) {
     console.error("finalization_exception", { job_id: event.job_id, error: String(error), stack: error instanceof Error ? error.stack : undefined });
     await transition(event.job_id, JobStatus.FAILED, `Finalization error: ${String(error)}`);
   }

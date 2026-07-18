@@ -5,33 +5,26 @@ import { InstantiationError } from "../../errors/InstantiationError.js";
 
 const { Pool } = pg;
 
-class MySqlManager extends ServiceManager 
-{
+class MySqlManager extends ServiceManager {
   protected static instance: MySqlManager;
   private _pool: pg.Pool | null = null;
 
-  protected constructor(enforce: () => void) 
-{
-    if (enforce !== Enforce) 
-{
+  protected constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate MySqlManager directly. Use getInstance()");
     }
     super(enforce);
   }
 
-  public static getInstance(): MySqlManager 
-{
-    if (!MySqlManager.instance) 
-{
+  public static getInstance(): MySqlManager {
+    if (!MySqlManager.instance) {
       MySqlManager.instance = new MySqlManager(Enforce);
     }
     return MySqlManager.instance;
   }
 
-  private getPool(): pg.Pool 
-{
-    if (!this._pool) 
-{
+  private getPool(): pg.Pool {
+    if (!this._pool) {
       const config = Config.getInstance();
       this._pool = new Pool({
         connectionString: config.settings.DATABASE_URL,
@@ -43,29 +36,25 @@ class MySqlManager extends ServiceManager
     return this._pool;
   }
 
-  public get pool(): pg.Pool 
-{
+  public get pool(): pg.Pool {
     return this.getPool();
   }
 
-  public async initialize(): Promise<void> 
-{
+  public async initialize(): Promise<void> {
     console.log("Initializing MySqlManager...");
     await this.waitForDb();
     console.log("MySqlManager initialized");
   }
 
-  public async shutdown(): Promise<void> 
-{
+  public async shutdown(): Promise<void> {
     console.log("Shutting down MySqlManager...");
     await this.pool.end();
   }
 
-  public get sequelize() 
-{
+  public get sequelize() {
+    // Placeholder for Sequelize ORM if needed
     return {
-      sync: async (options: any) => 
-{
+      sync: async (options: any) => {
         console.log("Database sync placeholder");
       }
     };
@@ -75,25 +64,19 @@ class MySqlManager extends ServiceManager
    * Wait for database connection to succeed (Cloud SQL proxy race condition guard).
    * Retries with exponential backoff up to 300 seconds (5 minutes).
    */
-  private async waitForDb(): Promise<void> 
-{
-    const maxAttempts = 60;
+  private async waitForDb(): Promise<void> {
+    const maxAttempts = 60; // 60 * 5s = 300s max for cold starts and connection recovery
     let attempt = 0;
-    while (attempt < maxAttempts) 
-{
-      try 
-{
+    while (attempt < maxAttempts) {
+      try {
         const client = await this.pool.connect();
         await client.query("SELECT 1");
         client.release();
         return;
-      }
- catch 
-{
+      } catch (err) {
         attempt++;
-        const delay = Math.min(5000 * attempt, 10000);
-        if (attempt < maxAttempts) 
-{
+        const delay = Math.min(5000 * attempt, 10000); // 5s, 10s, 10s, ...
+        if (attempt < maxAttempts) {
           await new Promise(r => setTimeout(r, delay));
         }
       }
@@ -101,8 +84,7 @@ class MySqlManager extends ServiceManager
     throw new Error(`Database connection failed after ${maxAttempts} attempts`);
   }
 
-  public async getJob(jobId: string): Promise<ParseJobRow | undefined> 
-{
+  public async getJob(jobId: string): Promise<ParseJobRow | undefined> {
     const result = await this.pool.query<ParseJobRow>(
       "SELECT * FROM parse_jobs WHERE job_id = $1",
       [jobId]
@@ -110,8 +92,7 @@ class MySqlManager extends ServiceManager
     return result.rows[0];
   }
 
-  public async getBatchJobs(batchId: string): Promise<ParseJobRow[]> 
-{
+  public async getBatchJobs(batchId: string): Promise<ParseJobRow[]> {
     const result = await this.pool.query<ParseJobRow>(
       "SELECT * FROM parse_jobs WHERE batch_id = $1",
       [batchId]
@@ -119,8 +100,7 @@ class MySqlManager extends ServiceManager
     return result.rows;
   }
 
-  public async getJobParts(jobId: string): Promise<OutputPartRow[]> 
-{
+  public async getJobParts(jobId: string): Promise<OutputPartRow[]> {
     const result = await this.pool.query<OutputPartRow>(
       "SELECT * FROM output_parts WHERE job_id = $1",
       [jobId]
@@ -132,8 +112,7 @@ class MySqlManager extends ServiceManager
     jobId: string,
     entryName: string,
     entrySize: number
-  ): Promise<void> 
-{
+  ): Promise<void> {
     const { randomUUID } = await import("crypto");
     await this.pool.query(
       `INSERT INTO pending_archive_entries (id, job_id, entry_name, entry_size, status)
@@ -146,8 +125,7 @@ class MySqlManager extends ServiceManager
   public async markPendingEntryProcessing(
     jobId: string,
     entryName: string
-  ): Promise<void> 
-{
+  ): Promise<void> {
     await this.pool.query(
       `UPDATE pending_archive_entries 
        SET status = 'processing', updated_at = NOW() 
@@ -159,8 +137,7 @@ class MySqlManager extends ServiceManager
   public async markPendingEntryCompleted(
     jobId: string,
     entryName: string
-  ): Promise<void> 
-{
+  ): Promise<void> {
     await this.pool.query(
       `UPDATE pending_archive_entries 
        SET status = 'completed', updated_at = NOW() 
@@ -173,8 +150,7 @@ class MySqlManager extends ServiceManager
     jobId: string,
     entryName: string,
     error: string
-  ): Promise<void> 
-{
+  ): Promise<void> {
     await this.pool.query(
       `UPDATE pending_archive_entries 
        SET status = 'failed', error = $3, updated_at = NOW() 
@@ -183,8 +159,7 @@ class MySqlManager extends ServiceManager
     );
   }
 
-  public async getPendingEntries(jobId: string): Promise<PendingArchiveEntryRow[]> 
-{
+  public async getPendingEntries(jobId: string): Promise<PendingArchiveEntryRow[]> {
     const result = await this.pool.query<PendingArchiveEntryRow>(
       "SELECT * FROM pending_archive_entries WHERE job_id = $1",
       [jobId]
@@ -192,8 +167,7 @@ class MySqlManager extends ServiceManager
     return result.rows;
   }
 
-  public async getPendingEntryCount(jobId: string): Promise<{ pending: number; completed: number; failed: number }> 
-{
+  public async getPendingEntryCount(jobId: string): Promise<{ pending: number; completed: number; failed: number }> {
     const result = await this.pool.query(
       `SELECT 
          COUNT(*) FILTER (WHERE status = 'pending') as pending,
@@ -206,8 +180,7 @@ class MySqlManager extends ServiceManager
     return result.rows[0];
   }
 
-  public async getPendingEntryTotalSize(jobId: string): Promise<number> 
-{
+  public async getPendingEntryTotalSize(jobId: string): Promise<number> {
     const result = await this.pool.query(
       `SELECT COALESCE(SUM(entry_size), 0) as total_bytes
        FROM pending_archive_entries 
@@ -217,8 +190,7 @@ class MySqlManager extends ServiceManager
     return parseInt(result.rows[0].total_bytes, 10);
   }
 
-  public async createTables(): Promise<void> 
-{
+  public async createTables(): Promise<void> {
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS parse_jobs (
         job_id VARCHAR(36) PRIMARY KEY,
@@ -351,10 +323,10 @@ export interface ParseJobRow {
   source_ref: string;
   s3_url?: string;
   size?: number;
-  field_spec: any;
+  field_spec: any; // PostgreSQL JSONB is parsed automatically by pg
   exec_path: string;
   status: string;
-  output_paths: any;
+  output_paths: any; // PostgreSQL JSONB is parsed automatically by pg
   counts: Record<string, any>;
   timings: Record<string, any>;
   error?: string;

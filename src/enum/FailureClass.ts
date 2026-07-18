@@ -1,4 +1,4 @@
-export enum _FailureClass {
+export enum FailureClass {
   UNCERTAIN = "uncertain",
   TRANSFORM_ERROR = "transform_error",
   TYPE_MISMATCH = "type_mismatch",

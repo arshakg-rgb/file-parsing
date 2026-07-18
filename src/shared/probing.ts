@@ -1,3 +1,4 @@
+import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
@@ -14,22 +15,19 @@ export interface ProbeResult {
   sampleLines: string[];
 }
 
-class ProbingService extends ServiceManager 
-{
+class ProbingService extends ServiceManager {
   protected static instance: ProbingService;
   private logger: any;
   private gcsUtils: FirestoreCacheUtils;
-  private readonly PROBE_SIZE_PER_COUNT = 536870912;
+  private readonly PROBE_SIZE_PER_COUNT = 536870912; // 512MB
   private readonly PROBE_COUNT_MIN = 1;
   private readonly PROBE_COUNT_MAX = 10;
-  private readonly PROBE_WINDOW_MIN_BYTES = 65536;
-  private readonly PROBE_WINDOW_MAX_BYTES = 1048576;
+  private readonly PROBE_WINDOW_MIN_BYTES = 65536; // 64KB
+  private readonly PROBE_WINDOW_MAX_BYTES = 1048576; // 1MB
   private readonly PROBE_TARGET_LINES = 150;
 
-  private constructor(enforce: () => void) 
-{
-    if (enforce !== Enforce) 
-{
+  private constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate ProbingService directly. Use getInstance()");
     }
     super(enforce);
@@ -38,17 +36,14 @@ class ProbingService extends ServiceManager
     this.gcsUtils = FirestoreCacheUtils.getInstance();
   }
 
-  public static getInstance(): ProbingService 
-{
-    if (!ProbingService.instance) 
-{
+  public static getInstance(): ProbingService {
+    if (!ProbingService.instance) {
       ProbingService.instance = new ProbingService(Enforce);
     }
     return ProbingService.instance;
   }
 
-  public calculateProbeCount(fileSize: number): number 
-{
+  public calculateProbeCount(fileSize: number): number {
     const sizePerProbe = this.PROBE_SIZE_PER_COUNT;
     const idealCount = Math.ceil(fileSize / sizePerProbe);
     
@@ -58,8 +53,7 @@ class ProbingService extends ServiceManager
     );
   }
 
-  public calculateProbeWindow(avgRowWidth: number, maxRowWidth: number): number 
-{
+  public calculateProbeWindow(avgRowWidth: number, maxRowWidth: number): number {
     const minWidth = this.PROBE_WINDOW_MIN_BYTES;
     const maxWidth = this.PROBE_WINDOW_MAX_BYTES;
     const targetLines = this.PROBE_TARGET_LINES;
@@ -69,28 +63,23 @@ class ProbingService extends ServiceManager
     return Math.max(minWidth, Math.min(widthBased, maxWidth));
   }
 
-  public generateProbeOffsets(fileSize: number, probeCount: number): number[] 
-{
+  public generateProbeOffsets(fileSize: number, probeCount: number): number[] {
     const offsets: number[] = [];
     
-    if (probeCount === 1) 
-{
+    if (probeCount === 1) {
       return [0];
     }
     
     const step = Math.floor(fileSize / probeCount);
     
-    for (let i = 0; i < probeCount; i++) 
-{
+    for (let i = 0; i < probeCount; i++) {
       offsets.push(i * step);
     }
     
-    if (!offsets.includes(0)) 
-{
+    if (!offsets.includes(0)) {
       offsets.push(0);
     }
-    if (!offsets.includes(fileSize - 1)) 
-{
+    if (!offsets.includes(fileSize - 1)) {
       offsets.push(fileSize - 1);
     }
     
@@ -102,8 +91,7 @@ class ProbingService extends ServiceManager
     key: string,
     offset: number,
     fileSize: number
-  ): Promise<ProbeResult> 
-{
+  ): Promise<ProbeResult> {
     const windowSize = this.PROBE_WINDOW_MIN_BYTES;
     const endOffset = Math.min(offset + windowSize - 1, fileSize - 1);
     
@@ -116,8 +104,7 @@ class ProbingService extends ServiceManager
     const lines = content.split("\n").filter(line => line.trim());
     const lineCount = lines.length;
     
-    if (lineCount === 0) 
-{
+    if (lineCount === 0) {
       return {
         offset,
         size: buffer.length,
@@ -162,8 +149,7 @@ class ProbingService extends ServiceManager
     encoding: string;
     avgRowWidth: number;
     maxRowWidth: number;
-  }> 
-{
+  }> {
     const fileSize = await this.gcsUtils.objectSize(bucket, key);
     const probeCount = this.calculateProbeCount(fileSize);
     const offsets = this.generateProbeOffsets(fileSize, probeCount);
@@ -180,16 +166,14 @@ class ProbingService extends ServiceManager
     let totalMaxRowWidth = 0;
     let finalEncoding = "utf-8";
     
-    for (const offset of offsets) 
-{
+    for (const offset of offsets) {
       const result = await this.executeProbe(bucket, key, offset, fileSize);
       probeResults.push(result);
       
       totalAvgRowWidth += result.avgRowWidth;
       totalMaxRowWidth = Math.max(totalMaxRowWidth, result.maxRowWidth);
       
-      if (result.encoding !== "utf-8" && finalEncoding === "utf-8") 
-{
+      if (result.encoding !== "utf-8" && finalEncoding === "utf-8") {
         finalEncoding = result.encoding;
       }
     }
@@ -222,10 +206,8 @@ class ProbingService extends ServiceManager
     likelyHasEmbeddedNewlines: boolean;
     likelyHasQuotedFields: boolean;
     suggestedDelimiter: string;
-  } 
-{
-    if (probeResults.length === 0) 
-{
+  } {
+    if (probeResults.length === 0) {
       return {
         isHomogeneous: true,
         likelyHasEmbeddedNewlines: false,
@@ -233,36 +215,32 @@ class ProbingService extends ServiceManager
         suggestedDelimiter: ",",
       };
     }
+    
+    const firstSample = probeResults[0].sampleLines;
     let consistentStructure = true;
     let hasQuotes = false;
     let hasCommas = false;
     let hasTabs = false;
     let hasPipes = false;
     
-    for (const result of probeResults) 
-{
-      for (const line of result.sampleLines) 
-{
+    for (const result of probeResults) {
+      for (const line of result.sampleLines) {
         if (line.includes("\"")) hasQuotes = true;
         
         if (line.includes(",")) hasCommas = true;
         if (line.includes("\t")) hasTabs = true;
         if (line.includes("|")) hasPipes = true;
         
-        if ((line.match(/"/g) || []).length % 2 !== 0) 
-{
+        if ((line.match(/"/g) || []).length % 2 !== 0) {
           consistentStructure = false;
         }
       }
     }
     
     let suggestedDelimiter = ",";
-    if (hasTabs && !hasCommas) 
-{
+    if (hasTabs && !hasCommas) {
       suggestedDelimiter = "\t";
-    }
- else if (hasPipes && !hasCommas && !hasTabs) 
-{
+    } else if (hasPipes && !hasCommas && !hasTabs) {
       suggestedDelimiter = "|";
     }
     
@@ -280,20 +258,16 @@ export default ProbingService;
 
 const probingService = ProbingService.getInstance();
 
-export class AdaptiveProbing 
-{
-  calculateProbeCount(fileSize: number): number 
-{
+export class AdaptiveProbing {
+  calculateProbeCount(fileSize: number): number {
     return probingService.calculateProbeCount(fileSize);
   }
 
-  calculateProbeWindow(avgRowWidth: number, maxRowWidth: number): number 
-{
+  calculateProbeWindow(avgRowWidth: number, maxRowWidth: number): number {
     return probingService.calculateProbeWindow(avgRowWidth, maxRowWidth);
   }
 
-  generateProbeOffsets(fileSize: number, probeCount: number): number[] 
-{
+  generateProbeOffsets(fileSize: number, probeCount: number): number[] {
     return probingService.generateProbeOffsets(fileSize, probeCount);
   }
 
@@ -302,8 +276,7 @@ export class AdaptiveProbing
     key: string,
     offset: number,
     fileSize: number
-  ): Promise<ProbeResult> 
-{
+  ): Promise<ProbeResult> {
     return probingService.executeProbe(bucket, key, offset, fileSize);
   }
 
@@ -315,8 +288,7 @@ export class AdaptiveProbing
     encoding: string;
     avgRowWidth: number;
     maxRowWidth: number;
-  }> 
-{
+  }> {
     return probingService.probeFile(bucket, key);
   }
 
@@ -325,8 +297,7 @@ export class AdaptiveProbing
     likelyHasEmbeddedNewlines: boolean;
     likelyHasQuotedFields: boolean;
     suggestedDelimiter: string;
-  } 
-{
+  } {
     return probingService.analyzeProbes(probeResults);
   }
 }

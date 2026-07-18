@@ -1,6 +1,5 @@
 import tseslint from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
-import unusedImports from "eslint-plugin-unused-imports";
 
 export default [
   {
@@ -13,23 +12,18 @@ export default [
       }
     },
     plugins: {
-      "@typescript-eslint": tseslint,
-      "unused-imports": unusedImports
+      "@typescript-eslint": tseslint
     },
     rules: {
       ...tseslint.configs["flat/eslint-recommended"].rules,
       ...tseslint.configs["flat/recommended"].rules,
       "@typescript-eslint/explicit-function-return-type": "off",
       "@typescript-eslint/no-explicit-any": "warn",
-      "@typescript-eslint/no-unused-vars": "off",
-      "unused-imports/no-unused-imports": "error",
-      "unused-imports/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+      "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
       "@typescript-eslint/no-inferrable-types": "off",
       "no-console": "warn",
       "semi": ["error", "always"],
-      "quotes": ["error", "double"],
-      "brace-style": ["error", "allman", { "allowSingleLine": false }],
-      "no-inline-comments": ["error", { "ignorePattern": "^(TODO|FIXME|eslint)" }]
+      "quotes": ["error", "double"]
     }
   },
   {

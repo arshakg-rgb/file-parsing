@@ -1,13 +1,11 @@
 import { ErrorInfo } from "./io/ErrorInfo.js";
 
-export class CustomError extends Error 
-{
+export class CustomError extends Error {
   public readonly code: string;
   public readonly statusCode: number;
   public readonly details?: any;
 
-  constructor(message: string, code: string = "CUSTOM_ERROR", statusCode: number = 500, details?: any) 
-{
+  constructor(message: string, code: string = "CUSTOM_ERROR", statusCode: number = 500, details?: any) {
     super(message);
     this.name = this.constructor.name;
     this.code = code;
@@ -16,8 +14,7 @@ export class CustomError extends Error
     Error.captureStackTrace(this, this.constructor);
   }
 
-  toJSON(): ErrorInfo 
-{
+  toJSON(): ErrorInfo {
     return {
       message: this.message,
       code: this.code,

@@ -1,38 +1,31 @@
+import Config from "../../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../../config/ServiceManager.js";
 import { InstantiationError } from "../../errors/InstantiationError.js";
 import { metrics } from "./metrics.js";
 
-class PrometheusService extends ServiceManager 
-{
+class PrometheusService extends ServiceManager {
   protected static instance: PrometheusService;
 
-  private constructor(enforce: () => void) 
-{
-    if (enforce !== Enforce) 
-{
+  private constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate PrometheusService directly. Use getInstance()");
     }
     super(enforce);
   }
 
-  public static getInstance(): PrometheusService 
-{
-    if (!PrometheusService.instance) 
-{
+  public static getInstance(): PrometheusService {
+    if (!PrometheusService.instance) {
       PrometheusService.instance = new PrometheusService(Enforce);
     }
     return PrometheusService.instance;
   }
 
-  public formatPrometheusMetrics(): string 
-{
+  public formatPrometheusMetrics(): string {
     const lines: string[] = [];
   
-    for (const [key, value] of Object.entries(metrics.toJSON().counters)) 
-{
+    for (const [key, value] of Object.entries(metrics.toJSON().counters)) {
       const [name, ...tags] = key.split(",");
-      const tagStr = tags.map((t) => 
-{
+      const tagStr = tags.map((t) => {
         const [k, v] = t.split("=");
         return `${k}="${v}"`;
       }).join(",");
@@ -40,11 +33,9 @@ class PrometheusService extends ServiceManager
       lines.push(`${name}{${tagStr}} ${value}`);
     }
   
-    for (const [key, value] of Object.entries(metrics.toJSON().gauges)) 
-{
+    for (const [key, value] of Object.entries(metrics.toJSON().gauges)) {
       const [name, ...tags] = key.split(",");
-      const tagStr = tags.map((t) => 
-{
+      const tagStr = tags.map((t) => {
         const [k, v] = t.split("=");
         return `${k}="${v}"`;
       }).join(",");
@@ -52,11 +43,9 @@ class PrometheusService extends ServiceManager
       lines.push(`${name}{${tagStr}} ${value}`);
     }
   
-    for (const [key, value] of Object.entries(metrics.toJSON().histograms)) 
-{
+    for (const [key, value] of Object.entries(metrics.toJSON().histograms)) {
       const [name, ...tags] = key.split(",");
-      const tagStr = tags.map((t) => 
-{
+      const tagStr = tags.map((t) => {
         const [k, v] = t.split("=");
         return `${k}="${v}"`;
       }).join(",");
@@ -77,7 +66,6 @@ export default PrometheusService;
 
 const prometheusService = PrometheusService.getInstance();
 
-export function formatPrometheusMetrics(): string 
-{
+export function formatPrometheusMetrics(): string {
   return prometheusService.formatPrometheusMetrics();
 }

@@ -6,8 +6,7 @@ const REGION = "us-east-1";
 const BUCKET = "file-parsing-pipeline-data";
 const KEY = "test/sample.csv";
 
-async function main() 
-{
+async function main() {
   const filePath = process.argv[2] || "test/sample.csv";
   const body = await readFile(filePath);
   const s3 = new S3Client({
@@ -20,8 +19,7 @@ async function main()
   console.log(`Uploaded s3://${BUCKET}/${KEY}`);
 }
 
-main().catch((err) => 
-{
+main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
