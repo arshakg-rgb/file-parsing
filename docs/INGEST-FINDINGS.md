@@ -61,8 +61,8 @@ to be transient and never logged; entry names come straight from an attacker-con
 ### [0] CRITICAL — Archive passwords leak four different ways
 
 **Anchors:** `src/services/ingest/normalizer.ts:148,280,519,561`;
-`src/services/archive_entry_consumer/handler.ts:80,83`; `src/services/ingest/normalizer.ts:151`;
-`src/services/job_service/router.ts:150-154`; `src/services/ingest/handler.ts:19` (module-global
+`src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:80,83`; `src/services/ingest/normalizer.ts:151`;
+`src/services/job_service/JobServiceRouter.ts:150-154`; `src/services/ingest/IngestServiceHandler.ts:19` (module-global
 `_passwordCache`); `src/services/ingest/normalizer.ts:246`.
 
 The RAR path shells out to `unrar` and passes the password as a single `'-p' + password` argv
@@ -105,7 +105,7 @@ extraction reads and exfiltrates the key into a user-readable artifact.
 ### [12] HIGH — `unrar` argument injection via entry names
 
 **Anchors:** `src/services/ingest/normalizer.ts:278`;
-`src/services/archive_entry_consumer/handler.ts:78`.
+`src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:78`.
 
 Attacker-controlled entry names are passed positionally to `unrar` with **no `--` end-of-options
 separator** (e.g. `spawn('unrar', ['p','-inul', tmpPath, entryName])`). An entry whose name begins
@@ -198,7 +198,7 @@ parent batch — batch counts are wrong and completion logic misfires.
 ### [26] MEDIUM — RAR entries written to the wrong bucket
 
 **Anchors:** `src/services/ingest/normalizer.ts:274`;
-`src/services/archive_entry_consumer/handler.ts:74-75`.
+`src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:74-75`.
 
 The extracted `entryKey` is written back into the **source archive bucket**, not `DATA_BUCKET`. On
 a read-only customer source bucket this yields a `403` (surfacing as a misleading "no extractable
@@ -228,7 +228,7 @@ compound each other.
 
 ### [4] CRITICAL — Retry counter hardcoded to 1; poison messages redeliver forever
 
-**Anchors:** `src/services/archive_entry_consumer/handler.ts:314` (call site),
+**Anchors:** `src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:314` (call site),
 `:25` (`MAX_RETRIES = 3`), `:255-257` (`markPendingEntryFailed`), `:127` (`handleArchiveEntry`
 signature).
 
@@ -286,7 +286,7 @@ and the job is wedged in `awaiting_password`.
 
 ### [15] HIGH — Total-size bomb guard double-counts the current entry
 
-**Anchors:** `src/services/archive_entry_consumer/handler.ts:162,165`
+**Anchors:** `src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:162,165`
 (`markPendingEntryProcessing` before `getPendingEntryTotalSize`); `src/shared/db.ts:188-192`
 (`SUM` over `status IN ('completed', 'processing')`).
 
@@ -300,7 +300,7 @@ forever.
 
 ### [16] HIGH — Ingest guard is not idempotent
 
-**Anchors:** `src/services/ingest/handler.ts` — short-circuit on `INGESTING`/`FAILED` then ack.
+**Anchors:** `src/services/ingest/IngestServiceHandler.ts` — short-circuit on `INGESTING`/`FAILED` then ack.
 
 The ingest handler only short-circuits (and acks) when the job is already `INGESTING` or `FAILED`.
 A redelivery *after* `DONE` is not caught, so it re-extracts the archive and duplicates every child.
@@ -332,7 +332,7 @@ no child ever runs, and no one notices because the job reports success.
 
 ### [21] HIGH — Permanent-error ack orphans the pending row
 
-**Anchors:** `src/services/archive_entry_consumer/handler.ts:323` (ack on "exceeds maximum" depth).
+**Anchors:** `src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:323` (ack on "exceeds maximum" depth).
 
 The depth check throws *before* `markProcessing`/`markFailed` run. `consumerLoop` catches the
 "exceeds maximum" error and acks the message (line ~323) but never updates the entry row, so it
@@ -418,7 +418,7 @@ to a second worker, and now two workers extract the same archive in parallel.
 ### [18] HIGH — Temp file / handle leaks on error paths
 
 **Anchors:** `src/services/ingest/normalizer.ts:133` (RAR download before try/finally);
-`src/services/archive_entry_consumer/handler.ts:67`; zip/tar/7z cleanup at `normalizer.ts:417-418,
+`src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:67`; zip/tar/7z cleanup at `normalizer.ts:417-418,
 461-462, 494-495` (straight-line, not `finally`).
 
 The RAR temp download happens *before* the `try/finally` that would unlink it (line ~133), and the
@@ -439,7 +439,7 @@ objects long afterward.
 
 ### [29] MEDIUM — Concurrency cap is ineffective
 
-**Anchors:** `src/services/archive_entry_consumer/handler.ts:310`
+**Anchors:** `src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:310`
 (`messagesByJob...map(async ...)`).
 
 The consumer builds promises with `.map(async ...)`, which starts every promise eagerly. The
@@ -478,8 +478,8 @@ job fails on the one bad entry.
 
 ### [25] MEDIUM — Ingest/consumer write `parse_jobs` directly (cross-service races)
 
-**Anchors:** `src/services/ingest/handler.ts:79` (UPDATE `s3_url`/`size`);
-`src/services/archive_entry_consumer/handler.ts` reads `parse_jobs` to decide DONE.
+**Anchors:** `src/services/ingest/IngestServiceHandler.ts:79` (UPDATE `s3_url`/`size`);
+`src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts` reads `parse_jobs` to decide DONE.
 
 The ingest handler `UPDATE`s `parse_jobs` (`s3_url`, `size`) directly at line ~79, and the archive
 entry consumer reads `parse_jobs` to decide completion. These cross-service writes race against the

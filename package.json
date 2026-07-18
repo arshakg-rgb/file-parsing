@@ -7,7 +7,7 @@
   "types": "dist/shared/s3Utils.d.ts",
   "scripts": {
     "build": "tsc",
-    "dev:job": "tsx src/services/job_service/main.ts",
+    "dev:job": "tsx src/services/job_service/JobServiceHandler.ts",
     "dev:ingest": "tsx src/services/ingest/IngestServiceHandler.ts",
     "dev:detect": "tsx src/services/detect_bootstrap/DetectBootstrapServiceHandler.ts",
     "dev:parse": "tsx src/services/stream_parser/StreamParserServiceHandler.ts",

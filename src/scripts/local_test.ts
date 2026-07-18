@@ -711,7 +711,7 @@ check("UTF-8 content round-trips correctly (not mojibake) once detected as utf-8
 
 console.log("\n=== 17. Ordered line classifier ===");
 
-const { LineClassifier } = await import("../services/stream_parser/classifier.js");
+const { LineClassifier } = await import("../services/stream_parser/LineClassifier.js");
 const FS = ["email", "name", "phone", "address"];
 const classifyOne = (fields: string[], line: string) =>
   new LineClassifier("test", fields, [], []).classify(line, 0, line.length);

@@ -5,7 +5,7 @@ import { sendRaw, publishEvent } from "../../shared/queueUtils.js";
 import { settings } from "../../shared/config.js";
 import { randomUUID } from "crypto";
 import { SourceType } from "../../shared/models/job.js";
-import { finalizeOutput } from "./finalize.js";
+import { finalizeOutput } from "./FinalizationService.js";
 
 export class TransitionError extends Error {
   constructor(message: string) {

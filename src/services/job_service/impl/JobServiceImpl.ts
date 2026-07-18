@@ -6,7 +6,7 @@ import MySqlManager from "../../../config/db/MySqlManager.js";
 import { receiveMessages, deleteMessage } from "../../../shared/queueUtils.js";
 import { JobEvent, EventType } from "../../../shared/models/events.js";
 import { handleEvent } from "../stateMachine.js";
-import { router } from "../router.js";
+import { router } from "../JobServiceRouter.js";
 import { createTables } from "../../../shared/db.js";
 import { JobService } from "../JobService.js";
 import { IJobService, JobRequest, JobResponse } from "../io/IJobService.js";

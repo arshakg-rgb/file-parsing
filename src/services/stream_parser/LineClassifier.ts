@@ -2,34 +2,12 @@ import { settings } from "../../shared/config.js";
 import { FailureClass, ColumnMap } from "../../shared/models/job.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
 import { safeRegex, safeRegexTest } from "../../utils/validator/safeRegex.js";
+import { AIVerdict, ClassifyRequest, ClassifyResponse } from "../ai_classifier/io/IAiClassifier.js";
+import { ClassifyResult, IClassifier } from "./io/IClassifier.js";
 
-interface ClassifyRequest {
-  unknown_line: string;
-  field_spec: string[];
-  context_lines?: string[];
-  job_id?: string;
-}
+export { ClassifyResult } from "./io/IClassifier.js";
 
-interface ClassifyResponse {
-  kind: "record-template" | "rubbish-signature" | "uncertain";
-  template?: RecordTemplate | RubbishTemplate;
-}
-
-enum AIVerdict {
-  RECORD_TEMPLATE = "record-template",
-  RUBBISH_SIGNATURE = "rubbish-signature",
-  UNCERTAIN = "uncertain"
-}
-
-export interface ClassifyResult {
-  verdict: "parsed" | "rubbish" | "uncertain";
-  row?: Record<string, any>;
-  template_id?: string;
-  template_version?: number;
-  failure_class?: FailureClass;
-}
-
-export class LineClassifier {
+export class LineClassifier implements IClassifier {
   private jobId: string;
   private fieldSpec: string[];
   private recordTemplates: RecordTemplate[];

@@ -3,7 +3,7 @@ import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js
 import { JobStatus, ParseMessage, FailureClass, JobCounts, totalFailed } from "../../shared/models/job.js";
 import { receiveMessages, deleteMessage, publishEvent } from "../../shared/queueUtils.js";
 import { parseGcsUrl, streamLines, objectSize, readRange } from "../../shared/gcsUtils.js";
-import { LineClassifier } from "./classifier.js";
+import { LineClassifier } from "./LineClassifier.js";
 import { templateRegistry } from "../../shared/templateRegistry.js";
 import { OutputManager } from "../../shared/parquetWriter.js";
 import { CsvOutputWriter } from "../../shared/csvOutputWriter.js";

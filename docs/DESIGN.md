@@ -33,7 +33,7 @@ Conceptually the ordered stages are:
    - `rubbish-signature` → cached, dropped + logged;
    - `uncertain` → dead-letter for **human review** (never a guess).
 
-### 2.1 Implementation — `src/services/stream_parser/classifier.ts`
+### 2.1 Implementation — `src/services/stream_parser/LineClassifier.ts`
 
 `LineClassifier.classify(line, byteOffset, byteLength)` returns `{ verdict: "parsed" | "rubbish" | "uncertain", row?, template_id?, template_version?, failure_class? }`. Its actual stage order is a faithful, slightly richer expansion of the intent:
 
@@ -65,7 +65,7 @@ The rationale is asymmetric cost: **dropping a real record is unrecoverable; an 
 
 ### 2.3 Thrashing guard
 
-Cached-template matching is local and cheap. A match-rate monitor (`src/services/stream_parser/matchRate.ts`; defaults `MATCH_RATE_FLOOR = 0.1`, `MATCH_RATE_WINDOW = 1000`) watches the local-hit ratio so that a collapse in match rate flags the job instead of silently hammering AI. AI cost is bounded by the number of **distinct line patterns** per file, not by the number of lines.
+Cached-template matching is local and cheap. A match-rate monitor (`src/services/stream_parser/MatchRateMonitor.ts`; defaults `MATCH_RATE_FLOOR = 0.1`, `MATCH_RATE_WINDOW = 1000`) watches the local-hit ratio so that a collapse in match rate flags the job instead of silently hammering AI. AI cost is bounded by the number of **distinct line patterns** per file, not by the number of lines.
 
 ---
 
@@ -113,7 +113,7 @@ The system is eight *logical* services. Deployment packaging is a separate quest
 - **Encrypted archives** → `awaiting_password`: the job holds no worker, allows bounded attempts (`ARCHIVE_PASSWORD_MAX_ATTEMPTS`, default 3), and on exhaustion transitions to `failed` (`password_unavailable`). Passwords arrive via `POST /jobs/:job_id/password` → an `action: "provide_password"` message on the ingest queue.
 
 ### 4.3 Detect / Bootstrap — adaptive probing
-`src/services/detect_bootstrap/handler.ts`, `src/shared/probing.ts`
+`src/services/detect_bootstrap/DetectBootstrapServiceHandler.ts`, `src/shared/probing.ts`
 
 - **Adaptive probing** decides how to read a file. Probe window `W = max(PROBE_WINDOW_MIN_BYTES, avg_row × PROBE_TARGET_LINES, max_row × 4)` clamped to `PROBE_WINDOW_MAX_BYTES` — defaults `max(64KB, ~150×avg_row, 4×max_row)` capped at 1MB. The unit of information is **lines** (~100–150 per probe): one line can't identify a dialect.
 - Probe **count** scales with file size: `ceil(fileSize / PROBE_SIZE_PER_COUNT)` (512MB per probe) clamped to `[PROBE_COUNT_MIN, PROBE_COUNT_MAX]` = `[5, 24]`, evenly spaced, with **head and tail always** included (`generateProbeOffsets`).
@@ -140,18 +140,18 @@ The system is eight *logical* services. Deployment packaging is a separate quest
 - It **owns the shared, versioned template registry**. Production uses Vertex AI (`VERTEX_MODEL`, default `gemini-2.5-flash`); local vs hosted model is a deployment knob (`mock.ts`, `BEDROCK_MODEL_ID`, `ANTHROPIC_*`). Templates persist to Firestore (`TEMPLATE_COLLECTION`, default `file-parsing-templates`).
 
 ### 4.6 Load — idempotent bulk load
-`src/services/load/handler.ts`
+`src/services/load/LoadServiceHandler.ts`
 
 - Bulk-loads merged Parquet into `parsed_records`. **Idempotent** by design: rows are keyed on `(job_id, byte_offset)`, and the insert is `INSERT ... ON CONFLICT ("_job_id", "_byte_offset") DO NOTHING`, so a crash-and-rerun cannot duplicate rows.
 - Kept a separate stage on purpose: the object store is a replayable checkpoint, so a DB outage never stalls parsing. Non-system columns are folded into a `fields` JSONB payload; system columns (`_job_id`, `_byte_offset`, `_line_no`, `_template_id`, …) are stored explicitly. Recovered rows from Retry are loaded through the same `upsertRows` path.
 
 ### 4.7 Report — terminal-state summary
-`src/services/report/handler.ts`
+`src/services/report/ReportServiceHandler.ts`
 
 - Fires on any terminal state. Per file: counts (parsed / dropped-as-rubbish / failed), templates + versions used, failures by class with DLQ pointers, a rubbish-log pointer, and artifact locations. Also produces a batch roll-up.
 
 ### 4.8 Retry — DLQ only
-`src/services/retry/handler.ts`
+`src/services/retry/RetryServiceHandler.ts`
 
 - Consumes the DLQ (`fpp-line-dlq`) only. **Rubbish is never retried.**
 - Refetches just the failed line by byte-range and re-classifies per failure class:

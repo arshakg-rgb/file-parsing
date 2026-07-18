@@ -23,7 +23,7 @@ The unit-test suite is currently **green while production is broken**, so fixing
 Do the following as part of **CU6**, before relying on any test signal:
 
 - Delete the shadow `detectArchiveType` in `local_test.ts` and import the **real** exported `detectArchiveType` from `normalizer.ts`.
-- **Export** `handleArchiveEntry` from `src/services/archive_entry_consumer/handler.ts` (currently module-private at `handler.ts:127`) so retry/permanent-error logic is unit-testable.
+- **Export** `handleArchiveEntry` from `src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts` (currently module-private at `handler.ts:127`) so retry/permanent-error logic is unit-testable.
 - Guard the module-bottom call `consumerLoop()` (`handler.ts:350`) behind an `import.meta.url` main-module check so importing the module for tests does not start the consumer loop.
 
 These three changes make findings `[4]`, `[15]`, and `[21]` unit-testable.
@@ -179,11 +179,11 @@ The ordering above is not a preference; violating it duplicates or drops user da
 
 | Path | Role |
 |------|------|
-| `src/services/ingest/handler.ts` | Ingest message handler; idempotency guard, `_passwordCache` (`:19`), status transitions |
+| `src/services/ingest/IngestServiceHandler.ts` | Ingest message handler; idempotency guard, `_passwordCache` (`:19`), status transitions |
 | `src/services/ingest/normalizer.ts` | Archive detection + extraction (RAR/zip/gz/tar/7z), magic bytes (`:76-78`), `unrar` argv |
 | `src/services/ingest/http_server.ts` | `POST /upload` + health endpoint |
 | `src/services/ingest/ssrf_guard.ts` | `checkUrl` / `fetchUrlStream`, IP blocklist |
-| `src/services/archive_entry_consumer/handler.ts` | Async per-entry consumer; `handleArchiveEntry` (`:127`), `consumerLoop` (`:283`, invoked `:350`) |
+| `src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts` | Async per-entry consumer; `handleArchiveEntry` (`:127`), `consumerLoop` (`:283`, invoked `:350`) |
 | `src/services/job_service/stateMachine.ts` | `createChildJob` (`:114`), event handling |
 | `src/shared/db.ts` | `getPendingEntryCount` (`:175`), `getPendingEntryTotalSize` (`:188`), pending-entry mutators |
 | `src/shared/queueUtils.ts` | `publishEvent` (`:263`), `sendRaw` (`:242`), `pubReceive` (`:120`) |

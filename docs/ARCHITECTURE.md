@@ -20,15 +20,15 @@
 
 | Service | Entry point | Consumes | Produces | Role |
 |---|---|---|---|---|
-| **job-service** | `src/services/job_service/main.ts` | `fpp-job-events` | all status writes | REST API (`/v1`, port 8000) **and** the sole event-bus consumer; owns every `parse_jobs` status transition |
-| **ingest** | `src/services/ingest/handler.ts` (+ `http_server.ts`) | `fpp-ingest` | `fpp-classify`, `fpp-archive-entry`, events | resolve source, SSRF-guard URL fetches, detect & extract archives |
-| **detect-bootstrap** | `src/services/detect_bootstrap/handler.ts` | `fpp-classify` | `fpp-parse` | probe file structure, fingerprint, AI-mint seed templates |
-| **stream-parser** | `src/services/stream_parser/handler.ts` | `fpp-parse` | parquet in GCS, `fpp-line-dlq`, events | stream lines, classify each, write parquet + `parsed_records` |
+| **job-service** | `src/services/job_service/JobServiceHandler.ts` | `fpp-job-events` | all status writes | REST API (`/v1`, port 8000) **and** the sole event-bus consumer; owns every `parse_jobs` status transition |
+| **ingest** | `src/services/ingest/IngestServiceHandler.ts` (+ `http_server.ts`) | `fpp-ingest` | `fpp-classify`, `fpp-archive-entry`, events | resolve source, SSRF-guard URL fetches, detect & extract archives |
+| **detect-bootstrap** | `src/services/detect_bootstrap/DetectBootstrapServiceHandler.ts` | `fpp-classify` | `fpp-parse` | probe file structure, fingerprint, AI-mint seed templates |
+| **stream-parser** | `src/services/stream_parser/StreamParserServiceHandler.ts` | `fpp-parse` | parquet in GCS, `fpp-line-dlq`, events | stream lines, classify each, write parquet + `parsed_records` |
 | **ai-classifier** | `src/services/ai_classifier/main.ts` | HTTP (`/classify`, port 8001) | — | standalone Express AI service (Firestore-backed); mostly parallel/unwired from the hot path |
-| **load** | `src/services/load/handler.ts` | `fpp-load` | `fpp-report` | bulk-insert parquet rows into `parsed_records` |
-| **report** | `src/services/report/handler.ts` | `fpp-report` | events | write per-job report JSON + batch rollups |
-| **retry** | `src/services/retry/handler.ts` | `fpp-line-dlq` | `fpp-load` (recovered rows) | re-process dead-lettered lines by failure class |
-| **archive-entry-consumer** | `src/services/archive_entry_consumer/handler.ts` | `fpp-archive-entry` | events | process large async archive entries, close out the parent |
+| **load** | `src/services/load/LoadServiceHandler.ts` | `fpp-load` | `fpp-report` | bulk-insert parquet rows into `parsed_records` |
+| **report** | `src/services/report/ReportServiceHandler.ts` | `fpp-report` | events | write per-job report JSON + batch rollups |
+| **retry** | `src/services/retry/RetryServiceHandler.ts` | `fpp-line-dlq` | `fpp-load` (recovered rows) | re-process dead-lettered lines by failure class |
+| **archive-entry-consumer** | `src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts` | `fpp-archive-entry` | events | process large async archive entries, close out the parent |
 
 ### 1.2 Queues / topics
 
@@ -87,7 +87,7 @@ Notes that matter:
 
 ### 2.2 The event bus (`fpp-job-events`)
 
-Single topic, single consumer: **job-service**'s `eventConsumerLoop` in `src/services/job_service/main.ts`. Services **never mutate job status directly** — they publish events and job-service applies the transition. Event types (`src/shared/models/events.ts`):
+Single topic, single consumer: **job-service**'s `eventConsumerLoop` in `src/services/job_service/JobServiceHandler.ts`. Services **never mutate job status directly** — they publish events and job-service applies the transition. Event types (`src/shared/models/events.ts`):
 
 `job_status_changed`, `entry_discovered`, `parsing_completed`, `loading_completed`, `reporting_completed`, `error_occurred`.
 
@@ -97,7 +97,7 @@ Single topic, single consumer: **job-service**'s `eventConsumerLoop` in `src/ser
 
 ## 3. REST API
 
-Express, mounted under `/v1`, **port 8000** (`src/services/job_service/router.ts`, `main.ts`).
+Express, mounted under `/v1`, **port 8000** (`src/services/job_service/JobServiceRouter.ts`, `main.ts`).
 
 | Method + path | Purpose |
 |---|---|
@@ -145,7 +145,7 @@ Magic-byte detection on the first **512 bytes** (zip / gz / 7z / rar / tar). Bom
 
 ## 5. Detect-bootstrap (probing, fingerprinting, templates)
 
-Consumes `fpp-classify` (`src/services/detect_bootstrap/handler.ts`).
+Consumes `fpp-classify` (`src/services/detect_bootstrap/DetectBootstrapServiceHandler.ts`).
 
 - **Head window** ≤ 64 KB; encoding via `jschardet`.
 - **Probe window** = `clamp(max(150·avgRow, 4·maxRow), 64KB, 1MB)`; **5–24 evenly spaced probes** (roughly one per 512 MB).
@@ -170,9 +170,9 @@ Upsert `ON CONFLICT (fingerprint)` bumps `version + 1`.
 
 ## 6. Stream-parser (line classification, AI, parquet)
 
-Consumes `fpp-parse` (`src/services/stream_parser/handler.ts`).
+Consumes `fpp-parse` (`src/services/stream_parser/StreamParserServiceHandler.ts`).
 
-### 6.1 LineClassifier (`src/services/stream_parser/classifier.ts`)
+### 6.1 LineClassifier (`src/services/stream_parser/LineClassifier.ts`)
 
 Ordered and deterministic:
 
@@ -194,7 +194,7 @@ The parser only **files uncertain lines to the DLQ**; it does not call AI per li
 
 ### 6.3 Parquet — the live path
 
-The **live** writer is `src/shared/parquetWriter.ts` (`OutputManager` / `OutputBuffer`). `src/services/stream_parser/parquetWriter.ts` (`ParquetWriterPool` / `RubbishLogWriter` / `DLQWriter`) is a **diverged dead twin with zero importers** — yet it is the only code that would populate `output_parts` and the only code with flush-failure re-queue.
+The **live** writer is `src/shared/parquetWriter.ts` (`OutputManager` / `OutputBuffer`). `src/services/stream_parser/ParquetWriterPool.ts` (`ParquetWriterPool` / `RubbishLogWriter` / `DLQWriter`) is a **diverged dead twin with zero importers** — yet it is the only code that would populate `output_parts` and the only code with flush-failure re-queue.
 
 **Live invariants** (hard-won during the 2026-07-17 firefight):
 
@@ -214,13 +214,13 @@ The **live** writer is `src/shared/parquetWriter.ts` (`OutputManager` / `OutputB
 
 ## 7. Finalize, load, report, retry
 
-### 7.1 Finalize (`src/services/job_service/finalize.ts`)
+### 7.1 Finalize (`src/services/job_service/FinalizationService.ts`)
 
 Runs inside job-service. Merges parquet parts **per template** with a 64 MB cap (`MAX_MERGED_PART_BYTES`), backfills line numbers by **reading the entire source file** (an OOM risk on large inputs), applies the quality gate, then publishes to `fpp-load`.
 
 > `finalize.groupByTemplate` mis-parses the `templateId` out of filenames (it does not account for the `flushCounter` suffix). Grouping still works, but the merged directory names are polluted.
 
-### 7.2 Load (`fpp-load`, `src/services/load/handler.ts`)
+### 7.2 Load (`fpp-load`, `src/services/load/LoadServiceHandler.ts`)
 
 Downloads each parquet part **fully into memory**, reads it with `@dsnp/parquetjs`, and does a **multi-row parameterized `INSERT`** into `parsed_records` (**not** `COPY`).
 
@@ -231,13 +231,13 @@ Downloads each parquet part **fully into memory**, reads it with `@dsnp/parquetj
 
 Then publishes to `fpp-report`.
 
-### 7.3 Report (`fpp-report`, `src/services/report/handler.ts`)
+### 7.3 Report (`fpp-report`, `src/services/report/ReportServiceHandler.ts`)
 
 Writes `gs://datalead-osint/reports/<jobId>/report.json`. Writes a batch rollup at `gs://datalead-osint/reports/batches/<batchId>/rollup.json` **only when every sibling is terminal** (so one stuck child blocks the rollup forever). Emits `REPORTING_COMPLETED`; job-service performs the final `done` transition.
 
 > Quirk: `rubbish_log_path` and `dlq_count` are smuggled to report inside `parse_jobs.timings` as `_rubbish_log_path` / `_dlq_count`.
 
-### 7.4 Retry + DLQ (`fpp-line-dlq`, `src/services/retry/handler.ts`, `src/shared/dlqManager.ts`)
+### 7.4 Retry + DLQ (`fpp-line-dlq`, `src/services/retry/RetryServiceHandler.ts`, `src/shared/dlqManager.ts`)
 
 `DLQManager.addEntry` → `INSERT ... ON CONFLICT (job_id, line_no) DO NOTHING RETURNING dlq_id` (a `null` return means duplicate; callers must skip their counters). This depends on migration **004**'s `UNIQUE (job_id, line_no)`, added because Cloud Run rollouts restart parse jobs from line 1 and duplicate DLQ rows.
 
@@ -321,10 +321,10 @@ These **do not agree**. `parsed_records`, `templates`, and `pending_archive_entr
 | `src/shared/qualityGate.ts` | (no-op) failed-ratio gate |
 | `src/shared/traceSystem.ts` | per-line `parsed_records` insert + counters |
 | `src/services/ingest/ssrf_guard.ts` | SSRF blocklist / redirect / size checks |
-| `src/services/detect_bootstrap/handler.ts` | probing + fingerprinting + seed minting |
-| `src/services/stream_parser/classifier.ts` | ordered line classifier |
-| `src/services/load/handler.ts` | bulk insert into `parsed_records` |
-| `src/services/retry/handler.ts` | DLQ recovery strategies |
-| `src/services/job_service/finalize.ts` | part merge + quality gate + backfill |
+| `src/services/detect_bootstrap/DetectBootstrapServiceHandler.ts` | probing + fingerprinting + seed minting |
+| `src/services/stream_parser/LineClassifier.ts` | ordered line classifier |
+| `src/services/load/LoadServiceHandler.ts` | bulk insert into `parsed_records` |
+| `src/services/retry/RetryServiceHandler.ts` | DLQ recovery strategies |
+| `src/services/job_service/FinalizationService.ts` | part merge + quality gate + backfill |
 | `src/scripts/reconciler.ts` | stuck-job sweeper |
 | `src/db/migrations/*.sql` vs `src/shared/db.ts` `createTables()` | the two diverging schema sources |

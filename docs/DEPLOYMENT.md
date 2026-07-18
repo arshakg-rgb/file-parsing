@@ -35,7 +35,7 @@ Common flags on every service: `--allow-unauthenticated` (note: the job API is p
 
 | Service (Cloud Run name) | Image (`…/file-parsing/<name>:latest`) | Dockerfile | Entry point (`CMD`) | Memory | Notes |
 |---|---|---|---|---|---|
-| `job-service` | `job-service` | `Dockerfile.job` | `dist/services/job_service/main.js` | 512Mi | Public job API |
+| `job-service` | `job-service` | `Dockerfile.job` | `dist/services/job_service/JobServiceHandler.js` | 512Mi | Public job API |
 | `ingest` | `ingest` | `Dockerfile.ingest` | `dist/services/ingest/IngestServiceHandler.js` | 4Gi | gen2, session affinity, GCS bucket `datalead-osint` mounted at `/mnt/scratch` for RAR; bundles `unrar` static binary |
 | `detect-bootstrap` | `detect-bootstrap` | `Dockerfile.detect` | `dist/services/detect_bootstrap/DetectBootstrapServiceHandler.js` | 512Mi | Runs AI in-process |
 | `stream-parser` | `stream-parser` | `Dockerfile.stream` | `dist/services/stream_parser/StreamParserServiceHandler.js` | 1Gi | Runs AI in-process; writes Parquet + per-job CSV output |
@@ -85,7 +85,7 @@ The `DISABLED FOR FAST TEST BUILDS` comments are grouped exactly as: (a) `ai-cla
 The standalone `ai-classifier` Cloud Run service exposes a `/classify` HTTP endpoint that **has no callers**. AI classification happens **in-process** inside `detect-bootstrap` and `stream-parser` via dynamic import of the same handler code:
 
 - `src/services/detect_bootstrap/DetectBootstrapServiceHandler.ts` → `await import("../ai_classifier/AiClassifierServiceHandler.js")` (and `../ai_classifier/mock.js`)
-- `src/services/stream_parser/classifier.ts` → `await import("../ai_classifier/AiClassifierServiceHandler.js")`
+- `src/services/stream_parser/LineClassifier.ts` → `await import("../ai_classifier/AiClassifierServiceHandler.js")`
 
 So the classifier library ships **inside** the detect/stream images and runs in the same process — no network hop to a separate service.
 

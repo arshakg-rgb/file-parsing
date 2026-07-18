@@ -6,12 +6,9 @@ import { IObjectStorage } from "./finalize/IObjectStorage.js";
 import { LineNumberMapper } from "./finalize/LineNumberMapper.js";
 import { ParquetEngine, type ParquetRow } from "./finalize/ParquetEngine.js";
 import { StoragePath, type GcsProtocol } from "./finalize/StoragePath.js";
+import type { FinalizeResult } from "./io/IFinalizationService.js";
 
-export interface FinalizeResult {
-  failed: boolean;
-  paths: string[];
-  error?: string;
-}
+export type { FinalizeResult } from "./io/IFinalizationService.js";
 
 /**
  * High-level service that orchestrates output finalization.

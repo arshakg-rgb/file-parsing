@@ -4,7 +4,7 @@ import { InstantiationError } from "../../../errors/InstantiationError.js";
 import MySqlManager from "../../../config/db/MySqlManager.js";
 import { DLQMessage, DLQStatus, FailureClass, JobStatus, LoadMessage } from "../../../shared/models/job.js";
 import { receiveMessages, deleteMessage, sendMessage } from "../../../shared/queueUtils.js";
-import { ClassifyResult, LineClassifier } from "../../stream_parser/classifier.js";
+import { ClassifyResult, LineClassifier } from "../../stream_parser/LineClassifier.js";
 import { templateRegistry } from "../../../shared/templateRegistry.js";
 import { createLogger } from "../../../utils/logger/logger.js";
 import { metrics } from "../../../utils/response/metrics.js";

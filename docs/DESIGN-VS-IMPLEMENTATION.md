@@ -35,7 +35,7 @@ The eight logical services live under `src/services/`: `job_service`, `ingest`, 
 
 The design specifies an ordered, cheapest-first classifier: (1) length/empty gate → drop, no AI; (2) record templates → extract target fields → Parquet row; (3) rubbish templates → drop + rubbish-log; (4) AI, only for unknowns, returning exactly one verdict — `record-template` (cached, parsed), `rubbish-signature` (cached, dropped+logged), or `uncertain` (→ dead-letter for human review, never a guess). A non-negotiable **asymmetry** governs it: record templates are tried *before* rubbish, rubbish matches only on a high-confidence structural signature, and ambiguity always resolves toward "keep and check" — dropping a real record is unrecoverable, an extra AI call is cheap.
 
-This is implemented in `src/services/stream_parser/classifier.ts` as `LineClassifier.classify()`. The verified order is:
+This is implemented in `src/services/stream_parser/LineClassifier.ts` as `LineClassifier.classify()`. The verified order is:
 
 1. **Length / empty / binary gate** (`classifier.ts:63-74`) — empty → rubbish `length-gate`; `> 64 KB` → `uncertain`; non-printable ratio `> 0.3` → rubbish `binary-gate`. Declined locally, never AI.
 2. **Header capture** (first data line only, `classifier.ts:78-85`, `detectHeader` at `:353`) — a genuine header row is detected, used to build a name→column map, and **declined itself** (rubbish `header`), never emitted as a data row.
@@ -61,7 +61,7 @@ Commit `0507455` had added `src/shared/formatDetector.ts` (`parseLine` classifyi
 
 Two failures existed. (a) At job creation, `router.ts` accepted a `field_spec` only as an array or `{fields:[...]}`; a client sending a **JSON string** (`field_spec: "[\"email\",\"name\"]"`) matched neither and was stored as `[]` in `parse_jobs`, even though the raw string was still forwarded on the ingest queue and re-parsed downstream — so the DB and report saw no spec while parsing limped on. (b) The headerless CSV path mapped **positionally** (`parts[0]→field_spec[0]`, …), so a real row like `1416779,2231849,"OD2667900",…` yielded `email=1416779, name=2231849, phone="OD2667900"` — garbage, because nothing checked that a column's *content* matched the field's *meaning*.
 
-**Fix (verified):** `src/services/job_service/router.ts:20-37` now normalizes `field_spec` from any of: a plain array, a JSON-array string, a JSON-`{fields:[…]}` string, a `{fields}` object, or a plain comma-separated string. The normalized array is stored (`router.ts:59`) and re-echoed consistently. On the extraction side, the headerless CSV path identifies columns by **content** (`validateField`, `classifier.ts:261-277`: email must match an email regex; phone must be 10–15 digits and contain no `@`) instead of by position; weak fields (name/address) are left `null` rather than guessed. The header-mapped path (`csv-mapped`) trusts the captured header when one is present, which is the reliable route.
+**Fix (verified):** `src/services/job_service/JobServiceRouter.ts:20-37` now normalizes `field_spec` from any of: a plain array, a JSON-array string, a JSON-`{fields:[…]}` string, a `{fields}` object, or a plain comma-separated string. The normalized array is stored (`router.ts:59`) and re-echoed consistently. On the extraction side, the headerless CSV path identifies columns by **content** (`validateField`, `classifier.ts:261-277`: email must match an email regex; phone must be 10–15 digits and contain no `@`) instead of by position; weak fields (name/address) are left `null` rather than guessed. The header-mapped path (`csv-mapped`) trusts the captured header when one is present, which is the reliable route.
 
 ### Gap 3 — junk and header lines were force-parsed into rows
 
@@ -77,7 +77,7 @@ The first cut of this refactor went through a multi-agent adversarial review tha
 
 ### In-loop synchronous AI escalation (design step 4)
 
-The design's centerpiece is: an unknown line triggers a **synchronous** AI call from inside the streaming pass, the verdict is cached as a template, and the parser acts on it — so the very lines the AI is meant to learn from are the ones it sees. **This is intentionally not wired.** The hot loop calls only the deterministic `classifier.classify()`; unmatched lines return `uncertain` and are dead-lettered to `fpp-line-dlq`. The retry service picks them up out-of-band: `src/services/retry/handler.ts:52` routes `FailureClass.UNCERTAIN` straight to `updateDeadLetterStatus(dlq_id, "review")` (`retry/handler.ts:137`) — i.e. human review, not AI. The scaffolding for in-loop AI exists but is dormant:
+The design's centerpiece is: an unknown line triggers a **synchronous** AI call from inside the streaming pass, the verdict is cached as a template, and the parser acts on it — so the very lines the AI is meant to learn from are the ones it sees. **This is intentionally not wired.** The hot loop calls only the deterministic `classifier.classify()`; unmatched lines return `uncertain` and are dead-lettered to `fpp-line-dlq`. The retry service picks them up out-of-band: `src/services/retry/RetryServiceHandler.ts:52` routes `FailureClass.UNCERTAIN` straight to `updateDeadLetterStatus(dlq_id, "review")` (`retry/handler.ts:137`) — i.e. human review, not AI. The scaffolding for in-loop AI exists but is dormant:
 
 - `LineClassifier.classifyWithAI` / `classifyWithTimeout` (`classifier.ts:150-179`) — never called from `handler.ts`.
 - `AIRateLimiter` is defined and instantiated in `stream_parser/handler.ts:58,102`, but its `acquire()` is never awaited on the parse path.
@@ -87,7 +87,7 @@ The commit message states the reason plainly: unbounded serial in-loop AI, witho
 
 ### Match-rate (thrash) monitor
 
-The design's thrash guard watches the local-template hit ratio and **flags the job** on collapse instead of silently hammering AI. `MatchRateMonitor` exists (`src/services/stream_parser/matchRate.ts:3`) but is **never imported or instantiated** in `stream_parser/handler.ts` — there is no collapse flagging. Because it is a precondition for safely enabling in-loop AI, it is deferred together with step 4.
+The design's thrash guard watches the local-template hit ratio and **flags the job** on collapse instead of silently hammering AI. `MatchRateMonitor` exists (`src/services/stream_parser/MatchRateMonitor.ts:3`) but is **never imported or instantiated** in `stream_parser/handler.ts` — there is no collapse flagging. Because it is a precondition for safely enabling in-loop AI, it is deferred together with step 4.
 
 ## Other notable divergences (still open)
 
