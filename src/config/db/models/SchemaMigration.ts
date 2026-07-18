@@ -1,32 +1,43 @@
-import { DataTypes, Model, Optional } from "sequelize";
-import type { Sequelize } from "sequelize";
+import {
+  Table,
+  Column,
+  DataType,
+  Model,
+  PrimaryKey,
+} from "sequelize-typescript";
 
-export interface SchemaMigrationAttributes {
+export interface ISchemaMigration {
   version: number;
   applied_at?: Date;
   description?: string | null;
 }
 
-export type SchemaMigrationCreationAttributes = Optional<SchemaMigrationAttributes, "applied_at">;
+export type SchemaMigrationAttributes = ISchemaMigration;
 
-export class SchemaMigration extends Model<SchemaMigrationAttributes, SchemaMigrationCreationAttributes> implements SchemaMigrationAttributes {
+export interface SchemaMigrationCreationAttributes extends Omit<
+  ISchemaMigration,
+  "applied_at"
+> {}
+
+@Table({
+  tableName: "schema_migrations",
+  timestamps: false,
+})
+export default class SchemaMigration extends Model<ISchemaMigration, SchemaMigrationCreationAttributes> {
+  @PrimaryKey
+  @Column({ type: DataType.INTEGER, allowNull: false })
   declare version: number;
-  declare applied_at: Date;
-  declare description: string | null;
-}
 
-export function initSchemaMigrationModel(sequelize: Sequelize): typeof SchemaMigration {
-  SchemaMigration.init(
-    {
-      version: { type: DataTypes.INTEGER, primaryKey: true },
-      applied_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
-      description: { type: DataTypes.TEXT, allowNull: true },
+  @Column({
+    type: DataType.DATE,
+    allowNull: false,
+    defaultValue: DataType.NOW,
+    get() {
+      return this.getDataValue("applied_at");
     },
-    {
-      sequelize,
-      tableName: "schema_migrations",
-      timestamps: false,
-    }
-  );
-  return SchemaMigration;
+  })
+  declare applied_at: Date;
+
+  @Column({ type: DataType.TEXT, allowNull: true })
+  declare description: string | null;
 }

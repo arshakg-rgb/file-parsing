@@ -1,7 +1,12 @@
-import { DataTypes, Model, Optional } from "sequelize";
-import type { Sequelize } from "sequelize";
+import {
+  Table,
+  Column,
+  DataType,
+  Model,
+  PrimaryKey,
+} from "sequelize-typescript";
 
-export interface RubbishLogAttributes {
+export interface IRubbishLog {
   id?: number;
   job_id: string;
   byte_offset: number;
@@ -11,35 +16,45 @@ export interface RubbishLogAttributes {
   logged_at?: Date;
 }
 
-export type RubbishLogCreationAttributes = Optional<RubbishLogAttributes, "id" | "logged_at">;
+export type RubbishLogAttributes = IRubbishLog;
 
-export class RubbishLog extends Model<RubbishLogAttributes, RubbishLogCreationAttributes> implements RubbishLogAttributes {
+export interface RubbishLogCreationAttributes extends Omit<
+  IRubbishLog,
+  "id" | "logged_at"
+> {}
+
+@Table({
+  tableName: "rubbish_log",
+  timestamps: false,
+  indexes: [{ fields: ["job_id", "byte_offset"] }],
+})
+export default class RubbishLog extends Model<IRubbishLog, RubbishLogCreationAttributes> {
+  @PrimaryKey
+  @Column({ type: DataType.BIGINT, autoIncrement: true, allowNull: false })
   declare id: number;
-  declare job_id: string;
-  declare byte_offset: number;
-  declare line_no: number;
-  declare raw_bytes: string;
-  declare matched_template_id: string;
-  declare logged_at: Date;
-}
 
-export function initRubbishLogModel(sequelize: Sequelize): typeof RubbishLog {
-  RubbishLog.init(
-    {
-      id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-      job_id: { type: DataTypes.STRING(36), allowNull: false },
-      byte_offset: { type: DataTypes.BIGINT, allowNull: false },
-      line_no: { type: DataTypes.BIGINT, allowNull: false },
-      raw_bytes: { type: DataTypes.TEXT, allowNull: false },
-      matched_template_id: { type: DataTypes.STRING(36), allowNull: false },
-      logged_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+  @Column({ type: DataType.STRING(36), allowNull: false })
+  declare job_id: string;
+
+  @Column({ type: DataType.BIGINT, allowNull: false })
+  declare byte_offset: number;
+
+  @Column({ type: DataType.BIGINT, allowNull: false })
+  declare line_no: number;
+
+  @Column({ type: DataType.TEXT, allowNull: false })
+  declare raw_bytes: string;
+
+  @Column({ type: DataType.STRING(36), allowNull: false })
+  declare matched_template_id: string;
+
+  @Column({
+    type: DataType.DATE,
+    allowNull: false,
+    defaultValue: DataType.NOW,
+    get() {
+      return this.getDataValue("logged_at");
     },
-    {
-      sequelize,
-      tableName: "rubbish_log",
-      timestamps: false,
-      indexes: [{ fields: ["job_id", "byte_offset"] }],
-    }
-  );
-  return RubbishLog;
+  })
+  declare logged_at: Date;
 }

@@ -1,7 +1,12 @@
-import { DataTypes, Model, Optional } from "sequelize";
-import type { Sequelize } from "sequelize";
+import {
+  Table,
+  Column,
+  DataType,
+  Model,
+  PrimaryKey,
+} from "sequelize-typescript";
 
-export interface ParsedRecordAttributes {
+export interface IParsedRecord {
   id?: number;
   _job_id: string;
   _byte_offset: number;
@@ -16,45 +21,57 @@ export interface ParsedRecordAttributes {
   fields: any;
 }
 
-export type ParsedRecordCreationAttributes = Optional<ParsedRecordAttributes, "id">;
+export type ParsedRecordAttributes = IParsedRecord;
 
-export class ParsedRecord extends Model<ParsedRecordAttributes, ParsedRecordCreationAttributes> implements ParsedRecordAttributes {
+export interface ParsedRecordCreationAttributes extends Omit<
+  IParsedRecord,
+  "id"
+> {}
+
+@Table({
+  tableName: "parsed_records",
+  timestamps: false,
+  indexes: [
+    { fields: ["_job_id"] },
+    { fields: ["_job_id", "_byte_offset"], unique: true },
+    { fields: ["fields"], using: "gin" },
+  ],
+})
+export default class ParsedRecord extends Model<IParsedRecord, ParsedRecordCreationAttributes> {
+  @PrimaryKey
+  @Column({ type: DataType.BIGINT, autoIncrement: true, allowNull: false })
   declare id: number;
-  declare _job_id: string;
-  declare _byte_offset: number;
-  declare _byte_length: number;
-  declare _record_index: number;
-  declare _line_no: number;
-  declare _template_id: string;
-  declare _template_version: number;
-  declare _checksum: string;
-  declare _parsed_at: Date;
-  declare _part_id: string;
-  declare fields: any;
-}
 
-export function initParsedRecordModel(sequelize: Sequelize): typeof ParsedRecord {
-  ParsedRecord.init(
-    {
-      id: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
-      _job_id: { type: DataTypes.STRING(36), allowNull: false },
-      _byte_offset: { type: DataTypes.BIGINT, allowNull: false },
-      _byte_length: { type: DataTypes.INTEGER, allowNull: false },
-      _record_index: { type: DataTypes.INTEGER, allowNull: false },
-      _line_no: { type: DataTypes.BIGINT, allowNull: false },
-      _template_id: { type: DataTypes.STRING(36), allowNull: false },
-      _template_version: { type: DataTypes.INTEGER, allowNull: false },
-      _checksum: { type: DataTypes.STRING(64), allowNull: false },
-      _parsed_at: { type: DataTypes.DATE, allowNull: false },
-      _part_id: { type: DataTypes.STRING(36), allowNull: false },
-      fields: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
-    },
-    {
-      sequelize,
-      tableName: "parsed_records",
-      timestamps: false,
-      indexes: [{ fields: ["_job_id"] }, { fields: ["_job_id", "_byte_offset"], unique: true }, { fields: ["fields"], using: "gin" }],
-    }
-  );
-  return ParsedRecord;
+  @Column({ type: DataType.STRING(36), allowNull: false })
+  declare _job_id: string;
+
+  @Column({ type: DataType.BIGINT, allowNull: false })
+  declare _byte_offset: number;
+
+  @Column({ type: DataType.INTEGER, allowNull: false })
+  declare _byte_length: number;
+
+  @Column({ type: DataType.INTEGER, allowNull: false })
+  declare _record_index: number;
+
+  @Column({ type: DataType.BIGINT, allowNull: false })
+  declare _line_no: number;
+
+  @Column({ type: DataType.STRING(36), allowNull: false })
+  declare _template_id: string;
+
+  @Column({ type: DataType.INTEGER, allowNull: false })
+  declare _template_version: number;
+
+  @Column({ type: DataType.STRING(64), allowNull: false })
+  declare _checksum: string;
+
+  @Column({ type: DataType.DATE, allowNull: false })
+  declare _parsed_at: Date;
+
+  @Column({ type: DataType.STRING(36), allowNull: false })
+  declare _part_id: string;
+
+  @Column({ type: DataType.JSONB, allowNull: false, defaultValue: {} })
+  declare fields: any;
 }

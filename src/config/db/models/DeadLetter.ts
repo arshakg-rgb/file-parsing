@@ -1,7 +1,12 @@
-import { DataTypes, Model, Optional } from "sequelize";
-import type { Sequelize } from "sequelize";
+import {
+  Table,
+  Column,
+  DataType,
+  Model,
+  PrimaryKey,
+} from "sequelize-typescript";
 
-export interface DeadLetterAttributes {
+export interface IDeadLetter {
   dlq_id: string;
   job_id: string;
   byte_offset: number;
@@ -16,45 +21,64 @@ export interface DeadLetterAttributes {
   updated_at?: Date;
 }
 
-export type DeadLetterCreationAttributes = Optional<DeadLetterAttributes, "created_at" | "updated_at" | "attempts">;
+export type DeadLetterAttributes = IDeadLetter;
 
-export class DeadLetter extends Model<DeadLetterAttributes, DeadLetterCreationAttributes> implements DeadLetterAttributes {
+export interface DeadLetterCreationAttributes extends Omit<
+  IDeadLetter,
+  "created_at" | "updated_at"
+> {}
+
+@Table({
+  tableName: "dead_letters",
+  timestamps: false,
+  indexes: [{ fields: ["job_id", "byte_offset"] }, { fields: ["status"] }],
+})
+export default class DeadLetter extends Model<IDeadLetter, DeadLetterCreationAttributes> {
+  @PrimaryKey
+  @Column({ type: DataType.STRING(36), allowNull: false })
   declare dlq_id: string;
-  declare job_id: string;
-  declare byte_offset: number;
-  declare byte_length: number;
-  declare line_no: number;
-  declare raw_bytes: string;
-  declare failure_class: string;
-  declare error: string;
-  declare attempts: number;
-  declare status: string;
-  declare created_at: Date;
-  declare updated_at: Date;
-}
 
-export function initDeadLetterModel(sequelize: Sequelize): typeof DeadLetter {
-  DeadLetter.init(
-    {
-      dlq_id: { type: DataTypes.STRING(36), primaryKey: true },
-      job_id: { type: DataTypes.STRING(36), allowNull: false },
-      byte_offset: { type: DataTypes.BIGINT, allowNull: false },
-      byte_length: { type: DataTypes.INTEGER, allowNull: false },
-      line_no: { type: DataTypes.BIGINT, allowNull: false },
-      raw_bytes: { type: DataTypes.TEXT, allowNull: false },
-      failure_class: { type: DataTypes.STRING(32), allowNull: false },
-      error: { type: DataTypes.TEXT, allowNull: false },
-      attempts: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
-      status: { type: DataTypes.STRING(16), allowNull: false, defaultValue: "pending" },
-      created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
-      updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+  @Column({ type: DataType.STRING(36), allowNull: false })
+  declare job_id: string;
+
+  @Column({ type: DataType.BIGINT, allowNull: false })
+  declare byte_offset: number;
+
+  @Column({ type: DataType.INTEGER, allowNull: false })
+  declare byte_length: number;
+
+  @Column({ type: DataType.BIGINT, allowNull: false })
+  declare line_no: number;
+
+  @Column({ type: DataType.TEXT, allowNull: false })
+  declare raw_bytes: string;
+
+  @Column({ type: DataType.STRING(32), allowNull: false })
+  declare failure_class: string;
+
+  @Column({ type: DataType.TEXT, allowNull: false })
+  declare error: string;
+
+  @Column({ type: DataType.INTEGER, allowNull: false, defaultValue: 0 })
+  declare attempts: number;
+
+  @Column({ type: DataType.STRING(16), allowNull: false, defaultValue: "pending" })
+  declare status: string;
+
+  @Column({
+    type: DataType.DATE,
+    allowNull: false,
+    defaultValue: DataType.NOW,
+    get() {
+      return this.getDataValue("created_at");
     },
-    {
-      sequelize,
-      tableName: "dead_letters",
-      timestamps: false,
-      indexes: [{ fields: ["job_id", "byte_offset"] }, { fields: ["status"] }],
-    }
-  );
-  return DeadLetter;
+  })
+  declare created_at: Date;
+
+  @Column({
+    type: DataType.DATE,
+    allowNull: false,
+    defaultValue: DataType.NOW,
+  })
+  declare updated_at: Date;
 }

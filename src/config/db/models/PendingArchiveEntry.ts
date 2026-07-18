@@ -1,7 +1,12 @@
-import { DataTypes, Model, Optional } from "sequelize";
-import type { Sequelize } from "sequelize";
+import {
+  Table,
+  Column,
+  DataType,
+  Model,
+  PrimaryKey,
+} from "sequelize-typescript";
 
-export interface PendingArchiveEntryAttributes {
+export interface IPendingArchiveEntry {
   id: string;
   job_id: string;
   entry_name: string;
@@ -12,37 +17,52 @@ export interface PendingArchiveEntryAttributes {
   updated_at?: Date;
 }
 
-export type PendingArchiveEntryCreationAttributes = Optional<PendingArchiveEntryAttributes, "created_at" | "updated_at">;
+export type PendingArchiveEntryAttributes = IPendingArchiveEntry;
 
-export class PendingArchiveEntry extends Model<PendingArchiveEntryAttributes, PendingArchiveEntryCreationAttributes> implements PendingArchiveEntryAttributes {
+export interface PendingArchiveEntryCreationAttributes extends Omit<
+  IPendingArchiveEntry,
+  "created_at" | "updated_at"
+> {}
+
+@Table({
+  tableName: "pending_archive_entries",
+  timestamps: false,
+  indexes: [{ fields: ["job_id"] }, { fields: ["status"] }],
+})
+export default class PendingArchiveEntry extends Model<IPendingArchiveEntry, PendingArchiveEntryCreationAttributes> {
+  @PrimaryKey
+  @Column({ type: DataType.STRING(36), allowNull: false })
   declare id: string;
-  declare job_id: string;
-  declare entry_name: string;
-  declare entry_size: number;
-  declare status: string;
-  declare error: string | null;
-  declare created_at: Date;
-  declare updated_at: Date;
-}
 
-export function initPendingArchiveEntryModel(sequelize: Sequelize): typeof PendingArchiveEntry {
-  PendingArchiveEntry.init(
-    {
-      id: { type: DataTypes.STRING(36), primaryKey: true },
-      job_id: { type: DataTypes.STRING(36), allowNull: false },
-      entry_name: { type: DataTypes.TEXT, allowNull: false },
-      entry_size: { type: DataTypes.BIGINT, allowNull: false },
-      status: { type: DataTypes.STRING(16), allowNull: false, defaultValue: "pending" },
-      error: { type: DataTypes.TEXT, allowNull: true },
-      created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
-      updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+  @Column({ type: DataType.STRING(36), allowNull: false })
+  declare job_id: string;
+
+  @Column({ type: DataType.TEXT, allowNull: false })
+  declare entry_name: string;
+
+  @Column({ type: DataType.BIGINT, allowNull: false })
+  declare entry_size: number;
+
+  @Column({ type: DataType.STRING(16), allowNull: false, defaultValue: "pending" })
+  declare status: string;
+
+  @Column({ type: DataType.TEXT, allowNull: true })
+  declare error: string | null;
+
+  @Column({
+    type: DataType.DATE,
+    allowNull: false,
+    defaultValue: DataType.NOW,
+    get() {
+      return this.getDataValue("created_at");
     },
-    {
-      sequelize,
-      tableName: "pending_archive_entries",
-      timestamps: false,
-      indexes: [{ fields: ["job_id"] }, { fields: ["status"] }],
-    }
-  );
-  return PendingArchiveEntry;
+  })
+  declare created_at: Date;
+
+  @Column({
+    type: DataType.DATE,
+    allowNull: false,
+    defaultValue: DataType.NOW,
+  })
+  declare updated_at: Date;
 }

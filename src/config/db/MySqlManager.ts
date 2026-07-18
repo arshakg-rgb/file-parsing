@@ -1,9 +1,11 @@
+import "reflect-metadata";
 import pg from "pg";
-import { Sequelize } from "sequelize";
+import { Sequelize } from "sequelize-typescript";
 import Config from "../system-config/Config.js";
 import ServiceManager, { Enforce } from "../ServiceManager.js";
 import { InstantiationError } from "../../errors/InstantiationError.js";
-import { initModels, type DatabaseModels } from "./models/index.js";
+import * as dbModels from "./models/index.js";
+import type { DatabaseModels } from "./models/index.js";
 import { Repositories } from "./repositories/index.js";
 
 const { Pool } = pg;
@@ -74,7 +76,17 @@ class MySqlManager extends ServiceManager {
 
   public get models(): DatabaseModels {
     if (!this._models) {
-      this._models = initModels(this.sequelize);
+      this._models = {
+        ParseJob: dbModels.ParseJob,
+        DeadLetter: dbModels.DeadLetter,
+        OutputPart: dbModels.OutputPart,
+        PendingArchiveEntry: dbModels.PendingArchiveEntry,
+        ParsedRecord: dbModels.ParsedRecord,
+        RubbishLog: dbModels.RubbishLog,
+        Template: dbModels.Template,
+        SchemaMigration: dbModels.SchemaMigration,
+      };
+      this.sequelize.addModels(Object.values(this._models));
     }
     return this._models;
   }

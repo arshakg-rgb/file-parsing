@@ -1,12 +1,43 @@
-import type { Sequelize } from "sequelize";
-import { initParseJobModel, ParseJob } from "./ParseJob.js";
-import { initDeadLetterModel, DeadLetter } from "./DeadLetter.js";
-import { initOutputPartModel, OutputPart } from "./OutputPart.js";
-import { initPendingArchiveEntryModel, PendingArchiveEntry } from "./PendingArchiveEntry.js";
-import { initParsedRecordModel, ParsedRecord } from "./ParsedRecord.js";
-import { initRubbishLogModel, RubbishLog } from "./RubbishLog.js";
-import { initTemplateModel, Template } from "./Template.js";
-import { initSchemaMigrationModel, SchemaMigration } from "./SchemaMigration.js";
+import ParseJob, {
+  type IParseJob,
+  type ParseJobAttributes,
+  type ParseJobCreationAttributes,
+} from "./ParseJob.js";
+import DeadLetter, {
+  type IDeadLetter,
+  type DeadLetterAttributes,
+  type DeadLetterCreationAttributes,
+} from "./DeadLetter.js";
+import OutputPart, {
+  type IOutputPart,
+  type OutputPartAttributes,
+  type OutputPartCreationAttributes,
+} from "./OutputPart.js";
+import PendingArchiveEntry, {
+  type IPendingArchiveEntry,
+  type PendingArchiveEntryAttributes,
+  type PendingArchiveEntryCreationAttributes,
+} from "./PendingArchiveEntry.js";
+import ParsedRecord, {
+  type IParsedRecord,
+  type ParsedRecordAttributes,
+  type ParsedRecordCreationAttributes,
+} from "./ParsedRecord.js";
+import RubbishLog, {
+  type IRubbishLog,
+  type RubbishLogAttributes,
+  type RubbishLogCreationAttributes,
+} from "./RubbishLog.js";
+import Template, {
+  type ITemplate,
+  type TemplateAttributes,
+  type TemplateCreationAttributes,
+} from "./Template.js";
+import SchemaMigration, {
+  type ISchemaMigration,
+  type SchemaMigrationAttributes,
+  type SchemaMigrationCreationAttributes,
+} from "./SchemaMigration.js";
 
 export {
   ParseJob,
@@ -19,6 +50,33 @@ export {
   SchemaMigration,
 };
 
+export type {
+  IParseJob,
+  ParseJobAttributes,
+  ParseJobCreationAttributes,
+  IDeadLetter,
+  DeadLetterAttributes,
+  DeadLetterCreationAttributes,
+  IOutputPart,
+  OutputPartAttributes,
+  OutputPartCreationAttributes,
+  IPendingArchiveEntry,
+  PendingArchiveEntryAttributes,
+  PendingArchiveEntryCreationAttributes,
+  IParsedRecord,
+  ParsedRecordAttributes,
+  ParsedRecordCreationAttributes,
+  IRubbishLog,
+  RubbishLogAttributes,
+  RubbishLogCreationAttributes,
+  ITemplate,
+  TemplateAttributes,
+  TemplateCreationAttributes,
+  ISchemaMigration,
+  SchemaMigrationAttributes,
+  SchemaMigrationCreationAttributes,
+};
+
 export interface DatabaseModels {
   ParseJob: typeof ParseJob;
   DeadLetter: typeof DeadLetter;
@@ -28,17 +86,4 @@ export interface DatabaseModels {
   RubbishLog: typeof RubbishLog;
   Template: typeof Template;
   SchemaMigration: typeof SchemaMigration;
-}
-
-export function initModels(sequelize: Sequelize): DatabaseModels {
-  return {
-    ParseJob: initParseJobModel(sequelize),
-    DeadLetter: initDeadLetterModel(sequelize),
-    OutputPart: initOutputPartModel(sequelize),
-    PendingArchiveEntry: initPendingArchiveEntryModel(sequelize),
-    ParsedRecord: initParsedRecordModel(sequelize),
-    RubbishLog: initRubbishLogModel(sequelize),
-    Template: initTemplateModel(sequelize),
-    SchemaMigration: initSchemaMigrationModel(sequelize),
-  };
 }

@@ -1,7 +1,12 @@
-import { DataTypes, Model, Optional } from "sequelize";
-import type { Sequelize } from "sequelize";
+import {
+  Table,
+  Column,
+  DataType,
+  Model,
+  PrimaryKey,
+} from "sequelize-typescript";
 
-export interface ParseJobAttributes {
+export interface IParseJob {
   job_id: string;
   batch_id?: string | null;
   parent_job_id?: string | null;
@@ -20,53 +25,76 @@ export interface ParseJobAttributes {
   updated_at?: Date;
 }
 
-export type ParseJobCreationAttributes = Optional<ParseJobAttributes, "created_at" | "updated_at">;
+export type ParseJobAttributes = IParseJob;
 
-export class ParseJob extends Model<ParseJobAttributes, ParseJobCreationAttributes> implements ParseJobAttributes {
+export interface ParseJobCreationAttributes extends Omit<
+  IParseJob,
+  "created_at" | "updated_at"
+> {}
+
+@Table({
+  tableName: "parse_jobs",
+  timestamps: false,
+  indexes: [{ fields: ["batch_id"] }, { fields: ["status"] }],
+})
+export default class ParseJob extends Model<IParseJob, ParseJobCreationAttributes> {
+  @PrimaryKey
+  @Column({ type: DataType.STRING(36), allowNull: false })
   declare job_id: string;
-  declare batch_id: string | null;
-  declare parent_job_id: string | null;
-  declare source_type: string;
-  declare source_ref: string;
-  declare s3_url: string | null;
-  declare size: number | null;
-  declare field_spec: any;
-  declare exec_path: string;
-  declare status: string;
-  declare output_paths: any;
-  declare counts: any;
-  declare timings: any;
-  declare error: string | null;
-  declare created_at: Date;
-  declare updated_at: Date;
-}
 
-export function initParseJobModel(sequelize: Sequelize): typeof ParseJob {
-  ParseJob.init(
-    {
-      job_id: { type: DataTypes.STRING(36), primaryKey: true },
-      batch_id: { type: DataTypes.STRING(36), allowNull: true },
-      parent_job_id: { type: DataTypes.STRING(36), allowNull: true },
-      source_type: { type: DataTypes.STRING(32), allowNull: false },
-      source_ref: { type: DataTypes.TEXT, allowNull: false },
-      s3_url: { type: DataTypes.TEXT, allowNull: true },
-      size: { type: DataTypes.BIGINT, allowNull: true },
-      field_spec: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
-      exec_path: { type: DataTypes.STRING(16), allowNull: false, defaultValue: "stream" },
-      status: { type: DataTypes.STRING(32), allowNull: false, defaultValue: "queued" },
-      output_paths: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
-      counts: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
-      timings: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
-      error: { type: DataTypes.TEXT, allowNull: true },
-      created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
-      updated_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+  @Column({ type: DataType.STRING(36), allowNull: true })
+  declare batch_id: string | null;
+
+  @Column({ type: DataType.STRING(36), allowNull: true })
+  declare parent_job_id: string | null;
+
+  @Column({ type: DataType.STRING(32), allowNull: false })
+  declare source_type: string;
+
+  @Column({ type: DataType.TEXT, allowNull: false })
+  declare source_ref: string;
+
+  @Column({ type: DataType.TEXT, allowNull: true })
+  declare s3_url: string | null;
+
+  @Column({ type: DataType.BIGINT, allowNull: true })
+  declare size: number | null;
+
+  @Column({ type: DataType.JSONB, allowNull: false, defaultValue: [] })
+  declare field_spec: any;
+
+  @Column({ type: DataType.STRING(16), allowNull: false, defaultValue: "stream" })
+  declare exec_path: string;
+
+  @Column({ type: DataType.STRING(32), allowNull: false, defaultValue: "queued" })
+  declare status: string;
+
+  @Column({ type: DataType.JSONB, allowNull: false, defaultValue: [] })
+  declare output_paths: any;
+
+  @Column({ type: DataType.JSONB, allowNull: false, defaultValue: {} })
+  declare counts: any;
+
+  @Column({ type: DataType.JSONB, allowNull: false, defaultValue: {} })
+  declare timings: any;
+
+  @Column({ type: DataType.TEXT, allowNull: true })
+  declare error: string | null;
+
+  @Column({
+    type: DataType.DATE,
+    allowNull: false,
+    defaultValue: DataType.NOW,
+    get() {
+      return this.getDataValue("created_at");
     },
-    {
-      sequelize,
-      tableName: "parse_jobs",
-      timestamps: false,
-      indexes: [{ fields: ["batch_id"] }, { fields: ["status"] }],
-    }
-  );
-  return ParseJob;
+  })
+  declare created_at: Date;
+
+  @Column({
+    type: DataType.DATE,
+    allowNull: false,
+    defaultValue: DataType.NOW,
+  })
+  declare updated_at: Date;
 }

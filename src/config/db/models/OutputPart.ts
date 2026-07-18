@@ -1,7 +1,12 @@
-import { DataTypes, Model, Optional } from "sequelize";
-import type { Sequelize } from "sequelize";
+import {
+  Table,
+  Column,
+  DataType,
+  Model,
+  PrimaryKey,
+} from "sequelize-typescript";
 
-export interface OutputPartAttributes {
+export interface IOutputPart {
   part_id: string;
   job_id: string;
   template_id: string;
@@ -11,35 +16,45 @@ export interface OutputPartAttributes {
   created_at?: Date;
 }
 
-export type OutputPartCreationAttributes = Optional<OutputPartAttributes, "created_at">;
+export type OutputPartAttributes = IOutputPart;
 
-export class OutputPart extends Model<OutputPartAttributes, OutputPartCreationAttributes> implements OutputPartAttributes {
+export interface OutputPartCreationAttributes extends Omit<
+  IOutputPart,
+  "created_at"
+> {}
+
+@Table({
+  tableName: "output_parts",
+  timestamps: false,
+  indexes: [{ fields: ["job_id"] }],
+})
+export default class OutputPart extends Model<IOutputPart, OutputPartCreationAttributes> {
+  @PrimaryKey
+  @Column({ type: DataType.STRING(36), allowNull: false })
   declare part_id: string;
-  declare job_id: string;
-  declare template_id: string;
-  declare s3_path: string;
-  declare row_count: number;
-  declare byte_size: number;
-  declare created_at: Date;
-}
 
-export function initOutputPartModel(sequelize: Sequelize): typeof OutputPart {
-  OutputPart.init(
-    {
-      part_id: { type: DataTypes.STRING(36), primaryKey: true },
-      job_id: { type: DataTypes.STRING(36), allowNull: false },
-      template_id: { type: DataTypes.STRING(36), allowNull: false },
-      s3_path: { type: DataTypes.TEXT, allowNull: false },
-      row_count: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
-      byte_size: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
-      created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+  @Column({ type: DataType.STRING(36), allowNull: false })
+  declare job_id: string;
+
+  @Column({ type: DataType.STRING(36), allowNull: false })
+  declare template_id: string;
+
+  @Column({ type: DataType.TEXT, allowNull: false })
+  declare s3_path: string;
+
+  @Column({ type: DataType.INTEGER, allowNull: false, defaultValue: 0 })
+  declare row_count: number;
+
+  @Column({ type: DataType.BIGINT, allowNull: false, defaultValue: 0 })
+  declare byte_size: number;
+
+  @Column({
+    type: DataType.DATE,
+    allowNull: false,
+    defaultValue: DataType.NOW,
+    get() {
+      return this.getDataValue("created_at");
     },
-    {
-      sequelize,
-      tableName: "output_parts",
-      timestamps: false,
-      indexes: [{ fields: ["job_id"] }],
-    }
-  );
-  return OutputPart;
+  })
+  declare created_at: Date;
 }
