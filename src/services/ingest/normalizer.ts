@@ -95,7 +95,7 @@ export async function extractArchiveToS3(
   batchId: string,
   password?: string,
   _depth = 0
-): Promise<Record<string, any>[]> {
+): Promise<Record<string, unknown>[]> {
   if (_depth > settings.ARCHIVE_MAX_NESTING_DEPTH) {
     throw new BombError(`Archive nesting depth ${_depth} exceeds maximum ${settings.ARCHIVE_MAX_NESTING_DEPTH}`);
   }
@@ -135,7 +135,7 @@ export async function extractArchiveToS3(
     
     // Use CLI-based extraction for memory efficiency
     const { spawn } = await import("child_process");
-    const out: Record<string, any>[] = [];
+    const out: Record<string, unknown>[] = [];
     let totalUncompressed = 0;
     const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
     const MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024;
@@ -397,14 +397,14 @@ async function extractZip(
   fieldSpec: string[],
   batchId: string,
   password?: string
-): Promise<Record<string, any>[]> {
+): Promise<Record<string, unknown>[]> {
   const tmp = await withTempFile(raw, ".zip");
   const zip = new NodeStreamZip.async({ file: tmp, password: password || undefined });
   const entries = await zip.entries();
   if (Object.keys(entries).length > settings.ARCHIVE_MAX_ENTRIES) {
     throw new BombError(`ZIP has ${Object.keys(entries).length} entries > cap ${settings.ARCHIVE_MAX_ENTRIES}`);
   }
-  const out: Record<string, any>[] = [];
+  const out: Record<string, unknown>[] = [];
   let totalUncompressed = 0;
   for (const [name, entry] of Object.entries(entries)) {
     if (entry.isDirectory) continue;
@@ -425,7 +425,7 @@ async function extractGz(
   compressedSize: number,
   fieldSpec: string[],
   batchId: string
-): Promise<Record<string, any>[]> {
+): Promise<Record<string, unknown>[]> {
   const data = await gunzip(raw);
   checkRatio(compressedSize, data.length);
   const name = `decompressed_${jobId}.dat`;
@@ -439,12 +439,12 @@ async function extractTarArchive(
   compressedSize: number,
   fieldSpec: string[],
   batchId: string
-): Promise<Record<string, any>[]> {
+): Promise<Record<string, unknown>[]> {
   const tmp = await withTempFile(raw, ".tar");
   const extractDir = path.join(os.tmpdir(), randomUUID());
   await fs.mkdir(extractDir, { recursive: true });
   await extractTar({ file: tmp, cwd: extractDir });
-  const out: Record<string, any>[] = [];
+  const out: Record<string, unknown>[] = [];
   let totalUncompressed = 0;
   const files = await fs.readdir(extractDir, { recursive: true });
   for (const rel of files) {
@@ -470,13 +470,13 @@ async function extract7z(
   fieldSpec: string[],
   batchId: string,
   password?: string
-): Promise<Record<string, any>[]> {
+): Promise<Record<string, unknown>[]> {
   const tmp = await withTempFile(raw, ".7z");
   const extractDir = path.join(os.tmpdir(), randomUUID());
   await fs.mkdir(extractDir, { recursive: true });
   const stream = Seven.extractFull(tmp, extractDir, { password: password || undefined });
   await once(stream, "end");
-  const out: Record<string, any>[] = [];
+  const out: Record<string, unknown>[] = [];
 
   let totalUncompressed = 0;
   const files = await fs.readdir(extractDir, { recursive: true });
@@ -503,11 +503,11 @@ async function extractRar(
   fieldSpec: string[],
   batchId: string,
   password?: string
-): Promise<Record<string, any>[]> {
+): Promise<Record<string, unknown>[]> {
   // Use CLI-based extraction for memory efficiency (same approach as extractArchiveToS3)
   const tmp = await withTempFile(raw, ".rar");
   const { spawn } = await import("child_process");
-  const out: Record<string, any>[] = [];
+  const out: Record<string, unknown>[] = [];
   let totalUncompressed = 0;
   const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
   const MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024;

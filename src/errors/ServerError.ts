@@ -5,7 +5,7 @@ export class ServerError extends CustomError {
   static readonly DATABASE = "DATABASE_ERROR";
   static readonly SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE";
 
-  constructor(message: string, code: string = ServerError.INTERNAL, statusCode: number = 500, details?: any) {
+  constructor(message: string, code: string = ServerError.INTERNAL, statusCode: number = 500, details?: unknown) {
     super(message, code, statusCode, details);
   }
 }

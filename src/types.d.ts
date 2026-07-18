@@ -34,7 +34,7 @@ declare module "unrar-async" {
   };
 
   export interface ExtractResult<withContent = never> {
-    arcHeader: any;
+    arcHeader: unknown;
     fileHeaders: FileHeader[];
     fileCount: number;
     totalSize: number;

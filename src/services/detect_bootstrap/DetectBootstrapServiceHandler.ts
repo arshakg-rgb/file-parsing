@@ -69,7 +69,7 @@ export class DetectBootstrapService {
   private logger = createLogger("detect_bootstrap");
   
   // Lazy loaded classifier
-  private classify: ((req: any) => Promise<any>) | null = null;
+  private classify: ((req: ClassifyRequest) => Promise<ClassifyResponse>) | null = null;
   
   /**
    * Private constructor for singleton pattern
@@ -102,19 +102,22 @@ export class DetectBootstrapService {
     
     if (settings.BEDROCK_MODEL_ID === "mock") {
       const { mockClassify } = await import("../ai_classifier/mock.js");
-      this.classify = async (req: any) => {
+      this.classify = async (req: ClassifyRequest) => {
         const resp = await mockClassify(req);
-        return resp.template ? { kind: resp.kind as any, template: resp.template as any } : { kind: "uncertain" };
+        return resp.template ? { kind: resp.kind, template: resp.template } : { kind: "uncertain" };
       };
     } else {
       const { classifyAi } = await import("../ai_classifier/AiClassifierServiceHandler.js");
-      this.classify = async (req: any) => {
+      this.classify = async (req: ClassifyRequest) => {
         // Convert to the expected format for the AI classifier
         const aiReq = {
           ...req,
           context_lines: req.context_lines || []
         };
-        return await classifyAi(aiReq);
+        const aiResp = await classifyAi(aiReq);
+        return aiResp.template
+          ? { kind: aiResp.kind as ClassifyResponse["kind"], template: aiResp.template }
+          : { kind: "uncertain" };
       };
     }
   }
@@ -172,7 +175,7 @@ export class DetectBootstrapService {
    * @param eventType - Type of event to emit
    * @param data - Event payload data
    */
-  private emit(jobId: string, eventType: EventType, data: Record<string, any>): void {
+  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>): void {
     publishEvent(makeJobEvent(eventType, jobId, "detect_bootstrap", data));
   }
 
@@ -426,7 +429,7 @@ export class DetectBootstrapService {
     };
     console.log("detect_sending_to_parse", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL });
     try {
-      await sendRaw(settings.PARSE_QUEUE_URL, parseMsg);
+      await sendRaw(settings.PARSE_QUEUE_URL, parseMsg as unknown as Record<string, unknown>);
       console.log("detect_parse_message_sent", { job_id: jobId });
     } catch (sendErr) {
       this.logger.error("detect_send_to_parse_failed", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL }, sendErr instanceof Error ? sendErr : new Error(String(sendErr)));

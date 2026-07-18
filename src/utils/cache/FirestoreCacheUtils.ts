@@ -42,9 +42,9 @@ class FirestoreCacheUtils {
     return this.config;
   }
 
-  private isRetryable(err: any): boolean {
+  private isRetryable(err: unknown): boolean {
     if (!err) return false;
-    const code = err.code;
+    const code = (err as { code?: string | number }).code;
     if (typeof code === "number") return code === 429 || code >= 500;
     if (typeof code === "string") {
       return ["ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "ECONNREFUSED", "EPIPE"].includes(code);
@@ -53,7 +53,7 @@ class FirestoreCacheUtils {
   }
 
   private async withRetry<T>(fn: () => Promise<T>, retries = GCS_RETRIES, delay = 200): Promise<T> {
-    let lastErr: any;
+    let lastErr: unknown;
     for (let i = 0; i <= retries; i++) {
       try {
         return await fn();
@@ -89,7 +89,7 @@ class FirestoreCacheUtils {
     return this.withRetry(
       () => this.withTimeout(async () => {
         const [meta] = await this.storage.bucket(bucket).file(key).getMetadata();
-        return Number((meta as any).size ?? 0);
+        return Number((meta as { size?: string | number }).size ?? 0);
       }, GCS_TIMEOUT_MS),
       GCS_RETRIES
     );
@@ -156,7 +156,7 @@ class FirestoreCacheUtils {
       throw new Error(`Source file not found: ${srcBucket}/${srcKey}`);
     }
     const [meta] = await srcFile.getMetadata();
-    const size = Number((meta as any).size ?? 0);
+    const size = Number((meta as { size?: string | number }).size ?? 0);
   
     if (size > 100 * 1024 * 1024) {
       console.log(`Using streaming copy for large file: ${size} bytes`);
@@ -224,7 +224,7 @@ class FirestoreCacheUtils {
     return this.withRetry(
       () => this.withTimeout(async () => {
         const [files] = await this.storage.bucket(bucket).getFiles({ prefix });
-        return files.map((f) => [`gs://${bucket}/${f.name}`, Number((f.metadata as any).size ?? 0)]);
+        return files.map((f) => [`gs://${bucket}/${f.name}`, Number((f.metadata as { size?: string | number }).size ?? 0)]);
       }, GCS_TIMEOUT_MS),
       GCS_RETRIES
     );

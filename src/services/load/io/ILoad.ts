@@ -2,7 +2,7 @@ export interface LoadRequest {
   job_id: string;
   s3_url: string;
   field_spec: string[];
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface LoadResponse {

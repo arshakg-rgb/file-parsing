@@ -1,12 +1,12 @@
 export interface RetryRequest {
   job_id: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface RetryResponse {
   success: boolean;
   error?: string;
-  data?: any;
+  data?: unknown;
 }
 
 export interface IRetry {

@@ -2,11 +2,12 @@ import Config from "../../../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
 import { InstantiationError } from "../../../errors/InstantiationError.js";
 import MySqlManager from "../../../config/db/MySqlManager.js";
+import type { DeadLetterAttributes } from "../../../config/db/models/DeadLetter.js";
 import { DLQMessage, DLQStatus, FailureClass, JobStatus, LoadMessage } from "../../../shared/models/job.js";
 import { receiveMessages, deleteMessage, sendMessage } from "../../../shared/queueUtils.js";
 import { ClassifyResult, LineClassifier } from "../../stream_parser/LineClassifier.js";
 import { templateRegistry } from "../../../shared/templateRegistry.js";
-import { createLogger } from "../../../utils/logger/logger.js";
+import { createLogger, Logger } from "../../../utils/logger/logger.js";
 import { metrics } from "../../../utils/response/metrics.js";
 import { startHealthCheckServer } from "../../../utils/response/health.js";
 import { RetryService } from "../RetryService.js";
@@ -14,7 +15,7 @@ import { IRetry, RetryRequest, RetryResponse } from "../io/IRetry.js";
 
 class RetryServiceImpl extends ServiceManager implements RetryService {
   protected static instance: RetryServiceImpl;
-  private logger: any;
+  private logger: Logger;
   private dbManager: MySqlManager;
   private ALT_ENCODINGS = ["utf-8", "iso-8859-1", "cp1252", "utf-16"];
 
@@ -39,7 +40,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     return RetryServiceImpl.instance;
   }
 
-  public getLogger(): any {
+  public getLogger(): Logger {
     return this.logger;
   }
 
@@ -148,7 +149,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     return this.dbManager.repositories.jobs.getFieldSpec(jobId);
   }
 
-  private async getDeadLetter(dlqId: string): Promise<any> {
+  private async getDeadLetter(dlqId: string): Promise<DeadLetterAttributes | null> {
     return this.dbManager.repositories.deadLetters.findById(dlqId);
   }
 

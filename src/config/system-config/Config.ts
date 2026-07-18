@@ -25,8 +25,8 @@ function getOptionalString(name: string): string | undefined {
 class Config {
   private static instance: Config;
   private _appConfig: IAppConfig;
-  private _commonConfig: any;
-  private _authConfig: any;
+  private _commonConfig: unknown;
+  private _authConfig: unknown;
   private _databaseConfig: IDatabaseConfig;
 
   private constructor() {
@@ -68,11 +68,11 @@ class Config {
     return this._appConfig;
   }
 
-  public get commonConfig(): any {
+  public get commonConfig(): unknown {
     return this._commonConfig;
   }
 
-  public get authConfig(): any {
+  public get authConfig(): unknown {
     return this._authConfig;
   }
 

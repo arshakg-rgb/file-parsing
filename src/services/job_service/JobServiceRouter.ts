@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from "express";
 import { randomUUID } from "crypto";
 import { settings } from "../../shared/config.js";
 import { repositories, ParseJobRow } from "../../shared/db.js";
-import { SourceType, JobStatus, ParseJob } from "../../shared/models/job.js";
+import { SourceType, JobStatus, ParseJob, JobTimings } from "../../shared/models/job.js";
 import { sendRaw } from "../../shared/queueUtils.js";
 import { presignedPutUrl } from "../../shared/gcsUtils.js";
 import { transition } from "./stateMachine.js";
@@ -23,7 +23,7 @@ router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => 
         for (const [k, v] of Object.entries(raw)) {
           if (typeof v === "number" && Number.isInteger(v) && v >= 0) cleaned[k] = v;
           else if (Array.isArray(v)) {
-            const idxs = v.filter((n: any) => typeof n === "number" && Number.isInteger(n) && n >= 0);
+            const idxs = v.filter((n: unknown) => typeof n === "number" && Number.isInteger(n) && n >= 0);
             if (idxs.length) cleaned[k] = idxs;
           }
         }
@@ -38,20 +38,20 @@ router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => 
     // Normalize field_spec into a plain array of field names. Accept: an array; a JSON-array
     // string ('["email","name"]'); a JSON-object string ('{"fields":[{"name":"email"}]}'); a
     // { fields: [{name}] } object; or a plain comma-separated string ('email,name').
-    const namesFromArray = (arr: any[]): string[] =>
-      arr.map((f: any) => (typeof f === "string" ? f : f?.name)).filter(Boolean);
+    const namesFromArray = (arr: unknown[]): string[] =>
+      arr.map((f) => (typeof f === "string" ? f : (f as { name?: string } | undefined | null)?.name)).filter((x): x is string => typeof x === "string");
     let fieldNames: string[] = [];
     if (field_spec) {
       if (Array.isArray(field_spec)) {
         fieldNames = namesFromArray(field_spec);
       } else if (typeof field_spec === "string") {
         const s = field_spec.trim();
-        let parsed: any;
+        let parsed: unknown;
         try { parsed = JSON.parse(s); } catch { parsed = undefined; }
         if (Array.isArray(parsed)) fieldNames = namesFromArray(parsed);
-        else if (parsed && Array.isArray(parsed.fields)) fieldNames = namesFromArray(parsed.fields);
+        else if (parsed && Array.isArray((parsed as Record<string, unknown>).fields)) fieldNames = namesFromArray((parsed as Record<string, unknown>).fields as unknown[]);
         else if (s) fieldNames = s.split(",").map((x) => x.trim()).filter(Boolean); // plain CSV string
-      } else if (field_spec.fields && Array.isArray(field_spec.fields)) {
+      } else if ((field_spec as Record<string, unknown>).fields && Array.isArray((field_spec as Record<string, unknown>).fields)) {
         fieldNames = namesFromArray(field_spec.fields);
       }
     }
@@ -128,7 +128,7 @@ router.get("/jobs/:job_id", async (req: Request, res: Response, next: NextFuncti
       counts: row.counts,
       timings: row.timings,
       output_paths: row.output_paths,
-      csv_output_path: (row.timings as any)?._csv_output_path ?? null,
+      csv_output_path: (row.timings as JobTimings)?._csv_output_path ?? null,
       error: row.error,
     });
   } catch (err) {
@@ -213,7 +213,7 @@ router.post("/jobs/:job_id/retry", async (req: Request, res: Response, next: Nex
 
     // Determine appropriate queue based on target status
     let queueUrl: string;
-    let message: any = { job_id: req.params.job_id, manual_override: true };
+    let message: Record<string, unknown> = { job_id: req.params.job_id, manual_override: true };
 
     switch (target_status) {
       case JobStatus.INGESTING:

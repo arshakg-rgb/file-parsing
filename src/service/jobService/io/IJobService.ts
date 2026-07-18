@@ -2,7 +2,7 @@ export interface JobEvent {
   jobId: string;
   eventType: string;
   timestamp: string;
-  data?: any;
+  data?: unknown;
 }
 
 export interface JobServiceConfig {

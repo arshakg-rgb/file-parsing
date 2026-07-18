@@ -122,7 +122,7 @@ class FinalizationService {
   }
 
   private normalizeLineNumbers(rows: ParquetRow[]): void {
-    rows.sort((a, b) => (a._line_no ?? 0) - (b._line_no ?? 0));
+    rows.sort((a, b) => Number(a._line_no ?? 0) - Number(b._line_no ?? 0));
     let nextLineNo = 1;
     for (const r of rows) {
       if (r._line_no === undefined || r._line_no === null || r._line_no === 0) {
@@ -139,7 +139,7 @@ class FinalizationService {
       return;
     }
 
-    const timings = (job.timings as Record<string, any>) || {};
+    const timings = (job.timings as Record<string, unknown>) || {};
     const rubbishLogPath = timings._rubbish_log_path as string | undefined;
 
     let source: Buffer | undefined;
@@ -169,7 +169,7 @@ class FinalizationService {
       targetOffsets.add(dlq.byteOffset);
     }
 
-    let rubbishEntries: Array<Record<string, any>> = [];
+    let rubbishEntries: Array<Record<string, unknown>> = [];
     if (rubbishLogPath) {
       try {
         const raw = await this.storage.read(StoragePath.parse(rubbishLogPath));
@@ -210,13 +210,13 @@ class FinalizationService {
   private async updateRubbishLog(
     jobId: string,
     rubbishLogPath: string,
-    entries: Array<Record<string, any>>,
+    entries: Array<Record<string, unknown>>,
     lineMap: Map<number, number>
   ): Promise<void> {
     let changed = false;
     const updated = entries.map((e) => {
-      const line = lineMap.get(e.byte_offset);
-      if (line !== undefined && e.line_no !== line) {
+      const line = lineMap.get(e.byte_offset as number);
+      if (line !== undefined && (e.line_no as number | undefined) !== line) {
         changed = true;
         return { ...e, line_no: line };
       }
@@ -242,8 +242,8 @@ class FinalizationService {
       const rows = await this.engine.readRows(this.storage, storagePath);
       let fileChanged = false;
       for (const r of rows) {
-        const line = lineMap.get(r._byte_offset);
-        if (line !== undefined && r._line_no !== line) {
+        const line = lineMap.get(r._byte_offset as number);
+        if (line !== undefined && (r._line_no as number | undefined) !== line) {
           r._line_no = line;
           fileChanged = true;
         }

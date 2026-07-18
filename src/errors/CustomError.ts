@@ -3,9 +3,9 @@ import { ErrorInfo } from "./io/ErrorInfo.js";
 export class CustomError extends Error {
   public readonly code: string;
   public readonly statusCode: number;
-  public readonly details?: any;
+  public readonly details?: unknown;
 
-  constructor(message: string, code: string = "CUSTOM_ERROR", statusCode: number = 500, details?: any) {
+  constructor(message: string, code: string = "CUSTOM_ERROR", statusCode: number = 500, details?: unknown) {
     super(message);
     this.name = this.constructor.name;
     this.code = code;

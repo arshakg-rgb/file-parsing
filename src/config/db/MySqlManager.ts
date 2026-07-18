@@ -131,12 +131,12 @@ export interface ParseJobRow {
   source_ref: string;
   s3_url?: string;
   size?: number;
-  field_spec: any; // PostgreSQL JSONB is parsed automatically by pg
+  field_spec: unknown; // PostgreSQL JSONB is parsed automatically by pg
   exec_path: string;
   status: string;
-  output_paths: any; // PostgreSQL JSONB is parsed automatically by pg
-  counts: Record<string, any>;
-  timings: Record<string, any>;
+  output_paths: unknown; // PostgreSQL JSONB is parsed automatically by pg
+  counts: Record<string, unknown>;
+  timings: Record<string, unknown>;
   error?: string;
   created_at: Date;
   updated_at: Date;

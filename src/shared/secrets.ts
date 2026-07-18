@@ -54,15 +54,16 @@ class SecretsService extends ServiceManager {
       }
     
       return null;
-    } catch (err: any) {
-      if (err.name === "ResourceNotFoundException") {
+    } catch (err: unknown) {
+      const e = err as { name?: string; message?: string };
+      if (e.name === "ResourceNotFoundException") {
         return null;
       }
-      throw new Error(`Failed to fetch secret ${secretName}: ${err.message}`);
+      throw new Error(`Failed to fetch secret ${secretName}: ${e.message}`);
     }
   }
 
-  public async getSecretJson<T = Record<string, any>>(secretName: string): Promise<T | null> {
+  public async getSecretJson<T = Record<string, unknown>>(secretName: string): Promise<T | null> {
     const secret = await this.getSecret(secretName);
     if (!secret) return null;
   
@@ -100,7 +101,7 @@ export async function getSecret(secretName: string): Promise<string | null> {
   return secretsService.getSecret(secretName);
 }
 
-export async function getSecretJson<T = Record<string, any>>(secretName: string): Promise<T | null> {
+export async function getSecretJson<T = Record<string, unknown>>(secretName: string): Promise<T | null> {
   return secretsService.getSecretJson<T>(secretName);
 }
 

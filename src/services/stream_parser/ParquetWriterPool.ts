@@ -1,17 +1,22 @@
+import { OutputPartCreationAttributes } from "../../config/db/models/OutputPart.js";
 import os from "os";
 import path from "path";
 import fs from "fs/promises";
 import { createReadStream } from "fs";
 import { pipeline } from "node:stream/promises";
 import { randomUUID, createHash } from "crypto";
-import { ParquetSchema, ParquetWriter } from "@dsnp/parquetjs";
+import { ParquetSchema, ParquetWriter, type SchemaDefinition, type ParquetType } from "@dsnp/parquetjs";
 import { settings } from "../../shared/config.js";
 import { OutputPart } from "../../shared/models/job.js";
 import { repositories } from "../../shared/db.js";
 import { gcsClient, putObject } from "../../shared/gcsUtils.js";
 
-function estimateRowBytes(row: Record<string, any>): number {
-  return Object.values(row).reduce((acc, v) => acc + (v === null ? 4 : String(v).length), 0) + Object.keys(row).length * 16;
+function estimateRowBytes(row: Record<string, unknown>): number {
+  let bytes = 0;
+  for (const v of Object.values(row)) {
+    bytes += (v === null ? 4 : String(v).length);
+  }
+  return bytes + Object.keys(row).length * 16;
 }
 
 export class ParquetWriterPool {
@@ -19,7 +24,7 @@ export class ParquetWriterPool {
   private bucket: string;
   private outputPrefix: string;
   private watermark: number;
-  private buffers: { [templateId: string]: Record<string, any>[] };
+  private buffers: { [templateId: string]: Record<string, unknown>[] };
   private bufferBytes: number;
   private parts: OutputPart[];
   private totalRows: number;
@@ -38,7 +43,7 @@ export class ParquetWriterPool {
   }
 
   write(
-    row: Record<string, any>,
+    row: Record<string, unknown>,
     templateId: string,
     templateVersion: number,
     byteOffset: number,
@@ -88,7 +93,7 @@ export class ParquetWriterPool {
     this.buffers = {};
     this.bufferBytes = 0;
     const flushed: OutputPart[] = [];
-    const failed: { [templateId: string]: Record<string, any>[] } = {};
+    const failed: { [templateId: string]: Record<string, unknown>[] } = {};
 
     for (const [templateId, rows] of Object.entries(toFlush)) {
       if (!rows.length) continue;
@@ -115,7 +120,7 @@ export class ParquetWriterPool {
     return flushed;
   }
 
-  private async writePart(templateId: string, rows: Record<string, any>[]): Promise<OutputPart> {
+  private async writePart(templateId: string, rows: Record<string, unknown>[]): Promise<OutputPart> {
     const partId = randomUUID();
     for (const r of rows) r._part_id = partId;
 
@@ -154,7 +159,7 @@ export class ParquetWriterPool {
     };
 
     try {
-      await repositories.outputParts.create(part as any);
+      await repositories.outputParts.create(part as OutputPartCreationAttributes);
     } catch (e) {
       console.error("output_parts_insert_failed", { jobId: this.jobId, partId, error: String(e) });
     }
@@ -267,8 +272,8 @@ export class DLQWriter {
   }
 }
 
-export function buildSchema(rows: Record<string, any>[]): ParquetSchema {
-  const schemaObj: any = {};
+export function buildSchema(rows: Record<string, unknown>[]): ParquetSchema {
+  const schemaObj: SchemaDefinition = {};
   for (const row of rows) {
     for (const [k, v] of Object.entries(row)) {
       if (!schemaObj[k]) {
@@ -280,7 +285,7 @@ export function buildSchema(rows: Record<string, any>[]): ParquetSchema {
   return new ParquetSchema(schemaObj);
 }
 
-function typeForValue(v: any): string {
+function typeForValue(v: unknown): ParquetType {
   if (v === null || v === undefined) return "UTF8";
   if (typeof v === "boolean") return "BOOLEAN";
   if (typeof v === "number") return Number.isInteger(v) && Number.isSafeInteger(v) ? "INT64" : "DOUBLE";

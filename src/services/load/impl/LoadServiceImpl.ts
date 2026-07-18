@@ -7,7 +7,7 @@ import { EventType, JobEvent, makeJobEvent } from "../../../shared/models/events
 import { JobStatus, LoadMessage } from "../../../shared/models/job.js";
 import { receiveMessages, deleteMessage, publishEvent } from "../../../shared/queueUtils.js";
 import { ParquetReader } from "@dsnp/parquetjs";
-import { createLogger } from "../../../utils/logger/logger.js";
+import { createLogger, Logger } from "../../../utils/logger/logger.js";
 import { metrics } from "../../../utils/response/metrics.js";
 import { startHealthCheckServer } from "../../../utils/response/health.js";
 import { LoadService } from "../LoadService.js";
@@ -15,7 +15,7 @@ import { ILoad, LoadRequest, LoadResponse } from "../io/ILoad.js";
 
 class LoadServiceImpl extends ServiceManager implements LoadService {
   protected static instance: LoadServiceImpl;
-  private logger: any;
+  private logger: Logger;
   private gcsUtils: FirestoreCacheUtils;
   private dbManager: MySqlManager;
   private SYSTEM_COLS = [
@@ -51,7 +51,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     return LoadServiceImpl.instance;
   }
 
-  public getLogger(): any {
+  public getLogger(): Logger {
     return this.logger;
   }
 
@@ -68,7 +68,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     return { success: true };
   }
 
-  private emit(jobId: string, eventType: EventType, data: Record<string, any>) {
+  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>) {
     publishEvent(makeJobEvent(eventType, jobId, "load", data));
   }
 
@@ -106,7 +106,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     }
   }
 
-  private buildRecoveredRow(msg: LoadMessage): Record<string, any> {
+  private buildRecoveredRow(msg: LoadMessage): Record<string, unknown> {
     const now = new Date().toISOString();
     return {
       ...msg.recovered_row,
@@ -123,41 +123,41 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     };
   }
 
-  private async readParquet(s3Path: string): Promise<Record<string, any>[]> {
+  private async readParquet(s3Path: string): Promise<Record<string, unknown>[]> {
     const [bucket, key] = this.gcsUtils.parseGcsUrl(s3Path);
     const raw = await this.gcsUtils.readFull(bucket, key);
     const reader = await ParquetReader.openBuffer(raw);
     const cursor = reader.getCursor();
-    const rows: Record<string, any>[] = [];
-    let row: any;
+    const rows: Record<string, unknown>[] = [];
+    let row: unknown;
     while ((row = await cursor.next())) {
-      rows.push(row);
+      rows.push(row as Record<string, unknown>);
     }
     await reader.close();
     return rows;
   }
 
-  private async upsertRows(_jobId: string, rows: Record<string, any>[]): Promise<void> {
+  private async upsertRows(_jobId: string, rows: Record<string, unknown>[]): Promise<void> {
     if (!rows.length) return;
 
     for (let i = 0; i < rows.length; i += this.UPSERT_BATCH) {
       const batch = rows.slice(i, i + this.UPSERT_BATCH);
       const records = batch.map((row) => {
-        const fields: Record<string, any> = {};
+        const fields: Record<string, unknown> = {};
         for (const [k, v] of Object.entries(row)) {
           if (!k.startsWith("_")) fields[k] = v;
         }
         return {
-          _job_id: row._job_id,
-          _byte_offset: row._byte_offset,
-          _byte_length: row._byte_length,
-          _record_index: row._record_index,
-          _line_no: row._line_no,
-          _template_id: row._template_id,
-          _template_version: row._template_version,
-          _checksum: row._checksum,
-          _parsed_at: typeof row._parsed_at === "number" ? new Date(row._parsed_at) : row._parsed_at,
-          _part_id: row._part_id,
+          _job_id: row._job_id as string,
+          _byte_offset: row._byte_offset as number,
+          _byte_length: row._byte_length as number,
+          _record_index: row._record_index as number,
+          _line_no: row._line_no as number,
+          _template_id: row._template_id as string,
+          _template_version: row._template_version as number,
+          _checksum: row._checksum as string,
+          _parsed_at: typeof row._parsed_at === "number" ? new Date(row._parsed_at) : (row._parsed_at as Date),
+          _part_id: row._part_id as string,
           fields,
         };
       });

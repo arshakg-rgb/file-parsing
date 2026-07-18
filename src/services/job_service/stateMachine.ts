@@ -1,6 +1,6 @@
 import { repositories, ParseJobRow } from "../../shared/db.js";
-import { JobStatus, JobStatus as JS, VALID_TRANSITIONS, isTerminal } from "../../shared/models/job.js";
-import { EventType, JobEvent, ParsingCompletedData } from "../../shared/models/events.js";
+import { JobStatus, JobStatus as JS, VALID_TRANSITIONS, isTerminal, JobTimings, JobCounts } from "../../shared/models/job.js";
+import { EventType, JobEvent, ParsingCompletedData, EntryDiscoveredData, StatusChangedData } from "../../shared/models/events.js";
 import { sendRaw, publishEvent } from "../../shared/queueUtils.js";
 import { settings } from "../../shared/config.js";
 import { randomUUID } from "crypto";
@@ -22,7 +22,7 @@ export async function transition(
   jobId: string,
   newStatus: JobStatus,
   error?: string,
-  extraFields: Record<string, any> = {}
+  extraFields: Record<string, unknown> = {}
 ): Promise<ParseJobRow> {
   const row = await getJob(jobId);
   if (!row) throw new TransitionError(`Job ${jobId} not found`);
@@ -49,7 +49,7 @@ export async function transition(
     timings["completed_at"] = new Date().toISOString();
   }
 
-  const updates: Record<string, any> = {
+  const updates: Record<string, unknown> = {
     status: newStatus,
     timings,
     updated_at: new Date(),
@@ -65,8 +65,8 @@ export async function handleEvent(event: JobEvent): Promise<void> {
   const etype = event.event_type;
 
   if (etype === EventType.JOB_STATUS_CHANGED) {
-    const newStatus = event.data.new_status as JobStatus;
-    await transition(event.job_id, newStatus, event.data.error);
+    const statusData = event.data as unknown as StatusChangedData;
+    await transition(event.job_id, statusData.new_status, statusData.error);
   } else if (etype === EventType.ENTRY_DISCOVERED) {
     await createChildJob(event);
   } else if (etype === EventType.PARSING_COMPLETED) {
@@ -79,22 +79,22 @@ export async function handleEvent(event: JobEvent): Promise<void> {
       status: row?.status,
       counts: row?.counts,
       output_paths: Array.isArray(row?.output_paths) ? row.output_paths : [],
-      rubbish_log_path: (row?.timings as any)?._rubbish_log_path ?? null,
-      dlq_count: (row?.timings as any)?._dlq_count ?? 0,
-      csv_output_path: (row?.timings as any)?._csv_output_path ?? null,
+      rubbish_log_path: (row?.timings as JobTimings)?._rubbish_log_path ?? null,
+      dlq_count: (row?.timings as JobTimings)?._dlq_count ?? 0,
+      csv_output_path: (row?.timings as JobTimings)?._csv_output_path ?? null,
     });
   } else if (etype === EventType.REPORTING_COMPLETED) {
     const row = await getJob(event.job_id);
     // Use counts from event data if available, otherwise use database
-    const counts = event.data.counts || row?.counts;
+    const counts = (event.data as Record<string, unknown>).counts as JobCounts || row?.counts;
     await transition(event.job_id, JobStatus.DONE, undefined, { counts });
   } else if (etype === EventType.ERROR_OCCURRED) {
-    await transition(event.job_id, JobStatus.FAILED, event.data.error);
+    await transition(event.job_id, JobStatus.FAILED, (event.data as Record<string, unknown>).error as string);
   }
 }
 
 async function createChildJob(event: JobEvent): Promise<void> {
-  const data = event.data;
+  const data = event.data as unknown as EntryDiscoveredData;
   const now = new Date().toISOString();
   const childId = randomUUID();
 
@@ -106,7 +106,7 @@ async function createChildJob(event: JobEvent): Promise<void> {
     job_id: childId,
     batch_id: data.batch_id,
     parent_job_id: data.parent_job_id,
-    source_type: data.source_type || SourceType.ARCHIVE_ENTRY,
+    source_type: SourceType.ARCHIVE_ENTRY,
     source_ref: data.entry_name,
     s3_url: data.entry_s3_url,
     size: data.entry_size,
@@ -130,7 +130,7 @@ async function createChildJob(event: JobEvent): Promise<void> {
 }
 
 async function onParsingCompleted(event: JobEvent): Promise<void> {
-  const data = event.data as ParsingCompletedData;
+  const data = event.data as unknown as ParsingCompletedData;
   console.log("parsing_completed_received", { job_id: event.job_id, parsed: data.parsed, dropped: data.dropped_rubbish, failed: data.failed, part_count: data.part_s3_paths.length });
   
   const row = await getJob(event.job_id);

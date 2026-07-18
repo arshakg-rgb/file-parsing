@@ -52,7 +52,7 @@ async function sendIngestMessage(s3Key: string): Promise<string> {
   return jobId;
 }
 
-async function waitForReport(jobId: string, timeoutMs = 120000): Promise<any> {
+async function waitForReport(jobId: string, timeoutMs = 120000): Promise<unknown> {
   const queueUrl = await getQueueUrl(REPORT_QUEUE);
   const startTime = Date.now();
   

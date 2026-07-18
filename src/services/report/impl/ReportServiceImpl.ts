@@ -4,10 +4,12 @@ import { InstantiationError } from "../../../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../../../utils/cache/FirestoreCacheUtils.js";
 import MySqlManager from "../../../config/db/MySqlManager.js";
 import { EventType, JobEvent, makeJobEvent } from "../../../shared/models/events.js";
-import { JobStatus, ReportMessage, JobCounts } from "../../../shared/models/job.js";
+import { JobStatus, ReportMessage, JobCounts, JobTimings } from "../../../shared/models/job.js";
+import type { ParseJobAttributes } from "../../../config/db/models/ParseJob.js";
+import type { OutputPartAttributes } from "../../../config/db/models/OutputPart.js";
 import { receiveMessages, deleteMessage, publishEvent } from "../../../shared/queueUtils.js";
 import { QualityGate } from "../../../shared/qualityGate.js";
-import { createLogger } from "../../../utils/logger/logger.js";
+import { createLogger, Logger } from "../../../utils/logger/logger.js";
 import { metrics } from "../../../utils/response/metrics.js";
 import { startHealthCheckServer } from "../../../utils/response/health.js";
 import { ReportService } from "../ReportService.js";
@@ -15,7 +17,7 @@ import { IReport, ReportRequest, ReportResponse } from "../io/IReport.js";
 
 class ReportServiceImpl extends ServiceManager implements ReportService {
   protected static instance: ReportServiceImpl;
-  private logger: any;
+  private logger: Logger;
   private gcsUtils: FirestoreCacheUtils;
   private dbManager: MySqlManager;
 
@@ -41,7 +43,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
     return ReportServiceImpl.instance;
   }
 
-  public getLogger(): any {
+  public getLogger(): Logger {
     return this.logger;
   }
 
@@ -58,7 +60,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
     return { success: true };
   }
 
-  private emit(jobId: string, eventType: EventType, data: Record<string, any>) {
+  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>) {
     publishEvent(makeJobEvent(eventType, jobId, "report", data));
   }
 
@@ -111,7 +113,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
       },
       output_parts: parts.map((p) => ({ s3_path: p.s3_path, rows: p.row_count, bytes: p.byte_size })),
       output_paths: msg.output_paths,
-      csv_output_path: msg.csv_output_path ?? (jobRow.timings as any)?._csv_output_path ?? null,
+      csv_output_path: msg.csv_output_path ?? (jobRow.timings as JobTimings)?._csv_output_path ?? null,
       rubbish_log_path: msg.rubbish_log_path,
       dlq_count: msg.dlq_count,
       timings: jobRow.timings,
@@ -135,19 +137,19 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
     this.emit(jobId, EventType.REPORTING_COMPLETED, { counts: msg.counts });
   }
 
-  private async getJob(jobId: string): Promise<any> {
+  private async getJob(jobId: string): Promise<ParseJobAttributes | null> {
     return this.dbManager.repositories.jobs.findById(jobId);
   }
 
-  private async getParts(jobId: string): Promise<any[]> {
+  private async getParts(jobId: string): Promise<OutputPartAttributes[]> {
     return this.dbManager.repositories.outputParts.findByJob(jobId);
   }
 
-  private async getBatchJobs(batchId: string): Promise<any[]> {
+  private async getBatchJobs(batchId: string): Promise<ParseJobAttributes[]> {
     return this.dbManager.repositories.jobs.findByBatchId(batchId);
   }
 
-  private async writeBatchRollup(batchId: string, jobs: any[]): Promise<void> {
+  private async writeBatchRollup(batchId: string, jobs: ParseJobAttributes[]): Promise<void> {
     const rollup = {
       batch_id: batchId,
       generated_at: new Date().toISOString(),
@@ -156,8 +158,8 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
       partial: jobs.filter((j) => j.status === JobStatus.PARTIAL).length,
       held: jobs.filter((j) => j.status === JobStatus.HELD).length,
       failed: jobs.filter((j) => j.status === JobStatus.FAILED).length,
-      total_parsed: jobs.reduce((a, j) => a + ((j.counts as any)?.parsed || 0), 0),
-      total_dropped: jobs.reduce((a, j) => a + ((j.counts as any)?.dropped_rubbish || 0), 0),
+      total_parsed: jobs.reduce((a, j) => a + (j.counts.parsed || 0), 0),
+      total_dropped: jobs.reduce((a, j) => a + (j.counts.dropped_rubbish || 0), 0),
       jobs: jobs.map((j) => ({ job_id: j.job_id, status: j.status, source: j.source_ref })),
     };
     const config = this.getConfig();

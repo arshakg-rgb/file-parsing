@@ -2,7 +2,7 @@ import { settings } from "../../shared/config.js";
 
 export interface LogContext {
   job_id?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export class Logger {

@@ -1,7 +1,7 @@
 import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
-import { createLogger } from "../utils/logger/logger.js";
+import { createLogger, Logger } from "../utils/logger/logger.js";
 
 export enum LineFormat {
   CSV = "csv",
@@ -13,13 +13,13 @@ export enum LineFormat {
 
 export interface ParsedLine {
   format: LineFormat;
-  data: Record<string, any> | null;
+  data: Record<string, unknown> | null;
   error?: string;
 }
 
 class FormatDetectorService extends ServiceManager {
   protected static instance: FormatDetectorService;
-  private logger: any;
+  private logger: Logger;
 
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
@@ -61,9 +61,9 @@ class FormatDetectorService extends ServiceManager {
     return LineFormat.TEXT;
   }
 
-  public parseTwitterUserLine(line: string): Record<string, any> | null {
+  public parseTwitterUserLine(line: string): Record<string, unknown> | null {
     try {
-      const data: Record<string, any> = {};
+      const data: Record<string, unknown> = {};
       
       const emailMatch = line.match(/Email:\s*([^\s-]+)/);
       if (emailMatch) data.email = emailMatch[1];
@@ -87,7 +87,7 @@ class FormatDetectorService extends ServiceManager {
     }
   }
 
-  public parseJsonLine(line: string): Record<string, any> | null {
+  public parseJsonLine(line: string): Record<string, unknown> | null {
     try {
       const parsed = JSON.parse(line);
       return parsed;
@@ -97,10 +97,10 @@ class FormatDetectorService extends ServiceManager {
     }
   }
 
-  public parseCsvLine(line: string, fieldSpec?: string[]): Record<string, any> | null {
+  public parseCsvLine(line: string, fieldSpec?: string[]): Record<string, unknown> | null {
     try {
       const parts = line.split(",");
-      const data: Record<string, any> = {};
+      const data: Record<string, unknown> = {};
       
       if (fieldSpec && fieldSpec.length > 0) {
         for (let i = 0; i < fieldSpec.length; i++) {
@@ -152,15 +152,15 @@ export function detectLineFormat(line: string): LineFormat {
   return formatDetectorService.detectLineFormat(line);
 }
 
-export function parseTwitterUserLine(line: string): Record<string, any> | null {
+export function parseTwitterUserLine(line: string): Record<string, unknown> | null {
   return formatDetectorService.parseTwitterUserLine(line);
 }
 
-export function parseJsonLine(line: string): Record<string, any> | null {
+export function parseJsonLine(line: string): Record<string, unknown> | null {
   return formatDetectorService.parseJsonLine(line);
 }
 
-export function parseCsvLine(line: string, fieldSpec?: string[]): Record<string, any> | null {
+export function parseCsvLine(line: string, fieldSpec?: string[]): Record<string, unknown> | null {
   return formatDetectorService.parseCsvLine(line, fieldSpec);
 }
 

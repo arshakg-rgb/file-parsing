@@ -3,12 +3,12 @@ import { Storage } from "@google-cloud/storage";
 import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
-import { createLogger } from "../utils/logger/logger.js";
+import { createLogger, Logger } from "../utils/logger/logger.js";
 import { decode } from "../utils/normalizers/encoding.js";
 
 class GcsUtilsService extends ServiceManager {
   protected static instance: GcsUtilsService;
-  private logger: any;
+  private logger: Logger;
   private storage: Storage | null = null;
   private readonly GCS_RETRIES = 3;
   private readonly GCS_TIMEOUT_MS = 7200000;
@@ -46,9 +46,9 @@ class GcsUtilsService extends ServiceManager {
     return this.storage;
   }
 
-  private isRetryable(err: any): boolean {
+  private isRetryable(err: unknown): boolean {
     if (!err) return false;
-    const code = err.code;
+    const code = (err as { code?: string | number }).code;
     if (typeof code === "number") return code === 429 || code >= 500;
     if (typeof code === "string") {
       return ["ECONNRESET", "ETIMEDOUT", "ENOTFOUND", "ECONNREFUSED", "EPIPE"].includes(code);
@@ -57,7 +57,7 @@ class GcsUtilsService extends ServiceManager {
   }
 
   private async withRetry<T>(fn: () => Promise<T>, retries = this.GCS_RETRIES, delay = 200): Promise<T> {
-    let lastErr: any;
+    let lastErr: unknown;
     for (let i = 0; i <= retries; i++) {
       try {
         return await fn();
@@ -92,7 +92,7 @@ class GcsUtilsService extends ServiceManager {
     return this.withRetry(
       () => this.withTimeout(async () => {
         const [meta] = await this.getStorage().bucket(bucket).file(key).getMetadata();
-        return Number((meta as any).size ?? 0);
+        return Number((meta as { size?: string | number }).size ?? 0);
       }, this.GCS_TIMEOUT_MS),
       this.GCS_RETRIES
     );
@@ -159,7 +159,7 @@ class GcsUtilsService extends ServiceManager {
       throw new Error(`Source file not found: ${srcBucket}/${srcKey}`);
     }
     const [meta] = await srcFile.getMetadata();
-    const size = Number((meta as any).size ?? 0);
+    const size = Number((meta as { size?: string | number }).size ?? 0);
   
     if (size > 100 * 1024 * 1024) {
       this.logger.info(`Using streaming copy for large file: ${size} bytes`);
@@ -212,7 +212,7 @@ class GcsUtilsService extends ServiceManager {
     
       readStream.pipe(writeStream)
         .on("error", (error) => {
-          this.logger.error("stream_copy_error:", error);
+          this.logger.error("stream_copy_error:", { error: error.message, stack: error.stack });
           reject(error);
         })
         .on("finish", () => {
@@ -227,7 +227,7 @@ class GcsUtilsService extends ServiceManager {
     return this.withRetry(
       () => this.withTimeout(async () => {
         const [files] = await this.getStorage().bucket(bucket).getFiles({ prefix });
-        return files.map((f) => [`gs://${bucket}/${f.name}`, Number((f.metadata as any).size ?? 0)]);
+        return files.map((f) => [`gs://${bucket}/${f.name}`, Number((f.metadata as { size?: string | number }).size ?? 0)]);
       }, this.GCS_TIMEOUT_MS),
       this.GCS_RETRIES
     );

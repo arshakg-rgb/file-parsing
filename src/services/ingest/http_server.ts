@@ -18,7 +18,7 @@ app.get("/health", (_req: Request, res: Response) => {
 });
 
 // File upload endpoint
-app.post("/upload", upload.single("file"), async (req: any, res: Response) => {
+app.post("/upload", upload.single("file"), async (req: Request, res: Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });

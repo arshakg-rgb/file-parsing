@@ -8,14 +8,14 @@ import Config from "../../../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
 import { InstantiationError } from "../../../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../../../utils/cache/FirestoreCacheUtils.js";
-import { createLogger } from "../../../utils/logger/logger.js";
+import { createLogger, Logger } from "../../../utils/logger/logger.js";
 import { startHealthCheckServer } from "../../../utils/response/health.js";
 import { ArchiveEntryConsumerService } from "../ArchiveEntryConsumerService.js";
 import { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryResponse } from "../io/IArchiveEntryConsumer.js";
 
 class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveEntryConsumerService {
   protected static instance: ArchiveEntryConsumerServiceImpl;
-  private logger: any;
+  private logger: Logger;
   private gcsUtils: FirestoreCacheUtils;
   private passwordCache: Map<string, Buffer>;
   private passwordAttempts: Map<string, number>;
@@ -47,7 +47,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
     return ArchiveEntryConsumerServiceImpl.instance;
   }
 
-  public getLogger(): any {
+  public getLogger(): Logger {
     return this.logger;
   }
 
@@ -147,7 +147,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
       
       // Get the size of the extracted file
       const [meta] = await entryFile.getMetadata();
-      const size = Number((meta as any).size ?? 0);
+      const size = Number((meta as { size?: string | number }).size ?? 0);
       
       const s3Url = `gs://${bucket}/${entryKey}`;
       return { s3Url, size };

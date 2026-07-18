@@ -14,6 +14,8 @@ import {
   AIVerdict,
 } from "../io/IAiClassifier.js";
 
+type RawClassifyResponse = Record<string, unknown>;
+
 const SYSTEM_PROMPT = `You are a data-parsing assistant embedded in a production file-parsing pipeline.
 A streaming parser has encountered a line that matches NO known template.
 
@@ -116,7 +118,7 @@ class AiClassifierServiceImpl extends ServiceManager implements AiClassifierServ
     });
 
     return response.text
-      ?? response.candidates?.[0]?.content?.parts?.map((part: any) => part.text).join("")
+      ?? response.candidates?.[0]?.content?.parts?.map((part: unknown) => (part as { text?: string }).text).join("")
       ?? "";
   }
 
@@ -126,16 +128,16 @@ class AiClassifierServiceImpl extends ServiceManager implements AiClassifierServ
 IMPORTANT: You must respond with a template definition (kind, template.field_map, etc.) as specified in the system prompt. Do NOT extract the data from this line - create a reusable template that can parse this line and similar lines.`;
   }
 
-  public extractJson(text: string): any {
+  public extractJson(text: string): RawClassifyResponse {
     // Try markdown code fence first (```json or ```)
     const fence = /\`\`\`(?:json)?\s*(\{[\s\S]*?\})\s*\`\`\`/.exec(text);
-    if (fence) return JSON.parse(fence[1]);
+    if (fence) return JSON.parse(fence[1]) as RawClassifyResponse;
     
     // Try bare JSON object
     const brace = /\{[\s\S]*\}/.exec(text);
     if (brace) {
       try {
-        return JSON.parse(brace[0]);
+        return JSON.parse(brace[0]) as RawClassifyResponse;
       } catch {}
     }
     
@@ -144,18 +146,18 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     const lastBrace = text.lastIndexOf("}");
     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
       try {
-        return JSON.parse(text.substring(firstBrace, lastBrace + 1));
+        return JSON.parse(text.substring(firstBrace, lastBrace + 1)) as RawClassifyResponse;
       } catch {}
     }
     
     throw new Error(`No JSON found in model output. Response: ${text.slice(0, 200)}...`);
   }
 
-  public fingerprint(line: string, raw: any): string {
-    const t = raw.template || {};
-    const parts = [raw.kind || "unknown", t.structure || "", t.delimiter || "", t.quote_char || ""];
-    if (t.field_map) parts.push(Object.keys(t.field_map).sort().join(","));
-    if (t.signature) parts.push(t.signature.slice(0, 64));
+  public fingerprint(line: string, raw: RawClassifyResponse): string {
+    const t = (raw.template || {}) as Record<string, unknown>;
+    const parts = [(raw.kind as string) || "unknown", (t.structure as string) || "", (t.delimiter as string) || "", (t.quote_char as string) || ""];
+    if (t.field_map) parts.push(Object.keys(t.field_map as Record<string, unknown>).sort().join(","));
+    if (t.signature) parts.push((t.signature as string).slice(0, 64));
     return crypto.createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 24);
   }
 
@@ -178,13 +180,13 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     return crypto.createHash("sha256").update(`text|${line.length}`).digest("hex").slice(0, 24);
   }
 
-  public buildTemplateFromRaw(raw: any, kindStr: string, line: string): RecordTemplate | RubbishTemplate | null {
+  public buildTemplateFromRaw(raw: RawClassifyResponse, kindStr: string, line: string): RecordTemplate | RubbishTemplate | null {
     try {
       const fp = this.fingerprint(line, raw);
       if (kindStr === "record-template") {
-        const t = raw.template || {};
+        const t = (raw.template || {}) as Record<string, unknown>;
         const fieldMap: Record<string, { locator: string; type: string }> = {};
-        for (const [field, loc] of Object.entries(t.field_map || {})) {
+        for (const [field, loc] of Object.entries((t.field_map || {}) as Record<string, FieldLocator>)) {
           const locator = loc as FieldLocator;
           fieldMap[field] = {
             locator: locator.index !== undefined ? `index:${locator.index}` : 
@@ -198,20 +200,20 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
           fingerprint: fp,
           version: 1,
           field_map: fieldMap,
-          structure: t.structure || "csv",
-          length_hint: t.length_hint_min || 0,
+          structure: (t.structure as string) || "csv",
+          length_hint: (t.length_hint_min as number) || 0,
           source: "ai" as const,
           created_at: new Date(),
         };
       }
       if (kindStr === "rubbish-signature") {
-        const t = raw.template || {};
+        const t = (raw.template || {}) as Record<string, unknown>;
         return {
           template_id: crypto.randomUUID(),
           fingerprint: fp,
           version: 1,
-          signature: t.signature,
-          confidence: parseFloat(t.confidence) || 0.95,
+          signature: t.signature as string,
+          confidence: parseFloat(t.confidence as string) || 0.95,
           source: "ai" as const,
           created_at: new Date(),
         };
@@ -222,14 +224,14 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     return null;
   }
 
-  public async callVertexAI(prompt: string): Promise<any> {
+  public async callVertexAI(prompt: string): Promise<RawClassifyResponse> {
     try {
       console.log("vertex_ai_request_start", { promptLength: prompt.length });
       const text = await this.askVertexAI(prompt);
       console.log("vertex_ai_response_raw", { response: text.slice(0, 500) });
       const parsed = this.extractJson(text);
       console.log("vertex_ai_response_parsed", { parsed: JSON.stringify(parsed).slice(0, 500) });
-      return parsed;
+      return parsed as RawClassifyResponse;
     } catch (error) {
       console.error("vertex_ai_request_failed", { error: String(error) });
       throw error;
@@ -265,7 +267,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     return { success: false, delimiter: "", fields: [] };
   }
 
-  public createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: string): any {
+  public createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: string): RecordTemplate {
     const fieldMap: Record<string, { locator: string; type: string }> = {};
     
     fieldSpec.forEach((field, index) => {
@@ -335,7 +337,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     const userPrompt = this.buildUserPrompt(req);
     try {
       const raw = await this.callVertexAI(userPrompt);
-      let kindStr = raw.kind || "uncertain";
+      let kindStr: string = (raw.kind as string) || "uncertain";
       
       // Handle structure names (csv, json, etc.) as record-template
       const structureNames = ["csv", "json", "kv", "fixed", "regex"];

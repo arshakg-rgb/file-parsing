@@ -2,16 +2,16 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 import { randomUUID } from "crypto";
-import { ParquetReader, ParquetWriter, ParquetSchema } from "@dsnp/parquetjs";
+import { ParquetReader, ParquetWriter, ParquetSchema, type SchemaDefinition, type ParquetType } from "@dsnp/parquetjs";
 import { IObjectStorage } from "./IObjectStorage.js";
 import { StoragePath } from "./StoragePath.js";
 
 export interface ParquetRow {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export class ParquetEngine {
-  static sanitizeBigInt(value: any): any {
+  static sanitizeBigInt(value: unknown): unknown {
     if (typeof value === "bigint") {
       return Number(value);
     }
@@ -19,7 +19,7 @@ export class ParquetEngine {
       return value.map(ParquetEngine.sanitizeBigInt);
     }
     if (value !== null && typeof value === "object") {
-      const result: Record<string, any> = {};
+      const result: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value)) {
         result[k] = ParquetEngine.sanitizeBigInt(v);
       }
@@ -29,12 +29,12 @@ export class ParquetEngine {
   }
 
   static buildSchema(rows: ParquetRow[]): ParquetSchema {
-    const schemaObj: any = {};
+    const schemaObj: SchemaDefinition = {};
     for (const row of rows) {
       for (const [k, v] of Object.entries(row)) {
         if (!schemaObj[k]) {
           const value = ParquetEngine.sanitizeBigInt(v);
-          const type =
+          const type: ParquetType =
             value === null || value === undefined
               ? "UTF8"
               : typeof value === "boolean"
@@ -58,9 +58,9 @@ export class ParquetEngine {
     const reader = await ParquetReader.openBuffer(buffer);
     const cursor = reader.getCursor();
     const rows: ParquetRow[] = [];
-    let row: any;
-    while ((row = await cursor.next())) {
-      rows.push(ParquetEngine.sanitizeBigInt(row));
+    let row: ParquetRow | null;
+    while ((row = await cursor.next() as ParquetRow | null)) {
+      if (row) rows.push(ParquetEngine.sanitizeBigInt(row) as ParquetRow);
     }
     await reader.close();
     return rows;
@@ -74,7 +74,7 @@ export class ParquetEngine {
     const tempFile = path.join(os.tmpdir(), `${randomUUID()}.parquet`);
     const writer = await ParquetWriter.openFile(ParquetEngine.buildSchema(rows), tempFile);
     for (const row of rows) {
-      await writer.appendRow(ParquetEngine.sanitizeBigInt(row));
+      await writer.appendRow(ParquetEngine.sanitizeBigInt(row) as ParquetRow);
     }
     await writer.close();
 

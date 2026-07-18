@@ -2,7 +2,8 @@ import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import MySqlManager from "../config/db/MySqlManager.js";
-import { createLogger } from "../utils/logger/logger.js";
+import { createLogger, Logger } from "../utils/logger/logger.js";
+import type { ParsedRecordAttributes } from "../config/db/models/ParsedRecord.js";
 import crypto from "crypto";
 
 export interface TraceRecord {
@@ -17,12 +18,12 @@ export interface TraceRecord {
   template_version: number;
   checksum: string;
   parsed_at: Date;
-  row_data?: Record<string, any>;
+  row_data?: Record<string, unknown>;
 }
 
 class TraceSystemService extends ServiceManager {
   protected static instance: TraceSystemService;
-  private logger: any;
+  private logger: Logger;
   private dbManager: MySqlManager;
 
   private constructor(enforce: () => void) {
@@ -107,9 +108,9 @@ class TraceSystemService extends ServiceManager {
 
   public async getJobTraces(jobId: string): Promise<TraceRecord[]> {
     const rows = await this.dbManager.repositories.parsedRecords.findByJob(jobId);
-    
-    return rows.map((row: any) => ({
-      s3_url: typeof row.fields === "string" ? JSON.parse(row.fields).s3_url : row.fields?.s3_url,
+
+    return rows.map((row: ParsedRecordAttributes) => ({
+      s3_url: (row.fields.s3_url as string | undefined) ?? "",
       byte_offset: row._byte_offset,
       byte_length: row._byte_length,
       record_index: row._record_index,
@@ -123,7 +124,7 @@ class TraceSystemService extends ServiceManager {
     }));
   }
 
-  public async getJobRubbishLog(jobId: string): Promise<any[]> {
+  public async getJobRubbishLog(jobId: string): Promise<unknown[]> {
     return this.dbManager.repositories.rubbishLogs.findByJob(jobId);
   }
 
@@ -174,7 +175,7 @@ export class TraceSystem {
     return traceSystemService.getJobTraces(jobId);
   }
 
-  async getJobRubbishLog(jobId: string): Promise<any[]> {
+  async getJobRubbishLog(jobId: string): Promise<unknown[]> {
     return traceSystemService.getJobRubbishLog(jobId);
   }
 

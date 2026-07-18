@@ -55,6 +55,7 @@ export interface JobTimings {
   loading_at?: string;
   reporting_at?: string;
   completed_at?: string;
+  [key: string]: unknown;
 }
 
 export interface ParseJob {
@@ -201,7 +202,7 @@ export interface LoadMessage {
   job_id: string;
   output_paths?: string[];
   field_spec?: string[];
-  recovered_row?: Record<string, any>;
+  recovered_row?: Record<string, unknown>;
   byte_offset?: number;
   byte_length?: number;
   line_no?: number;

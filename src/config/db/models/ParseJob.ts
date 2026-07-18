@@ -5,6 +5,7 @@ import {
   Model,
   PrimaryKey,
 } from "sequelize-typescript";
+import type { JobCounts, JobTimings } from "../../../shared/models/job.js";
 
 export interface IParseJob {
   job_id: string;
@@ -14,12 +15,12 @@ export interface IParseJob {
   source_ref: string;
   s3_url?: string | null;
   size?: number | null;
-  field_spec: any;
+  field_spec: string[];
   exec_path: string;
   status: string;
-  output_paths: any;
-  counts: any;
-  timings: any;
+  output_paths: string[];
+  counts: JobCounts;
+  timings: JobTimings;
   error?: string | null;
   created_at?: Date;
   updated_at?: Date;
@@ -61,7 +62,7 @@ export default class ParseJob extends Model<IParseJob, ParseJobCreationAttribute
   declare size: number | null;
 
   @Column({ type: DataType.JSONB, allowNull: false, defaultValue: [] })
-  declare field_spec: any;
+  declare field_spec: string[];
 
   @Column({ type: DataType.STRING(16), allowNull: false, defaultValue: "stream" })
   declare exec_path: string;
@@ -70,13 +71,13 @@ export default class ParseJob extends Model<IParseJob, ParseJobCreationAttribute
   declare status: string;
 
   @Column({ type: DataType.JSONB, allowNull: false, defaultValue: [] })
-  declare output_paths: any;
+  declare output_paths: string[];
 
   @Column({ type: DataType.JSONB, allowNull: false, defaultValue: {} })
-  declare counts: any;
+  declare counts: JobCounts;
 
   @Column({ type: DataType.JSONB, allowNull: false, defaultValue: {} })
-  declare timings: any;
+  declare timings: JobTimings;
 
   @Column({ type: DataType.TEXT, allowNull: true })
   declare error: string | null;

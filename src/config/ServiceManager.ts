@@ -8,7 +8,7 @@ import Config from "./system-config/Config.js";
 
 class ServiceManager {
   protected static instance: ServiceManager;
-  private services: Map<string, any> = new Map();
+  private services: Map<string, ServiceManager> = new Map();
   protected config: Config;
 
   protected constructor(enforce: () => void) {
@@ -28,7 +28,7 @@ class ServiceManager {
   /**
    * Register a service
    */
-  public registerService(name: string, service: any): void {
+  public registerService(name: string, service: ServiceManager): void {
     this.services.set(name, service);
   }
 
@@ -36,7 +36,7 @@ class ServiceManager {
    * Get a registered service
    */
   public getService<T>(name: string): T | undefined {
-    return this.services.get(name);
+    return this.services.get(name) as T | undefined;
   }
 
   /**

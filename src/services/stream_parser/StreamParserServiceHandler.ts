@@ -1,6 +1,7 @@
+import { Template } from "../../shared/models/template.js";
 import { settings } from "../../shared/config.js";
 import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js";
-import { JobStatus, ParseMessage, FailureClass, JobCounts, totalFailed } from "../../shared/models/job.js";
+import { JobStatus, ParseMessage, FailureClass, JobCounts, totalFailed, ColumnMap } from "../../shared/models/job.js";
 import { receiveMessages, deleteMessage, publishEvent } from "../../shared/queueUtils.js";
 import { parseGcsUrl, streamLines, objectSize, readRange } from "../../shared/gcsUtils.js";
 import { LineClassifier } from "./LineClassifier.js";
@@ -11,7 +12,7 @@ import { DLQManager } from "../../shared/dlqManager.js";
 import { TraceSystem } from "../../shared/traceSystem.js";
 import { QualityGate } from "../../shared/qualityGate.js";
 import { AdaptiveProbing } from "../../shared/probing.js";
-import { createLogger } from "../../utils/logger/logger.js";
+import { createLogger, Logger } from "../../utils/logger/logger.js";
 import { metrics } from "../../utils/response/metrics.js";
 import { startHealthCheckServer } from "../../utils/response/health.js";
 import { waitForDb } from "../../shared/db.js";
@@ -27,9 +28,9 @@ class AIRateLimiter {
   private requests: number[] = [];
   private rpm: number;
   private burst: number;
-  private logger: any;
+  private logger: Logger;
 
-  constructor(rpm: number, burst: number, logger: any) {
+  constructor(rpm: number, burst: number, logger: Logger) {
     this.rpm = rpm;
     this.burst = burst;
     this.logger = logger;
@@ -112,7 +113,7 @@ export class StreamParserService {
   private running: boolean = false;
   private currentJob: Promise<void> | null = null;
   private aiRateLimiter: AIRateLimiter | null = null;
-  private templateCache: Map<string, any> = new Map();
+  private templateCache: Map<string, Map<string, Template>> = new Map();
   private parseCount: number = 0;
   private lastCacheFlush: number = Date.now();
   
@@ -232,16 +233,16 @@ export class StreamParserService {
   }
 
   /**
-   * Sanitize any value recursively - single source of truth for type handling
+   * Sanitize all values recursively - single source of truth for type handling
    * 
    * @param value - Any value to sanitize
    * @returns Sanitized value
    */
-  private sanitizeValue(value: any): any {
+  private sanitizeValue(value: unknown): unknown {
     if (typeof value === "string") return this.sanitizeForPg(value);
     if (Array.isArray(value)) return value.map(v => this.sanitizeValue(v));
     if (value instanceof Date) return value;
-    if (typeof value === "object" && value !== null) return this.sanitizeRecord(value);
+    if (typeof value === "object" && value !== null) return this.sanitizeRecord(value as Record<string, unknown>);
     return value;
   }
 
@@ -252,8 +253,8 @@ export class StreamParserService {
    * @param record - Record to sanitize
    * @returns Sanitized record
    */
-  private sanitizeRecord(record: Record<string, any>): Record<string, any> {
-    const sanitized: Record<string, any> = {};
+  private sanitizeRecord(record: Record<string, unknown>): Record<string, unknown> {
+    const sanitized: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(record)) {
       sanitized[key] = this.sanitizeValue(value);
     }
@@ -278,7 +279,7 @@ export class StreamParserService {
    * @param eventType - Type of event to emit
    * @param data - Event payload data
    */
-  private emit(jobId: string, eventType: EventType, data: Record<string, any>): void {
+  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>): void {
     publishEvent(makeJobEvent(eventType, jobId, "stream_parser", data));
   }
 
@@ -374,7 +375,7 @@ export class StreamParserService {
 
     const recordTemplates = templateRegistry.getAllRecordTemplates();
     const rubbishTemplates = templateRegistry.getAllRubbishTemplates();
-    const columnMap = (msg as any).column_map || undefined;
+    const columnMap = (msg as unknown as Record<string, unknown>).column_map as ColumnMap | undefined;
     const classifier = new LineClassifier(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap);
     const outputManager = new OutputManager();
     const csvWriter = new CsvOutputWriter(jobId, fieldSpec);
@@ -385,7 +386,7 @@ export class StreamParserService {
     const counts: JobCounts = { parsed: 0, dropped_rubbish: 0, failed_by_class: {} };
     let lineNo = 0;
     let recordIndex = 0;
-    let fatal: any = null;
+    let fatal: Error | null = null;
 
     // Inline AI (design step 4): when the local ordered classifier can't decide, ask the model
     // once, cache its verdict as a template, and reuse it locally thereafter. Bounded per job.
@@ -553,7 +554,7 @@ export class StreamParserService {
         }
       }
 
-      // Flush any remaining output
+      // Flush remaining output
       const outputPaths = await outputManager.flushAll();
       // Write the human-readable per-job CSV mirror (best-effort; Parquet stays authoritative)
       const csvOutputPath = await csvWriter.flush();
@@ -594,8 +595,8 @@ export class StreamParserService {
       metrics.set("parse.duration_ms", parseDuration);
       metrics.set("parse.ai_calls", aiCalls);
     } catch (exc) {
-      fatal = exc;
-      this.logger.error("parse_failed", { job_id: jobId }, exc instanceof Error ? exc : new Error(String(exc)));
+      fatal = exc instanceof Error ? exc : new Error(String(exc));
+      this.logger.error("parse_failed", { job_id: jobId }, fatal);
       metrics.increment("parse.error", 1);
       this.emit(jobId, EventType.ERROR_OCCURRED, { error: String(exc) });
     } finally {

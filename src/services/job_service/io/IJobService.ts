@@ -1,12 +1,12 @@
 export interface JobRequest {
   job_id: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface JobResponse {
   success: boolean;
   error?: string;
-  data?: any;
+  data?: unknown;
 }
 
 export interface IJobService {

@@ -15,7 +15,7 @@ export interface ClassifyResponse {
 
 export interface ClassifyResult {
   verdict: "parsed" | "rubbish" | "uncertain";
-  row?: Record<string, any>;
+  row?: Record<string, unknown>;
   template_id?: string;
   template_version?: number;
   failure_class?: FailureClass;

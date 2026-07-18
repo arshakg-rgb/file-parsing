@@ -168,8 +168,9 @@ export class AiClassifierService {
       ),
     ]);
 
-    return (response as any).text
-      ?? (response as any).candidates?.[0]?.content?.parts?.map((part: any) => part.text).join("")
+    const resp = response as { text?: string; candidates?: { content?: { parts?: { text?: string }[] } }[] };
+    return resp.text
+      ?? resp.candidates?.[0]?.content?.parts?.map((part) => part.text).join("")
       ?? "";
   }
 
@@ -275,7 +276,7 @@ If uncertain:
    * @param delimiter - The delimiter that matched
    * @returns Template object
    */
-  private createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: string): any {
+  private createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: string): RecordTemplate {
     const fieldMap: Record<string, { locator: string; type: string }> = {};
     
     fieldSpec.forEach((field, index) => {
@@ -363,7 +364,7 @@ If uncertain:
       // Create a template from the CSV parse result
       const template = this.createTemplateFromCSV(req.unknown_line, req.field_spec, csvResult.delimiter);
       await templateRegistry.saveTemplate(template, "record");
-      templateRegistry.addRecordTemplate(template);
+      templateRegistry.addRecordTemplate(template as RecordTemplate);
       return { kind: AIVerdict.RECORD_TEMPLATE, template };
     }
 
@@ -399,8 +400,8 @@ If uncertain:
       const { mockClassify } = await import("./mock.js");
       const resp = mockClassify(req) as ClassifyResponse;
       if (resp.template) {
-        const isRecord = "field_map" in (resp.template as any);
-        await templateRegistry.saveTemplate(resp.template as any, isRecord ? "record" : "rubbish");
+        const isRecord = "field_map" in resp.template;
+        await templateRegistry.saveTemplate(resp.template, isRecord ? "record" : "rubbish");
         if (isRecord) templateRegistry.addRecordTemplate(resp.template as RecordTemplate);
         else templateRegistry.addRubbishTemplate(resp.template as RubbishTemplate);
         console.log("ai_classified_mock", { job_id: req.job_id, kind: resp.kind, template_id: resp.template.template_id });
@@ -415,8 +416,8 @@ If uncertain:
     try {
       this.vertexAiCalls++;
       const rawText = await this.askVertexAI(userPrompt);
-      const raw = JSON.parse(extractJsonFromMarkdown(rawText));
-      let kindStr = raw.kind || "uncertain";
+      const raw = JSON.parse(extractJsonFromMarkdown(rawText)) as Record<string, unknown>;
+      let kindStr = (raw.kind as string) || "uncertain";
       
       // Handle structure names (csv, json, etc.) as record-template
       const structureNames = ["csv", "json", "kv", "fixed", "regex"];
@@ -471,19 +472,35 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
    * @param line - Original line
    * @returns Template object or null
    */
-  private buildTemplateFromRaw(raw: any, kind: string, line: string): any {
+  private buildTemplateFromRaw(raw: Record<string, unknown>, kind: string, line: string): RecordTemplate | RubbishTemplate | null {
     try {
-      const template = raw.template;
+      const template = raw.template as Record<string, unknown> | undefined;
       if (!template) return null;
-      
-      return {
+
+      const base = {
         template_id: crypto.randomBytes(16).toString("hex"),
         fingerprint: this.quickFingerprint(line),
         version: 1,
-        ...template,
         source: "ai" as const,
-        created_at: new Date()
+        created_at: new Date(),
       };
+      if (kind === "record-template") {
+        const fieldMap = template.field_map as Record<string, { locator: string; type: string }> | undefined;
+        if (!fieldMap) return null;
+        return {
+          ...base,
+          field_map: fieldMap,
+          structure: (template.structure as string) || "csv",
+          delimiter: template.delimiter as string | undefined,
+          quote_char: template.quote_char as string | undefined,
+          length_hint: (template.length_hint as number) ?? line.length,
+        } as RecordTemplate;
+      }
+      return {
+        ...base,
+        signature: (template.signature as string) || "",
+        confidence: (template.confidence as number) ?? 1,
+      } as RubbishTemplate;
     } catch {
       return null;
     }
@@ -494,7 +511,7 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
 const aiClassifierService = AiClassifierService.getInstance();
 
 // Backward compatibility wrappers
-export async function classifyAi(req: any): Promise<any> {
+export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> {
   return aiClassifierService.classifyAi(req);
 }
 

@@ -7,7 +7,7 @@ export interface ClassifyRequest {
 
 export interface ClassifyResponse {
   kind: "record-template" | "rubbish-signature" | "uncertain";
-  template?: any;
+  template?: unknown;
 }
 
 export interface IDetectBootstrap {

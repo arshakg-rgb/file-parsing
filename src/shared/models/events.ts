@@ -16,14 +16,14 @@ export interface JobEvent {
   job_id: string;
   source_service: string;
   timestamp: string;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
 }
 
 export function makeJobEvent(
   event_type: EventType,
   job_id: string,
   source_service: string,
-  data: Record<string, any> = {}
+  data: Record<string, unknown> = {}
 ): JobEvent {
   return {
     event_id: randomUUID(),

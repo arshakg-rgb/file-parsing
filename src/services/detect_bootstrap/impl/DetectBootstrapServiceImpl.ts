@@ -9,7 +9,7 @@ import { JobStatus, ClassifyMessage, ParseMessage } from "../../../shared/models
 import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "../../../shared/queueUtils.js";
 import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "../../../utils/normalizers/encoding.js";
 import { templateRegistry } from "../../../shared/templateRegistry.js";
-import { createLogger } from "../../../utils/logger/logger.js";
+import { createLogger, Logger } from "../../../utils/logger/logger.js";
 import { metrics } from "../../../utils/response/metrics.js";
 import { startHealthCheckServer } from "../../../utils/response/health.js";
 import { AiClassifierService } from "../../ai_classifier/AiClassifierServiceHandler.js";
@@ -19,7 +19,7 @@ import { IDetectBootstrap, ClassifyRequest, ClassifyResponse } from "../io/IDete
 
 class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstrapService {
   protected static instance: DetectBootstrapServiceImpl;
-  private logger: any;
+  private logger: Logger;
   private gcsUtils: FirestoreCacheUtils;
   private classify: (req: ClassifyRequest) => Promise<ClassifyResponse>;
 
@@ -36,7 +36,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     if (config.settings.BEDROCK_MODEL_ID === "mock") {
       this.classify = async (req: ClassifyRequest) => {
         const resp = await mockClassify(req);
-        return resp.template ? { kind: resp.kind as any, template: resp.template as any } : { kind: "uncertain" };
+        return resp.template ? { kind: resp.kind, template: resp.template } : { kind: "uncertain" };
       };
     } else {
       const aiService = AiClassifierService.getInstance();
@@ -45,7 +45,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
           ...req,
           context_lines: req.context_lines || []
         };
-        return await aiService.classifyAi(aiReq);
+        return (await aiService.classifyAi(aiReq)) as ClassifyResponse;
       };
     }
     
@@ -61,7 +61,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     return DetectBootstrapServiceImpl.instance;
   }
 
-  public getLogger(): any {
+  public getLogger(): Logger {
     return this.logger;
   }
 
@@ -224,8 +224,9 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
         continue;
       }
       if (resp.template) {
-        seedTemplateIds.push(resp.template.template_id);
-        this.logger.info("seed_template_created", { job_id: jobId, kind: resp.kind, template_id: resp.template.template_id, fingerprint: fp });
+        const tmpl = resp.template as { template_id: string };
+        seedTemplateIds.push(tmpl.template_id);
+        this.logger.info("seed_template_created", { job_id: jobId, kind: resp.kind, template_id: tmpl.template_id, fingerprint: fp });
         metrics.increment("detect.template_created", 1, { kind: resp.kind });
       }
     }
@@ -243,7 +244,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     const config = this.getConfig();
     console.log("detect_sending_to_parse", { job_id: jobId, queue_url: config.settings.PARSE_QUEUE_URL });
     try {
-      await sendRaw(config.settings.PARSE_QUEUE_URL, parseMsg);
+      await sendRaw(config.settings.PARSE_QUEUE_URL, parseMsg as unknown as Record<string, unknown>);
       console.log("detect_parse_message_sent", { job_id: jobId });
     } catch (sendErr) {
       this.logger.error("detect_send_to_parse_failed", { job_id: jobId, queue_url: config.settings.PARSE_QUEUE_URL }, sendErr instanceof Error ? sendErr : new Error(String(sendErr)));
@@ -251,7 +252,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     }
   }
 
-  private emit(jobId: string, eventType: EventType, data: Record<string, any>) {
+  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>) {
     publishEvent(makeJobEvent(eventType, jobId, "detect_bootstrap", data));
   }
 }

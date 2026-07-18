@@ -49,14 +49,20 @@ async function uploadFile(presignedUrl: string, content: string): Promise<number
   return response.status;
 }
 
-async function getJobStatus(jobId: string): Promise<any> {
+interface JobStatusResponse {
+  status: string;
+  error?: string;
+  counts?: { parsed?: number };
+}
+
+async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
   const response = await fetch(`${JOB_SERVICE_URL}/${jobId}`);
 
   if (!response.ok) {
     throw new Error(`Failed to get job status: ${response.status} ${response.statusText}`);
   }
 
-  return response.json();
+  return response.json() as Promise<JobStatusResponse>;
 }
 
 async function main() {

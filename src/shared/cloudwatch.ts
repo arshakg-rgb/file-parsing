@@ -1,14 +1,14 @@
-import { CloudWatchLogsClient, PutLogEventsCommand, CreateLogGroupCommand, CreateLogStreamCommand, DescribeLogGroupsCommand } from "@aws-sdk/client-cloudwatch-logs";
+import { CloudWatchLogsClient, PutLogEventsCommand, CreateLogGroupCommand, CreateLogStreamCommand, DescribeLogGroupsCommand, PutLogEventsCommandInput } from "@aws-sdk/client-cloudwatch-logs";
 import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
-import { createLogger } from "../utils/logger/logger.js";
+import { createLogger, Logger } from "../utils/logger/logger.js";
 
 class CloudWatchService extends ServiceManager {
   protected static instance: CloudWatchService;
   private logsClient: CloudWatchLogsClient | null = null;
   private sequenceTokens: Map<string, string> = new Map();
-  private logger: any;
+  private logger: Logger;
 
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
@@ -47,9 +47,10 @@ class CloudWatchService extends ServiceManager {
       const client = this.getLogsClient();
       await client.send(new CreateLogGroupCommand({ logGroupName }));
       this.logger.debug("log_group_created", { logGroupName });
-    } catch (err: any) {
-      if (err.name !== "ResourceAlreadyExistsException") {
-        this.logger.error("log_group_creation_failed", { logGroupName, error: err.message });
+    } catch (err: unknown) {
+      const e = err as { name?: string; message?: string };
+      if (e.name !== "ResourceAlreadyExistsException") {
+        this.logger.error("log_group_creation_failed", { logGroupName, error: e.message });
         throw err;
       }
       this.logger.debug("log_group_already_exists", { logGroupName });
@@ -61,9 +62,10 @@ class CloudWatchService extends ServiceManager {
       const client = this.getLogsClient();
       await client.send(new CreateLogStreamCommand({ logGroupName, logStreamName }));
       this.logger.debug("log_stream_created", { logGroupName, logStreamName });
-    } catch (err: any) {
-      if (err.name !== "ResourceAlreadyExistsException") {
-        this.logger.error("log_stream_creation_failed", { logGroupName, logStreamName, error: err.message });
+    } catch (err: unknown) {
+      const e = err as { name?: string; message?: string };
+      if (e.name !== "ResourceAlreadyExistsException") {
+        this.logger.error("log_stream_creation_failed", { logGroupName, logStreamName, error: e.message });
         throw err;
       }
       this.logger.debug("log_stream_already_exists", { logGroupName, logStreamName });
@@ -84,7 +86,7 @@ class CloudWatchService extends ServiceManager {
     const tokenKey = this.getSequenceTokenKey(logGroupName, logStreamName);
     const sequenceToken = this.sequenceTokens.get(tokenKey);
   
-    const params: any = {
+    const params: PutLogEventsCommandInput = {
       logGroupName,
       logStreamName,
       logEvents: [
@@ -111,7 +113,7 @@ class CloudWatchService extends ServiceManager {
   public async sendJsonToCloudWatch(
     logGroupName: string,
     logStreamName: string,
-    data: Record<string, any>
+    data: Record<string, unknown>
   ): Promise<void> {
     await this.sendToCloudWatch(logGroupName, logStreamName, JSON.stringify(data));
   }
@@ -124,8 +126,8 @@ class CloudWatchService extends ServiceManager {
         limit: 1,
       }));
       return response.logGroups?.some(group => group.logGroupName === logGroupName) || false;
-    } catch (err: any) {
-      this.logger.error("log_group_check_failed", { logGroupName, error: err.message });
+    } catch (err: unknown) {
+      this.logger.error("log_group_check_failed", { logGroupName, error: (err as { message?: string }).message });
       return false;
     }
   }
@@ -156,7 +158,7 @@ export async function sendToCloudWatch(
 export async function sendJsonToCloudWatch(
   logGroupName: string,
   logStreamName: string,
-  data: Record<string, any>
+  data: Record<string, unknown>
 ): Promise<void> {
   return cloudWatchService.sendJsonToCloudWatch(logGroupName, logStreamName, data);
 }

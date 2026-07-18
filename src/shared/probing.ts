@@ -2,7 +2,7 @@ import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
-import { createLogger } from "../utils/logger/logger.js";
+import { createLogger, Logger } from "../utils/logger/logger.js";
 import jschardet from "jschardet";
 
 export interface ProbeResult {
@@ -17,7 +17,7 @@ export interface ProbeResult {
 
 class ProbingService extends ServiceManager {
   protected static instance: ProbingService;
-  private logger: any;
+  private logger: Logger;
   private gcsUtils: FirestoreCacheUtils;
   private readonly PROBE_SIZE_PER_COUNT = 536870912; // 512MB
   private readonly PROBE_COUNT_MIN = 1;

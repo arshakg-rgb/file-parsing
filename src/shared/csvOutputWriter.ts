@@ -5,11 +5,11 @@ import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
-import { createLogger } from "../utils/logger/logger.js";
+import { createLogger, Logger } from "../utils/logger/logger.js";
 
 class CsvOutputService extends ServiceManager {
   protected static instance: CsvOutputService;
-  private logger: any;
+  private logger: Logger;
   private gcsUtils: FirestoreCacheUtils;
 
   private constructor(enforce: () => void) {
@@ -51,7 +51,7 @@ export class CsvOutputWriter {
   private rowCount = 0;
   private failed = false;
   private readonly columns: string[];
-  private readonly logger: any;
+  private readonly logger: Logger;
   private readonly gcsUtils: FirestoreCacheUtils;
   private readonly config: Config;
 
@@ -70,7 +70,7 @@ export class CsvOutputWriter {
     return vals.map((v) => csvEscapeCell(v)).join(",") + "\r\n";
   }
 
-  addRow(row: Record<string, any>, _lineNo?: number): void {
+  addRow(row: Record<string, unknown>, _lineNo?: number): void {
     if (this.failed) return;
     try {
       if (!this.stream) {

@@ -4,7 +4,7 @@ const config = Config.getInstance();
 
 export interface LogContext {
   job_id?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export class Logger {

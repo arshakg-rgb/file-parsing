@@ -82,7 +82,7 @@ export const settings = {
   // Line-reader safety valves for messy data. A quoted field may contain at most this many
   // embedded newlines before an unbalanced/stray quote is treated as spurious and the line
   // is broken (0 = a newline always ends a line; quotes still protect embedded delimiters
-  // within a physical line). MAX_LINE_BYTES hard-caps any single line to bound memory.
+  // within a physical line). MAX_LINE_BYTES hard-caps every single line to bound memory.
   MAX_QUOTED_NEWLINES: getNumber("MAX_QUOTED_NEWLINES", 0),
   MAX_LINE_BYTES: getNumber("MAX_LINE_BYTES", 1024 * 1024),
   SMALL_FILE_SINGLE_GET_THRESHOLD: getNumber(

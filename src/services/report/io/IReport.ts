@@ -1,12 +1,12 @@
 export interface ReportRequest {
   job_id: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ReportResponse {
   success: boolean;
   error?: string;
-  data?: any;
+  data?: unknown;
 }
 
 export interface IReport {

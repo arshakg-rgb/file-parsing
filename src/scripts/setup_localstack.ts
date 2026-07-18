@@ -29,8 +29,9 @@ async function createBuckets() {
     try {
       await s3.send(new CreateBucketCommand({ Bucket: bucket }));
       console.log(`Created bucket: ${bucket}`);
-    } catch (err: any) {
-      if (err.name !== "BucketAlreadyExists") console.log(`Bucket already exists: ${bucket}`);
+    } catch (err: unknown) {
+      const e = err as { name?: string };
+      if (e.name !== "BucketAlreadyExists") console.log(`Bucket already exists: ${bucket}`);
     }
   }
 }
@@ -44,8 +45,9 @@ async function createQueues() {
         Attributes: { FifoQueue: "true", ContentBasedDeduplication: "false", VisibilityTimeout: "600" },
       }));
       console.log(`Created queue: ${q}`);
-    } catch (err: any) {
-      if (err.message?.includes("already exists") || err.name === "QueueAlreadyExists") {
+    } catch (err: unknown) {
+      const e = err as { name?: string; message?: string };
+      if (e.message?.includes("already exists") || e.name === "QueueAlreadyExists") {
         console.log(`Queue already exists: ${q}`);
         const url = await sqs.send(new GetQueueUrlCommand({ QueueName: q }));
         await sqs.send(new SetQueueAttributesCommand({ QueueUrl: url.QueueUrl, Attributes: { VisibilityTimeout: "600" } }));

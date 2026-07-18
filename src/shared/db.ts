@@ -1,5 +1,9 @@
 // Re-export from MySqlManager for backward compatibility
 import MySqlManager from "../config/db/MySqlManager.js";
+import type { ParseJobAttributes } from "../config/db/models/ParseJob.js";
+import type { OutputPartAttributes } from "../config/db/models/OutputPart.js";
+import type { DeadLetterAttributes } from "../config/db/models/DeadLetter.js";
+import type { PendingArchiveEntryAttributes } from "../config/db/models/PendingArchiveEntry.js";
 
 const dbManager = MySqlManager.getInstance();
 const repos = dbManager.repositories;
@@ -11,17 +15,17 @@ export const models = dbManager.models;
 export const repositories = repos;
 
 // Legacy row shape aliases for minimal downstream churn
-export type ParseJobRow = any;
-export type OutputPartRow = any;
-export type DeadLetterRow = any;
-export type PendingArchiveEntryRow = any;
+export type ParseJobRow = ParseJobAttributes;
+export type OutputPartRow = OutputPartAttributes;
+export type DeadLetterRow = DeadLetterAttributes;
+export type PendingArchiveEntryRow = PendingArchiveEntryAttributes;
 
 // Re-export functions as wrappers around the repository layer
 export async function waitForDb(): Promise<void> {
   await dbManager.initialize();
 }
 
-export async function getJob(jobId: string): Promise<ParseJobRow | undefined> {
+export async function getJob(jobId: string): Promise<ParseJobRow | null> {
   return repos.jobs.findById(jobId);
 }
 

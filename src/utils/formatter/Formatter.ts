@@ -12,7 +12,7 @@ export enum LineFormat {
 
 export interface ParsedLine {
   format: LineFormat;
-  data: Record<string, any> | null;
+  data: Record<string, unknown> | null;
   error?: string;
 }
 
@@ -52,9 +52,9 @@ export function detectLineFormat(line: string): LineFormat {
  * Parse Twitter user data line
  * Format: "Email: xxx - Name: xxx - ScreenName: xxx - Followers: xxx - Created At: xxx"
  */
-export function parseTwitterUserLine(line: string): Record<string, any> | null {
+export function parseTwitterUserLine(line: string): Record<string, unknown> | null {
   try {
-    const data: Record<string, any> = {};
+    const data: Record<string, unknown> = {};
     
     // Extract Email
     const emailMatch = line.match(/Email:\s*([^\s-]+)/);
@@ -86,7 +86,7 @@ export function parseTwitterUserLine(line: string): Record<string, any> | null {
 /**
  * Parse JSON line
  */
-export function parseJsonLine(line: string): Record<string, any> | null {
+export function parseJsonLine(line: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(line);
     return parsed;
@@ -99,11 +99,11 @@ export function parseJsonLine(line: string): Record<string, any> | null {
 /**
  * Parse CSV line (simple implementation)
  */
-export function parseCsvLine(line: string, fieldSpec?: string[]): Record<string, any> | null {
+export function parseCsvLine(line: string, fieldSpec?: string[]): Record<string, unknown> | null {
   try {
     // Simple CSV split by comma
     const parts = line.split(",");
-    const data: Record<string, any> = {};
+    const data: Record<string, unknown> = {};
     
     if (fieldSpec && fieldSpec.length > 0) {
       // Use field spec to name fields

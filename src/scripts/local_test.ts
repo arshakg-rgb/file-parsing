@@ -1,3 +1,5 @@
+interface MockClient { query: () => Promise<void>; release: () => void; }
+
 /**
  * Local test suite – runs without GCP/DB connections.
  * Usage:  npx tsx src/scripts/local_test.ts
@@ -63,7 +65,7 @@ check("throws on s3:// URL", () => {
   assert.throws(() => parseGcsUrl("s3://bucket/key"), /Expected gs:\/\/ URL/);
 });
 check("throws on null/undefined", () => {
-  assert.throws(() => parseGcsUrl(undefined as any), /Expected gs:\/\/ URL/);
+  assert.throws(() => parseGcsUrl(undefined as unknown as string), /Expected gs:\/\/ URL/);
 });
 check("nested path preserved", () => {
   const [b, k] = parseGcsUrl("gs://datalead-osint/ingested/abc-123/source");
@@ -80,7 +82,7 @@ console.log("\n=== 2. parquetWriter output path ===");
 const DATA_BUCKET = "datalead-osint";
 
 class MockOutputBuffer {
-  private rows: Record<string, any>[] = [];
+  private rows: Record<string, unknown>[] = [];
   private partId: string;
   private uploadedPaths: string[] = [];
 
@@ -88,7 +90,7 @@ class MockOutputBuffer {
     this.partId = `${jobId}-${templateId}-${Date.now()}`;
   }
 
-  addRow(row: Record<string, any>) { this.rows.push(row); }
+  addRow(row: Record<string, unknown>) { this.rows.push(row); }
 
   async flush(): Promise<string | null> {
     if (this.rows.length === 0) return null;
@@ -494,7 +496,7 @@ await checkAsync("waitForDb succeeds on first attempt (DB ready)", async () => {
   const mockPool = {
     connect: async () => {
       attempts++;
-      const client: any = { query: async () => {}, release: () => {} };
+      const client: MockClient = { query: async () => {}, release: () => {} };
       return client;
     }
   };
@@ -503,7 +505,7 @@ await checkAsync("waitForDb succeeds on first attempt (DB ready)", async () => {
   let attempt = 0;
   while (attempt < maxAttempts) {
     try {
-      const client: any = await mockPool.connect();
+      const client: MockClient = await mockPool.connect();
       await client.query();
       client.release();
       break;
@@ -521,7 +523,7 @@ await checkAsync("waitForDb retries with backoff until DB is ready", async () =>
     connect: async () => {
       attempts++;
       if (attempts < 3) throw new Error("ECONNREFUSED");
-      const client: any = { query: async () => {}, release: () => {} };
+      const client: MockClient = { query: async () => {}, release: () => {} };
       return client;
     }
   };
@@ -529,7 +531,7 @@ await checkAsync("waitForDb retries with backoff until DB is ready", async () =>
   let attempt = 0;
   while (attempt < maxAttempts) {
     try {
-      const client: any = await mockPool.connect();
+      const client: MockClient = await mockPool.connect();
       await client.query();
       client.release();
       break;
@@ -551,7 +553,7 @@ await checkAsync("waitForDb throws after max attempts (DB never ready)", async (
   try {
     while (attempt < maxAttempts) {
       try {
-        const client: any = await mockPool.connect();
+        const client: MockClient = await mockPool.connect();
         await client.query();
         client.release();
         break;
@@ -573,20 +575,20 @@ await checkAsync("waitForDb throws after max attempts (DB never ready)", async (
 
 console.log("\n=== 15. Vertex AI JSON extraction ===");
 
-function extractJson(text: string): any {
+function extractJson(text: string): Record<string, unknown> {
   const fence = /\`\`\`(?:json)?\s*(\{[\s\S]*?\})\s*\`\`\`/.exec(text);
-  if (fence) return JSON.parse(fence[1]);
+  if (fence) return JSON.parse(fence[1]) as Record<string, unknown>;
   const brace = /\{[\s\S]*\}/.exec(text);
   if (brace) {
     try {
-      return JSON.parse(brace[0]);
+      return JSON.parse(brace[0]) as Record<string, unknown>;
     } catch {}
   }
   const firstBrace = text.indexOf("{");
   const lastBrace = text.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
     try {
-      return JSON.parse(text.substring(firstBrace, lastBrace + 1));
+      return JSON.parse(text.substring(firstBrace, lastBrace + 1)) as Record<string, unknown>;
     } catch {}
   }
   throw new Error(`No JSON found in model output. Response: ${text.slice(0, 200)}...`);
@@ -641,7 +643,7 @@ check("extractJson handles nested JSON objects", () => {
   const text = "Here is the template:\n{\"kind\":\"record-template\",\"template\":{\"structure\":\"csv\"}}";
   const result = extractJson(text);
   assert.equal(result.kind, "record-template");
-  assert.equal(result.template.structure, "csv");
+  assert.equal((result.template as Record<string, unknown>).structure, "csv");
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -658,7 +660,7 @@ const { decode, bufferEncodingFor, normalizeEncoding, isLikelyUtf8 } = await imp
 
 check("decode never throws for labels that crashed prod (latin-1, iso-8859-1, cp1252, windows-1252, iso-8859-2, unknown)", () => {
   const raw = Buffer.from([0x48, 0x69, 0xe9, 0x0a]);
-  for (const label of ["latin-1", "iso-8859-1", "cp1252", "windows-1252", "iso-8859-2", "utf-16", "GB2312", "made-up-xyz", "", null as any]) {
+  for (const label of ["latin-1", "iso-8859-1", "cp1252", "windows-1252", "iso-8859-2", "utf-16", "GB2312", "made-up-xyz", "", null]) {
     assert.doesNotThrow(() => decode(raw, label), `decode threw for ${JSON.stringify(label)}`);
   }
 });
@@ -672,7 +674,7 @@ check("iso-8859-2 decodes 0xB1 to ą via TextDecoder (latin1 would give ±)", ()
   assert.equal(decode(Buffer.from([0xb1]), "iso-8859-2"), "ą");
 });
 check("bufferEncodingFor always returns a valid Buffer encoding", () => {
-  for (const label of ["latin-1", "iso-8859-1", "cp1252", "windows-1252", "iso-8859-2", "utf-16", "zzz", null as any]) {
+  for (const label of ["latin-1", "iso-8859-1", "cp1252", "windows-1252", "iso-8859-2", "utf-16", "zzz", null]) {
     assert.ok(Buffer.isEncoding(bufferEncodingFor(label)), `invalid for ${JSON.stringify(label)}: ${bufferEncodingFor(label)}`);
   }
 });
@@ -786,19 +788,22 @@ check("phone content-match rejects ZIP+4 / year ranges (needs 10-15 digits)", ()
 
 // --- router field_spec normalization (job_service accepts multiple encodings) ---
 check("field_spec normalization: array / JSON-array string / JSON-{fields} string / comma string", () => {
-  const norm = (field_spec: any): string[] => {
-    const namesFromArray = (arr: any[]): string[] => arr.map((f: any) => (typeof f === "string" ? f : f?.name)).filter(Boolean);
+  const norm = (field_spec: unknown): string[] => {
+    const namesFromArray = (arr: unknown[]): string[] =>
+      arr.map((f) => (typeof f === "string" ? f : (f as { name?: string } | undefined | null)?.name)).filter((x): x is string => typeof x === "string");
     let fieldNames: string[] = [];
     if (field_spec) {
       if (Array.isArray(field_spec)) fieldNames = namesFromArray(field_spec);
       else if (typeof field_spec === "string") {
         const s = field_spec.trim();
-        let parsed: any;
+        let parsed: unknown;
         try { parsed = JSON.parse(s); } catch { parsed = undefined; }
         if (Array.isArray(parsed)) fieldNames = namesFromArray(parsed);
-        else if (parsed && Array.isArray(parsed.fields)) fieldNames = namesFromArray(parsed.fields);
+        else if (parsed && Array.isArray((parsed as Record<string, unknown>).fields)) fieldNames = namesFromArray((parsed as Record<string, unknown>).fields as unknown[]);
         else if (s) fieldNames = s.split(",").map((x) => x.trim()).filter(Boolean);
-      } else if (field_spec.fields && Array.isArray(field_spec.fields)) fieldNames = namesFromArray(field_spec.fields);
+      } else if ((field_spec as Record<string, unknown>).fields && Array.isArray((field_spec as Record<string, unknown>).fields)) {
+        fieldNames = namesFromArray((field_spec as Record<string, unknown>).fields as unknown[]);
+      }
     }
     return fieldNames;
   };

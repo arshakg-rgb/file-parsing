@@ -5,13 +5,14 @@ import {
   Model,
   PrimaryKey,
 } from "sequelize-typescript";
+import type { FieldLocator } from "../../../shared/models/template.js";
 
 export interface ITemplate {
   template_id: string;
   fingerprint: string;
   version: number;
   kind: string;
-  field_map?: any;
+  field_map?: Record<string, FieldLocator> | null;
   structure?: string | null;
   length_hint?: number | null;
   signature?: string | null;
@@ -47,7 +48,7 @@ export default class Template extends Model<ITemplate, TemplateCreationAttribute
   declare kind: string;
 
   @Column({ type: DataType.JSONB, allowNull: true })
-  declare field_map: any;
+  declare field_map: Record<string, FieldLocator> | null;
 
   @Column({ type: DataType.TEXT, allowNull: true })
   declare structure: string | null;

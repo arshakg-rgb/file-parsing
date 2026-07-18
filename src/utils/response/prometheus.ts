@@ -22,8 +22,13 @@ class PrometheusService extends ServiceManager {
 
   public formatPrometheusMetrics(): string {
     const lines: string[] = [];
-  
-    for (const [key, value] of Object.entries(metrics.toJSON().counters)) {
+    const snapshot = metrics.toJSON() as {
+      counters: Record<string, number>;
+      gauges: Record<string, number>;
+      histograms: Record<string, { count: number; min: number; max: number; avg: number }>;
+    };
+
+    for (const [key, value] of Object.entries(snapshot.counters)) {
       const [name, ...tags] = key.split(",");
       const tagStr = tags.map((t) => {
         const [k, v] = t.split("=");
@@ -33,7 +38,7 @@ class PrometheusService extends ServiceManager {
       lines.push(`${name}{${tagStr}} ${value}`);
     }
   
-    for (const [key, value] of Object.entries(metrics.toJSON().gauges)) {
+    for (const [key, value] of Object.entries(snapshot.gauges)) {
       const [name, ...tags] = key.split(",");
       const tagStr = tags.map((t) => {
         const [k, v] = t.split("=");
@@ -42,19 +47,18 @@ class PrometheusService extends ServiceManager {
       lines.push(`# TYPE ${name} gauge`);
       lines.push(`${name}{${tagStr}} ${value}`);
     }
-  
-    for (const [key, value] of Object.entries(metrics.toJSON().histograms)) {
+
+    for (const [key, value] of Object.entries(snapshot.histograms)) {
       const [name, ...tags] = key.split(",");
       const tagStr = tags.map((t) => {
         const [k, v] = t.split("=");
         return `${k}="${v}"`;
       }).join(",");
-      const hist = value as { count: number; min: number; max: number; avg: number };
       lines.push(`# TYPE ${name} histogram`);
-      lines.push(`${name}_count{${tagStr}} ${hist.count}`);
-      lines.push(`${name}_sum{${tagStr}} ${hist.count * hist.avg}`);
-      lines.push(`${name}_min{${tagStr}} ${hist.min}`);
-      lines.push(`${name}_max{${tagStr}} ${hist.max}`);
+      lines.push(`${name}_count{${tagStr}} ${value.count}`);
+      lines.push(`${name}_sum{${tagStr}} ${value.count * value.avg}`);
+      lines.push(`${name}_min{${tagStr}} ${value.min}`);
+      lines.push(`${name}_max{${tagStr}} ${value.max}`);
     }
   
     return lines.join("\n");

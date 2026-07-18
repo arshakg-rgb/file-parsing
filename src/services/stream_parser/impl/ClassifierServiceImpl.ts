@@ -90,7 +90,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     const cached = this.aiCache.get(fp);
 
     // 2. Known learned record templates (records have priority over rubbish).
-    let bestRecord: { row: Record<string, any>; template: RecordTemplate; score: number } | null = null;
+    let bestRecord: { row: Record<string, unknown>; template: RecordTemplate; score: number } | null = null;
     for (const t of this.recordTemplates) {
       if (t.length_hint !== undefined && line.length < t.length_hint) continue;
       try {
@@ -193,11 +193,11 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
   }
 
-  private extractLine(line: string, rec: RecordTemplate): Record<string, any> | null {
+  private extractLine(line: string, rec: RecordTemplate): Record<string, unknown> | null {
     const parsed = this.parseStructure(line, rec);
     if (!parsed) return null;
 
-    const row: Record<string, any> = {};
+    const row: Record<string, unknown> = {};
     let presentCount = 0;
     for (const field of this.fieldSpec) {
       const loc = rec.field_map[field];
@@ -212,7 +212,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return presentCount > 0 ? row : null;
   }
 
-  private parseStructure(line: string, rec: RecordTemplate): string | any[] | Record<string, any> | null {
+  private parseStructure(line: string, rec: RecordTemplate): string | unknown[] | Record<string, unknown> | null {
     if (rec.structure === "json") {
       if (line[0] !== "{" && line[0] !== "[") return null;
       try {
@@ -249,12 +249,12 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return null;
   }
 
-  private parseXml(line: string): Record<string, any> | null {
+  private parseXml(line: string): Record<string, unknown> | null {
     // Simple XML parsing for basic structures
     // For production, use a proper XML parser like xml2js
     if (!line.includes("<") || !line.includes(">")) return null;
     
-    const obj: Record<string, any> = {};
+    const obj: Record<string, unknown> = {};
     const tagRegex = /<(\w+)>([^<]*)<\/\1>/g;
     let match;
     while ((match = tagRegex.exec(line)) !== null) {
@@ -265,7 +265,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return Object.keys(obj).length > 0 ? obj : null;
   }
 
-  private parseYaml(line: string): Record<string, any> | null {
+  private parseYaml(line: string): Record<string, unknown> | null {
     // Simple YAML parsing for key-value pairs
     // For production, use a proper YAML parser like js-yaml
     if (!line.includes(":")) return null;
@@ -281,13 +281,13 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return Object.keys(obj).length > 0 ? obj : null;
   }
 
-  private parseXmlRecord(line: string): { row: Record<string, any>; template_id: string } | null {
+  private parseXmlRecord(line: string): { row: Record<string, unknown>; template_id: string } | null {
     const obj = this.parseXml(line);
     if (!obj) return null;
     return this.extractFromObject(obj, "xml", false);
   }
 
-  private parseYamlRecord(line: string): { row: Record<string, any>; template_id: string } | null {
+  private parseYamlRecord(line: string): { row: Record<string, unknown>; template_id: string } | null {
     const obj = this.parseYaml(line);
     if (!obj) return null;
     return this.extractFromObject(obj, "yaml", false);
@@ -309,7 +309,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
   }
 
   /** Content validation, used to identify columns in a headerless CSV and to reject junk. */
-  private validateField(field: string, value: any): boolean {
+  private validateField(field: string, value: unknown): boolean {
     if (value === null || value === undefined) return false;
     const v = String(value).trim();
     if (v === "") return false;
@@ -332,25 +332,25 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     if (nf === "url" || nf === "website" || nf === "link") {
       return /^https?:\/\/.+\..+/.test(v);
     }
-    return true; // name/address/other: any non-empty value
+    return true; // name/address/other: every non-empty value
   }
 
   /**
    * Extract only the field_spec fields from an object, matching by key name/alias.
    * requireStrong=true (fragile "Label: value" lines): accept only when a strongly-typed
    * field (email/phone/date/zip/url) actually validates, or when ≥2 requested fields are present.
-   * requireStrong=false (a genuine JSON/XML/YAML object, which is inherently structured): accept any single match.
+   * requireStrong=false (a genuine JSON/XML/YAML object, which is inherently structured): accept a single match.
    */
   private extractFromObject(
-    obj: Record<string, any>,
+    obj: Record<string, unknown>,
     templateId: string,
     requireStrong: boolean
-  ): { row: Record<string, any>; template_id: string } | null {
-    const row: Record<string, any> = {};
+  ): { row: Record<string, unknown>; template_id: string } | null {
+    const row: Record<string, unknown> = {};
     let matched = 0;
     let strong = 0;
     for (const field of this.fieldSpec) {
-      let value: any = undefined;
+      let value: unknown = undefined;
       for (const [k, val] of Object.entries(obj)) {
         if (this.keyMatchesField(k, field)) { value = val; break; }
       }
@@ -371,16 +371,16 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return accept ? { row, template_id: templateId } : null;
   }
 
-  private parseJsonRecord(line: string): { row: Record<string, any>; template_id: string } | null {
+  private parseJsonRecord(line: string): { row: Record<string, unknown>; template_id: string } | null {
     const t = line.trim();
     if (t[0] !== "{") return null;
-    let obj: any;
+    let obj: unknown;
     try { obj = JSON.parse(t); } catch { return null; }
     if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
-    return this.extractFromObject(obj, TEMPLATE_IDS.JSON, false);
+    return this.extractFromObject(obj as Record<string, unknown>, TEMPLATE_IDS.JSON, false);
   }
 
-  private parseKvRecord(line: string): { row: Record<string, any>; template_id: string } | null {
+  private parseKvRecord(line: string): { row: Record<string, unknown>; template_id: string } | null {
     // Only the "Label: value - Label: value" shape. The old "k=v" whitespace fallback split
     // values on spaces (truncating multi-word values), so it was removed.
     if (!line.includes(":")) return null;
@@ -427,12 +427,12 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return matched >= need ? map : null;
   }
 
-  private parseDelimitedRecord(line: string): Record<string, any> | null {
+  private parseDelimitedRecord(line: string): Record<string, unknown> | null {
     if (this.fieldSpec.length === 0) return null;
     const parts = this.splitBestDelimited(line);
     if (!parts) return null;
 
-    const row: Record<string, any> = {};
+    const row: Record<string, unknown> = {};
     let matched = 0;
 
     if (this.headerMap) {
@@ -451,7 +451,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     const claimed = new Set<number>();
     for (const field of this.fieldSpec) {
       const nf = this.normalizeKey(field);
-      let value: any = null;
+      let value: unknown = null;
       if (nf === "email" || nf === "phone" || nf === "zip" || nf === "date" || nf === "url") {
         for (let i = 0; i < parts.length; i++) {
           if (claimed.has(i)) continue;
@@ -465,7 +465,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return matched > 0 ? row : null;
   }
 
-  private applyLocator(line: string, parsed: string | any[] | Record<string, any>, loc: string): any {
+  private applyLocator(line: string, parsed: string | unknown[] | Record<string, unknown>, loc: string): unknown {
     if (loc.startsWith("index:")) {
       const index = parseInt(loc.replace("index:", ""));
       if (Array.isArray(parsed) && index < parsed.length) return parsed[index];
@@ -473,7 +473,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     }
     if (loc.startsWith("key:")) {
       const key = loc.replace("key:", "");
-      if (parsed && !Array.isArray(parsed) && typeof parsed === "object") return (parsed as any)[key];
+      if (parsed && !Array.isArray(parsed) && typeof parsed === "object") return (parsed as Record<string, unknown>)[key];
       return undefined;
     }
     if (loc.startsWith("regex:")) {
@@ -488,8 +488,8 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return undefined;
   }
 
-  private coerce(row: Record<string, any>): Record<string, any> {
-    const out: Record<string, any> = {};
+  private coerce(row: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(row)) {
       if (v === null || v === undefined || v === "") {
         out[k] = null;

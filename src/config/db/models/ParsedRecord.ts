@@ -18,7 +18,7 @@ export interface IParsedRecord {
   _checksum: string;
   _parsed_at: Date;
   _part_id: string;
-  fields: any;
+  fields: Record<string, unknown>;
 }
 
 export type ParsedRecordAttributes = IParsedRecord;
@@ -73,5 +73,5 @@ export default class ParsedRecord extends Model<IParsedRecord, ParsedRecordCreat
   declare _part_id: string;
 
   @Column({ type: DataType.JSONB, allowNull: false, defaultValue: {} })
-  declare fields: any;
+  declare fields: Record<string, unknown>;
 }

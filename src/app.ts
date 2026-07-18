@@ -1,3 +1,4 @@
+import { Request, Response } from "express";
 import { Server as HttpServer } from "node:http";
 import * as http from "node:http";
 import { createLogger, Logger } from "./utils/logger/Log.js";
@@ -87,8 +88,8 @@ export class App {
 
     this.app.use(
       bodyParser.json({
-        verify: function (req: any, _res: any, buf: Buffer): void {
-          req["rawBody"] = buf;
+        verify: function (req: Request, _res: Response, buf: Buffer): void {
+          (req as unknown as { rawBody: Buffer }).rawBody = buf;
         },
         limit: requestBodyLimit,
       })

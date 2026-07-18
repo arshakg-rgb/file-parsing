@@ -1,4 +1,4 @@
-import { templateRegistry, RecordTemplate, RubbishTemplate, TemplateKind } from "./templateRegistry.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate, TemplateKind, TemplateRegistryService } from "./templateRegistry.js";
 import { createLogger } from "../utils/logger/logger.js";
 
 const logger = createLogger("classifier");
@@ -13,7 +13,7 @@ export enum LineFate {
 export interface ClassificationResult {
   fate: LineFate;
   template?: RecordTemplate | RubbishTemplate;
-  extractedFields?: Record<string, any>;
+  extractedFields?: Record<string, unknown>;
   reason?: string;
 }
 
@@ -26,7 +26,7 @@ export class LineClassifier {
     byteOffset: number,
     lineNo: number
   ): Promise<ClassificationResult> {
-    const registryClass = this.registry.constructor as any;
+    const registryClass = this.registry.constructor as typeof TemplateRegistryService;
     if (!registryClass.passesLengthGate(line, fieldSpec)) {
       logger.debug("line_dropped_length", { byte_offset: byteOffset, line_no: lineNo });
       return { fate: LineFate.DROPPED_LENGTH, reason: "Failed length gate" };
@@ -72,8 +72,8 @@ export class LineClassifier {
     line: string, 
     fieldSpec: string[], 
     template: RecordTemplate
-  ): Record<string, any> {
-    const fields: Record<string, any> = {};
+  ): Record<string, unknown> {
+    const fields: Record<string, unknown> = {};
     const parts = line.split(",");
     
     for (let i = 0; i < fieldSpec.length; i++) {

@@ -1,9 +1,10 @@
+import { Firestore } from "@google-cloud/firestore";
 import ServiceManager, { Enforce } from "../ServiceManager.js";
 import { InstantiationError } from "../../errors/InstantiationError.js";
 
 class FirestoreManager extends ServiceManager {
   protected static instance: FirestoreManager;
-  private firestore: any;
+  private firestore!: Firestore;
 
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
@@ -34,7 +35,7 @@ class FirestoreManager extends ServiceManager {
     }
   }
 
-  public getFirestore(): any {
+  public getFirestore(): Firestore {
     return this.firestore;
   }
 }

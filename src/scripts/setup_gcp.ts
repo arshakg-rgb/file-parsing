@@ -19,8 +19,9 @@ async function ensureTopic(pubsub: PubSub, name: string): Promise<void> {
   try {
     await pubsub.createTopic({ name: `projects/${settings.GCP_PROJECT_ID}/topics/${name}`, messageRetentionDuration: { seconds: 604800 } });
     console.log(`Created topic: ${name}`);
-  } catch (err: any) {
-    if (err.code === 6) {
+  } catch (err: unknown) {
+    const e = err as { code?: number };
+    if (e.code === 6) {
       console.log(`Topic already exists: ${name}`);
     } else {
       throw err;
@@ -44,8 +45,9 @@ async function ensureSubscription(pubsub: PubSub, topicName: string): Promise<vo
       }
     );
     console.log(`Created subscription: ${subName}`);
-  } catch (err: any) {
-    if (err.code === 6) {
+  } catch (err: unknown) {
+    const e = err as { code?: number };
+    if (e.code === 6) {
       console.log(`Subscription already exists: ${subName}`);
     } else {
       throw err;

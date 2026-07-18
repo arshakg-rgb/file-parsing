@@ -151,7 +151,7 @@ export class IngestService {
    * @param eventType - Type of event to emit
    * @param data - Event payload data
    */
-  private emit(jobId: string, eventType: EventType, data: Record<string, any>): void {
+  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>): void {
     publishEvent(makeJobEvent(eventType, jobId, "ingest", data));
   }
 
@@ -387,14 +387,17 @@ export class IngestService {
       
       let hasPending = false;
       for (const entry of entries) {
-        if (entry.pending) {
+        const entryName = entry.entry_name as string;
+        const entrySize = entry.entry_size as number;
+        const isPending = entry.pending as boolean;
+        if (isPending) {
           hasPending = true;
-          this.logger.info("archive_entry_pending", { job_id: jobId, entry_name: entry.entry_name, entry_size: entry.entry_size });
+          this.logger.info("archive_entry_pending", { job_id: jobId, entry_name: entryName, entry_size: entrySize });
           metrics.increment("ingest.entry_pending", 1);
           // Create pending entry record in database
-          await createPendingArchiveEntry(jobId, entry.entry_name, entry.entry_size);
+          await createPendingArchiveEntry(jobId, entryName, entrySize);
         } else {
-          await publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "ingest", entry));
+          await publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "ingest", entry as Record<string, unknown>));
         }
       }
       
@@ -481,8 +484,9 @@ export class IngestService {
           
           for (const { payload, receiptHandle } of messages) {
             try {
-              if ((payload as any).action === "provide_password") {
-                await this.handlePassword(payload.job_id, (payload as any).password);
+              const payloadRecord = payload as unknown as Record<string, unknown>;
+              if (payloadRecord.action === "provide_password") {
+                await this.handlePassword(payload.job_id, payloadRecord.password as string);
               } else {
                 await this.handleIngest(payload);
               }

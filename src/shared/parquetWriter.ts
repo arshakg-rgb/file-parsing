@@ -4,16 +4,16 @@ import fs from "fs/promises";
 import { createReadStream } from "fs";
 import { pipeline } from "node:stream/promises";
 import { randomUUID, createHash } from "crypto";
-import { ParquetSchema, ParquetWriter } from "@dsnp/parquetjs";
+import { ParquetSchema, ParquetWriter, type SchemaDefinition, type ParquetType } from "@dsnp/parquetjs";
 import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
-import { createLogger } from "../utils/logger/logger.js";
+import { createLogger, Logger } from "../utils/logger/logger.js";
 
 class ParquetOutputService extends ServiceManager {
   protected static instance: ParquetOutputService;
-  private logger: any;
+  private logger: Logger;
   private gcsUtils: FirestoreCacheUtils;
   private FLUSH_LINE_THRESHOLD: number;
 
@@ -35,7 +35,7 @@ class ParquetOutputService extends ServiceManager {
     return ParquetOutputService.instance;
   }
 
-  public getLogger(): any {
+  public getLogger(): Logger {
     return this.logger;
   }
 
@@ -50,14 +50,18 @@ class ParquetOutputService extends ServiceManager {
 
 
 export interface OutputRow {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
-function estimateRowBytes(row: Record<string, any>): number {
-  return Object.values(row).reduce((acc, v) => acc + (v === null ? 4 : String(v).length), 0) + Object.keys(row).length * 16;
+function estimateRowBytes(row: Record<string, unknown>): number {
+  let bytes = 0;
+  for (const v of Object.values(row)) {
+    bytes += (v === null ? 4 : String(v).length);
+  }
+  return bytes + Object.keys(row).length * 16;
 }
 
-function typeForValue(v: any): string {
+function typeForValue(v: unknown): ParquetType {
   if (v === null || v === undefined) return "UTF8";
   if (typeof v === "boolean") return "BOOLEAN";
   if (typeof v === "number") return Number.isInteger(v) && Number.isSafeInteger(v) ? "INT64" : "DOUBLE";
@@ -65,8 +69,8 @@ function typeForValue(v: any): string {
   return "UTF8";
 }
 
-function buildSchema(rows: Record<string, any>[]): ParquetSchema {
-  const schemaObj: any = {};
+function buildSchema(rows: Record<string, unknown>[]): ParquetSchema {
+  const schemaObj: SchemaDefinition = {};
   for (const row of rows) {
     for (const [k, v] of Object.entries(row)) {
       if (!schemaObj[k]) {

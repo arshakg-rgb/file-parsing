@@ -2,7 +2,8 @@ import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import MySqlManager from "../config/db/MySqlManager.js";
-import { createLogger } from "../utils/logger/logger.js";
+import { createLogger, Logger } from "../utils/logger/logger.js";
+import { totalFailed } from "../shared/models/job.js";
 
 export interface QualityMetrics {
   totalLines: number;
@@ -14,7 +15,7 @@ export interface QualityMetrics {
 
 class QualityGateService extends ServiceManager {
   protected static instance: QualityGateService;
-  private logger: any;
+  private logger: Logger;
   private dbManager: MySqlManager;
   private readonly FAILED_LINE_RATIO_THRESHOLD: number;
 
@@ -43,14 +44,15 @@ class QualityGateService extends ServiceManager {
       throw new Error(`Job not found: ${jobId}`);
     }
     
-    const totalLines = counts.parsed + counts.dropped_rubbish + counts.failed;
-    const failedLineRatio = totalLines > 0 ? counts.failed / totalLines : 0;
+    const failed = totalFailed(counts);
+    const totalLines = counts.parsed + counts.dropped_rubbish + failed;
+    const failedLineRatio = totalLines > 0 ? failed / totalLines : 0;
 
     return {
       totalLines,
       parsedLines: counts.parsed || 0,
       droppedRubbishLines: counts.dropped_rubbish || 0,
-      failedLines: counts.failed || 0,
+      failedLines: failed || 0,
       failedLineRatio,
     };
   }

@@ -5,7 +5,7 @@ export class ValidationError extends CustomError {
   static readonly MISSING_FIELD = "MISSING_FIELD";
   static readonly INVALID_FORMAT = "INVALID_FORMAT";
 
-  constructor(message: string, code: string = ValidationError.INPUT, details?: any) {
+  constructor(message: string, code: string = ValidationError.INPUT, details?: unknown) {
     super(message, code, 400, details);
   }
 }

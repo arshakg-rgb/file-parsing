@@ -11,6 +11,7 @@ import type { ParsedRecordAttributes, ParsedRecordCreationAttributes } from "../
 import type { RubbishLogAttributes, RubbishLogCreationAttributes } from "../models/RubbishLog.js";
 import type { TemplateAttributes, TemplateCreationAttributes } from "../models/Template.js";
 import type { SchemaMigrationAttributes, SchemaMigrationCreationAttributes } from "../models/SchemaMigration.js";
+import type { JobCounts } from "../../../shared/models/job.js";
 import type { RecordTemplate, RubbishTemplate } from "../../../shared/templateRegistry.js";
 
 export class JobRepository {
@@ -23,7 +24,7 @@ export class JobRepository {
   async findById(jobId: string, options?: { attributes?: (keyof ParseJobAttributes)[] }): Promise<ParseJobAttributes | null> {
     const row = await this.ParseJob.findByPk(jobId, {
       raw: true,
-      attributes: options?.attributes as any,
+      attributes: options?.attributes as string[],
     });
     return (row as ParseJobAttributes) || null;
   }
@@ -36,7 +37,7 @@ export class JobRepository {
   }
 
   async create(data: ParseJobCreationAttributes): Promise<ParseJobAttributes> {
-    const row = await this.ParseJob.create(data as any, { raw: true });
+    const row = await this.ParseJob.create(data, { raw: true });
     return row.get({ plain: true }) as ParseJobAttributes;
   }
 
@@ -113,9 +114,9 @@ export class JobRepository {
     return { totalJobs, passedJobs, heldJobs, failedJobs };
   }
 
-  async getCounts(jobId: string): Promise<any> {
+  async getCounts(jobId: string): Promise<JobCounts> {
     const row = await this.findById(jobId, { attributes: ["counts"] });
-    return row?.counts || { parsed: 0, dropped_rubbish: 0, failed: 0 };
+    return row?.counts || { parsed: 0, dropped_rubbish: 0, dlq_count: 0, failed_by_class: {} };
   }
 }
 
@@ -133,7 +134,7 @@ export class DeadLetterRepository {
       });
       if (existing) return null;
     }
-    const row = await this.DeadLetter.create(data as any);
+    const row = await this.DeadLetter.create(data);
     return row.get({ plain: true }) as DeadLetterAttributes;
   }
 
@@ -206,7 +207,7 @@ export class OutputPartRepository {
   async create(data: OutputPartCreationAttributes): Promise<OutputPartAttributes | null> {
     const [row] = await this.OutputPart.findOrCreate({
       where: { part_id: data.part_id },
-      defaults: data as any,
+      defaults: data,
     });
     return row.get({ plain: true }) as OutputPartAttributes;
   }
@@ -220,7 +221,7 @@ export class PendingArchiveEntryRepository {
   }
 
   async create(data: PendingArchiveEntryCreationAttributes): Promise<PendingArchiveEntryAttributes> {
-    const row = await this.Entry.create(data as any);
+    const row = await this.Entry.create(data);
     return row.get({ plain: true }) as PendingArchiveEntryAttributes;
   }
 
@@ -284,16 +285,16 @@ export class ParsedRecordRepository {
 
   async create(data: ParsedRecordCreationAttributes): Promise<ParsedRecordAttributes | null> {
     try {
-      const row = await this.ParsedRecord.create(data as any);
+      const row = await this.ParsedRecord.create(data);
       return row.get({ plain: true }) as ParsedRecordAttributes;
-    } catch (err: any) {
-      if (err.name === "SequelizeUniqueConstraintError") return null;
+    } catch (err: unknown) {
+      if ((err as { name?: string }).name === "SequelizeUniqueConstraintError") return null;
       throw err;
     }
   }
 
   async bulkCreate(rows: ParsedRecordCreationAttributes[], ignoreDuplicates = true): Promise<void> {
-    await this.ParsedRecord.bulkCreate(rows as any, { ignoreDuplicates });
+    await this.ParsedRecord.bulkCreate(rows, { ignoreDuplicates });
   }
 
   async findByJob(jobId: string): Promise<ParsedRecordAttributes[]> {
@@ -324,7 +325,7 @@ export class RubbishLogRepository {
   }
 
   async create(data: RubbishLogCreationAttributes): Promise<RubbishLogAttributes> {
-    const row = await this.RubbishLog.create(data as any);
+    const row = await this.RubbishLog.create(data);
     return row.get({ plain: true }) as RubbishLogAttributes;
   }
 
@@ -380,7 +381,7 @@ export class TemplateRepository {
       if (existing) {
         await this.Template.update(data, { where: { fingerprint: template.fingerprint } });
       } else {
-        await this.Template.create(data as any);
+        await this.Template.create(data);
       }
     } else {
       const rt = template as RubbishTemplate;
@@ -396,7 +397,7 @@ export class TemplateRepository {
       if (existing) {
         await this.Template.update(data, { where: { fingerprint: template.fingerprint } });
       } else {
-        await this.Template.create(data as any);
+        await this.Template.create(data);
       }
     }
   }

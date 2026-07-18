@@ -3,7 +3,7 @@ import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import MySqlManager from "../config/db/MySqlManager.js";
 import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
-import { createLogger } from "../utils/logger/logger.js";
+import { createLogger, Logger } from "../utils/logger/logger.js";
 import crypto from "crypto";
 
 export interface DeadLetterEntry {
@@ -31,7 +31,7 @@ export enum FailureClass {
 
 class DLQManagerService extends ServiceManager {
   protected static instance: DLQManagerService;
-  private logger: any;
+  private logger: Logger;
   private dbManager: MySqlManager;
   private gcsUtils: FirestoreCacheUtils;
   private readonly MAX_RETRY_ATTEMPTS = 2;
