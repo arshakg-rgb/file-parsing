@@ -1,3 +1,5 @@
+import { RecordTemplate, RubbishTemplate } from "../../../shared/templateRegistry.js";
+
 export interface ClassifyRequest {
   unknown_line: string;
   field_spec: string[];
@@ -5,9 +7,27 @@ export interface ClassifyRequest {
   job_id?: string;
 }
 
+export enum AIVerdict {
+  RECORD_TEMPLATE = "record-template",
+  RUBBISH_SIGNATURE = "rubbish-signature",
+  UNCERTAIN = "uncertain",
+}
+
 export interface ClassifyResponse {
-  kind: "record-template" | "rubbish-signature" | "uncertain";
-  template?: any;
+  kind: AIVerdict;
+  template?: RecordTemplate | RubbishTemplate;
+}
+
+export interface FieldLocator {
+  index?: number;
+  regex?: string;
+  key?: string;
+}
+
+export interface CSVParseResult {
+  success: boolean;
+  delimiter: string;
+  fields: string[];
 }
 
 export interface IAiClassifier {

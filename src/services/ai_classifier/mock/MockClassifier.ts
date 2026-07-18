@@ -1,19 +1,6 @@
 import crypto from "crypto";
 import { RecordTemplate, RubbishTemplate } from "../../../shared/templateRegistry.js";
-
-export interface MockClassifyRequest {
-  unknown_line: string;
-  field_spec: string[];
-  context_lines?: string[];
-  job_id?: string;
-}
-
-export type MockClassifyKind = "record-template" | "rubbish-signature" | "uncertain";
-
-export interface MockClassifyResponse {
-  kind: MockClassifyKind;
-  template?: RecordTemplate | RubbishTemplate;
-}
+import type { MockClassifyRequest, MockClassifyResponse } from "../io/IMockClassifier.js";
 
 export class MockClassifier {
   private static instance: MockClassifier;

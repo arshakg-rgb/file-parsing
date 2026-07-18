@@ -5,25 +5,14 @@ import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
 import { InstantiationError } from "../../../errors/InstantiationError.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../../shared/templateRegistry.js";
 import { AiClassifierService } from "../AiClassifierService.js";
-import { IAiClassifier, ClassifyRequest, ClassifyResponse } from "../io/IAiClassifier.js";
-
-interface FieldLocator {
-  index?: number;
-  regex?: string;
-  key?: string;
-}
-
-enum AIVerdict {
-  RECORD_TEMPLATE = "record-template",
-  RUBBISH_SIGNATURE = "rubbish-signature",
-  UNCERTAIN = "uncertain"
-}
-
-interface CSVParseResult {
-  success: boolean;
-  delimiter: string;
-  fields: string[];
-}
+import {
+  IAiClassifier,
+  ClassifyRequest,
+  ClassifyResponse,
+  FieldLocator,
+  CSVParseResult,
+  AIVerdict,
+} from "../io/IAiClassifier.js";
 
 const SYSTEM_PROMPT = `You are a data-parsing assistant embedded in a production file-parsing pipeline.
 A streaming parser has encountered a line that matches NO known template.

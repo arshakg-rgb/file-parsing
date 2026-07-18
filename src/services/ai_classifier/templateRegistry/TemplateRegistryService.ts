@@ -2,18 +2,9 @@ import { randomUUID } from "crypto";
 import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
 import { InstantiationError } from "../../../errors/InstantiationError.js";
 import { Template, TemplateKind } from "../../../shared/models/template.js";
+import { ITemplateRegistry } from "../io/ITemplateRegistry.js";
 import { TemplateCache } from "./TemplateCache.js";
 import { FirestoreTemplateRepository } from "./FirestoreTemplateRepository.js";
-
-export interface ITemplateRegistry {
-  getByFingerprint(fingerprint: string): Template[];
-  getLatest(fingerprint: string, kind?: TemplateKind): Template | null;
-  save(tmpl: Template): Promise<Template>;
-  incrementMatchCount(templateId: string, fingerprint: string): void;
-  listAll(kind?: TemplateKind): Template[];
-  warmCache(): Promise<void>;
-  ensureTableExists(): void;
-}
 
 export class TemplateRegistryService extends ServiceManager implements ITemplateRegistry {
   protected static instance: TemplateRegistryService;

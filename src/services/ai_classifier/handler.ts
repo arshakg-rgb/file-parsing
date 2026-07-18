@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { GoogleGenAI } from "@google/genai";
 import { settings } from "../../shared/config.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
+import { ClassifyRequest, ClassifyResponse, FieldLocator, CSVParseResult, AIVerdict } from "./io/IAiClassifier.js";
 
 /**
  * Extract JSON from a string that may be wrapped in markdown code fences
@@ -31,51 +32,6 @@ function extractJsonFromMarkdown(raw: string): string {
   }
 
   return trimmed;
-}
-
-/**
- * Request interface for AI classification
- */
-interface ClassifyRequest {
-  unknown_line: string;
-  field_spec: string[];
-  context_lines?: string[];
-  job_id?: string;
-}
-
-/**
- * Response interface for AI classification
- */
-interface ClassifyResponse {
-  kind: "record-template" | "rubbish-signature" | "uncertain";
-  template?: RecordTemplate | RubbishTemplate;
-}
-
-/**
- * Field locator for template field mapping
- */
-interface FieldLocator {
-  index?: number;
-  regex?: string;
-  key?: string;
-}
-
-/**
- * AI verdict enumeration
- */
-enum AIVerdict {
-  RECORD_TEMPLATE = "record-template",
-  RUBBISH_SIGNATURE = "rubbish-signature",
-  UNCERTAIN = "uncertain"
-}
-
-/**
- * CSV parse result interface
- */
-interface CSVParseResult {
-  success: boolean;
-  delimiter: string;
-  fields: string[];
 }
 
 /**
@@ -543,4 +499,4 @@ export async function classifyAi(req: any): Promise<any> {
 }
 
 // Export interfaces for external use
-export type { ClassifyRequest, ClassifyResponse, FieldLocator, CSVParseResult };
+export type { ClassifyRequest, ClassifyResponse, FieldLocator, CSVParseResult, AIVerdict } from "./io/IAiClassifier.js";

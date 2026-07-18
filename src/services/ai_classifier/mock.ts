@@ -1,8 +1,8 @@
-import {
-  MockClassifier,
+import { MockClassifier } from "./mock/MockClassifier.js";
+import type {
   MockClassifyRequest,
   MockClassifyResponse,
-} from "./mock/MockClassifier.js";
+} from "./io/IMockClassifier.js";
 
 export type { MockClassifyRequest, MockClassifyResponse };
 export { MockClassifier };
