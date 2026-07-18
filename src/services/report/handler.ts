@@ -41,4 +41,10 @@ export async function consumerLoop(): Promise<void> {
   return reportService.consumerLoop();
 }
 
+// Auto-start the service when module is loaded
+reportService.consumerLoop().catch(err => {
+  console.error("report_consumer_failed", { error: String(err) });
+  process.exit(1);
+});
+
 export default ReportService;

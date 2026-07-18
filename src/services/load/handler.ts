@@ -41,4 +41,10 @@ export async function consumerLoop(): Promise<void> {
   return loadService.consumerLoop();
 }
 
+// Auto-start the service when module is loaded
+loadService.consumerLoop().catch(err => {
+  console.error("load_consumer_failed", { error: String(err) });
+  process.exit(1);
+});
+
 export default LoadService;
