@@ -1,4 +1,4 @@
-import JobService from './main.js';
+import JobServiceImpl from './impl/JobServiceImpl.js';
 
-const jobService = JobService.getInstance();
+const jobService = JobServiceImpl.getInstance();
 jobService.start();
