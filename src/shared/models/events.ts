@@ -69,4 +69,5 @@ export interface ParsingCompletedData {
   part_s3_paths: string[];
   dlq_count: number;
   rubbish_log_path?: string;
+  csv_output_path?: string | null;
 }

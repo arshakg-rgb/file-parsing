@@ -128,6 +128,7 @@ router.get("/jobs/:job_id", async (req: Request, res: Response, next: NextFuncti
       counts: row.counts,
       timings: row.timings,
       output_paths: row.output_paths,
+      csv_output_path: (row.timings as any)?._csv_output_path ?? null,
       error: row.error,
     });
   } catch (err) {

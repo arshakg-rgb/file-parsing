@@ -81,6 +81,7 @@ export async function handleEvent(event: JobEvent): Promise<void> {
       output_paths: Array.isArray(row?.output_paths) ? row.output_paths : [],
       rubbish_log_path: (row?.timings as any)?._rubbish_log_path ?? null,
       dlq_count: (row?.timings as any)?._dlq_count ?? 0,
+      csv_output_path: (row?.timings as any)?._csv_output_path ?? null,
     });
   } else if (etype === EventType.REPORTING_COMPLETED) {
     const row = await getJob(event.job_id);
@@ -142,11 +143,12 @@ async function onParsingCompleted(event: JobEvent): Promise<void> {
   counts.parsed = data.parsed;
   counts.dropped_rubbish = data.dropped_rubbish;
 
-  // Stash rubbish_log_path and dlq_count in timings so the report step can read them later
+  // Stash rubbish_log_path, dlq_count, and csv_output_path in timings so the report step can read them later
   const timings = {
     ...(row.timings || {}),
     _rubbish_log_path: data.rubbish_log_path ?? null,
     _dlq_count: data.dlq_count ?? 0,
+    _csv_output_path: data.csv_output_path ?? null,
   };
 
   const totalLines = data.parsed + data.dropped_rubbish + data.failed;

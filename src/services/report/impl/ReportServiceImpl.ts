@@ -111,6 +111,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
       },
       output_parts: parts.map((p) => ({ s3_path: p.s3_path, rows: p.row_count, bytes: p.byte_size })),
       output_paths: msg.output_paths,
+      csv_output_path: msg.csv_output_path ?? (jobRow.timings as any)?._csv_output_path ?? null,
       rubbish_log_path: msg.rubbish_log_path,
       dlq_count: msg.dlq_count,
       timings: jobRow.timings,

@@ -575,6 +575,7 @@ export class StreamParserService {
         part_s3_paths: outputPaths,
         dlq_count: counts.dlq_count || 0,
         rubbish_log_path: counts.rubbish_log_path,
+        csv_output_path: csvOutputPath,
       }));
 
       const parseDuration = Date.now() - parseStartTime;

@@ -216,4 +216,5 @@ export interface ReportMessage {
   output_paths: string[];
   rubbish_log_path?: string;
   dlq_count: number;
+  csv_output_path?: string | null;
 }
