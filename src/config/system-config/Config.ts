@@ -33,7 +33,7 @@ class Config {
     this._appConfig = {
       name: getString("APP_NAME", "file-parsing-pipeline"),
       version: getString("APP_VERSION", "1.0.0"),
-      environment: (getString("NODE_ENV", "development") as 'development' | 'staging' | 'production'),
+      environment: (getString("NODE_ENV", "development") as "development" | "staging" | "production"),
       port: getNumber("PORT", 3000),
     };
 

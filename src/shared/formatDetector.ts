@@ -106,14 +106,14 @@ class FormatDetectorService extends ServiceManager {
         for (let i = 0; i < fieldSpec.length; i++) {
           const fieldName = fieldSpec[i];
           if (i < parts.length) {
-            data[fieldName] = parts[i].trim().replace(/^"|"$/g, '');
+            data[fieldName] = parts[i].trim().replace(/^"|"$/g, "");
           } else {
             data[fieldName] = null;
           }
         }
       } else {
         for (let i = 0; i < parts.length; i++) {
-          data[`field_${i}`] = parts[i].trim().replace(/^"|"$/g, '');
+          data[`field_${i}`] = parts[i].trim().replace(/^"|"$/g, "");
         }
       }
       

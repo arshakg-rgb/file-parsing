@@ -81,7 +81,7 @@ async function main() {
       await new Promise(r => setTimeout(r, 5000));
 
       const job = await getJobStatus(job_id);
-      console.log(`[${attempts}] Status: ${job.status}, Parsed: ${job.counts?.parsed || 0}, Error: ${job.error || 'none'}`);
+      console.log(`[${attempts}] Status: ${job.status}, Parsed: ${job.counts?.parsed || 0}, Error: ${job.error || "none"}`);
 
       if (job.status === "done") {
         console.log("✅ Job completed successfully!");
@@ -89,7 +89,7 @@ async function main() {
       }
 
       if (job.status === "failed") {
-        console.log(`❌ Job failed!`);
+        console.log("❌ Job failed!");
         console.log(`Error: ${job.error}`);
         process.exit(1);
       }

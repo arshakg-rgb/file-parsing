@@ -234,7 +234,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       const delim = rec.field_map && Object.values(rec.field_map)[0]?.locator?.startsWith("index:")
         ? Object.values(rec.field_map)[0].locator.replace("index:", "")
         : ",";
-      const quote = '"';
+      const quote = "\"";
       return parseCsvLine(line, delim, quote);
     }
     if (rec.structure === "xml") {
@@ -396,7 +396,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
   private splitBestDelimited(line: string): string[] | null {
     let best: string[] | null = null;
     for (const delim of DELIMITERS) {
-      const parts = parseCsvLine(line, delim, '"');
+      const parts = parseCsvLine(line, delim, "\"");
       if (parts.length < 2) continue;
       if (!best || parts.length > best.length) best = parts;
     }
@@ -504,7 +504,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
   }
 }
 
-function parseCsvLine(line: string, delim: string, quoteChar: string = '"'): string[] {
+function parseCsvLine(line: string, delim: string, quoteChar: string = "\""): string[] {
   const quote = quoteChar || null;
   const parts: string[] = [];
   let current = "";
@@ -543,7 +543,7 @@ function quickFingerprint(line: string): string {
     } catch { /* ignore */ }
   }
   for (const delim of DELIMITERS) {
-    const parts = parseCsvLine(line, delim, '"');
+    const parts = parseCsvLine(line, delim, "\"");
     if (parts.length >= 3) return `csv|${delim}|${parts.length}`;
   }
   return `text|${trimmed.length}`;

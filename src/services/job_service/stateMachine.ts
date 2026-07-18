@@ -59,16 +59,16 @@ export async function transition(
   Object.assign(updates, extraFields);
 
   // JSON.stringify JSONB fields for PostgreSQL
-  if (updates.field_spec && typeof updates.field_spec !== 'string') {
+  if (updates.field_spec && typeof updates.field_spec !== "string") {
     updates.field_spec = JSON.stringify(updates.field_spec);
   }
-  if (updates.output_paths && typeof updates.output_paths !== 'string') {
+  if (updates.output_paths && typeof updates.output_paths !== "string") {
     updates.output_paths = JSON.stringify(updates.output_paths);
   }
-  if (updates.counts && typeof updates.counts !== 'string') {
+  if (updates.counts && typeof updates.counts !== "string") {
     updates.counts = JSON.stringify(updates.counts);
   }
-  if (updates.timings && typeof updates.timings !== 'string') {
+  if (updates.timings && typeof updates.timings !== "string") {
     updates.timings = JSON.stringify(updates.timings);
   }
 

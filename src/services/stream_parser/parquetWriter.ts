@@ -234,7 +234,7 @@ export class DLQWriter {
     const { sendMessage } = await import("../../shared/queueUtils.js");
     const { FailureClass } = await import("../../shared/models/job.js");
     const dlqId = randomUUID();
-    const rawBytes = Buffer.from(rawLine.replace(/\0/g, ''), "utf-8").toString("base64");
+    const rawBytes = Buffer.from(rawLine.replace(/\0/g, ""), "utf-8").toString("base64");
     await pool.query(
       `INSERT INTO dead_letters
         (dlq_id, job_id, byte_offset, byte_length, line_no, raw_bytes, failure_class, error, attempts, status, created_at, updated_at)

@@ -53,21 +53,21 @@ export class Logger {
       };
 
       const response = await fetch(`${settings.LOKI_HOST}/loki/api/v1/push`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Basic ${btoa(`${settings.LOKI_USERNAME}:${settings.LOKI_PASSWORD}`)}`,
+          "Content-Type": "application/json",
+          "Authorization": `Basic ${btoa(`${settings.LOKI_USERNAME}:${settings.LOKI_PASSWORD}`)}`,
         },
         body: JSON.stringify(logEntry),
         signal: AbortSignal.timeout(10000), // 10 second timeout
       });
 
       if (!response.ok) {
-        console.error('loki_send_failed', { status: response.status, statusText: response.statusText });
+        console.error("loki_send_failed", { status: response.status, statusText: response.statusText });
       }
     } catch (error) {
       // Silently fail Loki errors to avoid disrupting application
-      console.error('loki_send_error', { error: String(error) });
+      console.error("loki_send_error", { error: String(error) });
     }
   }
 

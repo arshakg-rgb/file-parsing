@@ -227,8 +227,8 @@ export class StreamParserService {
    */
   private sanitizeForPg(str: string): string {
     return str
-      .replace(/\u0000/g, '')
-      .replace(/\\u(?![0-9a-fA-F]{4})/g, '\\\\u');
+      .replace(/\u0000/g, "")
+      .replace(/\\u(?![0-9a-fA-F]{4})/g, "\\\\u");
   }
 
   /**
@@ -238,10 +238,10 @@ export class StreamParserService {
    * @returns Sanitized value
    */
   private sanitizeValue(value: any): any {
-    if (typeof value === 'string') return this.sanitizeForPg(value);
+    if (typeof value === "string") return this.sanitizeForPg(value);
     if (Array.isArray(value)) return value.map(v => this.sanitizeValue(v));
     if (value instanceof Date) return value;
-    if (typeof value === 'object' && value !== null) return this.sanitizeRecord(value);
+    if (typeof value === "object" && value !== null) return this.sanitizeRecord(value);
     return value;
   }
 
@@ -311,7 +311,7 @@ export class StreamParserService {
     
     // Parse field_spec if it's a JSON string
     let fieldSpec: string[] = [];
-    if (typeof msg.field_spec === 'string') {
+    if (typeof msg.field_spec === "string") {
       try {
         fieldSpec = JSON.parse(msg.field_spec);
       } catch {
@@ -353,8 +353,8 @@ export class StreamParserService {
         }
         
         // Analyze row widths
-        const content = buffer.toString('utf-8').replace(/\0/g, ''); // Remove null bytes
-        const lines = content.split('\n').filter(line => line.trim());
+        const content = buffer.toString("utf-8").replace(/\0/g, ""); // Remove null bytes
+        const lines = content.split("\n").filter(line => line.trim());
         if (lines.length > 0) {
           const widths = lines.map(l => l.length);
           avgRowWidth = Math.max(avgRowWidth, widths.reduce((a, b) => a + b, 0) / widths.length);

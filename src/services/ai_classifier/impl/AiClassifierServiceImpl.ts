@@ -87,8 +87,8 @@ class AiClassifierServiceImpl extends ServiceManager implements AiClassifierServ
     super(enforce);
     
     const config = this.getConfig();
-    const PROJECT_ID = config.settings.GCP_PROJECT_ID || 'data-etl-499916';
-    const LOCATION = config.settings.VERTEX_LOCATION || 'us-central1';
+    const PROJECT_ID = config.settings.GCP_PROJECT_ID || "data-etl-499916";
+    const LOCATION = config.settings.VERTEX_LOCATION || "us-central1";
 
     this.ai = new GoogleGenAI({
       vertexai: true,
@@ -109,26 +109,26 @@ class AiClassifierServiceImpl extends ServiceManager implements AiClassifierServ
    */
   public async askVertexAI(prompt: string): Promise<string> {
     const config = this.getConfig();
-    const MODEL = config.settings.VERTEX_MODEL || 'gemini-2.5-flash';
+    const MODEL = config.settings.VERTEX_MODEL || "gemini-2.5-flash";
 
     const response = await this.ai.models.generateContent({
       model: MODEL,
       contents: [
         {
-          role: 'user',
+          role: "user",
           parts: [{ text: prompt }],
         },
       ],
       config: {
-        responseModalities: ['TEXT'],
+        responseModalities: ["TEXT"],
         temperature: 0.2,
         maxOutputTokens: 1024,
       },
     });
 
     return response.text
-      ?? response.candidates?.[0]?.content?.parts?.map((part: any) => part.text).join('')
-      ?? '';
+      ?? response.candidates?.[0]?.content?.parts?.map((part: any) => part.text).join("")
+      ?? "";
   }
 
   public buildUserPrompt(req: ClassifyRequest): string {
@@ -151,8 +151,8 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     }
     
     // Try to find JSON by looking for first { and last }
-    const firstBrace = text.indexOf('{');
-    const lastBrace = text.lastIndexOf('}');
+    const firstBrace = text.indexOf("{");
+    const lastBrace = text.lastIndexOf("}");
     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
       try {
         return JSON.parse(text.substring(firstBrace, lastBrace + 1));
@@ -252,7 +252,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     
     // Ensure fieldSpec is an array
     const fieldSpecArray = Array.isArray(fieldSpec) ? fieldSpec : 
-      (typeof fieldSpec === 'string' ? JSON.parse(fieldSpec) : []);
+      (typeof fieldSpec === "string" ? JSON.parse(fieldSpec) : []);
     
     console.log("csv_parser_start", { line, fieldSpec: fieldSpecArray, delimiterCount: delimiters.length });
     

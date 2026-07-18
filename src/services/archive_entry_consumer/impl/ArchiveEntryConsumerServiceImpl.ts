@@ -79,7 +79,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
     fieldSpec: string[]
   ): Promise<{ s3Url: string; size: number }> {
     const [bucket, archiveKey] = this.gcsUtils.parseGcsUrl(archiveS3Url);
-    const mountPath = process.env.RAR_TEMP_MOUNT || '/mnt/scratch';
+    const mountPath = process.env.RAR_TEMP_MOUNT || "/mnt/scratch";
     const tmpPath = path.join(mountPath, `${crypto.randomUUID()}.rar`);
   
     this.logger.info("archive_entry_download_start", { job_id: jobId, archive_s3_url: archiveS3Url, tmp_path: tmpPath });
@@ -88,11 +88,11 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
     const fileStream = this.gcsUtils.getStorage().bucket(bucket).file(archiveKey).createReadStream();
     const writeStream = createWriteStream(tmpPath);
   
-    fileStream.on('error', (err) => {
+    fileStream.on("error", (err) => {
       this.logger.error("archive_entry_download_stream_error", { job_id: jobId, error: err.message });
     });
   
-    writeStream.on('error', (err) => {
+    writeStream.on("error", (err) => {
       this.logger.error("archive_entry_download_write_error", { job_id: jobId, error: err.message });
     });
   
@@ -106,34 +106,34 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
       const entryFile = this.gcsUtils.getStorage().bucket(bucket).file(entryKey);
       const writeStream = entryFile.createWriteStream();
       
-      const extractArgs = ['p', '-inul', tmpPath, entryName];
+      const extractArgs = ["p", "-inul", tmpPath, entryName];
       if (password) {
-        extractArgs.push('-p' + password);
+        extractArgs.push("-p" + password);
       }
       
       this.logger.info("archive_entry_extract_start", { job_id: jobId, entry_name: entryName, extract_args: extractArgs });
-      const extractProcess = spawn('unrar', extractArgs);
+      const extractProcess = spawn("unrar", extractArgs);
       
       extractProcess.stdout.pipe(writeStream);
       
       // Capture stderr for debugging
-      let stderrOutput = '';
-      extractProcess.stderr.on('data', (data) => {
+      let stderrOutput = "";
+      extractProcess.stderr.on("data", (data) => {
         stderrOutput += data.toString();
         this.logger.error("archive_entry_extract_stderr", { job_id: jobId, entry_name: entryName, stderr: data.toString() });
       });
       
       await new Promise<void>((resolve, reject) => {
-        writeStream.on('finish', resolve);
-        writeStream.on('error', (err) => {
+        writeStream.on("finish", resolve);
+        writeStream.on("error", (err) => {
           this.logger.error("archive_entry_extract_write_error", { job_id: jobId, entry_name: entryName, error: err.message });
           reject(err);
         });
-        extractProcess.on('error', (err) => {
+        extractProcess.on("error", (err) => {
           this.logger.error("archive_entry_extract_spawn_error", { job_id: jobId, entry_name: entryName, error: err.message });
           reject(err);
         });
-        extractProcess.on('close', (code) => {
+        extractProcess.on("close", (code) => {
           if (code !== 0) {
             this.logger.error("archive_entry_extract_failed", { job_id: jobId, entry_name: entryName, code, stderr: stderrOutput });
             reject(new Error(`unrar extraction failed with code ${code}: ${stderrOutput}`));

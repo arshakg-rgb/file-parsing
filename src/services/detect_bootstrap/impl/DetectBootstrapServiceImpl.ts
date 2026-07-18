@@ -194,7 +194,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
 
       // Parse field_spec if it's a JSON string
       let fieldSpecArray: string[] = [];
-      if (typeof msg.field_spec === 'string') {
+      if (typeof msg.field_spec === "string") {
         try {
           fieldSpecArray = JSON.parse(msg.field_spec);
         } catch {

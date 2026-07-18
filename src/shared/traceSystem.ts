@@ -114,7 +114,7 @@ class TraceSystemService extends ServiceManager {
 
   public async getJobTraces(jobId: string): Promise<TraceRecord[]> {
     const result = await this.dbManager.pool.query(
-      `SELECT * FROM parsed_records WHERE _job_id = $1 ORDER BY _byte_offset`,
+      "SELECT * FROM parsed_records WHERE _job_id = $1 ORDER BY _byte_offset",
       [jobId]
     );
     
@@ -135,7 +135,7 @@ class TraceSystemService extends ServiceManager {
 
   public async getJobRubbishLog(jobId: string): Promise<any[]> {
     const result = await this.dbManager.pool.query(
-      `SELECT * FROM rubbish_log WHERE job_id = $1 ORDER BY byte_offset`,
+      "SELECT * FROM rubbish_log WHERE job_id = $1 ORDER BY byte_offset",
       [jobId]
     );
     

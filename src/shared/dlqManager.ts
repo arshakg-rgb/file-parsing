@@ -86,7 +86,7 @@ class DLQManagerService extends ServiceManager {
     try {
       const [bucket, key] = this.gcsUtils.parseGcsUrl(s3Url);
       const buffer = await this.gcsUtils.readRange(bucket, key, dlqEntry.byte_offset, dlqEntry.byte_offset + dlqEntry.byte_length - 1);
-      return buffer.toString('utf-8');
+      return buffer.toString("utf-8");
     } catch (error) {
       this.logger.error("dlq_fetch_error", { dlq_id: dlqEntry.dlq_id, error: String(error) });
       throw error;

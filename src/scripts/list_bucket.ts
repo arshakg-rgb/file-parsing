@@ -5,9 +5,9 @@ const storage = new Storage();
 const bucket = storage.bucket(settings.DATA_BUCKET);
 
 async function listTestFolder() {
-  console.log(`Listing files in test folder...`);
+  console.log("Listing files in test folder...");
   try {
-    const [files] = await bucket.getFiles({ prefix: 'test/' });
+    const [files] = await bucket.getFiles({ prefix: "test/" });
     
     if (files.length === 0) {
       console.log("  No files found in test folder");
@@ -27,7 +27,7 @@ async function listTestFolder() {
       console.log(`  Size: ${sizeMB} MB`);
       console.log(`  GCS URL: ${gcsUrl}`);
       console.log(`  Public URL: ${publicUrl}`);
-      console.log('');
+      console.log("");
     }
   } catch (err) {
     console.log(`  Error: ${err}`);

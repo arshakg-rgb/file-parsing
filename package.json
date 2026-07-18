@@ -22,7 +22,9 @@
     "test:local": "tsx src/scripts/local_test.ts",
     "test:upload": "tsx src/scripts/test_upload.ts",
     "test:integration": "tsx src/scripts/integration_test.ts",
-    "test:perf": "tsx src/scripts/perf_test_backfill.ts"
+    "test:perf": "tsx src/scripts/perf_test_backfill.ts",
+    "lint": "eslint 'src/**/*.ts'",
+    "lint:fix": "eslint 'src/**/*.ts' --fix"
   },
   "keywords": [],
   "author": "",
@@ -59,6 +61,9 @@
     "@types/multer": "^1.4.11",
     "@types/node": "^20.14.0",
     "@types/pg": "^8.20.0",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
+    "@typescript-eslint/parser": "^8.64.0",
+    "eslint": "^10.7.0",
     "tsx": "^4.15.0",
     "typescript": "^5.4.5"
   }

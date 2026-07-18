@@ -155,9 +155,9 @@ export class TemplateRegistryService extends ServiceManager {
       
       for (const row of recordResult.rows) {
         let fieldMap;
-        if (typeof row.field_map === 'string') {
+        if (typeof row.field_map === "string") {
           fieldMap = JSON.parse(row.field_map);
-        } else if (typeof row.field_map === 'object' && row.field_map !== null) {
+        } else if (typeof row.field_map === "object" && row.field_map !== null) {
           fieldMap = row.field_map;
         } else {
           fieldMap = {};

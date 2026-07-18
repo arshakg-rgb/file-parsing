@@ -198,7 +198,7 @@ class FirestoreCacheUtils {
       let bytesCopied = 0;
       const startTime = Date.now();
     
-      readStream.on('data', (chunk) => {
+      readStream.on("data", (chunk) => {
         bytesCopied += chunk.length;
         const elapsed = (Date.now() - startTime) / 1000;
         const speed = bytesCopied / elapsed / (1024 * 1024);
@@ -208,11 +208,11 @@ class FirestoreCacheUtils {
       });
     
       readStream.pipe(writeStream)
-        .on('error', (error) => {
-          console.error('stream_copy_error:', error);
+        .on("error", (error) => {
+          console.error("stream_copy_error:", error);
           reject(error);
         })
-        .on('finish', () => {
+        .on("finish", () => {
           const elapsed = (Date.now() - startTime) / 1000;
           console.log(`stream_copy_complete: ${bytesCopied / (1024 * 1024)}MB in ${elapsed.toFixed(2)}s`);
           resolve();

@@ -255,8 +255,8 @@ check("GCS SignatureDoesNotMatch fix: curl must blank Content-Type when URL has 
   // The old bug: presignedPutUrl didn't include contentType, GCS signed for empty string
   // curl --data-binary adds 'application/x-www-form-urlencoded' automatically → mismatch
   // Fix: either blank Content-Type in curl OR sign URL with explicit contentType
-  const uploadCmd = `curl -X PUT -H "Content-Type:" --data-binary @file.csv "$URL"`;
-  assert.ok(uploadCmd.includes('Content-Type:"'));
+  const uploadCmd = "curl -X PUT -H \"Content-Type:\" --data-binary @file.csv \"$URL\"";
+  assert.ok(uploadCmd.includes("Content-Type:\""));
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -582,8 +582,8 @@ function extractJson(text: string): any {
       return JSON.parse(brace[0]);
     } catch {}
   }
-  const firstBrace = text.indexOf('{');
-  const lastBrace = text.lastIndexOf('}');
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
     try {
       return JSON.parse(text.substring(firstBrace, lastBrace + 1));
@@ -593,37 +593,37 @@ function extractJson(text: string): any {
 }
 
 check("extractJson handles markdown code fence with json label", () => {
-  const text = 'Here is the result:\n```json\n{"kind":"record-template"}\n```';
+  const text = "Here is the result:\n```json\n{\"kind\":\"record-template\"}\n```";
   const result = extractJson(text);
   assert.equal(result.kind, "record-template");
 });
 
 check("extractJson handles markdown code fence without json label", () => {
-  const text = '```\n{"kind":"rubbish-signature"}\n```';
+  const text = "```\n{\"kind\":\"rubbish-signature\"}\n```";
   const result = extractJson(text);
   assert.equal(result.kind, "rubbish-signature");
 });
 
 check("extractJson handles bare JSON object", () => {
-  const text = '{"kind":"uncertain"}';
+  const text = "{\"kind\":\"uncertain\"}";
   const result = extractJson(text);
   assert.equal(result.kind, "uncertain");
 });
 
 check("extractJson handles conversational text before JSON", () => {
-  const text = 'Based on the line, here is my analysis:\n{"kind":"record-template"}\nHope this helps!';
+  const text = "Based on the line, here is my analysis:\n{\"kind\":\"record-template\"}\nHope this helps!";
   const result = extractJson(text);
   assert.equal(result.kind, "record-template");
 });
 
 check("extractJson handles conversational text after JSON", () => {
-  const text = '{"kind":"uncertain"}\nLet me know if you need more details.';
+  const text = "{\"kind\":\"uncertain\"}\nLet me know if you need more details.";
   const result = extractJson(text);
   assert.equal(result.kind, "uncertain");
 });
 
 check("extractJson handles text both before and after JSON", () => {
-  const text = 'Analysis:\n{"kind":"rubbish-signature"}\nEnd of analysis.';
+  const text = "Analysis:\n{\"kind\":\"rubbish-signature\"}\nEnd of analysis.";
   const result = extractJson(text);
   assert.equal(result.kind, "rubbish-signature");
 });
@@ -638,7 +638,7 @@ check("extractJson throws when no JSON is found", () => {
 });
 
 check("extractJson handles nested JSON objects", () => {
-  const text = 'Here is the template:\n{"kind":"record-template","template":{"structure":"csv"}}';
+  const text = "Here is the template:\n{\"kind\":\"record-template\",\"template\":{\"structure\":\"csv\"}}";
   const result = extractJson(text);
   assert.equal(result.kind, "record-template");
   assert.equal(result.template.structure, "csv");
@@ -726,7 +726,7 @@ check("twitter key-value line extracts ONLY field_spec fields", () => {
   assert.equal(r.row!.phone, null);
 });
 check("JSON record extracts ONLY field_spec fields (no screen_name/followers dumped)", () => {
-  const r = classifyOne(FS, '{"id":9,"name":"Aaliyah","screen_name":"x","followers_count":3}');
+  const r = classifyOne(FS, "{\"id\":9,\"name\":\"Aaliyah\",\"screen_name\":\"x\",\"followers_count\":3}");
   assert.equal(r.verdict, "parsed");
   assert.deepEqual(Object.keys(r.row!).sort(), [...FS].sort());
   assert.equal(r.row!.name, "Aaliyah");
@@ -741,7 +741,7 @@ check("header row is declined (rubbish), not emitted as data", () => {
 check("data rows after a header map to the right columns (all four fields)", () => {
   const c = new LineClassifier("test", FS, [], []);
   c.classify("id,email,full_name,phone,address", 0, 0); // header
-  const r = c.classify('7,jane@x.com,Jane Roe,5551234567,"12 Main St"', 0, 0);
+  const r = c.classify("7,jane@x.com,Jane Roe,5551234567,\"12 Main St\"", 0, 0);
   assert.equal(r.verdict, "parsed");
   assert.equal(r.template_id, "csv-mapped");
   assert.deepEqual(r.row, { email: "jane@x.com", name: "Jane Roe", phone: "5551234567", address: "12 Main St" });
@@ -759,7 +759,7 @@ check("single 'Name: value' log fragment is declined (needs a strong field or >=
 });
 check("JSON log line whose key only weakly aliases a field is declined", () => {
   // 'username' no longer aliases 'name'; nothing else matches -> declined.
-  assert.equal(classifyOne(["name"], '{"level":"info","username":"svc-bot","msg":"go"}').verdict, "uncertain");
+  assert.equal(classifyOne(["name"], "{\"level\":\"info\",\"username\":\"svc-bot\",\"msg\":\"go\"}").verdict, "uncertain");
 });
 check("binary / mostly-nonprintable line is dropped as rubbish", () => {
   const r = classifyOne(FS, "\x00\x01\x02\x03\x04\x05\x06\x07 garbage");
@@ -772,7 +772,7 @@ check("empty line is length-gated to rubbish", () => {
 
 // --- content-based CSV column identification (headerless) ---
 check("headerless CSV identifies the email column by content, declines rows with none", () => {
-  const withEmail = classifyOne(FS, '1416779,2231849,"OD2667900",GLENN.RAINEY@HOTMAIL.CO.UK,07700900123');
+  const withEmail = classifyOne(FS, "1416779,2231849,\"OD2667900\",GLENN.RAINEY@HOTMAIL.CO.UK,07700900123");
   assert.equal(withEmail.verdict, "parsed");
   assert.equal(withEmail.row!.email, "GLENN.RAINEY@HOTMAIL.CO.UK");
   assert.equal(withEmail.row!.phone, "07700900123"); // 11 digits, not the 7-digit ID
@@ -803,8 +803,8 @@ check("field_spec normalization: array / JSON-array string / JSON-{fields} strin
     return fieldNames;
   };
   assert.deepEqual(norm(["email", "name"]), ["email", "name"]);
-  assert.deepEqual(norm('["email","name"]'), ["email", "name"]); // the exact string the client sent
-  assert.deepEqual(norm('{"fields":[{"name":"email"},{"name":"phone"}]}'), ["email", "phone"]);
+  assert.deepEqual(norm("[\"email\",\"name\"]"), ["email", "name"]); // the exact string the client sent
+  assert.deepEqual(norm("{\"fields\":[{\"name\":\"email\"},{\"name\":\"phone\"}]}"), ["email", "phone"]);
   assert.deepEqual(norm("email,name,phone"), ["email", "name", "phone"]);
 });
 
@@ -823,28 +823,28 @@ const { csvEscapeCell } = await import("../shared/csvOutputWriter.js");
 const splitLines = (s: string) => splitAllLines(Buffer.from(s, "utf-8")).map((t) => t[0]);
 
 check("stray/unbalanced quote does NOT swallow following lines", () => {
-  const out = splitLines('foo,",bar\nbaz,qux\nzip,zap\n');
+  const out = splitLines("foo,\",bar\nbaz,qux\nzip,zap\n");
   assert.equal(out.length, 3);
   assert.equal(out[1], "baz,qux");
   assert.equal(out[2], "zip,zap");
 });
 check("quote still protects an embedded delimiter within a single physical line", () => {
-  const out = splitLines('"a,b",c\nd,e\n');
+  const out = splitLines("\"a,b\",c\nd,e\n");
   assert.equal(out.length, 2);
-  assert.equal(out[0], '"a,b",c');
+  assert.equal(out[0], "\"a,b\",c");
   assert.equal(out[1], "d,e");
 });
 check("messy multi-record data stays one line per record (the reported failure)", () => {
-  const out = splitLines('1416779,OD2667900,",",GLENN@X.COM,",\n1416780,OD2667901,BANDAR,",\n');
+  const out = splitLines("1416779,OD2667900,\",\",GLENN@X.COM,\",\n1416780,OD2667901,BANDAR,\",\n");
   assert.equal(out.length, 2);
   assert.ok(out[0].includes("GLENN@X.COM"));
   assert.ok(out[1].startsWith("1416780"));
 });
 check("csvEscapeCell quotes commas/quotes/newlines and doubles inner quotes", () => {
   assert.equal(csvEscapeCell("plain"), "plain");
-  assert.equal(csvEscapeCell("a,b"), '"a,b"');
-  assert.equal(csvEscapeCell('he said "hi"'), '"he said ""hi"""');
-  assert.equal(csvEscapeCell("line1\nline2"), '"line1\nline2"');
+  assert.equal(csvEscapeCell("a,b"), "\"a,b\"");
+  assert.equal(csvEscapeCell("he said \"hi\""), "\"he said \"\"hi\"\"\"");
+  assert.equal(csvEscapeCell("line1\nline2"), "\"line1\nline2\"");
   assert.equal(csvEscapeCell(null), "");
   assert.equal(csvEscapeCell(undefined), "");
   assert.equal(csvEscapeCell(42), "42");
@@ -860,6 +860,6 @@ if (_failed > 0) {
   console.error(`\n❌ ${_failed} test(s) FAILED`);
   process.exit(1);
 } else {
-  console.log(`\n✅ All tests passed`);
+  console.log("\n✅ All tests passed");
   process.exit(0);
 }

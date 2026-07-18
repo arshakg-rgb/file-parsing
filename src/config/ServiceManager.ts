@@ -60,7 +60,7 @@ class ServiceManager {
   public async shutdown(): Promise<void> {
     // Cleanup services in reverse order
     for (const [name, service] of this.services) {
-      if (service.shutdown && typeof service.shutdown === 'function') {
+      if (service.shutdown && typeof service.shutdown === "function") {
         await service.shutdown();
       }
     }

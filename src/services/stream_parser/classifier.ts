@@ -285,7 +285,7 @@ export class LineClassifier {
       // field locator. The old code did `"index:0".replace("index:","")` -> "0", which split
       // every line on the digit 0. Use the template's stored delimiter, defaulting to comma.
       const delim = (rec as any).delimiter || ",";
-      const quote = '"';
+      const quote = "\"";
       return parseCsvLine(line, delim, quote);
     }
     if (rec.structure === "regex" || rec.structure === "fixed") {
@@ -391,7 +391,7 @@ export class LineClassifier {
   private splitBestDelimited(line: string): string[] | null {
     let best: string[] | null = null;
     for (const delim of [",", ";", "\t", "|"]) {
-      const parts = parseCsvLine(line, delim, '"');
+      const parts = parseCsvLine(line, delim, "\"");
       if (parts.length < 2) continue;
       if (!best || parts.length > best.length) best = parts;
     }
@@ -544,7 +544,7 @@ export class LineClassifier {
   }
 }
 
-function parseCsvLine(line: string, delim: string, quoteChar: string = '"'): string[] {
+function parseCsvLine(line: string, delim: string, quoteChar: string = "\""): string[] {
   const quote = quoteChar || null;
   const parts: string[] = [];
   let current = "";
@@ -583,7 +583,7 @@ function quickFingerprint(line: string): string {
     } catch { /* ignore */ }
   }
   for (const delim of [",", ";", "\t", "|"]) {
-    const parts = parseCsvLine(line, delim, '"');
+    const parts = parseCsvLine(line, delim, "\"");
     if (parts.length >= 3) return `csv|${delim}|${parts.length}`;
   }
   return `text|${trimmed.length}`;

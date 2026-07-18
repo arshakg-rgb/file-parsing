@@ -139,7 +139,7 @@ function groupByTemplate(paths: string[]): Map<string, string[]> {
     const parts = filename.split("-");
     // Find where job ID ends (after 5 hyphens for UUID pattern)
     // Job ID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (5 hyphens)
-    let jobIdEndIndex = 5; // After 5 hyphens, we're past the job ID
+    const jobIdEndIndex = 5; // After 5 hyphens, we're past the job ID
     let templateId = "unknown";
     
     if (parts.length > jobIdEndIndex + 1) {

@@ -179,27 +179,27 @@ export class AiClassifierService {
     if (!this.genAIClient) {
       this.genAIClient = new GoogleGenAI({
         vertexai: true,
-        project: settings.GCP_PROJECT_ID || 'data-etl-499916',
-        location: settings.VERTEX_LOCATION || 'us-central1',
+        project: settings.GCP_PROJECT_ID || "data-etl-499916",
+        location: settings.VERTEX_LOCATION || "us-central1",
       });
     }
     return this.genAIClient;
   }
 
   private async askVertexAI(prompt: string, timeoutMs: number = 30000): Promise<string> {
-    const MODEL = settings.VERTEX_MODEL || 'gemini-2.5-flash';
+    const MODEL = settings.VERTEX_MODEL || "gemini-2.5-flash";
     const ai = this.getGenAIClient();
 
     const generatePromise = ai.models.generateContent({
       model: MODEL,
       contents: [
         {
-          role: 'user',
+          role: "user",
           parts: [{ text: prompt }],
         },
       ],
       config: {
-        responseModalities: ['TEXT'],
+        responseModalities: ["TEXT"],
         temperature: 0.2,
         maxOutputTokens: 1024,
       },
@@ -213,8 +213,8 @@ export class AiClassifierService {
     ]);
 
     return (response as any).text
-      ?? (response as any).candidates?.[0]?.content?.parts?.map((part: any) => part.text).join('')
-      ?? '';
+      ?? (response as any).candidates?.[0]?.content?.parts?.map((part: any) => part.text).join("")
+      ?? "";
   }
 
   /**
@@ -285,7 +285,7 @@ If uncertain:
     
     // Ensure fieldSpec is an array
     const fieldSpecArray = Array.isArray(fieldSpec) ? fieldSpec : 
-      (typeof fieldSpec === 'string' ? JSON.parse(fieldSpec) : []);
+      (typeof fieldSpec === "string" ? JSON.parse(fieldSpec) : []);
     
     console.log("csv_parser_start", { line, fieldSpec: fieldSpecArray, delimiterCount: delimiters.length });
     
@@ -492,7 +492,7 @@ If uncertain:
    * @returns Fingerprint hash
    */
   private quickFingerprint(line: string): string {
-    return crypto.createHash('md5').update(line).digest('hex');
+    return crypto.createHash("md5").update(line).digest("hex");
   }
 
   /**
@@ -504,8 +504,8 @@ If uncertain:
     return `${this.SYSTEM_PROMPT}
 
 Unknown line: ${req.unknown_line}
-Field spec: ${req.field_spec.join(', ')}
-${req.context_lines ? `Context lines:\n${req.context_lines.join('\n')}` : ''}`;
+Field spec: ${req.field_spec.join(", ")}
+${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
   }
 
   /**

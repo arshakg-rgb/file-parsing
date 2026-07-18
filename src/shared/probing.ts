@@ -92,16 +92,16 @@ class ProbingService extends ServiceManager {
     offset: number,
     fileSize: number
   ): Promise<ProbeResult> {
-    let windowSize = this.PROBE_WINDOW_MIN_BYTES;
+    const windowSize = this.PROBE_WINDOW_MIN_BYTES;
     const endOffset = Math.min(offset + windowSize - 1, fileSize - 1);
     
     const buffer = await this.gcsUtils.readRange(bucket, key, offset, endOffset);
-    const content = buffer.toString('utf-8');
+    const content = buffer.toString("utf-8");
     
     const detected = jschardet.detect(buffer);
-    const encoding = detected.encoding || 'utf-8';
+    const encoding = detected.encoding || "utf-8";
     
-    const lines = content.split('\n').filter(line => line.trim());
+    const lines = content.split("\n").filter(line => line.trim());
     const lineCount = lines.length;
     
     if (lineCount === 0) {
@@ -164,7 +164,7 @@ class ProbingService extends ServiceManager {
     const probeResults: ProbeResult[] = [];
     let totalAvgRowWidth = 0;
     let totalMaxRowWidth = 0;
-    let finalEncoding = 'utf-8';
+    let finalEncoding = "utf-8";
     
     for (const offset of offsets) {
       const result = await this.executeProbe(bucket, key, offset, fileSize);
@@ -173,7 +173,7 @@ class ProbingService extends ServiceManager {
       totalAvgRowWidth += result.avgRowWidth;
       totalMaxRowWidth = Math.max(totalMaxRowWidth, result.maxRowWidth);
       
-      if (result.encoding !== 'utf-8' && finalEncoding === 'utf-8') {
+      if (result.encoding !== "utf-8" && finalEncoding === "utf-8") {
         finalEncoding = result.encoding;
       }
     }
@@ -212,7 +212,7 @@ class ProbingService extends ServiceManager {
         isHomogeneous: true,
         likelyHasEmbeddedNewlines: false,
         likelyHasQuotedFields: false,
-        suggestedDelimiter: ',',
+        suggestedDelimiter: ",",
       };
     }
     
@@ -225,11 +225,11 @@ class ProbingService extends ServiceManager {
     
     for (const result of probeResults) {
       for (const line of result.sampleLines) {
-        if (line.includes('"')) hasQuotes = true;
+        if (line.includes("\"")) hasQuotes = true;
         
-        if (line.includes(',')) hasCommas = true;
-        if (line.includes('\t')) hasTabs = true;
-        if (line.includes('|')) hasPipes = true;
+        if (line.includes(",")) hasCommas = true;
+        if (line.includes("\t")) hasTabs = true;
+        if (line.includes("|")) hasPipes = true;
         
         if ((line.match(/"/g) || []).length % 2 !== 0) {
           consistentStructure = false;
@@ -237,11 +237,11 @@ class ProbingService extends ServiceManager {
       }
     }
     
-    let suggestedDelimiter = ',';
+    let suggestedDelimiter = ",";
     if (hasTabs && !hasCommas) {
-      suggestedDelimiter = '\t';
+      suggestedDelimiter = "\t";
     } else if (hasPipes && !hasCommas && !hasTabs) {
-      suggestedDelimiter = '|';
+      suggestedDelimiter = "|";
     }
     
     return {

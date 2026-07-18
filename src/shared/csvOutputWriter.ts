@@ -32,7 +32,7 @@ class CsvOutputService extends ServiceManager {
   public static escapeCell(v: unknown): string {
     if (v === null || v === undefined) return "";
     const s = String(v);
-    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    return /[",\r\n]/.test(s) ? "\"" + s.replace(/"/g, "\"\"") + "\"" : s;
   }
 }
 

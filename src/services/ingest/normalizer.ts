@@ -116,17 +116,17 @@ export async function extractArchiveToS3(
     }
     
     // Use GCS FUSE mount path instead of RAM-backed /tmp
-    const mountPath = process.env.RAR_TEMP_MOUNT || '/mnt/scratch';
+    const mountPath = process.env.RAR_TEMP_MOUNT || "/mnt/scratch";
     const tmpPath = path.join(mountPath, `${randomUUID()}.rar`);
     console.log("rar_download_starting", { jobId, tmpPath, mountPath });
     const fileStream = gcsClient().bucket(bucket).file(key).createReadStream();
     const writeStream = createWriteStream(tmpPath);
     
-    fileStream.on('error', (err) => {
+    fileStream.on("error", (err) => {
       console.error("rar_download_stream_error", { jobId, error: err.message });
     });
     
-    writeStream.on('error', (err) => {
+    writeStream.on("error", (err) => {
       console.error("rar_download_write_error", { jobId, error: err.message });
     });
     
@@ -134,7 +134,7 @@ export async function extractArchiveToS3(
     console.log("rar_download_complete", { jobId, tmpPath, size });
     
     // Use CLI-based extraction for memory efficiency
-    const { spawn } = await import('child_process');
+    const { spawn } = await import("child_process");
     const out: Record<string, any>[] = [];
     let totalUncompressed = 0;
     const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
@@ -143,27 +143,27 @@ export async function extractArchiveToS3(
     try {
       // First, list archive contents to get file info
       // Use technical listing mode (lt -v) for stable Key: value format instead of human-readable table
-      const listArgs = ['lt', '-v', tmpPath];
+      const listArgs = ["lt", "-v", tmpPath];
       if (password) {
-        listArgs.push('-p' + password);
+        listArgs.push("-p" + password);
       }
       
       console.log("rar_list_starting", { jobId, args: listArgs });
-      const listProcess = spawn('unrar', listArgs);
-      let listOutput = '';
-      let listError = '';
+      const listProcess = spawn("unrar", listArgs);
+      let listOutput = "";
+      let listError = "";
       
-      listProcess.stdout.on('data', (data) => {
+      listProcess.stdout.on("data", (data) => {
         listOutput += data.toString();
       });
       
-      listProcess.stderr.on('data', (data) => {
+      listProcess.stderr.on("data", (data) => {
         listError += data.toString();
         console.error("rar_list_stderr", { jobId, data: data.toString() });
       });
       
       await new Promise<void>((resolve, reject) => {
-        listProcess.on('close', (code) => {
+        listProcess.on("close", (code) => {
           console.log("rar_list_complete", { jobId, code, outputLength: listOutput.length, errorLength: listError.length });
           if (code === 0) {
             resolve();
@@ -171,7 +171,7 @@ export async function extractArchiveToS3(
             reject(new Error(`unrar list failed with code ${code}: ${listError}`));
           }
         });
-        listProcess.on('error', (err) => {
+        listProcess.on("error", (err) => {
           console.error("rar_list_spawn_error", { jobId, error: err.message });
           reject(err);
         });
@@ -180,10 +180,10 @@ export async function extractArchiveToS3(
       // Parse unrar list output (handle both table and technical listing formats)
       function parseUnrarListing(output: string): Array<{ name: string; size: number }> {
         const files: Array<{ name: string; size: number }> = [];
-        const lines = output.split('\n');
+        const lines = output.split("\n");
         
         // Check if output is in technical listing format (Name:/Size: blocks)
-        if (output.includes('Name:') && output.includes('Size:')) {
+        if (output.includes("Name:") && output.includes("Size:")) {
           const blocks = output.split(/\r?\n\r?\n/);
           for (const block of blocks) {
             const nameMatch = block.match(/^\s*Name:\s*(.+)$/m);
@@ -275,21 +275,21 @@ export async function extractArchiveToS3(
           const entryFile = gcsClient().bucket(bucket).file(entryKey);
           const writeStream = entryFile.createWriteStream();
           
-          const extractArgs = ['p', '-inul', tmpPath, file.name];
+          const extractArgs = ["p", "-inul", tmpPath, file.name];
           if (password) {
-            extractArgs.push('-p' + password);
+            extractArgs.push("-p" + password);
           }
           
-          const extractProcess = spawn('unrar', extractArgs);
+          const extractProcess = spawn("unrar", extractArgs);
           
           // Pipe extraction output directly to GCS with backpressure
           extractProcess.stdout.pipe(writeStream);
           
           await new Promise<void>((resolve, reject) => {
-            writeStream.on('finish', resolve);
-            writeStream.on('error', reject);
-            extractProcess.on('error', reject);
-            extractProcess.on('close', (code) => {
+            writeStream.on("finish", resolve);
+            writeStream.on("error", reject);
+            extractProcess.on("error", reject);
+            extractProcess.on("close", (code) => {
               if (code !== 0) {
                 reject(new Error(`unrar extraction failed with code ${code}`));
               } else {
@@ -506,7 +506,7 @@ async function extractRar(
 ): Promise<Record<string, any>[]> {
   // Use CLI-based extraction for memory efficiency (same approach as extractArchiveToS3)
   const tmp = await withTempFile(raw, ".rar");
-  const { spawn } = await import('child_process');
+  const { spawn } = await import("child_process");
   const out: Record<string, any>[] = [];
   let totalUncompressed = 0;
   const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
@@ -514,25 +514,25 @@ async function extractRar(
   
   try {
     // List archive contents to get file info
-    const listArgs = ['l', '-v', tmp];
+    const listArgs = ["l", "-v", tmp];
     if (password) {
-      listArgs.push('-p' + password);
+      listArgs.push("-p" + password);
     }
     
-    const listProcess = spawn('unrar', listArgs);
-    let listOutput = '';
+    const listProcess = spawn("unrar", listArgs);
+    let listOutput = "";
     
-    listProcess.stdout.on('data', (data) => {
+    listProcess.stdout.on("data", (data) => {
       listOutput += data.toString();
     });
     
     await new Promise<void>((resolve, reject) => {
-      listProcess.on('close', (code) => code === 0 ? resolve() : reject(new Error(`unrar list failed with code ${code}`)));
-      listProcess.on('error', reject);
+      listProcess.on("close", (code) => code === 0 ? resolve() : reject(new Error(`unrar list failed with code ${code}`)));
+      listProcess.on("error", reject);
     });
     
     // Parse list output to get file information
-    const lines = listOutput.split('\n');
+    const lines = listOutput.split("\n");
     const files: Array<{ name: string; size: number }> = [];
     
     for (const line of lines) {
@@ -556,27 +556,27 @@ async function extractRar(
         continue;
       }
       
-      const extractArgs = ['p', '-inul', tmp, file.name];
+      const extractArgs = ["p", "-inul", tmp, file.name];
       if (password) {
-        extractArgs.push('-p' + password);
+        extractArgs.push("-p" + password);
       }
       
-      const extractProcess = spawn('unrar', extractArgs);
+      const extractProcess = spawn("unrar", extractArgs);
       const chunks: Buffer[] = [];
       
-      extractProcess.stdout.on('data', (chunk) => {
+      extractProcess.stdout.on("data", (chunk) => {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       });
       
       await new Promise<void>((resolve, reject) => {
-        extractProcess.on('close', (code) => {
+        extractProcess.on("close", (code) => {
           if (code !== 0) {
             reject(new Error(`unrar extraction failed with code ${code}`));
           } else {
             resolve();
           }
         });
-        extractProcess.on('error', reject);
+        extractProcess.on("error", reject);
       });
       
       const data = Buffer.concat(chunks);
