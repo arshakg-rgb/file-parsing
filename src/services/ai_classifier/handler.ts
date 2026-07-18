@@ -4,6 +4,36 @@ import { settings } from "../../shared/config.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
 
 /**
+ * Extract JSON from a string that may be wrapped in markdown code fences
+ * or contain explanatory text around the JSON object.
+ */
+function extractJsonFromMarkdown(raw: string): string {
+  const trimmed = raw.trim();
+
+  // Match fenced code blocks marked as json
+  const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+  if (fenceMatch) {
+    return fenceMatch[1].trim();
+  }
+
+  // Find the first { and last } to extract a JSON object
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    return trimmed.slice(firstBrace, lastBrace + 1);
+  }
+
+  // Find the first [ and last ]
+  const firstBracket = trimmed.indexOf("[");
+  const lastBracket = trimmed.lastIndexOf("]");
+  if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+    return trimmed.slice(firstBracket, lastBracket + 1);
+  }
+
+  return trimmed;
+}
+
+/**
  * Request interface for AI classification
  */
 interface ClassifyRequest {
@@ -417,7 +447,7 @@ If uncertain:
     try {
       this.vertexAiCalls++;
       const rawText = await this.askVertexAI(userPrompt);
-      const raw = JSON.parse(rawText);
+      const raw = JSON.parse(extractJsonFromMarkdown(rawText));
       let kindStr = raw.kind || "uncertain";
       
       // Handle structure names (csv, json, etc.) as record-template

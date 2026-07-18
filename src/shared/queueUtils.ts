@@ -138,14 +138,16 @@ class QueueService extends ServiceManager {
   private async pubSend(queueUrl: string, payload: object, groupId: string): Promise<string> {
     return this.withRetry(async () => {
       const data = Buffer.from(JSON.stringify(payload)).toString("base64");
-      const pub = await this.getPubPublisher();
       const topic = this.topicPath(queueUrl);
       this.logger.debug("pub_send_attempt", { queueUrl, topic, groupId });
       const [resp] = await this.withTimeout<any>(
-        () => pub.publish({
-          topic: topic,
-          messages: [{ data, orderingKey: groupId }],
-        }),
+        async () => {
+          const pub = await this.getPubPublisher();
+          return pub.publish({
+            topic: topic,
+            messages: [{ data, orderingKey: groupId }],
+          });
+        },
         this.QUEUE_TIMEOUT_SEND
       );
       const messageId = (resp.messageIds ?? [])[0] ?? "";
@@ -189,19 +191,24 @@ class QueueService extends ServiceManager {
 
   private async sqsSend(queueUrl: string, payload: object, delay: number, groupId: string): Promise<string> {
     return this.withRetry(async () => {
-      const { SendMessageCommand } = await import("@aws-sdk/client-sqs");
-      const { randomUUID } = await import("crypto");
-      const client = await this.getSqsClient();
       const params: any = {
         QueueUrl: queueUrl,
         MessageBody: JSON.stringify(payload),
         DelaySeconds: delay,
       };
       if (queueUrl.endsWith(".fifo")) {
+        const { randomUUID } = await import("crypto");
         params.MessageGroupId = groupId;
         params.MessageDeduplicationId = randomUUID();
       }
-      const resp = await this.withTimeout<any>(() => client.send(new SendMessageCommand(params)), this.QUEUE_TIMEOUT_SEND);
+      const resp = await this.withTimeout<any>(
+        async () => {
+          const { SendMessageCommand } = await import("@aws-sdk/client-sqs");
+          const client = await this.getSqsClient();
+          return client.send(new SendMessageCommand(params));
+        },
+        this.QUEUE_TIMEOUT_SEND
+      );
       return resp.MessageId ?? "";
     });
   }

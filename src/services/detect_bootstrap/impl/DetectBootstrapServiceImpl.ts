@@ -242,8 +242,13 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     };
     const config = this.getConfig();
     console.log("detect_sending_to_parse", { job_id: jobId, queue_url: config.settings.PARSE_QUEUE_URL });
-    await sendRaw(config.settings.PARSE_QUEUE_URL, parseMsg);
-    console.log("detect_parse_message_sent", { job_id: jobId });
+    try {
+      await sendRaw(config.settings.PARSE_QUEUE_URL, parseMsg);
+      console.log("detect_parse_message_sent", { job_id: jobId });
+    } catch (sendErr) {
+      this.logger.error("detect_send_to_parse_failed", { job_id: jobId, queue_url: config.settings.PARSE_QUEUE_URL }, sendErr instanceof Error ? sendErr : new Error(String(sendErr)));
+      throw sendErr;
+    }
   }
 
   private emit(jobId: string, eventType: EventType, data: Record<string, any>) {

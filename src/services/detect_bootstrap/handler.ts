@@ -425,8 +425,13 @@ export class DetectBootstrapService {
       seed_template_ids: seedTemplateIds,
     };
     console.log("detect_sending_to_parse", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL });
-    await sendRaw(settings.PARSE_QUEUE_URL, parseMsg);
-    console.log("detect_parse_message_sent", { job_id: jobId });
+    try {
+      await sendRaw(settings.PARSE_QUEUE_URL, parseMsg);
+      console.log("detect_parse_message_sent", { job_id: jobId });
+    } catch (sendErr) {
+      this.logger.error("detect_send_to_parse_failed", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL }, sendErr instanceof Error ? sendErr : new Error(String(sendErr)));
+      throw sendErr;
+    }
   }
 
   /**
