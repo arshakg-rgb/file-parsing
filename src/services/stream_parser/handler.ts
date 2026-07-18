@@ -220,7 +220,9 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
   let aiCalls = 0;
   let aiLocalRecoveries = 0; // unknowns the AI resolved (record or rubbish)
   let aiBudgetFlagged = false;
+  let localMatches = 0; // lines the LOCAL classifier placed without AI (match-rate monitor)
   const recentLines: string[] = []; // small context window for the model
+  const MATCH_RATE_FLOOR = 0.1; // design: flag the file if local-hit ratio collapses
 
   try {
     for await (const [line, byteOffset, byteLength] of streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding)) {
@@ -240,6 +242,11 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
         counts.dropped_rubbish++;
         continue; // Skip this line and continue with next
       }
+
+      // Match-rate monitor (design): a non-uncertain local verdict = a local hit (template or
+      // structural recognizer matched, no AI needed). The collapse of this ratio is what flags
+      // a pathological file at end-of-parse rather than quietly hammering AI.
+      if (result.verdict !== "uncertain") localMatches++;
 
       // Design step 4: a line the local classifier can't place (verdict "uncertain") is sent
       // to the AI ONCE — it returns a record template (parse it), a rubbish signature (drop it),
@@ -397,7 +404,12 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
       rubbish_log_path: counts.rubbish_log_path,
     }));
 
-    logger.info("parse_complete", { job_id: jobId, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
+    const localHitRate = lineNo > 0 ? localMatches / lineNo : 1;
+    const matchRateFlagged = lineNo >= 50 && localHitRate < MATCH_RATE_FLOOR;
+    if (matchRateFlagged) {
+      logger.warn("match_rate_collapsed", { job_id: jobId, local_hit_rate: Number(localHitRate.toFixed(3)), lines: lineNo, ai_calls: aiCalls, note: "templates rarely matched — file flagged for review" });
+    }
+    logger.info("parse_complete", { job_id: jobId, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts), ai_calls: aiCalls, ai_recoveries: aiLocalRecoveries, local_hit_rate: Number(localHitRate.toFixed(3)), match_rate_flagged: matchRateFlagged });
     metrics.set("parse.lines_parsed", counts.parsed);
     metrics.set("parse.lines_dropped", counts.dropped_rubbish);
     metrics.set("parse.lines_failed", totalFailed(counts));

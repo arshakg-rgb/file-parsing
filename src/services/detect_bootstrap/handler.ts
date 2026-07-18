@@ -189,7 +189,7 @@ export async function bootstrapJob(msg: ClassifyMessage): Promise<void> {
     let resp: ClassifyResponse;
     try {
       const aiTimeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("ai_classify_timeout")), settings.AI_CLASSIFY_TIMEOUT_MS)
+        setTimeout(() => reject(new Error("ai_classify_timeout")), settings.DETECT_PROBE_TIMEOUT_MS)
       );
       resp = await Promise.race([classify(req), aiTimeout]);
     } catch (aiErr) {

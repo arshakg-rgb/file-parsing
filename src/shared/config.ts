@@ -67,6 +67,9 @@ export const settings = {
   AI_INLINE_MODE: getString("AI_INLINE_MODE", "off"),
   // Hard cap on AI calls per job so a pathological file can't run up unbounded cost/latency.
   MAX_AI_CALLS_PER_JOB: getNumber("MAX_AI_CALLS_PER_JOB", 50),
+  // Per-probe AI timeout during detect_bootstrap. Shorter than the parse-time probe timeout so a
+  // slow model call while probing can't strand a job in "detecting" for minutes.
+  DETECT_PROBE_TIMEOUT_MS: getNumber("DETECT_PROBE_TIMEOUT_MS", 8000),
 
   // ---- Vertex AI ----
   VERTEX_MODEL: getString("VERTEX_MODEL", "gemini-2.5-flash"),
