@@ -12,7 +12,7 @@ import { templateRegistry } from "../../../shared/templateRegistry.js";
 import { createLogger } from "../../../utils/logger/logger.js";
 import { metrics } from "../../../utils/response/metrics.js";
 import { startHealthCheckServer } from "../../../utils/response/health.js";
-import AiClassifierService from "../../ai_classifier/handler.js";
+import { AiClassifierService } from "../../ai_classifier/handler.js";
 import { mockClassify } from "../../ai_classifier/mock.js";
 import { DetectBootstrapService } from "../DetectBootstrapService.js";
 import { IDetectBootstrap, ClassifyRequest, ClassifyResponse } from "../io/IDetectBootstrap.js";
@@ -39,7 +39,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
         return resp.template ? { kind: resp.kind as any, template: resp.template as any } : { kind: "uncertain" };
       };
     } else {
-      const aiService = new AiClassifierService();
+      const aiService = AiClassifierService.getInstance();
       this.classify = async (req: ClassifyRequest) => {
         const aiReq = {
           ...req,

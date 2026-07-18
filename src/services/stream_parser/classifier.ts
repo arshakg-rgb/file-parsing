@@ -1,7 +1,7 @@
 import { settings } from "../../shared/config.js";
 import { FailureClass, ColumnMap } from "../../shared/models/job.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
-import { safeRegex, safeRegexTest } from "../../shared/safeRegex.js";
+import { safeRegex, safeRegexTest } from "../../utils/validator/safeRegex.js";
 
 interface ClassifyRequest {
   unknown_line: string;
