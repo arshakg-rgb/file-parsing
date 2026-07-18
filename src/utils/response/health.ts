@@ -1,7 +1,7 @@
 import express from "express";
-import Config from "../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../config/ServiceManager.js";
-import { InstantiationError } from "../errors/InstantiationError.js";
+import Config from "../../config/system-config/Config.js";
+import ServiceManager, { Enforce } from "../../config/ServiceManager.js";
+import { InstantiationError } from "../../errors/InstantiationError.js";
 import { metrics } from "./metrics.js";
 import { formatPrometheusMetrics } from "./prometheus.js";
 
@@ -16,10 +16,10 @@ class HealthService extends ServiceManager {
   }
 
   public static getInstance(): HealthService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new HealthService(Enforce);
+    if (!HealthService.instance) {
+      HealthService.instance = new HealthService(Enforce);
     }
-    return ServiceManager.instance as HealthService;
+    return HealthService.instance;
   }
 
   public createHealthCheckServer(port = 3000): express.Application {

@@ -1,6 +1,6 @@
-import Config from "../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../config/ServiceManager.js";
-import { InstantiationError } from "../errors/InstantiationError.js";
+import Config from "../../config/system-config/Config.js";
+import ServiceManager, { Enforce } from "../../config/ServiceManager.js";
+import { InstantiationError } from "../../errors/InstantiationError.js";
 
 class SafeRegexService extends ServiceManager {
   protected static instance: SafeRegexService;
@@ -15,10 +15,10 @@ class SafeRegexService extends ServiceManager {
   }
 
   public static getInstance(): SafeRegexService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new SafeRegexService(Enforce);
+    if (!SafeRegexService.instance) {
+      SafeRegexService.instance = new SafeRegexService(Enforce);
     }
-    return ServiceManager.instance as SafeRegexService;
+    return SafeRegexService.instance;
   }
 
   private isSafeRegexSource(source: string): boolean {

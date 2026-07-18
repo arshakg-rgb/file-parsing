@@ -2,7 +2,7 @@ import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
-import { createLogger } from "./logger.js";
+import { createLogger } from "../utils/logger/logger.js";
 import jschardet from "jschardet";
 
 export interface ProbeResult {
@@ -37,10 +37,10 @@ class ProbingService extends ServiceManager {
   }
 
   public static getInstance(): ProbingService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new ProbingService(Enforce);
+    if (!ProbingService.instance) {
+      ProbingService.instance = new ProbingService(Enforce);
     }
-    return ServiceManager.instance as ProbingService;
+    return ProbingService.instance;
   }
 
   public calculateProbeCount(fileSize: number): number {

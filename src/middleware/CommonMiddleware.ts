@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import { CustomError } from "../../errors/CustomError.js";
+import { CustomError } from "../errors/CustomError.js";
 
 export function error404Handler(req: Request, res: Response): void {
   res.status(404).json({

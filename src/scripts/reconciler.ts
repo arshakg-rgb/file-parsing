@@ -3,7 +3,7 @@ import { getJob, getPendingEntryCount, pool, waitForDb } from "../shared/db.js";
 import { publishEvent } from "../shared/queueUtils.js";
 import { EventType, makeJobEvent } from "../shared/models/events.js";
 import { JobStatus } from "../shared/models/job.js";
-import { createLogger } from "../shared/logger.js";
+import { createLogger } from "../utils/logger/logger.js";
 
 const logger = createLogger("reconciler");
 

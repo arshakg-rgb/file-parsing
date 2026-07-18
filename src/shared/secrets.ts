@@ -15,10 +15,10 @@ class SecretsService extends ServiceManager {
   }
 
   public static getInstance(): SecretsService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new SecretsService(Enforce);
+    if (!SecretsService.instance) {
+      SecretsService.instance = new SecretsService(Enforce);
     }
-    return ServiceManager.instance as SecretsService;
+    return SecretsService.instance;
   }
 
   private getSecretsClient(): SecretsManagerClient {

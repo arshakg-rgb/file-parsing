@@ -2,6 +2,7 @@ import ServiceManager, { Enforce } from "../ServiceManager.js";
 import { InstantiationError } from "../../errors/InstantiationError.js";
 
 class FirestoreManager extends ServiceManager {
+  protected static instance: FirestoreManager;
   private firestore: any;
 
   protected constructor(enforce: () => void) {
@@ -12,10 +13,10 @@ class FirestoreManager extends ServiceManager {
   }
 
   public static getInstance(): FirestoreManager {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new FirestoreManager(Enforce);
+    if (!FirestoreManager.instance) {
+      FirestoreManager.instance = new FirestoreManager(Enforce);
     }
-    return ServiceManager.instance as FirestoreManager;
+    return FirestoreManager.instance;
   }
 
   public async initialize(): Promise<void> {

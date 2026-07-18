@@ -1,31 +1,16 @@
 import { randomUUID } from "crypto";
+import { SourceType } from "../../enum/SourceType.js";
+import { ExecPath } from "../../enum/ExecPath.js";
+import { JobStatus } from "../../enum/JobStatus.js";
+import { FailureClass } from "../../enum/FailureClass.js";
+import { DLQStatus } from "../../enum/DLQStatus.js";
 
-export enum SourceType {
-  S3 = "s3",
-  UPLOAD = "upload",
-  URL = "url",
-  ARCHIVE_ENTRY = "archive_entry",
-}
-
-export enum ExecPath {
-  STREAM = "stream",
-  PARALLEL = "parallel",
-}
-
-export enum JobStatus {
-  QUEUED = "queued",
-  INGESTING = "ingesting",
-  AWAITING_PASSWORD = "awaiting_password",
-  DETECTING = "detecting",
-  PARSING = "parsing",
-  FINALIZING = "finalizing",
-  LOADING = "loading",
-  REPORTING = "reporting",
-  DONE = "done",
-  PARTIAL = "partial",
-  HELD = "held",
-  FAILED = "failed",
-}
+// Re-export enums for backward compatibility
+export { SourceType } from "../../enum/SourceType.js";
+export { ExecPath } from "../../enum/ExecPath.js";
+export { JobStatus } from "../../enum/JobStatus.js";
+export { FailureClass } from "../../enum/FailureClass.js";
+export { DLQStatus } from "../../enum/DLQStatus.js";
 
 export const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
   [JobStatus.QUEUED]: [JobStatus.INGESTING, JobStatus.DETECTING, JobStatus.FAILED],
@@ -133,21 +118,6 @@ export interface RubbishLogEntry {
   raw_bytes: string;
   matched_template_id: string;
   logged_at: string;
-}
-
-export enum FailureClass {
-  UNCERTAIN = "uncertain",
-  TRANSFORM_ERROR = "transform_error",
-  TYPE_MISMATCH = "type_mismatch",
-  ENCODING_ERROR = "encoding_error",
-  EXTRACTION_ERROR = "extraction_error",
-}
-
-export enum DLQStatus {
-  PENDING = "pending",
-  RETRY = "retry",
-  REVIEW = "review",
-  RESOLVED = "resolved",
 }
 
 export interface DeadLetterEntry {

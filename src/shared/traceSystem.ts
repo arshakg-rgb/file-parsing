@@ -2,7 +2,7 @@ import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import MySqlManager from "../config/db/MySqlManager.js";
-import { createLogger } from "./logger.js";
+import { createLogger } from "../utils/logger/logger.js";
 import crypto from "crypto";
 
 export interface TraceRecord {
@@ -36,10 +36,10 @@ class TraceSystemService extends ServiceManager {
   }
 
   public static getInstance(): TraceSystemService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new TraceSystemService(Enforce);
+    if (!TraceSystemService.instance) {
+      TraceSystemService.instance = new TraceSystemService(Enforce);
     }
-    return ServiceManager.instance as TraceSystemService;
+    return TraceSystemService.instance;
   }
 
   public async createTrace(trace: TraceRecord): Promise<void> {

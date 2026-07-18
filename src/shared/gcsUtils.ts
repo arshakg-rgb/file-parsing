@@ -3,8 +3,8 @@ import { Storage } from "@google-cloud/storage";
 import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
-import { createLogger } from "./logger.js";
-import { decode } from "./encoding.js";
+import { createLogger } from "../utils/logger/logger.js";
+import { decode } from "../utils/normalizers/encoding.js";
 
 class GcsUtilsService extends ServiceManager {
   protected static instance: GcsUtilsService;
@@ -27,10 +27,10 @@ class GcsUtilsService extends ServiceManager {
   }
 
   public static getInstance(): GcsUtilsService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new GcsUtilsService(Enforce);
+    if (!GcsUtilsService.instance) {
+      GcsUtilsService.instance = new GcsUtilsService(Enforce);
     }
-    return ServiceManager.instance as GcsUtilsService;
+    return GcsUtilsService.instance;
   }
 
   public getStorage(): Storage {

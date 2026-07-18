@@ -14,12 +14,12 @@ import { DLQManager } from "../../shared/dlqManager.js";
 import { TraceSystem } from "../../shared/traceSystem.js";
 import { QualityGate } from "../../shared/qualityGate.js";
 import { AdaptiveProbing } from "../../shared/probing.js";
-import { createLogger } from "../../shared/logger.js";
-import { metrics } from "../../shared/metrics.js";
-import { startHealthCheckServer } from "../../shared/health.js";
+import { createLogger } from "../../utils/logger/logger.js";
+import { metrics } from "../../utils/response/metrics.js";
+import { startHealthCheckServer } from "../../utils/response/health.js";
 import { AIRateLimiter } from "../../utils/AIRateLimiter.js";
 import jschardet from "jschardet";
-import { normalizeEncoding, isLikelyUtf8 } from "../../shared/encoding.js";
+import { normalizeEncoding, isLikelyUtf8 } from "../../utils/normalizers/encoding.js";
 
 class StreamParserService extends ServiceManager {
   protected static instance: StreamParserService;

@@ -1,7 +1,7 @@
 import { settings } from "../../../shared/config.js";
 import { FailureClass } from "../../../shared/models/job.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../../shared/templateRegistry.js";
-import { safeRegex, safeRegexTest } from "../../../shared/safeRegex.js";
+import { safeRegex, safeRegexTest } from "../../../utils/validator/safeRegex.js";
 import ServiceManager from "../../../config/ServiceManager.js";
 import { Enforce } from "../../../config/ServiceManager.js";
 import { InstantiationError } from "../../../errors/InstantiationError.js";
@@ -161,8 +161,8 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       job_id: this.jobId,
     };
 
-    const { classifyAi } = await import("../../ai_classifier/handler.js");
-    const resp = await classifyAi(req);
+    const handler = await import("../../ai_classifier/handler.js");
+    const resp = await handler.classifyAi(req);
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
     }

@@ -2,7 +2,7 @@ import { CloudWatchLogsClient, PutLogEventsCommand, CreateLogGroupCommand, Creat
 import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
-import { createLogger } from "./logger.js";
+import { createLogger } from "../utils/logger/logger.js";
 
 class CloudWatchService extends ServiceManager {
   protected static instance: CloudWatchService;
@@ -20,10 +20,10 @@ class CloudWatchService extends ServiceManager {
   }
 
   public static getInstance(): CloudWatchService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new CloudWatchService(Enforce);
+    if (!CloudWatchService.instance) {
+      CloudWatchService.instance = new CloudWatchService(Enforce);
     }
-    return ServiceManager.instance as CloudWatchService;
+    return CloudWatchService.instance;
   }
 
   private getLogsClient(): CloudWatchLogsClient {

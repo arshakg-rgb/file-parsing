@@ -1,6 +1,6 @@
 import { Pool } from 'pg';
 import { settings } from '../shared/config.js';
-import { createLogger } from '../shared/logger.js';
+import { createLogger } from "../utils/logger/logger.js";
 
 const logger = createLogger('purge-data');
 

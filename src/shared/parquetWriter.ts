@@ -9,7 +9,7 @@ import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
-import { createLogger } from "./logger.js";
+import { createLogger } from "../utils/logger/logger.js";
 
 class ParquetOutputService extends ServiceManager {
   protected static instance: ParquetOutputService;
@@ -29,10 +29,10 @@ class ParquetOutputService extends ServiceManager {
   }
 
   public static getInstance(): ParquetOutputService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new ParquetOutputService(Enforce);
+    if (!ParquetOutputService.instance) {
+      ParquetOutputService.instance = new ParquetOutputService(Enforce);
     }
-    return ServiceManager.instance as ParquetOutputService;
+    return ParquetOutputService.instance;
   }
 
   public getLogger(): any {

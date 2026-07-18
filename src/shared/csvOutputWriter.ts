@@ -5,7 +5,7 @@ import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
-import { createLogger } from "./logger.js";
+import { createLogger } from "../utils/logger/logger.js";
 
 class CsvOutputService extends ServiceManager {
   protected static instance: CsvOutputService;
@@ -23,10 +23,10 @@ class CsvOutputService extends ServiceManager {
   }
 
   public static getInstance(): CsvOutputService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new CsvOutputService(Enforce);
+    if (!CsvOutputService.instance) {
+      CsvOutputService.instance = new CsvOutputService(Enforce);
     }
-    return ServiceManager.instance as CsvOutputService;
+    return CsvOutputService.instance;
   }
 
   public static escapeCell(v: unknown): string {

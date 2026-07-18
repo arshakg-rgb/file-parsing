@@ -2,7 +2,7 @@ import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
 import MySqlManager from "../config/db/MySqlManager.js";
-import { createLogger } from "./logger.js";
+import { createLogger } from "../utils/logger/logger.js";
 
 export interface QualityMetrics {
   totalLines: number;
@@ -30,10 +30,10 @@ class QualityGateService extends ServiceManager {
   }
 
   public static getInstance(): QualityGateService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new QualityGateService(Enforce);
+    if (!QualityGateService.instance) {
+      QualityGateService.instance = new QualityGateService(Enforce);
     }
-    return ServiceManager.instance as QualityGateService;
+    return QualityGateService.instance;
   }
 
   public async calculateMetrics(jobId: string): Promise<QualityMetrics> {

@@ -1,5 +1,5 @@
 import { templateRegistry, RecordTemplate, RubbishTemplate, TemplateKind } from "./templateRegistry.js";
-import { createLogger } from "./logger.js";
+import { createLogger } from "../utils/logger/logger.js";
 
 const logger = createLogger("classifier");
 

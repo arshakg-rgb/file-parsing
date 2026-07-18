@@ -5,11 +5,11 @@ import MySqlManager from "./config/db/MySqlManager.js";
 import express, { Express } from "express";
 import ServiceManager from "./config/ServiceManager.js";
 import { Constants } from "./common/io/Constants.js";
-import { error404Handler, errorPageHandler } from "./common/middleware/CommonMiddleware.js";
+import { error404Handler, errorPageHandler } from "./middleware/CommonMiddleware.js";
 import bodyParser from "body-parser";
 import CorsUtils from "./config/cors/CorsUtils.js";
-import ApiRouter from "./common/routes/ApiRouter.js";
-import { DeprecationMiddleware } from "./common/middleware/DeprecationMiddleware.js";
+import ApiRouter from "./routes/ApiRouter.js";
+import { DeprecationMiddleware } from "./middleware/DeprecationMiddleware.js";
 
 const logger: Logger = createLogger("app");
 

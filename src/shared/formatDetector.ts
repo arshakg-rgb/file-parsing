@@ -1,7 +1,7 @@
 import Config from "../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../config/ServiceManager.js";
 import { InstantiationError } from "../errors/InstantiationError.js";
-import { createLogger } from "./logger.js";
+import { createLogger } from "../utils/logger/logger.js";
 
 export enum LineFormat {
   CSV = "csv",
@@ -31,10 +31,10 @@ class FormatDetectorService extends ServiceManager {
   }
 
   public static getInstance(): FormatDetectorService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new FormatDetectorService(Enforce);
+    if (!FormatDetectorService.instance) {
+      FormatDetectorService.instance = new FormatDetectorService(Enforce);
     }
-    return ServiceManager.instance as FormatDetectorService;
+    return FormatDetectorService.instance;
   }
 
   public detectLineFormat(line: string): LineFormat {

@@ -1,4 +1,4 @@
-import { settings } from "./config.js";
+import { settings } from "../../shared/config.js";
 
 export interface LogContext {
   job_id?: string;

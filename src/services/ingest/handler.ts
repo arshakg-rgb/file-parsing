@@ -8,9 +8,9 @@ import { JobStatus, SourceType, IngestMessage } from "../../shared/models/job.js
 import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "../../shared/queueUtils.js";
 import { detectArchiveType, extractArchiveToS3, fetchUrlToS3, listS3Prefix, BombError } from "./normalizer.js";
 import { SSRFError } from "./ssrf_guard.js";
-import { createLogger } from "../../shared/logger.js";
-import { metrics } from "../../shared/metrics.js";
-import { startHealthCheckServer } from "../../shared/health.js";
+import { createLogger } from "../../utils/logger/logger.js";
+import { metrics } from "../../utils/response/metrics.js";
+import { startHealthCheckServer } from "../../utils/response/health.js";
 import MySqlManager from "../../config/db/MySqlManager.js";
 import path from "path";
 

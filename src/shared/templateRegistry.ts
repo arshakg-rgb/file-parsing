@@ -48,10 +48,10 @@ export class TemplateRegistryService extends ServiceManager {
   }
 
   public static getInstance(): TemplateRegistryService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new TemplateRegistryService(Enforce);
+    if (!TemplateRegistryService.instance) {
+      TemplateRegistryService.instance = new TemplateRegistryService(Enforce);
     }
-    return ServiceManager.instance as TemplateRegistryService;
+    return TemplateRegistryService.instance;
   }
 
   static generateFingerprint(line: string): string {

@@ -654,7 +654,7 @@ check("extractJson handles nested JSON objects", () => {
 
 console.log("\n=== 16. Encoding normalization / safe decode ===");
 
-const { decode, bufferEncodingFor, normalizeEncoding, isLikelyUtf8 } = await import("../shared/encoding.js");
+const { decode, bufferEncodingFor, normalizeEncoding, isLikelyUtf8 } = await import("../utils/normalizers/encoding.js");
 
 check("decode never throws for labels that crashed prod (latin-1, iso-8859-1, cp1252, windows-1252, iso-8859-2, unknown)", () => {
   const raw = Buffer.from([0x48, 0x69, 0xe9, 0x0a]);

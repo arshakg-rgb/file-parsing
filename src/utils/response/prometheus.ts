@@ -1,6 +1,6 @@
-import Config from "../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../config/ServiceManager.js";
-import { InstantiationError } from "../errors/InstantiationError.js";
+import Config from "../../config/system-config/Config.js";
+import ServiceManager, { Enforce } from "../../config/ServiceManager.js";
+import { InstantiationError } from "../../errors/InstantiationError.js";
 import { metrics } from "./metrics.js";
 
 class PrometheusService extends ServiceManager {
@@ -14,10 +14,10 @@ class PrometheusService extends ServiceManager {
   }
 
   public static getInstance(): PrometheusService {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new PrometheusService(Enforce);
+    if (!PrometheusService.instance) {
+      PrometheusService.instance = new PrometheusService(Enforce);
     }
-    return ServiceManager.instance as PrometheusService;
+    return PrometheusService.instance;
   }
 
   public formatPrometheusMetrics(): string {
