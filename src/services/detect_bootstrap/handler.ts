@@ -474,3 +474,9 @@ const detectBootstrapService = DetectBootstrapService.getInstance();
 export async function bootstrapJob(msg: ClassifyMessage): Promise<void> {
   return detectBootstrapService.bootstrapJob(msg);
 }
+
+// Auto-start the service when module is loaded
+detectBootstrapService.start().catch(err => {
+  console.error("detect_bootstrap_start_failed", { error: String(err) });
+  process.exit(1);
+});
