@@ -41,4 +41,10 @@ export async function consumerLoop(): Promise<void> {
   return retryService.consumerLoop();
 }
 
+// Auto-start the service when module is loaded
+retryService.consumerLoop().catch(err => {
+  console.error("retry_consumer_failed", { error: String(err) });
+  process.exit(1);
+});
+
 export default RetryService;
