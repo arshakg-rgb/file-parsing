@@ -104,6 +104,7 @@ export class AiClassifierService {
   private mockClassifications: number = 0;
   private csvParseSuccesses: number = 0;
   private csvParseFailures: number = 0;
+  private genAIClient: GoogleGenAI | null = null;
   
   /**
    * Private constructor for singleton pattern
@@ -174,16 +175,20 @@ export class AiClassifierService {
    * @returns The response text from the model
    * @throws Error if the API call fails
    */
-  private async askVertexAI(prompt: string, timeoutMs: number = 30000): Promise<string> {
-    const PROJECT_ID = settings.GCP_PROJECT_ID || 'data-etl-499916';
-    const LOCATION = settings.VERTEX_LOCATION || 'us-central1';
-    const MODEL = settings.VERTEX_MODEL || 'gemini-2.5-flash';
+  private getGenAIClient(): GoogleGenAI {
+    if (!this.genAIClient) {
+      this.genAIClient = new GoogleGenAI({
+        vertexai: true,
+        project: settings.GCP_PROJECT_ID || 'data-etl-499916',
+        location: settings.VERTEX_LOCATION || 'us-central1',
+      });
+    }
+    return this.genAIClient;
+  }
 
-    const ai = new GoogleGenAI({
-      vertexai: true,
-      project: PROJECT_ID,
-      location: LOCATION,
-    });
+  private async askVertexAI(prompt: string, timeoutMs: number = 30000): Promise<string> {
+    const MODEL = settings.VERTEX_MODEL || 'gemini-2.5-flash';
+    const ai = this.getGenAIClient();
 
     const generatePromise = ai.models.generateContent({
       model: MODEL,

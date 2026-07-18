@@ -37,6 +37,8 @@ export class TemplateRegistryService extends ServiceManager {
   private matchRateHistory: number[] = [];
   private readonly MATCH_RATE_WINDOW = 1000;
   private readonly MATCH_RATE_FLOOR = 0.1;
+  private readonly LOAD_TTL_MS = 30000; // 30s
+  private lastLoadedAt = 0;
   private dbManager: MySqlManager;
 
   private constructor(enforce: () => void) {
@@ -143,6 +145,9 @@ export class TemplateRegistryService extends ServiceManager {
   }
 
   async loadFromDatabase(): Promise<void> {
+    if (Date.now() - this.lastLoadedAt < this.LOAD_TTL_MS) {
+      return;
+    }
     try {
       const recordResult = await this.dbManager.pool.query(
         "SELECT * FROM templates WHERE kind = 'record'"
@@ -185,6 +190,7 @@ export class TemplateRegistryService extends ServiceManager {
           created_at: row.created_at,
         });
       }
+      this.lastLoadedAt = Date.now();
     } catch (error) {
       console.error("Failed to load templates from database:", error);
     }
