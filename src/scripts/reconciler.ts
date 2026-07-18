@@ -1,5 +1,5 @@
 import { settings } from "../shared/config.js";
-import { getJob, getPendingEntryCount, pool, waitForDb } from "../shared/db.js";
+import { getPendingEntryCount, repositories, waitForDb } from "../shared/db.js";
 import { publishEvent } from "../shared/queueUtils.js";
 import { EventType, makeJobEvent } from "../shared/models/events.js";
 import { JobStatus } from "../shared/models/job.js";
@@ -14,19 +14,13 @@ async function reconcileStuckJobs(): Promise<void> {
   await waitForDb();
   logger.info("reconciler_start");
   
-  const result = await pool.query(
-    `SELECT job_id, status, created_at, updated_at 
-     FROM parse_jobs 
-     WHERE status = $1 
-     AND updated_at < NOW() - INTERVAL '2 hours'`,
-    [JobStatus.INGESTING]
-  );
+  const rows = await repositories.jobs.findStuckIngesting(2);
   
-  logger.info("reconciler_found_stuck_jobs", { count: result.rows.length });
+  logger.info("reconciler_found_stuck_jobs", { count: rows.length });
   
-  for (const row of result.rows) {
+  for (const row of rows) {
     const jobId = row.job_id;
-    const stuckDuration = Date.now() - new Date(row.updated_at).getTime();
+    const stuckDuration = Date.now() - new Date(row.updated_at ?? Date.now()).getTime();
     
     logger.info("reconciler_processing_stuck_job", { job_id: jobId, stuck_duration_ms: stuckDuration });
     
@@ -53,25 +47,14 @@ async function reconcileStuckJobs(): Promise<void> {
         // Still has pending entries - check if they're stale
         const staleThreshold = Date.now() - (3 * 60 * 60 * 1000); // 3 hours
         
-        const pendingResult = await pool.query(
-          `SELECT id, entry_name, created_at 
-           FROM pending_archive_entries 
-           WHERE job_id = $1 AND status IN ('pending', 'processing') 
-           AND updated_at < NOW() - INTERVAL '3 hours'`,
-          [jobId]
-        );
+        const staleEntries = await repositories.pendingArchiveEntries.findStaleEntries(jobId, 3, ["pending", "processing"]);
         
-        if (pendingResult.rows.length > 0) {
-          logger.warn("reconciler_job_has_stale_pending_entries", { job_id: jobId, stale_count: pendingResult.rows.length });
+        if (staleEntries.length > 0) {
+          logger.warn("reconciler_job_has_stale_pending_entries", { job_id: jobId, stale_count: staleEntries.length });
           
           // Mark stale pending entries as failed
-          for (const pendingRow of pendingResult.rows) {
-            await pool.query(
-              `UPDATE pending_archive_entries 
-               SET status = 'failed', error = 'Stale pending entry - reconciler cleanup', updated_at = NOW() 
-               WHERE id = $1`,
-              [pendingRow.id]
-            );
+          for (const pendingRow of staleEntries) {
+            await repositories.pendingArchiveEntries.markStatus(pendingRow.id, "failed", "Stale pending entry - reconciler cleanup");
             logger.info("reconciler_marked_stale_entry_failed", { job_id: jobId, entry_name: pendingRow.entry_name });
           }
           

@@ -71,12 +71,12 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
     this.logger.info("report_start", { job_id: jobId, status: msg.status });
     metrics.increment("report.start", 1, { status: msg.status });
 
-    const jobRow = await this.dbManager.getJob(jobId);
+    const jobRow = await this.getJob(jobId);
     if (!jobRow) {
       throw new Error(`Job ${jobId} not found`);
     }
     const parts = await this.getParts(jobId);
-    const batchSiblings = jobRow.batch_id ? await this.dbManager.getBatchJobs(jobRow.batch_id) : [];
+    const batchSiblings = jobRow.batch_id ? await this.getBatchJobs(jobRow.batch_id) : [];
 
     const qualityGate = new QualityGate();
     const qualityMetrics = await qualityGate.calculateMetrics(jobId);
@@ -135,18 +135,15 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
   }
 
   private async getJob(jobId: string): Promise<any> {
-    const result = await this.dbManager.pool.query("SELECT * FROM parse_jobs WHERE job_id = $1", [jobId]);
-    return result.rows[0];
+    return this.dbManager.repositories.jobs.findById(jobId);
   }
 
   private async getParts(jobId: string): Promise<any[]> {
-    const result = await this.dbManager.pool.query("SELECT * FROM output_parts WHERE job_id = $1", [jobId]);
-    return result.rows;
+    return this.dbManager.repositories.outputParts.findByJob(jobId);
   }
 
   private async getBatchJobs(batchId: string): Promise<any[]> {
-    const result = await this.dbManager.pool.query("SELECT * FROM parse_jobs WHERE batch_id = $1", [batchId]);
-    return result.rows;
+    return this.dbManager.repositories.jobs.findByBatchId(batchId);
   }
 
   private async writeBatchRollup(batchId: string, jobs: any[]): Promise<void> {

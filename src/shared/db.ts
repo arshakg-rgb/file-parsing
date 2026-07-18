@@ -1,35 +1,36 @@
 // Re-export from MySqlManager for backward compatibility
-import MySqlManager, {
-  ParseJobRow,
-  OutputPartRow,
-  DeadLetterRow,
-  PendingArchiveEntryRow
-} from "../config/db/MySqlManager.js";
+import MySqlManager from "../config/db/MySqlManager.js";
 
 const dbManager = MySqlManager.getInstance();
+const repos = dbManager.repositories;
 
 // Re-export pool for backward compatibility
 export const pool = dbManager.pool;
 
-// Re-export interfaces for backward compatibility
-export type { ParseJobRow, OutputPartRow, DeadLetterRow, PendingArchiveEntryRow };
+export const models = dbManager.models;
+export const repositories = repos;
 
-// Re-export functions as wrappers around class methods
+// Legacy row shape aliases for minimal downstream churn
+export type ParseJobRow = any;
+export type OutputPartRow = any;
+export type DeadLetterRow = any;
+export type PendingArchiveEntryRow = any;
+
+// Re-export functions as wrappers around the repository layer
 export async function waitForDb(): Promise<void> {
-  // This is now handled by MySqlManager.initialize()
-  console.warn("waitForDb is deprecated. Use MySqlManager.getInstance().initialize() instead.");
+  await dbManager.initialize();
 }
 
 export async function getJob(jobId: string): Promise<ParseJobRow | undefined> {
-  return dbManager.getJob(jobId);
+  return repos.jobs.findById(jobId);
 }
 
 export async function getBatchJobs(batchId: string): Promise<ParseJobRow[]> {
-  return dbManager.getBatchJobs(batchId);
+  return repos.jobs.findByBatchId(batchId);
 }
 
 export async function getJobParts(jobId: string): Promise<OutputPartRow[]> {
-  return dbManager.getJobParts(jobId);
+  return repos.outputParts.findByJob(jobId);
 }
 
 export async function createPendingArchiveEntry(
@@ -37,21 +38,23 @@ export async function createPendingArchiveEntry(
   entryName: string,
   entrySize: number
 ): Promise<void> {
-  return dbManager.createPendingArchiveEntry(jobId, entryName, entrySize);
+  await repos.pendingArchiveEntries.create({ id: crypto.randomUUID(), job_id: jobId, entry_name: entryName, entry_size: entrySize, status: "pending" });
 }
 
 export async function markPendingEntryProcessing(
   jobId: string,
   entryName: string
 ): Promise<void> {
-  return dbManager.markPendingEntryProcessing(jobId, entryName);
+  const entry = await dbManager.models.PendingArchiveEntry.findOne({ where: { job_id: jobId, entry_name: entryName } });
+  if (entry) await repos.pendingArchiveEntries.markStatus(entry.id, "processing");
 }
 
 export async function markPendingEntryCompleted(
   jobId: string,
   entryName: string
 ): Promise<void> {
-  return dbManager.markPendingEntryCompleted(jobId, entryName);
+  const entry = await dbManager.models.PendingArchiveEntry.findOne({ where: { job_id: jobId, entry_name: entryName } });
+  if (entry) await repos.pendingArchiveEntries.markStatus(entry.id, "completed");
 }
 
 export async function markPendingEntryFailed(
@@ -59,23 +62,24 @@ export async function markPendingEntryFailed(
   entryName: string,
   error: string
 ): Promise<void> {
-  return dbManager.markPendingEntryFailed(jobId, entryName, error);
+  const entry = await dbManager.models.PendingArchiveEntry.findOne({ where: { job_id: jobId, entry_name: entryName } });
+  if (entry) await repos.pendingArchiveEntries.markStatus(entry.id, "failed", error);
 }
 
 export async function getPendingEntries(jobId: string): Promise<PendingArchiveEntryRow[]> {
-  return dbManager.getPendingEntries(jobId);
+  return repos.pendingArchiveEntries.findByJob(jobId);
 }
 
 export async function getPendingEntryCount(jobId: string): Promise<{ pending: number; completed: number; failed: number }> {
-  return dbManager.getPendingEntryCount(jobId);
+  return repos.pendingArchiveEntries.getCountByJob(jobId);
 }
 
 export async function getPendingEntryTotalSize(jobId: string): Promise<number> {
-  return dbManager.getPendingEntryTotalSize(jobId);
+  return repos.pendingArchiveEntries.getTotalSize(jobId);
 }
 
 export async function createTables(): Promise<void> {
-  return dbManager.createTables();
+  await dbManager.sequelize.sync({ force: false });
 }
 
 // Export the manager class for direct use

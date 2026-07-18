@@ -142,30 +142,27 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
 
     for (let i = 0; i < rows.length; i += this.UPSERT_BATCH) {
       const batch = rows.slice(i, i + this.UPSERT_BATCH);
-      const placeholders: string[] = [];
-      const values: any[] = [];
-      let idx = 1;
-
-      for (const row of batch) {
-        const rowPh: string[] = [];
-        for (const col of this.SYSTEM_COLS) {
-          rowPh.push(`$${idx++}`);
-          let v = row[col] ?? null;
-          if (col === "_parsed_at" && typeof v === "number") v = new Date(v);
-          values.push(v);
-        }
+      const records = batch.map((row) => {
         const fields: Record<string, any> = {};
         for (const [k, v] of Object.entries(row)) {
           if (!k.startsWith("_")) fields[k] = v;
         }
-        rowPh.push(`$${idx++}`);
-        values.push(JSON.stringify(fields));
-        placeholders.push(`(${rowPh.join(", ")})`);
-      }
+        return {
+          _job_id: row._job_id,
+          _byte_offset: row._byte_offset,
+          _byte_length: row._byte_length,
+          _record_index: row._record_index,
+          _line_no: row._line_no,
+          _template_id: row._template_id,
+          _template_version: row._template_version,
+          _checksum: row._checksum,
+          _parsed_at: typeof row._parsed_at === "number" ? new Date(row._parsed_at) : row._parsed_at,
+          _part_id: row._part_id,
+          fields,
+        };
+      });
 
-      const colList = [...this.SYSTEM_COLS, "fields"].map((c) => `"${c}"`).join(", ");
-      const sql = `INSERT INTO parsed_records (${colList}) VALUES ${placeholders.join(", ")} ON CONFLICT ("_job_id", "_byte_offset") DO NOTHING`;
-      await this.dbManager.pool.query(sql, values);
+      await this.dbManager.repositories.parsedRecords.bulkCreate(records);
       this.logger.debug("upsert_batch", { rows: batch.length, offset: i });
     }
   }

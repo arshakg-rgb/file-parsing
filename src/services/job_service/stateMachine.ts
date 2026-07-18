@@ -1,4 +1,4 @@
-import { pool, ParseJobRow } from "../../shared/db.js";
+import { repositories, ParseJobRow } from "../../shared/db.js";
 import { JobStatus, JobStatus as JS, VALID_TRANSITIONS, isTerminal } from "../../shared/models/job.js";
 import { EventType, JobEvent, ParsingCompletedData } from "../../shared/models/events.js";
 import { sendRaw, publishEvent } from "../../shared/queueUtils.js";
@@ -15,8 +15,7 @@ export class TransitionError extends Error {
 }
 
 export async function getJob(jobId: string): Promise<ParseJobRow | undefined> {
-  const result = await pool.query<ParseJobRow>("SELECT * FROM parse_jobs WHERE job_id = $1", [jobId]);
-  return result.rows[0];
+  return repositories.jobs.findById(jobId) as Promise<ParseJobRow | undefined>;
 }
 
 export async function transition(
@@ -58,25 +57,7 @@ export async function transition(
   if (error) updates.error = error;
   Object.assign(updates, extraFields);
 
-  // JSON.stringify JSONB fields for PostgreSQL
-  if (updates.field_spec && typeof updates.field_spec !== "string") {
-    updates.field_spec = JSON.stringify(updates.field_spec);
-  }
-  if (updates.output_paths && typeof updates.output_paths !== "string") {
-    updates.output_paths = JSON.stringify(updates.output_paths);
-  }
-  if (updates.counts && typeof updates.counts !== "string") {
-    updates.counts = JSON.stringify(updates.counts);
-  }
-  if (updates.timings && typeof updates.timings !== "string") {
-    updates.timings = JSON.stringify(updates.timings);
-  }
-
-  const fields = Object.keys(updates);
-  const values = Object.values(updates);
-  const setClause = fields.map((f, i) => `${f} = $${i + 2}`).join(", ");
-
-  await pool.query(`UPDATE parse_jobs SET ${setClause} WHERE job_id = $1`, [jobId, ...values]);
+  await repositories.jobs.updateFields(jobId, updates);
   return (await getJob(jobId))!;
 }
 
@@ -117,29 +98,25 @@ async function createChildJob(event: JobEvent): Promise<void> {
   const childId = randomUUID();
 
   // Ensure field_spec is never null - fallback to empty array
-  const fieldSpec = data.field_spec || [];
+  const rawFieldSpec = data.field_spec || [];
+  const fieldSpec = Array.isArray(rawFieldSpec) ? rawFieldSpec : (typeof rawFieldSpec === "string" ? JSON.parse(rawFieldSpec) : []);
 
-  await pool.query(
-    `INSERT INTO parse_jobs
-      (job_id, batch_id, parent_job_id, source_type, source_ref, s3_url, size, field_spec, exec_path, status, output_paths, counts, timings, error, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, '[]'::jsonb), $9, $10, $11, $12, $13, $14, NOW(), NOW())`,
-    [
-      childId,
-      data.batch_id,
-      data.parent_job_id,
-      data.source_type || SourceType.ARCHIVE_ENTRY,
-      data.entry_name,
-      data.entry_s3_url,
-      data.entry_size,
-      typeof fieldSpec === "string" ? fieldSpec : JSON.stringify(fieldSpec),
-      "stream",
-      JobStatus.QUEUED,
-      JSON.stringify([]),
-      JSON.stringify({ parsed: 0, dropped_rubbish: 0, failed_by_class: {} }),
-      JSON.stringify({ queued_at: now }),
-      null,
-    ]
-  );
+  await repositories.jobs.create({
+    job_id: childId,
+    batch_id: data.batch_id,
+    parent_job_id: data.parent_job_id,
+    source_type: data.source_type || SourceType.ARCHIVE_ENTRY,
+    source_ref: data.entry_name,
+    s3_url: data.entry_s3_url,
+    size: data.entry_size,
+    field_spec: fieldSpec,
+    exec_path: "stream",
+    status: JobStatus.QUEUED,
+    output_paths: [],
+    counts: { parsed: 0, dropped_rubbish: 0, failed_by_class: {} },
+    timings: { queued_at: now },
+    error: null,
+  });
 
   await sendRaw(settings.CLASSIFY_QUEUE_URL, {
     job_id: childId,

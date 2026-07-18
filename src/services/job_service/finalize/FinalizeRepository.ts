@@ -1,4 +1,4 @@
-import { getJob, pool, type ParseJobRow, type DeadLetterRow } from "../../../shared/db.js";
+import { getJob, repositories, type ParseJobRow } from "../../../shared/db.js";
 import { DeadLetter } from "./DeadLetter.js";
 
 export class FinalizeRepository {
@@ -7,17 +7,11 @@ export class FinalizeRepository {
   }
 
   async getDeadLetters(jobId: string): Promise<DeadLetter[]> {
-    const result = await pool.query<DeadLetterRow>(
-      "SELECT dlq_id, job_id, byte_offset, line_no FROM dead_letters WHERE job_id = $1",
-      [jobId]
-    );
-    return result.rows.map(DeadLetter.fromRow);
+    const rows = await repositories.deadLetters.findByJob(jobId);
+    return rows.map((row) => DeadLetter.fromRow(row as any));
   }
 
   async updateDeadLetterLineNo(dlqId: string, lineNo: number): Promise<void> {
-    await pool.query(
-      "UPDATE dead_letters SET line_no = $1, updated_at = NOW() WHERE dlq_id = $2",
-      [lineNo, dlqId]
-    );
+    await repositories.deadLetters.updateLineNo(dlqId, lineNo);
   }
 }

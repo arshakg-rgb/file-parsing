@@ -1,7 +1,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { randomUUID } from "crypto";
 import { settings } from "../../shared/config.js";
-import { pool, ParseJobRow } from "../../shared/db.js";
+import { repositories, ParseJobRow } from "../../shared/db.js";
 import { SourceType, JobStatus, ParseJob } from "../../shared/models/job.js";
 import { sendRaw } from "../../shared/queueUtils.js";
 import { presignedPutUrl } from "../../shared/gcsUtils.js";
@@ -85,12 +85,7 @@ router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => 
       updated_at: new Date(),
     };
 
-    await pool.query(
-      `INSERT INTO parse_jobs
-        (job_id, batch_id, parent_job_id, source_type, source_ref, s3_url, size, field_spec, exec_path, status, output_paths, counts, timings, error, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, '[]'::jsonb), $9, $10, $11, $12, $13, $14, NOW(), NOW())`,
-      [row.job_id, row.batch_id, row.parent_job_id, row.source_type, row.source_ref, row.s3_url, row.size, JSON.stringify(row.field_spec), row.exec_path, row.status, JSON.stringify(row.output_paths), JSON.stringify(row.counts), JSON.stringify(row.timings), row.error]
-    );
+    await repositories.jobs.create(row);
 
     console.log("job_created_sending_queue", { job_id: jobId, queue_url: settings.INGEST_QUEUE_URL, queue_backend: settings.QUEUE_BACKEND });
     const messageId = await sendRaw(settings.INGEST_QUEUE_URL, {
@@ -112,13 +107,8 @@ router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => 
 router.get("/jobs/stuck", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const thresholdMinutes = parseInt(req.query.minutes as string) || 15;
-    const result = await pool.query<ParseJobRow>(
-      `SELECT job_id, status, timings, error, created_at FROM parse_jobs
-       WHERE status NOT IN ('done', 'failed', 'partial', 'held')
-       AND updated_at < NOW() - INTERVAL '${thresholdMinutes} minutes'
-       ORDER BY updated_at ASC`
-    );
-    res.json({ stuck_jobs: result.rows, count: result.rows.length, threshold_minutes: thresholdMinutes });
+    const rows = await repositories.jobs.findStuckJobs(thresholdMinutes);
+    res.json({ stuck_jobs: rows, count: rows.length, threshold_minutes: thresholdMinutes });
   } catch (err) {
     next(err);
   }
@@ -126,8 +116,7 @@ router.get("/jobs/stuck", async (req: Request, res: Response, next: NextFunction
 
 router.get("/jobs/:job_id", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await pool.query<ParseJobRow>("SELECT * FROM parse_jobs WHERE job_id = $1", [req.params.job_id]);
-    const row = result.rows[0];
+    const row = await repositories.jobs.findById(String(req.params.job_id));
     if (!row) {
       res.status(404).json({ detail: "Job not found" });
       return;
@@ -148,9 +137,9 @@ router.get("/jobs/:job_id", async (req: Request, res: Response, next: NextFuncti
 
 router.get("/batches/:batch_id/jobs", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await pool.query<ParseJobRow>("SELECT * FROM parse_jobs WHERE batch_id = $1", [req.params.batch_id]);
+    const rows = await repositories.jobs.findByBatchId(String(req.params.batch_id));
     res.json(
-      result.rows.map((row: ParseJobRow) => ({
+      rows.map((row: ParseJobRow) => ({
         job_id: row.job_id,
         batch_id: row.batch_id,
         status: row.status,
@@ -167,8 +156,7 @@ router.get("/batches/:batch_id/jobs", async (req: Request, res: Response, next: 
 
 router.post("/jobs/:job_id/password", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await pool.query<ParseJobRow>("SELECT * FROM parse_jobs WHERE job_id = $1", [req.params.job_id]);
-    const row = result.rows[0];
+    const row = await repositories.jobs.findById(String(req.params.job_id));
     if (!row) {
       res.status(404).json({ detail: "Job not found" });
       return;
@@ -201,18 +189,12 @@ router.post("/jobs/:job_id/release-hold", async (req: Request, res: Response, ne
 router.post("/jobs/:job_id/fail", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { reason } = req.body;
-    const result = await pool.query<ParseJobRow>("SELECT * FROM parse_jobs WHERE job_id = $1", [req.params.job_id]);
-    const row = result.rows[0];
+    const row = await repositories.jobs.findById(String(req.params.job_id));
     if (!row) {
       res.status(404).json({ detail: "Job not found" });
       return;
     }
-    await pool.query(
-      `UPDATE parse_jobs SET status = 'failed', error = $1, updated_at = NOW(),
-       timings = timings || jsonb_build_object('failed_at', to_char(NOW() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
-       WHERE job_id = $2`,
-      [reason || "manually_failed", req.params.job_id]
-    );
+    await repositories.jobs.markFailed(String(req.params.job_id), reason || "manually_failed");
     res.status(204).send();
   } catch (err) {
     next(err);
@@ -222,8 +204,7 @@ router.post("/jobs/:job_id/fail", async (req: Request, res: Response, next: Next
 router.post("/jobs/:job_id/retry", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { target_status } = req.body;
-    const result = await pool.query<ParseJobRow>("SELECT * FROM parse_jobs WHERE job_id = $1", [req.params.job_id]);
-    const row = result.rows[0];
+    const row = await repositories.jobs.findById(String(req.params.job_id));
     if (!row) {
       res.status(404).json({ detail: "Job not found" });
       return;

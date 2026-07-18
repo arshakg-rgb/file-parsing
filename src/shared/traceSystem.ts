@@ -44,28 +44,19 @@ class TraceSystemService extends ServiceManager {
 
   public async createTrace(trace: TraceRecord): Promise<void> {
     try {
-      await this.dbManager.pool.query(
-        `INSERT INTO parsed_records 
-         (_job_id, _byte_offset, _byte_length, _record_index, _line_no, _template_id, _template_version, _checksum, _parsed_at, _part_id, fields)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-         ON CONFLICT ("_job_id", "_byte_offset") DO NOTHING`,
-        [
-          trace.job_id,
-          trace.byte_offset,
-          trace.byte_length,
-          trace.record_index,
-          trace.line_no,
-          trace.template_id,
-          trace.template_version,
-          trace.checksum,
-          trace.parsed_at,
-          trace.part_id,
-          JSON.stringify({
-            s3_url: trace.s3_url,
-            ...trace.row_data
-          })
-        ]
-      );
+      await this.dbManager.repositories.parsedRecords.create({
+        _job_id: trace.job_id,
+        _byte_offset: trace.byte_offset,
+        _byte_length: trace.byte_length,
+        _record_index: trace.record_index,
+        _line_no: trace.line_no,
+        _template_id: trace.template_id,
+        _template_version: trace.template_version,
+        _checksum: trace.checksum,
+        _parsed_at: trace.parsed_at,
+        _part_id: trace.part_id,
+        fields: { s3_url: trace.s3_url, ...trace.row_data },
+      });
       
       this.logger.debug("trace_created", { 
         job_id: trace.job_id, 
@@ -90,11 +81,13 @@ class TraceSystemService extends ServiceManager {
     matchedTemplateId: string
   ): Promise<void> {
     try {
-      await this.dbManager.pool.query(
-        `INSERT INTO rubbish_log (job_id, byte_offset, line_no, raw_bytes, matched_template_id, logged_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())`,
-        [jobId, byteOffset, lineNo, rawBytes, matchedTemplateId]
-      );
+      await this.dbManager.repositories.rubbishLogs.create({
+        job_id: jobId,
+        byte_offset: byteOffset,
+        line_no: lineNo,
+        raw_bytes: rawBytes,
+        matched_template_id: matchedTemplateId,
+      });
       
       this.logger.debug("rubbish_logged", { 
         job_id: jobId, 
@@ -113,13 +106,10 @@ class TraceSystemService extends ServiceManager {
   }
 
   public async getJobTraces(jobId: string): Promise<TraceRecord[]> {
-    const result = await this.dbManager.pool.query(
-      "SELECT * FROM parsed_records WHERE _job_id = $1 ORDER BY _byte_offset",
-      [jobId]
-    );
+    const rows = await this.dbManager.repositories.parsedRecords.findByJob(jobId);
     
-    return result.rows.map(row => ({
-      s3_url: JSON.parse(row.fields).s3_url,
+    return rows.map((row: any) => ({
+      s3_url: typeof row.fields === "string" ? JSON.parse(row.fields).s3_url : row.fields?.s3_url,
       byte_offset: row._byte_offset,
       byte_length: row._byte_length,
       record_index: row._record_index,
@@ -134,12 +124,7 @@ class TraceSystemService extends ServiceManager {
   }
 
   public async getJobRubbishLog(jobId: string): Promise<any[]> {
-    const result = await this.dbManager.pool.query(
-      "SELECT * FROM rubbish_log WHERE job_id = $1 ORDER BY byte_offset",
-      [jobId]
-    );
-    
-    return result.rows;
+    return this.dbManager.repositories.rubbishLogs.findByJob(jobId);
   }
 
   static generateChecksum(line: string): string {
@@ -147,12 +132,7 @@ class TraceSystemService extends ServiceManager {
   }
 
   public async lineExists(jobId: string, byteOffset: number): Promise<boolean> {
-    const result = await this.dbManager.pool.query(
-      "SELECT 1 FROM parsed_records WHERE _job_id = $1 AND _byte_offset = $2",
-      [jobId, byteOffset]
-    );
-    
-    return result.rows.length > 0;
+    return this.dbManager.repositories.parsedRecords.exists(jobId, byteOffset);
   }
 
   public async getLineFateCounts(jobId: string): Promise<{
@@ -160,26 +140,13 @@ class TraceSystemService extends ServiceManager {
     dropped: number;
     failed: number;
   }> {
-    const parsedResult = await this.dbManager.pool.query(
-      "SELECT COUNT(*) as count FROM parsed_records WHERE _job_id = $1",
-      [jobId]
-    );
+    const [parsed, dropped, failed] = await Promise.all([
+      this.dbManager.repositories.parsedRecords.countByJob(jobId),
+      this.dbManager.repositories.rubbishLogs.countByJob(jobId),
+      this.dbManager.repositories.deadLetters.countByJob(jobId),
+    ]);
     
-    const droppedResult = await this.dbManager.pool.query(
-      "SELECT COUNT(*) as count FROM rubbish_log WHERE job_id = $1",
-      [jobId]
-    );
-    
-    const failedResult = await this.dbManager.pool.query(
-      "SELECT COUNT(*) as count FROM dead_letters WHERE job_id = $1",
-      [jobId]
-    );
-    
-    return {
-      parsed: parseInt(parsedResult.rows[0].count),
-      dropped: parseInt(droppedResult.rows[0].count),
-      failed: parseInt(failedResult.rows[0].count),
-    };
+    return { parsed, dropped, failed };
   }
 }
 

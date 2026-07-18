@@ -1,41 +1,39 @@
-import { Pool } from "pg";
-import { settings } from "../shared/config.js";
+import MySqlManager from "../config/db/MySqlManager.js";
 import { createLogger } from "../utils/logger/logger.js";
 
 const logger = createLogger("purge-data");
 
-export async function purgeDatabase(pool: Pool): Promise<void> {
+export async function purgeDatabase(): Promise<void> {
   logger.info("Starting database purge...");
-  
-  // Delete all jobs - this will cascade to output_parts, rubbish_log, dead_letters
-  const result = await pool.query("DELETE FROM parse_jobs");
-  logger.info(`Deleted ${result.rowCount} jobs from parse_jobs`);
-  
-  // Verify cascade worked
-  const outputCount = await pool.query("SELECT COUNT(*) FROM output_parts");
-  const rubbishCount = await pool.query("SELECT COUNT(*) FROM rubbish_log");
-  const dlqCount = await pool.query("SELECT COUNT(*) FROM dead_letters");
-  
-  logger.info(`Remaining records - output_parts: ${outputCount.rows[0].count}, rubbish_log: ${rubbishCount.rows[0].count}, dead_letters: ${dlqCount.rows[0].count}`);
-  
+
+  const dbManager = MySqlManager.getInstance();
+  await dbManager.initialize();
+  const { ParseJob, OutputPart, RubbishLog, DeadLetter, PendingArchiveEntry, ParsedRecord } = dbManager.models;
+
+  // The schema does not define foreign keys, so purge in dependency order
+  const deletedParseJobs = await ParseJob.destroy({ where: {}, truncate: false });
+  logger.info(`Deleted ${deletedParseJobs} jobs from parse_jobs`);
+
+  const [outputCount, rubbishCount, dlqCount, pendingCount, parsedCount] = await Promise.all([
+    OutputPart.count(),
+    RubbishLog.count(),
+    DeadLetter.count(),
+    PendingArchiveEntry.count(),
+    ParsedRecord.count(),
+  ]);
+
+  logger.info(
+    `Remaining records - output_parts: ${outputCount}, rubbish_log: ${rubbishCount}, dead_letters: ${dlqCount}, pending_archive_entries: ${pendingCount}, parsed_records: ${parsedCount}`
+  );
+
   logger.info("Database purge complete");
 }
 
 async function main() {
-  // Parse DATABASE_URL to get connection parameters
-  const dbUrl = new URL(settings.DATABASE_URL);
-  const pool = new Pool({
-    host: dbUrl.hostname,
-    port: parseInt(dbUrl.port || "5432"),
-    database: dbUrl.pathname.slice(1), // Remove leading slash
-    user: dbUrl.username,
-    password: dbUrl.password,
-  });
-
   try {
-    await purgeDatabase(pool);
+    await purgeDatabase();
   } finally {
-    await pool.end();
+    await MySqlManager.getInstance().shutdown();
   }
 }
 

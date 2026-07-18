@@ -37,16 +37,11 @@ class QualityGateService extends ServiceManager {
   }
 
   public async calculateMetrics(jobId: string): Promise<QualityMetrics> {
-    const jobResult = await this.dbManager.pool.query(
-      "SELECT counts FROM parse_jobs WHERE job_id = $1",
-      [jobId]
-    );
+    const counts = await this.dbManager.repositories.jobs.getCounts(jobId);
     
-    if (jobResult.rows.length === 0) {
+    if (!counts) {
       throw new Error(`Job not found: ${jobId}`);
     }
-
-    const counts = jobResult.rows[0].counts as Record<string, number>;
     
     const totalLines = counts.parsed + counts.dropped_rubbish + counts.failed;
     const failedLineRatio = totalLines > 0 ? counts.failed / totalLines : 0;
@@ -83,10 +78,7 @@ class QualityGateService extends ServiceManager {
     const { passes, reason } = await this.passesQualityGate(jobId);
     
     if (!passes) {
-      await this.dbManager.pool.query(
-        "UPDATE parse_jobs SET status = 'held', error = $1 WHERE job_id = $2",
-        [reason, jobId]
-      );
+      await this.dbManager.repositories.jobs.hold(jobId, reason);
       this.logger.warn("quality_gate_failed", { job_id: jobId, reason });
     } else {
       this.logger.info("quality_gate_passed", { job_id: jobId });
@@ -99,23 +91,7 @@ class QualityGateService extends ServiceManager {
     heldJobs: number;
     failedJobs: number;
   }> {
-    const result = await this.dbManager.pool.query(
-      `SELECT 
-        COUNT(*) as total_jobs,
-        COUNT(*) FILTER (WHERE status = 'done') as passed_jobs,
-        COUNT(*) FILTER (WHERE status = 'held') as held_jobs,
-        COUNT(*) FILTER (WHERE status = 'failed') as failed_jobs
-       FROM parse_jobs 
-       WHERE batch_id = $1`,
-      [batchId]
-    );
-
-    return {
-      totalJobs: parseInt(result.rows[0].total_jobs),
-      passedJobs: parseInt(result.rows[0].passed_jobs),
-      heldJobs: parseInt(result.rows[0].held_jobs),
-      failedJobs: parseInt(result.rows[0].failed_jobs),
-    };
+    return this.dbManager.repositories.jobs.getBatchStats(batchId);
   }
 }
 

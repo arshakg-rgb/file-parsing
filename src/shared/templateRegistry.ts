@@ -149,11 +149,9 @@ export class TemplateRegistryService extends ServiceManager {
       return;
     }
     try {
-      const recordResult = await this.dbManager.pool.query(
-        "SELECT * FROM templates WHERE kind = 'record'"
-      );
+      const recordRows = await this.dbManager.repositories.templates.findByKind("record");
       
-      for (const row of recordResult.rows) {
+      for (const row of recordRows) {
         let fieldMap;
         if (typeof row.field_map === "string") {
           fieldMap = JSON.parse(row.field_map);
@@ -168,26 +166,24 @@ export class TemplateRegistryService extends ServiceManager {
           fingerprint: row.fingerprint,
           version: row.version,
           field_map: fieldMap,
-          structure: row.structure,
-          length_hint: row.length_hint,
-          source: row.source,
-          created_at: row.created_at,
+          structure: row.structure as string,
+          length_hint: row.length_hint as number,
+          source: row.source as "ai" | "bootstrap" | "user",
+          created_at: row.created_at as Date,
         });
       }
 
-      const rubbishResult = await this.dbManager.pool.query(
-        "SELECT * FROM templates WHERE kind = 'rubbish'"
-      );
+      const rubbishRows = await this.dbManager.repositories.templates.findByKind("rubbish");
       
-      for (const row of rubbishResult.rows) {
+      for (const row of rubbishRows) {
         this.rubbishCache.set(row.fingerprint, {
           template_id: row.template_id,
           fingerprint: row.fingerprint,
-          signature: row.signature,
-          confidence: row.confidence,
+          signature: row.signature as string,
+          confidence: Number(row.confidence),
           version: row.version,
-          source: row.source,
-          created_at: row.created_at,
+          source: row.source as "ai" | "bootstrap" | "user",
+          created_at: row.created_at as Date,
         });
       }
       this.lastLoadedAt = Date.now();
@@ -198,49 +194,7 @@ export class TemplateRegistryService extends ServiceManager {
 
   async saveTemplate(template: Template, kind: TemplateKind): Promise<void> {
     try {
-      if (kind === "record") {
-        const recordTemplate = template as RecordTemplate;
-        await this.dbManager.pool.query(
-          `INSERT INTO templates (template_id, fingerprint, version, field_map, structure, length_hint, kind, source, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           ON CONFLICT (fingerprint) DO UPDATE SET
-             version = EXCLUDED.version + 1,
-             field_map = EXCLUDED.field_map,
-             structure = EXCLUDED.structure,
-             length_hint = EXCLUDED.length_hint`,
-          [
-            recordTemplate.template_id,
-            recordTemplate.fingerprint,
-            recordTemplate.version,
-            JSON.stringify(recordTemplate.field_map),
-            recordTemplate.structure,
-            recordTemplate.length_hint,
-            kind,
-            recordTemplate.source,
-            recordTemplate.created_at,
-          ]
-        );
-      } else {
-        const rubbishTemplate = template as RubbishTemplate;
-        await this.dbManager.pool.query(
-          `INSERT INTO templates (template_id, fingerprint, version, signature, confidence, kind, source, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (fingerprint) DO UPDATE SET
-             version = EXCLUDED.version + 1,
-             signature = EXCLUDED.signature,
-             confidence = EXCLUDED.confidence`,
-          [
-            rubbishTemplate.template_id,
-            rubbishTemplate.fingerprint,
-            rubbishTemplate.version,
-            rubbishTemplate.signature,
-            rubbishTemplate.confidence,
-            kind,
-            rubbishTemplate.source,
-            rubbishTemplate.created_at,
-          ]
-        );
-      }
+      await this.dbManager.repositories.templates.saveTemplate(template, kind);
     } catch (error) {
       console.error("Failed to save template to database:", error);
     }

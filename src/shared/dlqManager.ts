@@ -65,15 +65,23 @@ class DLQManagerService extends ServiceManager {
   ): Promise<string | null> {
     const dlqId = crypto.randomUUID();
     
-    const result = await this.dbManager.pool.query(
-      `INSERT INTO dead_letters (dlq_id, job_id, byte_offset, byte_length, line_no, raw_bytes, failure_class, error, attempts, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
-       ON CONFLICT (job_id, line_no) DO NOTHING
-       RETURNING dlq_id`,
-      [dlqId, jobId, byteOffset, byteLength, lineNo, rawBytes, failureClass, error, 0, "pending"]
+    const row = await this.dbManager.repositories.deadLetters.create(
+      {
+        dlq_id: dlqId,
+        job_id: jobId,
+        byte_offset: byteOffset,
+        byte_length: byteLength,
+        line_no: lineNo,
+        raw_bytes: rawBytes,
+        failure_class: failureClass,
+        error,
+        attempts: 0,
+        status: "pending",
+      },
+      { conflictOn: "job_id_line_no" }
     );
     
-    if (result.rows.length === 0) {
+    if (!row) {
       this.logger.info("dlq_entry_duplicate_skipped", { job_id: jobId, line_no: lineNo, byte_offset: byteOffset });
       return null;
     }
@@ -94,29 +102,21 @@ class DLQManagerService extends ServiceManager {
   }
 
   public async retryEntry(dlqId: string, s3Url: string): Promise<boolean> {
-    const result = await this.dbManager.pool.query<DeadLetterEntry>(
-      "SELECT * FROM dead_letters WHERE dlq_id = $1",
-      [dlqId]
-    );
-    
-    const entry = result.rows[0];
+    const entry = await this.dbManager.repositories.deadLetters.findById(dlqId);
     if (!entry) {
       this.logger.warn("dlq_entry_not_found", { dlq_id: dlqId });
       return false;
     }
 
-    if (entry.attempts >= this.MAX_RETRY_ATTEMPTS) {
+    if ((entry.attempts || 0) >= this.MAX_RETRY_ATTEMPTS) {
       await this.markForReview(dlqId);
       this.logger.info("dlq_max_attempts_reached", { dlq_id: dlqId });
       return false;
     }
 
-    await this.dbManager.pool.query(
-      "UPDATE dead_letters SET attempts = attempts + 1, status = 'retry', updated_at = NOW() WHERE dlq_id = $1",
-      [dlqId]
-    );
+    await this.dbManager.repositories.deadLetters.incrementAttempts(dlqId, "retry");
 
-    const line = await this.fetchFailedLine(entry, s3Url);
+    const line = await this.fetchFailedLine(entry as unknown as DeadLetterEntry, s3Url);
     
     this.logger.info("dlq_retry_attempt", { dlq_id: dlqId, attempt: entry.attempts + 1 });
     
@@ -124,43 +124,25 @@ class DLQManagerService extends ServiceManager {
   }
 
   public async markForReview(dlqId: string): Promise<void> {
-    await this.dbManager.pool.query(
-      "UPDATE dead_letters SET status = 'review', updated_at = NOW() WHERE dlq_id = $1",
-      [dlqId]
-    );
+    await this.dbManager.repositories.deadLetters.updateStatus(dlqId, "review");
     this.logger.info("dlq_marked_review", { dlq_id: dlqId });
   }
 
   public async markResolved(dlqId: string): Promise<void> {
-    await this.dbManager.pool.query(
-      "UPDATE dead_letters SET status = 'resolved', updated_at = NOW() WHERE dlq_id = $1",
-      [dlqId]
-    );
+    await this.dbManager.repositories.deadLetters.updateStatus(dlqId, "resolved");
     this.logger.info("dlq_resolved", { dlq_id: dlqId });
   }
 
   public async getPendingEntries(jobId: string): Promise<DeadLetterEntry[]> {
-    const result = await this.dbManager.pool.query<DeadLetterEntry>(
-      "SELECT * FROM dead_letters WHERE job_id = $1 AND status = 'pending' ORDER BY byte_offset",
-      [jobId]
-    );
-    return result.rows;
+    return this.dbManager.repositories.deadLetters.findByJobAndStatus(jobId, "pending") as Promise<DeadLetterEntry[]>;
   }
 
   public async getRetryEntries(jobId: string): Promise<DeadLetterEntry[]> {
-    const result = await this.dbManager.pool.query<DeadLetterEntry>(
-      "SELECT * FROM dead_letters WHERE job_id = $1 AND status = 'retry' ORDER BY byte_offset",
-      [jobId]
-    );
-    return result.rows;
+    return this.dbManager.repositories.deadLetters.findByJobAndStatus(jobId, "retry") as Promise<DeadLetterEntry[]>;
   }
 
   public async getReviewEntries(jobId: string): Promise<DeadLetterEntry[]> {
-    const result = await this.dbManager.pool.query<DeadLetterEntry>(
-      "SELECT * FROM dead_letters WHERE job_id = $1 AND status = 'review' ORDER BY byte_offset",
-      [jobId]
-    );
-    return result.rows;
+    return this.dbManager.repositories.deadLetters.findByJobAndStatus(jobId, "review") as Promise<DeadLetterEntry[]>;
   }
 
   public async batchRetryJob(jobId: string, s3Url: string): Promise<{ success: number; failed: number }> {

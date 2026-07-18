@@ -145,24 +145,16 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
   }
 
   private async getFieldSpec(jobId: string): Promise<string[]> {
-    const result = await this.dbManager.pool.query<{ field_spec: string[] }>("SELECT field_spec FROM parse_jobs WHERE job_id = $1", [jobId]);
-    return result.rows[0]?.field_spec || [];
+    return this.dbManager.repositories.jobs.getFieldSpec(jobId);
   }
 
   private async getDeadLetter(dlqId: string): Promise<any> {
-    const result = await this.dbManager.pool.query("SELECT dlq_id, status FROM dead_letters WHERE dlq_id = $1", [dlqId]);
-    return result.rows[0];
+    return this.dbManager.repositories.deadLetters.findById(dlqId);
   }
 
   private async updateDeadLetterStatus(dlqId: string | undefined, status: string, attempts?: number): Promise<void> {
     if (!dlqId) return;
-    const fields = ["status = $2", "updated_at = NOW()"];
-    const values: any[] = [dlqId, status];
-    if (attempts !== undefined) {
-      fields.push("attempts = $3");
-      values.push(attempts);
-    }
-    await this.dbManager.pool.query(`UPDATE dead_letters SET ${fields.join(", ")} WHERE dlq_id = $1`, values);
+    await this.dbManager.repositories.deadLetters.updateStatus(dlqId, status, { attempts });
   }
 
   private async markForReview(msg: DLQMessage): Promise<void> {

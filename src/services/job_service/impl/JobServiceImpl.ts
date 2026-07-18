@@ -44,7 +44,7 @@ class JobServiceImpl extends ServiceManager implements JobService {
 
     this.app.get("/health/db", async (_req: Request, res: Response) => {
       try {
-        await this.dbManager.pool.query("SELECT 1");
+        await this.dbManager.sequelize.authenticate();
         res.json({ status: "healthy", database: "connected", timestamp: new Date().toISOString() });
       } catch (err) {
         res.status(500).json({ 

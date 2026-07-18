@@ -7,7 +7,7 @@ import { randomUUID, createHash } from "crypto";
 import { ParquetSchema, ParquetWriter } from "@dsnp/parquetjs";
 import { settings } from "../../shared/config.js";
 import { OutputPart } from "../../shared/models/job.js";
-import { pool } from "../../shared/db.js";
+import { repositories } from "../../shared/db.js";
 import { gcsClient, putObject } from "../../shared/gcsUtils.js";
 
 function estimateRowBytes(row: Record<string, any>): number {
@@ -154,12 +154,7 @@ export class ParquetWriterPool {
     };
 
     try {
-      await pool.query(
-        `INSERT INTO output_parts (part_id, job_id, template_id, s3_path, row_count, byte_size, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (part_id) DO NOTHING`,
-        [partId, this.jobId, templateId, part.s3_path, rows.length, fileStat.size, new Date()]
-      );
+      await repositories.outputParts.create(part as any);
     } catch (e) {
       console.error("output_parts_insert_failed", { jobId: this.jobId, partId, error: String(e) });
     }
@@ -235,13 +230,18 @@ export class DLQWriter {
     const { FailureClass } = await import("../../shared/models/job.js");
     const dlqId = randomUUID();
     const rawBytes = Buffer.from(rawLine.replace(/\0/g, ""), "utf-8").toString("base64");
-    await pool.query(
-      `INSERT INTO dead_letters
-        (dlq_id, job_id, byte_offset, byte_length, line_no, raw_bytes, failure_class, error, attempts, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
-       ON CONFLICT (dlq_id) DO NOTHING`,
-      [dlqId, this.jobId, byteOffset, byteLength, lineNo, rawBytes, failureClass, error, 0, "pending"]
-    );
+    await repositories.deadLetters.create({
+      dlq_id: dlqId,
+      job_id: this.jobId,
+      byte_offset: byteOffset,
+      byte_length: byteLength,
+      line_no: lineNo,
+      raw_bytes: rawBytes,
+      failure_class: failureClass,
+      error,
+      attempts: 0,
+      status: "pending",
+    });
     await sendMessage(
       settings.DLQ_QUEUE_URL,
       {
