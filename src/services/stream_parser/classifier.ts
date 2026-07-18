@@ -71,7 +71,7 @@ export class LineClassifier {
     if (line.length > 64 * 1024) {
       return { verdict: "uncertain", failure_class: FailureClass.TRANSFORM_ERROR };
     }
-    const nonPrintable = (trimmed.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g) || []).length;
+    const nonPrintable = (trimmed.match(/[^\x09\x0A\x0D\x20-\x7E]/g) || []).length;
     if (nonPrintable / trimmed.length > 0.3) {
       return { verdict: "rubbish", template_id: "binary-gate" };
     }

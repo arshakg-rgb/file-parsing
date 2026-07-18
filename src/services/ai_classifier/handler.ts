@@ -174,7 +174,7 @@ export class AiClassifierService {
    * @returns The response text from the model
    * @throws Error if the API call fails
    */
-  private async askVertexAI(prompt: string): Promise<string> {
+  private async askVertexAI(prompt: string, timeoutMs: number = 30000): Promise<string> {
     const PROJECT_ID = settings.GCP_PROJECT_ID || 'data-etl-499916';
     const LOCATION = settings.VERTEX_LOCATION || 'us-central1';
     const MODEL = settings.VERTEX_MODEL || 'gemini-2.5-flash';
@@ -185,7 +185,7 @@ export class AiClassifierService {
       location: LOCATION,
     });
 
-    const response = await ai.models.generateContent({
+    const generatePromise = ai.models.generateContent({
       model: MODEL,
       contents: [
         {
@@ -200,8 +200,15 @@ export class AiClassifierService {
       },
     });
 
-    return response.text
-      ?? response.candidates?.[0]?.content?.parts?.map((part: any) => part.text).join('')
+    const response = await Promise.race([
+      generatePromise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Vertex AI call timed out after ${timeoutMs}ms`)), timeoutMs)
+      ),
+    ]);
+
+    return (response as any).text
+      ?? (response as any).candidates?.[0]?.content?.parts?.map((part: any) => part.text).join('')
       ?? '';
   }
 
