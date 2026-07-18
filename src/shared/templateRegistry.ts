@@ -10,6 +10,7 @@ export interface RecordTemplate {
   version: number;
   field_map: Record<string, { locator: string; type: string }>;
   structure: string;
+  delimiter?: string; // for structure "csv": the field delimiter (defaults to "," when absent)
   length_hint: number;
   source: "ai" | "bootstrap" | "user";
   created_at: Date;

@@ -63,11 +63,14 @@ export class CsvOutputWriter {
     this.config = Config.getInstance();
   }
 
+  // CRLF line endings + a UTF-8 BOM (written once, before the header) so the file opens cleanly
+  // in Excel — matching the delivered reference format. Columns are exactly the field_spec,
+  // with no internal line_no column.
   private line(vals: unknown[]): string {
-    return vals.map((v) => csvEscapeCell(v)).join(",") + "\n";
+    return vals.map((v) => csvEscapeCell(v)).join(",") + "\r\n";
   }
 
-  addRow(row: Record<string, any>, lineNo?: number): void {
+  addRow(row: Record<string, any>, _lineNo?: number): void {
     if (this.failed) return;
     try {
       if (!this.stream) {
@@ -76,9 +79,9 @@ export class CsvOutputWriter {
           this.failed = true;
           this.logger.warn("csv_output_stream_error", { job_id: this.jobId, error: String(err) });
         });
-        this.stream.write(this.line([...this.columns, "line_no"]));
+        this.stream.write("﻿" + this.line([...this.columns]));
       }
-      this.stream.write(this.line([...this.columns.map((c) => row[c]), lineNo ?? ""]));
+      this.stream.write(this.line([...this.columns.map((c) => row[c])]));
       this.rowCount++;
     } catch (err) {
       this.failed = true;
