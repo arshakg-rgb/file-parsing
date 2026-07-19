@@ -53,26 +53,58 @@ export interface OutputRow {
   [key: string]: unknown;
 }
 
+function sanitizeParquetValue(value: unknown, isRecord = false): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "boolean" || typeof value === "number" || typeof value === "string") return value;
+  if (value instanceof Date) return value;
+
+  const anyValue = value as { toNumber?: () => number };
+  if (typeof anyValue.toNumber === "function") {
+    try {
+      const n = anyValue.toNumber();
+      if (Number.isFinite(n)) return n;
+    } catch { /* fall through */ }
+  }
+
+  if (Buffer.isBuffer(value)) return value.toString("utf-8");
+  if (value instanceof Uint8Array) return Buffer.from(value).toString("utf-8");
+  if (Array.isArray(value)) return JSON.stringify(value);
+
+  if (typeof value === "object" && isRecord) {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) {
+      result[k] = sanitizeParquetValue(v, false);
+    }
+    return result;
+  }
+
+  return JSON.stringify(value);
+}
+
 function estimateRowBytes(row: Record<string, unknown>): number {
   let bytes = 0;
   for (const v of Object.values(row)) {
-    bytes += (v === null ? 4 : String(v).length);
+    const s = sanitizeParquetValue(v, false);
+    bytes += (s === null || s === undefined ? 4 : String(s).length);
   }
   return bytes + Object.keys(row).length * 16;
 }
 
 function typeForValue(v: unknown): ParquetType {
-  if (v === null || v === undefined) return "UTF8";
-  if (typeof v === "boolean") return "BOOLEAN";
-  if (typeof v === "number") return Number.isInteger(v) && Number.isSafeInteger(v) ? "INT64" : "DOUBLE";
-  if (v instanceof Date) return "TIMESTAMP_MILLIS";
+  const value = sanitizeParquetValue(v, false);
+  if (value === null || value === undefined) return "UTF8";
+  if (typeof value === "boolean") return "BOOLEAN";
+  if (typeof value === "number") return Number.isInteger(value) && Number.isSafeInteger(value) ? "INT64" : "DOUBLE";
+  if (value instanceof Date) return "TIMESTAMP_MILLIS";
   return "UTF8";
 }
 
 function buildSchema(rows: Record<string, unknown>[]): ParquetSchema {
   const schemaObj: SchemaDefinition = {};
   for (const row of rows) {
-    for (const [k, v] of Object.entries(row)) {
+    const sanitized = sanitizeParquetValue(row, true) as Record<string, unknown>;
+    for (const [k, v] of Object.entries(sanitized)) {
       if (!schemaObj[k]) {
         schemaObj[k] = { type: typeForValue(v), optional: true };
       }
@@ -124,11 +156,12 @@ export class OutputBuffer {
     });
 
     try {
-      const schema = buildSchema(rowsToFlush);
+      const sanitizedRows = rowsToFlush.map((row) => sanitizeParquetValue(row, true) as Record<string, unknown>);
+      const schema = buildSchema(sanitizedRows);
       const tempFile = path.join(os.tmpdir(), `${flushPartId}.parquet`);
       const writer = await ParquetWriter.openFile(schema, tempFile);
       
-      for (const row of rowsToFlush) {
+      for (const row of sanitizedRows) {
         await writer.appendRow(row);
       }
       

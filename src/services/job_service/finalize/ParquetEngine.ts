@@ -11,21 +11,39 @@ export interface ParquetRow {
 }
 
 export class ParquetEngine {
-  static sanitizeBigInt(value: unknown): unknown {
-    if (typeof value === "bigint") {
-      return Number(value);
+  /**
+   * Convert values that parquetjs cannot write directly (objects, arrays, BigInt,
+   * Long objects, Buffer/Uint8Array, Date) into safe scalar Parquet values.
+   * Objects/arrays become JSON strings; Long-like objects become numbers.
+   */
+  static sanitizeValue(value: unknown, isRecord = false): unknown {
+    if (value === null || value === undefined) return value;
+    if (typeof value === "bigint") return Number(value);
+    if (typeof value === "boolean" || typeof value === "number" || typeof value === "string") return value;
+    if (value instanceof Date) return value;
+
+    const anyValue = value as { toNumber?: () => number };
+    if (typeof anyValue.toNumber === "function") {
+      try {
+        const n = anyValue.toNumber();
+        if (Number.isFinite(n)) return n;
+      } catch { /* fall through */ }
     }
-    if (Array.isArray(value)) {
-      return value.map(ParquetEngine.sanitizeBigInt);
-    }
-    if (value !== null && typeof value === "object") {
+
+    if (Buffer.isBuffer(value)) return value.toString("utf-8");
+    if (value instanceof Uint8Array) return Buffer.from(value).toString("utf-8");
+    if (Array.isArray(value)) return JSON.stringify(value);
+
+    if (typeof value === "object" && isRecord) {
       const result: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(value)) {
-        result[k] = ParquetEngine.sanitizeBigInt(v);
+        result[k] = ParquetEngine.sanitizeValue(v, false);
       }
       return result;
     }
-    return value;
+
+    // Any remaining object (nested JSON, maps, etc.) becomes a JSON string.
+    return JSON.stringify(value);
   }
 
   static buildSchema(rows: ParquetRow[]): ParquetSchema {
@@ -33,7 +51,7 @@ export class ParquetEngine {
     for (const row of rows) {
       for (const [k, v] of Object.entries(row)) {
         if (!schemaObj[k]) {
-          const value = ParquetEngine.sanitizeBigInt(v);
+          const value = ParquetEngine.sanitizeValue(v, false);
           const type: ParquetType =
             value === null || value === undefined
               ? "UTF8"
@@ -60,7 +78,7 @@ export class ParquetEngine {
     const rows: ParquetRow[] = [];
     let row: ParquetRow | null;
     while ((row = await cursor.next() as ParquetRow | null)) {
-      if (row) rows.push(ParquetEngine.sanitizeBigInt(row) as ParquetRow);
+      if (row) rows.push(ParquetEngine.sanitizeValue(row, true) as ParquetRow);
     }
     await reader.close();
     return rows;
@@ -71,10 +89,11 @@ export class ParquetEngine {
       return;
     }
 
+    const sanitizedRows = rows.map((row) => ParquetEngine.sanitizeValue(row, true) as ParquetRow);
     const tempFile = path.join(os.tmpdir(), `${randomUUID()}.parquet`);
-    const writer = await ParquetWriter.openFile(ParquetEngine.buildSchema(rows), tempFile);
-    for (const row of rows) {
-      await writer.appendRow(ParquetEngine.sanitizeBigInt(row) as ParquetRow);
+    const writer = await ParquetWriter.openFile(ParquetEngine.buildSchema(sanitizedRows), tempFile);
+    for (const row of sanitizedRows) {
+      await writer.appendRow(row);
     }
     await writer.close();
 

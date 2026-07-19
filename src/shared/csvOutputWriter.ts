@@ -31,7 +31,13 @@ class CsvOutputService extends ServiceManager {
 
   public static escapeCell(v: unknown): string {
     if (v === null || v === undefined) return "";
-    const s = String(v);
+    if (typeof v === "bigint") return String(v);
+    let s: string;
+    if (Array.isArray(v) || (typeof v === "object" && !(v instanceof Date))) {
+      s = JSON.stringify(v);
+    } else {
+      s = String(v);
+    }
     return /[",\r\n]/.test(s) ? "\"" + s.replace(/"/g, "\"\"") + "\"" : s;
   }
 }

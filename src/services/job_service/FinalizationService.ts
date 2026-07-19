@@ -182,7 +182,7 @@ class FinalizationService {
         const rows = await this.engine.readRows(this.storage, p);
         for (const r of rows) {
           if (r._byte_offset !== undefined && r._byte_offset !== null) {
-            targetOffsets.add(Number(this.engine.sanitizeBigInt(r._byte_offset)));
+            targetOffsets.add(Number(ParquetEngine.sanitizeValue(r._byte_offset, false)));
           }
         }
       } catch (e) {
