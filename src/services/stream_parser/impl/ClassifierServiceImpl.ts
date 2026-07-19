@@ -15,16 +15,56 @@ enum AIVerdict {
   UNCERTAIN = "uncertain"
 }
 
+/**
+ * ClassifierServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class ClassifierServiceImpl extends ServiceManager implements ClassifierService {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: ClassifierServiceImpl;
+    /**
+   * Job Id
+   * @private
+   */
   private jobId: string;
+    /**
+   * Field Spec
+   * @private
+   */
   private fieldSpec: string[];
+    /**
+   * Record Templates
+   * @private
+   */
   private recordTemplates: RecordTemplate[];
+    /**
+   * Rubbish Templates
+   * @private
+   */
   private rubbishTemplates: RubbishTemplate[];
+    /**
+   * Ai Cache
+   * @private
+   */
   private aiCache: Map<string, RecordTemplate | RubbishTemplate>;
+    /**
+   * Header Map
+   * @private
+   */
   private headerMap: Record<string, number> | null = null;
+    /**
+   * First Line
+   * @private
+   */
   private firstLine = true;
 
+    /**
+   * Constructs a new ClassifierServiceImpl instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate ClassifierServiceImpl directly. Use getInstance()");
@@ -40,6 +80,10 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     this.firstLine = true;
   }
 
+    /**
+   * Gets the single instance of the ClassifierServiceImpl class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): ClassifierServiceImpl {
     if (!ClassifierServiceImpl.instance) {
       ClassifierServiceImpl.instance = new ClassifierServiceImpl(Enforce);
@@ -47,6 +91,13 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return ClassifierServiceImpl.instance;
   }
 
+    /**
+   * Resets the operation
+   * @param jobId - The job identifier
+   * @param fieldSpec - The field spec
+   * @param recordTemplates - The record templates
+   * @param rubbishTemplates - The rubbish templates
+   */
   public reset(jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[]): void {
     this.jobId = jobId;
     this.fieldSpec = fieldSpec;
@@ -57,10 +108,21 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     this.firstLine = true;
   }
 
+    /**
+   * Gets header map
+   * @returns The record<string, number> | null result
+   */
   public getHeaderMap(): Record<string, number> | null {
     return this.headerMap;
   }
 
+    /**
+   * Classifies the operation
+   * @param line - The line to process
+   * @param _byteOffset - The _byte offset
+   * @param _byteLength - The _byte length
+   * @returns The classify result result
+   */
   classify(line: string, _byteOffset: number, _byteLength: number): ClassifyResult {
     // 1. Length / empty / binary gate — cheapest first. Declined locally, never AI.
     const trimmed = line.trim();
@@ -149,6 +211,12 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
   }
 
+    /**
+   * Classifies with a i
+   * @param line - The line to process
+   * @param contextLines - The context lines
+   * @returns A promise that resolves to the result
+   */
   async classifyWithAI(line: string, contextLines: string[]): Promise<ClassifyResult> {
     const fp = quickFingerprint(line);
     const cached = this.aiCache.get(fp);
@@ -170,6 +238,13 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return this.toResult(line, resp.template);
   }
 
+    /**
+   * Classifies with timeout
+   * @param line - The line to process
+   * @param contextLines - The context lines
+   * @param timeoutMs - The timeout in milliseconds
+   * @returns A promise that resolves to the result
+   */
   async classifyWithTimeout(line: string, contextLines: string[], timeoutMs: number): Promise<ClassifyResult> {
     return Promise.race([
       this.classifyWithAI(line, contextLines),
@@ -179,6 +254,12 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     ]);
   }
 
+    /**
+   * Performs the to result operation.
+   * @param line - The line to process
+   * @param tmpl - The tmpl
+   * @returns The classify result result
+   */
   private toResult(line: string, tmpl: RecordTemplate | RubbishTemplate): ClassifyResult {
     if ("signature" in tmpl) {
       if ((tmpl.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(tmpl.signature, line)) {
@@ -193,6 +274,12 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
   }
 
+    /**
+   * Extracts line
+   * @param line - The line to process
+   * @param rec - The rec
+   * @returns The record<string, unknown> | null result
+   */
   private extractLine(line: string, rec: RecordTemplate): Record<string, unknown> | null {
     const parsed = this.parseStructure(line, rec);
     if (!parsed) return null;
@@ -212,6 +299,12 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return presentCount > 0 ? row : null;
   }
 
+    /**
+   * Parses structure
+   * @param line - The line to process
+   * @param rec - The rec
+   * @returns The string | unknown[] |  record<string, unknown> | null result
+   */
   private parseStructure(line: string, rec: RecordTemplate): string | unknown[] | Record<string, unknown> | null {
     if (rec.structure === "json") {
       if (line[0] !== "{" && line[0] !== "[") return null;
@@ -249,6 +342,11 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return null;
   }
 
+    /**
+   * Parses xml
+   * @param line - The line to process
+   * @returns The record<string, unknown> | null result
+   */
   private parseXml(line: string): Record<string, unknown> | null {
     // Simple XML parsing for basic structures
     // For production, use a proper XML parser like xml2js
@@ -265,6 +363,11 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return Object.keys(obj).length > 0 ? obj : null;
   }
 
+    /**
+   * Parses yaml
+   * @param line - The line to process
+   * @returns The record<string, unknown> | null result
+   */
   private parseYaml(line: string): Record<string, unknown> | null {
     // Simple YAML parsing for key-value pairs
     // For production, use a proper YAML parser like js-yaml
@@ -281,12 +384,22 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return Object.keys(obj).length > 0 ? obj : null;
   }
 
+    /**
+   * Parses xml record
+   * @param line - The line to process
+   * @returns The { row:  record<string, unknown>; template_id: string } | null result
+   */
   private parseXmlRecord(line: string): { row: Record<string, unknown>; template_id: string } | null {
     const obj = this.parseXml(line);
     if (!obj) return null;
     return this.extractFromObject(obj, "xml", false);
   }
 
+    /**
+   * Parses yaml record
+   * @param line - The line to process
+   * @returns The { row:  record<string, unknown>; template_id: string } | null result
+   */
   private parseYamlRecord(line: string): { row: Record<string, unknown>; template_id: string } | null {
     const obj = this.parseYaml(line);
     if (!obj) return null;
@@ -371,6 +484,11 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return accept ? { row, template_id: templateId } : null;
   }
 
+    /**
+   * Parses json record
+   * @param line - The line to process
+   * @returns The { row:  record<string, unknown>; template_id: string } | null result
+   */
   private parseJsonRecord(line: string): { row: Record<string, unknown>; template_id: string } | null {
     const t = line.trim();
     if (t[0] !== "{") return null;
@@ -380,6 +498,11 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return this.extractFromObject(obj as Record<string, unknown>, TEMPLATE_IDS.JSON, false);
   }
 
+    /**
+   * Parses kv record
+   * @param line - The line to process
+   * @returns The { row:  record<string, unknown>; template_id: string } | null result
+   */
   private parseKvRecord(line: string): { row: Record<string, unknown>; template_id: string } | null {
     // Only the "Label: value - Label: value" shape. The old "k=v" whitespace fallback split
     // values on spaces (truncating multi-word values), so it was removed.
@@ -393,6 +516,11 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return this.extractFromObject(obj, TEMPLATE_IDS.KV, true);
   }
 
+    /**
+   * Splits best delimited
+   * @param line - The line to process
+   * @returns The string[] | null result
+   */
   private splitBestDelimited(line: string): string[] | null {
     let best: string[] | null = null;
     for (const delim of DELIMITERS) {
@@ -427,6 +555,11 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return matched >= need ? map : null;
   }
 
+    /**
+   * Parses delimited record
+   * @param line - The line to process
+   * @returns The record<string, unknown> | null result
+   */
   private parseDelimitedRecord(line: string): Record<string, unknown> | null {
     if (this.fieldSpec.length === 0) return null;
     const parts = this.splitBestDelimited(line);
@@ -465,6 +598,13 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return matched > 0 ? row : null;
   }
 
+    /**
+   * Performs the apply locator operation.
+   * @param line - The line to process
+   * @param parsed - The parsed
+   * @param loc - The loc
+   * @returns The unknown result
+   */
   private applyLocator(line: string, parsed: string | unknown[] | Record<string, unknown>, loc: string): unknown {
     if (loc.startsWith("index:")) {
       const index = parseInt(loc.replace("index:", ""));
@@ -488,6 +628,11 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     return undefined;
   }
 
+    /**
+   * Performs the coerce operation.
+   * @param row - The row
+   * @returns The record<string, unknown> result
+   */
   private coerce(row: Record<string, unknown>): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(row)) {
@@ -504,6 +649,13 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
   }
 }
 
+/**
+ * Parses csv line
+ * @param line - The line to process
+ * @param delim - The delim
+ * @param quoteChar - The quote char
+ * @returns The list of results
+ */
 function parseCsvLine(line: string, delim: string, quoteChar: string = "\""): string[] {
   const quote = quoteChar || null;
   const parts: string[] = [];
@@ -531,6 +683,11 @@ function parseCsvLine(line: string, delim: string, quoteChar: string = "\""): st
   return parts;
 }
 
+/**
+ * Performs the quick fingerprint operation.
+ * @param line - The line to process
+ * @returns The string result
+ */
 function quickFingerprint(line: string): string {
   const trimmed = line.trim();
   if (trimmed.length === 0) return "empty";

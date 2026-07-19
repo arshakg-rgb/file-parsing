@@ -21,11 +21,31 @@ export interface TraceRecord {
   row_data?: Record<string, unknown>;
 }
 
+/**
+ * TraceSystem is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 export class TraceSystem extends ServiceManager {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: TraceSystem;
+    /**
+   * Logger instance
+   * @private
+   */
   private logger: Logger;
+    /**
+   * Db Manager
+   * @private
+   */
   private dbManager: MySqlManager;
 
+    /**
+   * Constructs a new TraceSystem instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate TraceSystem directly. Use getInstance()");
@@ -36,6 +56,10 @@ export class TraceSystem extends ServiceManager {
     this.dbManager = MySqlManager.getInstance();
   }
 
+    /**
+   * Gets the single instance of the TraceSystem class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): TraceSystem {
     if (!TraceSystem.instance) {
       TraceSystem.instance = new TraceSystem(Enforce);
@@ -43,6 +67,10 @@ export class TraceSystem extends ServiceManager {
     return TraceSystem.instance;
   }
 
+    /**
+   * Creates trace
+   * @param trace - The trace
+   */
   public async createTrace(trace: TraceRecord): Promise<void> {
     try {
       await this.dbManager.repositories.parsedRecords.create({
@@ -74,6 +102,14 @@ export class TraceSystem extends ServiceManager {
     }
   }
 
+    /**
+   * Logs rubbish drop
+   * @param jobId - The job identifier
+   * @param byteOffset - The byte offset
+   * @param lineNo - The line no
+   * @param rawBytes - The raw bytes
+   * @param matchedTemplateId - The matched template id
+   */
   public async logRubbishDrop(
     jobId: string,
     byteOffset: number,
@@ -106,6 +142,11 @@ export class TraceSystem extends ServiceManager {
     }
   }
 
+    /**
+   * Gets job traces
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the list
+   */
   public async getJobTraces(jobId: string): Promise<TraceRecord[]> {
     const rows = await this.dbManager.repositories.parsedRecords.findByJob(jobId);
 
@@ -124,18 +165,39 @@ export class TraceSystem extends ServiceManager {
     }));
   }
 
+    /**
+   * Gets job rubbish log
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the list
+   */
   public async getJobRubbishLog(jobId: string): Promise<unknown[]> {
     return this.dbManager.repositories.rubbishLogs.findByJob(jobId);
   }
 
+    /**
+   * Performs the generate checksum operation.
+   * @param line - The line to process
+   * @returns The string result
+   */
   static generateChecksum(line: string): string {
     return crypto.createHash("sha256").update(line).digest("hex");
   }
 
+    /**
+   * Performs the line exists operation.
+   * @param jobId - The job identifier
+   * @param byteOffset - The byte offset
+   * @returns True if the operation succeeds, false otherwise
+   */
   public async lineExists(jobId: string, byteOffset: number): Promise<boolean> {
     return this.dbManager.repositories.parsedRecords.exists(jobId, byteOffset);
   }
 
+    /**
+   * Gets line fate counts
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the result
+   */
   public async getLineFateCounts(jobId: string): Promise<{
     parsed: number;
     dropped: number;

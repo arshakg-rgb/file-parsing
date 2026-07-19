@@ -16,15 +16,31 @@ import { pool, createPendingArchiveEntry } from "@shared/DatabaseManager.js";
 import { fetchUrlStream } from "./ssrf_guard.js";
 import { sendRaw } from "@shared/QueueService.js";
 
+/**
+ * The gunzip
+ */
 const gunzip = promisify(zlib.gunzip);
 
+/**
+ * Class representing a bomb error error.
+ */
 export class BombError extends Error {
+    /**
+   * Constructs a new BombError instance.
+   * @param message - The message
+   */
   constructor(message: string) {
     super(message);
     this.name = "BombError";
   }
 }
 
+/**
+ * Fetches url to s3
+ * @param jobId - The job identifier
+ * @param url - The URL to process
+ * @returns A promise that resolves to the result
+ */
 export async function fetchUrlToS3(jobId: string, url: string): Promise<[string, number]> {
   // Handle gs:// URLs directly using GCS utilities
   if (url.startsWith("gs://")) {
@@ -68,16 +84,38 @@ async function streamGcsToGcs(srcBucket: string, srcKey: string, dstBucket: stri
   console.log("gcs_copy_complete", { srcBucket, srcKey, dstBucket, dstKey });
 }
 
+/**
+ * Performs the list s3 prefix operation.
+ * @param prefixUrl - The prefix url
+ * @returns A promise that resolves to the list
+ */
 export async function listS3Prefix(prefixUrl: string): Promise<[string, number][]> {
   const [bucket, prefix] = parseS3Url(prefixUrl);
   return listObjects(bucket, prefix);
 }
 
+/**
+ * The m a g i c_ z i p
+ */
 const MAGIC_ZIP = Buffer.from("PK\x03\x04");
+/**
+ * The m a g i c_ g z
+ */
 const MAGIC_GZ = Buffer.from("\x1f\x8b");
+/**
+ * The m a g i c_7 z
+ */
 const MAGIC_7Z = Buffer.from("7z\xbc\xaf\x27\x1c");
+/**
+ * The m a g i c_ r a r
+ */
 const MAGIC_RAR = Buffer.from("Rar!");
 
+/**
+ * Detects archive type
+ * @param header - The header
+ * @returns The string | null result
+ */
 export function detectArchiveType(header: Buffer): string | null {
   if (header.slice(0, 4).equals(MAGIC_ZIP)) return "zip";
   if (header.slice(0, 2).equals(MAGIC_GZ)) return "gz";
@@ -87,6 +125,17 @@ export function detectArchiveType(header: Buffer): string | null {
   return null;
 }
 
+/**
+ * Extracts archive to s3
+ * @param jobId - The job identifier
+ * @param s3Url - The s3 url
+ * @param archiveType - The archive type
+ * @param fieldSpec - The field spec
+ * @param batchId - The batch identifier
+ * @param password - The password
+ * @param _depth - The _depth
+ * @returns A promise that resolves to the list
+ */
 export async function extractArchiveToS3(
   jobId: string,
   s3Url: string,
@@ -363,6 +412,11 @@ export async function extractArchiveToS3(
   throw new Error(`Unsupported archive type: ${archiveType}`);
 }
 
+/**
+ * Checks ratio
+ * @param compressed - The compressed
+ * @param uncompressed - The uncompressed
+ */
 function checkRatio(compressed: number, uncompressed: number): void {
   if (compressed > 0 && uncompressed / compressed > settings.ARCHIVE_MAX_COMPRESSION_RATIO) {
     throw new BombError(`Compression ratio ${(uncompressed / compressed).toFixed(0)}:1 exceeds cap ${settings.ARCHIVE_MAX_COMPRESSION_RATIO}:1`);
@@ -372,6 +426,13 @@ function checkRatio(compressed: number, uncompressed: number): void {
   }
 }
 
+/**
+ * Stores entry
+ * @param jobId - The job identifier
+ * @param entryName - The entry name
+ * @param data - The data to process
+ * @returns A promise that resolves to the result
+ */
 async function storeEntry(jobId: string, entryName: string, data: Buffer): Promise<[string, number]> {
   const safeName = path.basename(entryName).replace(/[#\s]+/g, "_") || "entry";
   const entryId = randomUUID();
@@ -380,16 +441,41 @@ async function storeEntry(jobId: string, entryName: string, data: Buffer): Promi
   return [`gs://${settings.DATA_BUCKET}/${s3Key}`, data.length];
 }
 
+/**
+ * Performs the make entry event operation.
+ * @param parentJobId - The parent job id
+ * @param batchId - The batch identifier
+ * @param s3Url - The s3 url
+ * @param name - The name value
+ * @param size - The size value
+ * @param fieldSpec - The field spec
+ */
 function makeEntryEvent(parentJobId: string, batchId: string, s3Url: string, name: string, size: number, fieldSpec: string[]) {
   return { parent_job_id: parentJobId, batchId: batchId, entry_s3_url: s3Url, entry_name: name, entry_size: size, field_spec: fieldSpec };
 }
 
+/**
+ * Performs the with temp file operation.
+ * @param data - The data to process
+ * @param ext - The ext
+ * @returns A promise that resolves to the result
+ */
 async function withTempFile(data: Buffer, ext: string): Promise<string> {
   const tmp = path.join(os.tmpdir(), `${randomUUID()}${ext}`);
   await fs.writeFile(tmp, data);
   return tmp;
 }
 
+/**
+ * Extracts zip
+ * @param jobId - The job identifier
+ * @param raw - The raw
+ * @param compressedSize - The compressed size
+ * @param fieldSpec - The field spec
+ * @param batchId - The batch identifier
+ * @param password - The password
+ * @returns A promise that resolves to the list
+ */
 async function extractZip(
   jobId: string,
   raw: Buffer,
@@ -419,6 +505,15 @@ async function extractZip(
   return out;
 }
 
+/**
+ * Extracts gz
+ * @param jobId - The job identifier
+ * @param raw - The raw
+ * @param compressedSize - The compressed size
+ * @param fieldSpec - The field spec
+ * @param batchId - The batch identifier
+ * @returns A promise that resolves to the list
+ */
 async function extractGz(
   jobId: string,
   raw: Buffer,
@@ -433,6 +528,15 @@ async function extractGz(
   return [makeEntryEvent(jobId, batchId, url, name, size, fieldSpec)];
 }
 
+/**
+ * Extracts tar archive
+ * @param jobId - The job identifier
+ * @param raw - The raw
+ * @param compressedSize - The compressed size
+ * @param fieldSpec - The field spec
+ * @param batchId - The batch identifier
+ * @returns A promise that resolves to the list
+ */
 async function extractTarArchive(
   jobId: string,
   raw: Buffer,
@@ -463,6 +567,16 @@ async function extractTarArchive(
   return out;
 }
 
+/**
+ * Extracts 7z
+ * @param jobId - The job identifier
+ * @param raw - The raw
+ * @param compressedSize - The compressed size
+ * @param fieldSpec - The field spec
+ * @param batchId - The batch identifier
+ * @param password - The password
+ * @returns A promise that resolves to the list
+ */
 async function extract7z(
   jobId: string,
   raw: Buffer,
@@ -496,6 +610,16 @@ async function extract7z(
   return out;
 }
 
+/**
+ * Extracts rar
+ * @param jobId - The job identifier
+ * @param raw - The raw
+ * @param compressedSize - The compressed size
+ * @param fieldSpec - The field spec
+ * @param batchId - The batch identifier
+ * @param password - The password
+ * @returns A promise that resolves to the list
+ */
 async function extractRar(
   jobId: string,
   raw: Buffer,

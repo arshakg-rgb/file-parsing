@@ -1,9 +1,18 @@
 import { Storage } from "@google-cloud/storage";
 import { settings } from "@shared/Settings.js";
 
+/**
+ * The storage
+ */
 const storage = new Storage();
+/**
+ * The bucket
+ */
 const bucket = storage.bucket(settings.DATA_BUCKET);
 
+/**
+ * Performs the list test folder operation.
+ */
 async function listTestFolder() {
   console.log("Listing files in test folder...");
   try {

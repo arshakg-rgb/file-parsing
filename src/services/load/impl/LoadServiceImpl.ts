@@ -13,19 +13,55 @@ import { startHealthCheckServer } from "@utils/response/health.js";
 import { LoadService } from "@service/load/LoadService.js";
 import { ILoad, LoadRequest, LoadResponse } from "@service/load/io/ILoad.js";
 
+/**
+ * LoadServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class LoadServiceImpl extends ServiceManager implements LoadService {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: LoadServiceImpl;
+    /**
+   * Logger instance
+   * @private
+   */
   private logger: Logger;
+    /**
+   * Gcs Utils
+   * @private
+   */
   private gcsUtils: FirestoreCacheUtils;
+    /**
+   * Db Manager
+   * @private
+   */
   private dbManager: MySqlManager;
+    /**
+   * S Y S T E M_ C O L S
+   * @private
+   */
   private SYSTEM_COLS = [
     "_job_id", "_byte_offset", "_byte_length", "_record_index",
     "_line_no", "_template_id", "_template_version", "_checksum",
     "_parsed_at", "_part_id",
   ] as const;
+    /**
+   * P A R A M S_ P E R_ R O W
+   * @private
+   */
   private PARAMS_PER_ROW: number;
+    /**
+   * U P S E R T_ B A T C H
+   * @private
+   */
   private UPSERT_BATCH: number;
 
+    /**
+   * Constructs a new LoadServiceImpl instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate LoadServiceImpl directly. Use getInstance()");
@@ -44,6 +80,10 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     }
   }
 
+    /**
+   * Gets the single instance of the LoadServiceImpl class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): LoadServiceImpl {
     if (!LoadServiceImpl.instance) {
       LoadServiceImpl.instance = new LoadServiceImpl(Enforce);
@@ -51,27 +91,54 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     return LoadServiceImpl.instance;
   }
 
+    /**
+   * Gets logger
+   * @returns The logger result
+   */
   public getLogger(): Logger {
     return this.logger;
   }
 
+    /**
+   * Gets gcs utils
+   * @returns The firestore cache utils result
+   */
   public getGcsUtils(): FirestoreCacheUtils {
     return this.gcsUtils;
   }
 
+    /**
+   * Gets db manager
+   * @returns The my sql manager result
+   */
   public getDbManager(): MySqlManager {
     return this.dbManager;
   }
 
+    /**
+   * Processes load
+   * @param req - The HTTP request object
+   * @returns A promise that resolves to the result
+   */
   public async processLoad(req: LoadRequest): Promise<LoadResponse> {
     // Placeholder implementation
     return { success: true };
   }
 
+    /**
+   * Emits the operation
+   * @param jobId - The job identifier
+   * @param eventType - The event type
+   * @param data - The data to process
+   */
   private emit(jobId: string, eventType: EventType, data: Record<string, unknown>) {
     publishEvent(makeJobEvent(eventType, jobId, "load", data));
   }
 
+    /**
+   * Loads job
+   * @param msg - The msg
+   */
   public async loadJob(msg: LoadMessage): Promise<void> {
     const jobId = msg.job_id;
 
@@ -106,6 +173,11 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     }
   }
 
+    /**
+   * Builds recovered row
+   * @param msg - The msg
+   * @returns The record<string, unknown> result
+   */
   private buildRecoveredRow(msg: LoadMessage): Record<string, unknown> {
     const now = new Date().toISOString();
     return {
@@ -123,6 +195,11 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     };
   }
 
+    /**
+   * Reads parquet
+   * @param s3Path - The s3 path
+   * @returns A promise that resolves to the list
+   */
   private async readParquet(s3Path: string): Promise<Record<string, unknown>[]> {
     const [bucket, key] = this.gcsUtils.parseGcsUrl(s3Path);
     const raw = await this.gcsUtils.readFull(bucket, key);
@@ -137,6 +214,11 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     return rows;
   }
 
+    /**
+   * Performs the upsert rows operation.
+   * @param _jobId - The _job id
+   * @param rows - The rows
+   */
   private async upsertRows(_jobId: string, rows: Record<string, unknown>[]): Promise<void> {
     if (!rows.length) return;
 
@@ -167,6 +249,9 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     }
   }
 
+    /**
+   * Performs the consumer loop operation.
+   */
   public async consumerLoop(): Promise<void> {
     await this.dbManager.initialize();
     this.logger.info("load_consumer_started");

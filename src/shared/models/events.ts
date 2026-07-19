@@ -19,6 +19,14 @@ export interface JobEvent {
   data: Record<string, unknown>;
 }
 
+/**
+ * Performs the make job event operation.
+ * @param event_type - The event_type
+ * @param job_id - The job_id
+ * @param source_service - The source_service
+ * @param data - The data to process
+ * @returns The job event result
+ */
 export function makeJobEvent(
   event_type: EventType,
   job_id: string,

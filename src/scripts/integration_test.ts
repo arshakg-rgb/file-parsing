@@ -3,17 +3,44 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3
 import { SQSClient, SendMessageCommand, ReceiveMessageCommand, DeleteMessageCommand, GetQueueUrlCommand } from "@aws-sdk/client-sqs";
 import { setTimeout as sleep } from "timers/promises";
 
+/**
+ * The e n d p o i n t
+ */
 const ENDPOINT = "http://localhost:4566";
+/**
+ * The r e g i o n
+ */
 const REGION = "us-east-1";
+/**
+ * The c r e d e n t i a l s
+ */
 const CREDENTIALS = { accessKeyId: "test", secretAccessKey: "test" };
 
+/**
+ * The s3
+ */
 const s3 = new S3Client({ endpoint: ENDPOINT, region: REGION, credentials: CREDENTIALS, forcePathStyle: true });
+/**
+ * The sqs
+ */
 const sqs = new SQSClient({ endpoint: ENDPOINT, region: REGION, credentials: CREDENTIALS });
 
+/**
+ * The d a t a_ b u c k e t
+ */
 const DATA_BUCKET = "datalead-osint";
+/**
+ * The i n g e s t_ q u e u e
+ */
 const INGEST_QUEUE = "fpp-ingest.fifo";
+/**
+ * The r e p o r t_ q u e u e
+ */
 const REPORT_QUEUE = "fpp-report.fifo";
 
+/**
+ * The s a m p l e_ c s v
+ */
 const SAMPLE_CSV = `id,name,email,created_at
 1,John Doe,john@example.com,2024-01-15
 2,Jane Smith,jane@example.com,2024-01-16
@@ -21,11 +48,20 @@ const SAMPLE_CSV = `id,name,email,created_at
 4,Alice Williams,alice@example.com,2024-01-18
 5,Charlie Brown,charlie@example.com,2024-01-19`;
 
+/**
+ * Gets queue url
+ * @param queueName - The queue name
+ * @returns A promise that resolves to the result
+ */
 async function getQueueUrl(queueName: string): Promise<string> {
   const resp = await sqs.send(new GetQueueUrlCommand({ QueueName: queueName }));
   return resp.QueueUrl || "";
 }
 
+/**
+ * Uploads test file
+ * @returns A promise that resolves to the result
+ */
 async function uploadTestFile(): Promise<string> {
   const key = `test/integration-${randomUUID()}.csv`;
   await s3.send(new PutObjectCommand({ Bucket: DATA_BUCKET, Key: key, Body: SAMPLE_CSV }));
@@ -33,6 +69,11 @@ async function uploadTestFile(): Promise<string> {
   return key;
 }
 
+/**
+ * Sends ingest message
+ * @param s3Key - The s3 key
+ * @returns A promise that resolves to the result
+ */
 async function sendIngestMessage(s3Key: string): Promise<string> {
   const queueUrl = await getQueueUrl(INGEST_QUEUE);
   const jobId = randomUUID();
@@ -52,6 +93,12 @@ async function sendIngestMessage(s3Key: string): Promise<string> {
   return jobId;
 }
 
+/**
+ * Waits for for report
+ * @param jobId - The job identifier
+ * @param timeoutMs - The timeout in milliseconds
+ * @returns A promise that resolves to the result
+ */
 async function waitForReport(jobId: string, timeoutMs = 120000): Promise<unknown> {
   const queueUrl = await getQueueUrl(REPORT_QUEUE);
   const startTime = Date.now();
@@ -77,6 +124,10 @@ async function waitForReport(jobId: string, timeoutMs = 120000): Promise<unknown
   throw new Error(`Timeout waiting for report for job ${jobId}`);
 }
 
+/**
+ * Verifies output
+ * @param jobId - The job identifier
+ */
 async function verifyOutput(jobId: string): Promise<void> {
   const reportKey = `reports/${jobId}/report.json`;
   try {
@@ -110,6 +161,9 @@ async function verifyOutput(jobId: string): Promise<void> {
   }
 }
 
+/**
+ * Runs integration test
+ */
 async function runIntegrationTest(): Promise<void> {
   console.log("Starting integration test...");
   

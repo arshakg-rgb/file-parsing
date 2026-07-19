@@ -2,14 +2,35 @@ import { S3Client, CreateBucketCommand, ListBucketsCommand } from "@aws-sdk/clie
 import { SQSClient, CreateQueueCommand, ListQueuesCommand, GetQueueUrlCommand, SetQueueAttributesCommand } from "@aws-sdk/client-sqs";
 import { DynamoDBClient, CreateTableCommand, DescribeTableCommand } from "@aws-sdk/client-dynamodb";
 
+/**
+ * The e n d p o i n t
+ */
 const ENDPOINT = "http://localhost:4566";
+/**
+ * The r e g i o n
+ */
 const REGION = "us-east-1";
+/**
+ * The c r e d e n t i a l s
+ */
 const CREDENTIALS = { accessKeyId: "test", secretAccessKey: "test" };
 
+/**
+ * The s3
+ */
 const s3 = new S3Client({ endpoint: ENDPOINT, region: REGION, credentials: CREDENTIALS, forcePathStyle: true });
+/**
+ * The sqs
+ */
 const sqs = new SQSClient({ endpoint: ENDPOINT, region: REGION, credentials: CREDENTIALS });
+/**
+ * The dynamodb
+ */
 const dynamodb = new DynamoDBClient({ endpoint: ENDPOINT, region: REGION, credentials: CREDENTIALS });
 
+/**
+ * Waits for for localstack
+ */
 async function waitForLocalstack(): Promise<void> {
   console.log("Waiting for LocalStack...");
   for (let i = 0; i < 30; i++) {
@@ -24,6 +45,9 @@ async function waitForLocalstack(): Promise<void> {
   throw new Error("LocalStack did not start within 60 seconds");
 }
 
+/**
+ * Creates buckets
+ */
 async function createBuckets() {
   for (const bucket of ["datalead-osint"]) {
     try {
@@ -36,6 +60,9 @@ async function createBuckets() {
   }
 }
 
+/**
+ * Creates queues
+ */
 async function createQueues() {
   const queues = ["fpp-ingest.fifo", "fpp-classify.fifo", "fpp-parse.fifo", "fpp-line-dlq.fifo", "fpp-load.fifo", "fpp-report.fifo", "fpp-job-events.fifo"];
   for (const q of queues) {
@@ -57,6 +84,9 @@ async function createQueues() {
   }
 }
 
+/**
+ * Creates dynamo table
+ */
 async function createDynamoTable() {
   try {
     await dynamodb.send(new DescribeTableCommand({ TableName: "file-parsing-templates" }));
@@ -78,6 +108,9 @@ async function createDynamoTable() {
   }
 }
 
+/**
+ * Main entry point of the application
+ */
 async function main() {
   await waitForLocalstack();
   await createBuckets();

@@ -6,11 +6,31 @@
 import { InstantiationError } from "@errors/InstantiationError.js";
 import Config from "@config/system-config/Config.js";
 
+/**
+ * ServiceManager manages the resource lifecycle.
+ */
 class ServiceManager {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: ServiceManager;
+    /**
+   * Services
+   * @private
+   */
   private services: Map<string, ServiceManager> = new Map();
+    /**
+   * Config
+   * @private
+   */
   protected config: Config;
 
+    /**
+   * Constructs a new ServiceManager instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate ServiceManager directly. Use getInstance()");
@@ -18,6 +38,10 @@ class ServiceManager {
     this.config = Config.getInstance();
   }
 
+    /**
+   * Gets the single instance of the ServiceManager class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): ServiceManager {
     if (!ServiceManager.instance) {
       ServiceManager.instance = new ServiceManager(Enforce);
@@ -67,6 +91,9 @@ class ServiceManager {
   }
 }
 
+/**
+ * Performs the enforce operation.
+ */
 function Enforce(): void {}
 
 export { Enforce };

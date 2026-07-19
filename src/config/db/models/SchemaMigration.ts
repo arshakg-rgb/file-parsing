@@ -19,15 +19,24 @@ export interface SchemaMigrationCreationAttributes extends Omit<
   "applied_at"
 > {}
 
+/**
+ * SchemaMigration is responsible for schema migration operations.
+ */
 @Table({
   tableName: "schema_migrations",
   timestamps: false,
 })
 export default class SchemaMigration extends Model<ISchemaMigration, SchemaMigrationCreationAttributes> {
+    /**
+   * Version
+   */
   @PrimaryKey
   @Column({ type: DataType.INTEGER, allowNull: false })
   declare version: number;
 
+    /**
+   * Applied_at
+   */
   @Column({
     type: DataType.DATE,
     allowNull: false,
@@ -38,6 +47,9 @@ export default class SchemaMigration extends Model<ISchemaMigration, SchemaMigra
   })
   declare applied_at: Date;
 
+    /**
+   * Description
+   */
   @Column({ type: DataType.TEXT, allowNull: true })
   declare description: string | null;
 }

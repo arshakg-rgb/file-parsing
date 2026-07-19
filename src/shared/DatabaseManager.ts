@@ -5,13 +5,25 @@ import type { OutputPartAttributes } from "@config/db/models/OutputPart.js";
 import type { DeadLetterAttributes } from "@config/db/models/DeadLetter.js";
 import type { PendingArchiveEntryAttributes } from "@config/db/models/PendingArchiveEntry.js";
 
+/**
+ * Database manager instance
+ */
 const dbManager = MySqlManager.getInstance();
+/**
+ * Repository accessors
+ */
 const repos = dbManager.repositories;
 
 // Re-export pool for backward compatibility
 export const pool = dbManager.pool;
 
+/**
+ * The models
+ */
 export const models = dbManager.models;
+/**
+ * The repositories
+ */
 export const repositories = repos;
 
 // Legacy row shape aliases for minimal downstream churn
@@ -25,18 +37,39 @@ export async function waitForDb(): Promise<void> {
   await dbManager.initialize();
 }
 
+/**
+ * Gets job
+ * @param jobId - The job identifier
+ * @returns A promise that resolves to the result
+ */
 export async function getJob(jobId: string): Promise<ParseJobRow | null> {
   return repos.jobs.findById(jobId);
 }
 
+/**
+ * Gets batch jobs
+ * @param batchId - The batch identifier
+ * @returns A promise that resolves to the list
+ */
 export async function getBatchJobs(batchId: string): Promise<ParseJobRow[]> {
   return repos.jobs.findByBatchId(batchId);
 }
 
+/**
+ * Gets job parts
+ * @param jobId - The job identifier
+ * @returns A promise that resolves to the list
+ */
 export async function getJobParts(jobId: string): Promise<OutputPartRow[]> {
   return repos.outputParts.findByJob(jobId);
 }
 
+/**
+ * Creates pending archive entry
+ * @param jobId - The job identifier
+ * @param entryName - The entry name
+ * @param entrySize - The entry size
+ */
 export async function createPendingArchiveEntry(
   jobId: string,
   entryName: string,
@@ -45,6 +78,11 @@ export async function createPendingArchiveEntry(
   await repos.pendingArchiveEntries.create({ id: crypto.randomUUID(), job_id: jobId, entry_name: entryName, entry_size: entrySize, status: "pending" });
 }
 
+/**
+ * Marks pending entry processing
+ * @param jobId - The job identifier
+ * @param entryName - The entry name
+ */
 export async function markPendingEntryProcessing(
   jobId: string,
   entryName: string
@@ -53,6 +91,11 @@ export async function markPendingEntryProcessing(
   if (entry) await repos.pendingArchiveEntries.markStatus(entry.id, "processing");
 }
 
+/**
+ * Marks pending entry completed
+ * @param jobId - The job identifier
+ * @param entryName - The entry name
+ */
 export async function markPendingEntryCompleted(
   jobId: string,
   entryName: string
@@ -61,6 +104,12 @@ export async function markPendingEntryCompleted(
   if (entry) await repos.pendingArchiveEntries.markStatus(entry.id, "completed");
 }
 
+/**
+ * Marks pending entry failed
+ * @param jobId - The job identifier
+ * @param entryName - The entry name
+ * @param error - The error that occurred
+ */
 export async function markPendingEntryFailed(
   jobId: string,
   entryName: string,
@@ -70,18 +119,36 @@ export async function markPendingEntryFailed(
   if (entry) await repos.pendingArchiveEntries.markStatus(entry.id, "failed", error);
 }
 
+/**
+ * Gets pending entries
+ * @param jobId - The job identifier
+ * @returns A promise that resolves to the list
+ */
 export async function getPendingEntries(jobId: string): Promise<PendingArchiveEntryRow[]> {
   return repos.pendingArchiveEntries.findByJob(jobId);
 }
 
+/**
+ * Gets pending entry count
+ * @param jobId - The job identifier
+ * @returns A promise that resolves to the result
+ */
 export async function getPendingEntryCount(jobId: string): Promise<{ pending: number; completed: number; failed: number }> {
   return repos.pendingArchiveEntries.getCountByJob(jobId);
 }
 
+/**
+ * Gets pending entry total size
+ * @param jobId - The job identifier
+ * @returns A promise that resolves to the result
+ */
 export async function getPendingEntryTotalSize(jobId: string): Promise<number> {
   return repos.pendingArchiveEntries.getTotalSize(jobId);
 }
 
+/**
+ * Creates tables
+ */
 export async function createTables(): Promise<void> {
   await dbManager.sequelize.sync({ force: false });
 }

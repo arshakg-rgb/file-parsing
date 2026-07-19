@@ -2,11 +2,25 @@ import crypto from "crypto";
 import { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import type { MockClassifyRequest, MockClassifyResponse } from "@service/ai_classifier/io/IMockClassifier.js";
 
+/**
+ * MockClassifier is responsible for mock classifier operations.
+ */
 export class MockClassifier {
+    /**
+   * Singleton instance
+   * @private
+   */
   private static instance: MockClassifier;
 
+    /**
+   * Constructs a new MockClassifier instance.
+   */
   private constructor() {}
 
+    /**
+   * Gets the single instance of the MockClassifier class.
+   * @returns The single instance of the class
+   */
   static getInstance(): MockClassifier {
     if (!MockClassifier.instance) {
       MockClassifier.instance = new MockClassifier();
@@ -14,6 +28,11 @@ export class MockClassifier {
     return MockClassifier.instance;
   }
 
+    /**
+   * Classifies the operation
+   * @param req - The HTTP request object
+   * @returns The mock classify response result
+   */
   classify(req: MockClassifyRequest): MockClassifyResponse {
     const line = req.unknown_line;
 
@@ -58,6 +77,11 @@ export class MockClassifier {
     return { kind: "uncertain" };
   }
 
+    /**
+   * Performs the fingerprint operation.
+   * @param line - The line to process
+   * @returns The string result
+   */
   static fingerprint(line: string): string {
     return crypto.createHash("sha256").update(line).digest("hex").slice(0, 24);
   }

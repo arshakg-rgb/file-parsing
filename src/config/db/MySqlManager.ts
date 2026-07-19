@@ -8,15 +8,46 @@ import * as dbModels from "@config/db/models/index.js";
 import type { DatabaseModels } from "@config/db/models/index.js";
 import { Repositories } from "@config/db/repositories/index.js";
 
+/**
+ * The {  pool }
+ */
 const { Pool } = pg;
 
+/**
+ * MySqlManager is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class MySqlManager extends ServiceManager {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: MySqlManager;
+    /**
+   * _pool
+   * @private
+   */
   private _pool: pg.Pool | null = null;
+    /**
+   * _sequelize
+   * @private
+   */
   private _sequelize?: Sequelize;
+    /**
+   * _models
+   * @private
+   */
   private _models?: DatabaseModels;
+    /**
+   * _repositories
+   * @private
+   */
   private _repositories?: Repositories;
 
+    /**
+   * Constructs a new MySqlManager instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate MySqlManager directly. Use getInstance()");
@@ -24,6 +55,10 @@ class MySqlManager extends ServiceManager {
     super(enforce);
   }
 
+    /**
+   * Gets the single instance of the MySqlManager class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): MySqlManager {
     if (!MySqlManager.instance) {
       MySqlManager.instance = new MySqlManager(Enforce);
@@ -31,6 +66,10 @@ class MySqlManager extends ServiceManager {
     return MySqlManager.instance;
   }
 
+    /**
+   * Gets pool
+   * @returns The pg. pool result
+   */
   private getPool(): pg.Pool {
     if (!this._pool) {
       const config = Config.getInstance();
@@ -44,10 +83,17 @@ class MySqlManager extends ServiceManager {
     return this._pool;
   }
 
+    /**
+   * Gets the pool.
+   * @returns The pg. pool result
+   */
   public get pool(): pg.Pool {
     return this.getPool();
   }
 
+    /**
+   * Initializes the service
+   */
   public async initialize(): Promise<void> {
     console.log("Initializing MySqlManager...");
     await this.waitForDb();
@@ -57,11 +103,18 @@ class MySqlManager extends ServiceManager {
     console.log("MySqlManager initialized");
   }
 
+    /**
+   * Stops the service gracefully
+   */
   public async shutdown(): Promise<void> {
     console.log("Shutting down MySqlManager...");
     await this.pool.end();
   }
 
+    /**
+   * Gets the sequelize.
+   * @returns The sequelize result
+   */
   public get sequelize(): Sequelize {
     if (!this._sequelize) {
       const config = Config.getInstance();
@@ -74,6 +127,10 @@ class MySqlManager extends ServiceManager {
     return this._sequelize;
   }
 
+    /**
+   * Gets the models.
+   * @returns The database models result
+   */
   public get models(): DatabaseModels {
     if (!this._models) {
       this._models = {
@@ -91,6 +148,10 @@ class MySqlManager extends ServiceManager {
     return this._models;
   }
 
+    /**
+   * Gets the repositories.
+   * @returns The repositories result
+   */
   public get repositories(): Repositories {
     if (!this._repositories) {
       this._repositories = new Repositories(this.models);

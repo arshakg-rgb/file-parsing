@@ -29,13 +29,41 @@ export enum FailureClass {
   EXTRACTION_ERROR = "extraction_error",
 }
 
+/**
+ * DLQManager is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 export class DLQManager extends ServiceManager {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: DLQManager;
+    /**
+   * Logger instance
+   * @private
+   */
   private logger: Logger;
+    /**
+   * Db Manager
+   * @private
+   */
   private dbManager: MySqlManager;
+    /**
+   * Gcs Utils
+   * @private
+   */
   private gcsUtils: FirestoreCacheUtils;
+    /**
+   * M A X_ R E T R Y_ A T T E M P T S
+   * @private
+   */
   private readonly MAX_RETRY_ATTEMPTS = 2;
 
+    /**
+   * Constructs a new DLQManager instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate DLQManager directly. Use getInstance()");
@@ -47,6 +75,10 @@ export class DLQManager extends ServiceManager {
     this.gcsUtils = FirestoreCacheUtils.getInstance();
   }
 
+    /**
+   * Gets the single instance of the DLQManager class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): DLQManager {
     if (!DLQManager.instance) {
       DLQManager.instance = new DLQManager(Enforce);
@@ -54,6 +86,17 @@ export class DLQManager extends ServiceManager {
     return DLQManager.instance;
   }
 
+    /**
+   * Adds entry
+   * @param jobId - The job identifier
+   * @param byteOffset - The byte offset
+   * @param byteLength - The byte length
+   * @param lineNo - The line no
+   * @param rawBytes - The raw bytes
+   * @param failureClass - The failure class
+   * @param error - The error that occurred
+   * @returns A promise that resolves to the result
+   */
   public async addEntry(
     jobId: string,
     byteOffset: number,
@@ -90,6 +133,12 @@ export class DLQManager extends ServiceManager {
     return dlqId;
   }
 
+    /**
+   * Fetches failed line
+   * @param dlqEntry - The dlq entry
+   * @param s3Url - The s3 url
+   * @returns A promise that resolves to the result
+   */
   public async fetchFailedLine(dlqEntry: DeadLetterEntry, s3Url: string): Promise<string> {
     try {
       const [bucket, key] = this.gcsUtils.parseGcsUrl(s3Url);
@@ -101,6 +150,12 @@ export class DLQManager extends ServiceManager {
     }
   }
 
+    /**
+   * Retries entry
+   * @param dlqId - The dlq id
+   * @param s3Url - The s3 url
+   * @returns True if the operation succeeds, false otherwise
+   */
   public async retryEntry(dlqId: string, s3Url: string): Promise<boolean> {
     const entry = await this.dbManager.repositories.deadLetters.findById(dlqId);
     if (!entry) {
@@ -123,28 +178,57 @@ export class DLQManager extends ServiceManager {
     return true;
   }
 
+    /**
+   * Marks for review
+   * @param dlqId - The dlq id
+   */
   public async markForReview(dlqId: string): Promise<void> {
     await this.dbManager.repositories.deadLetters.updateStatus(dlqId, "review");
     this.logger.info("dlq_marked_review", { dlq_id: dlqId });
   }
 
+    /**
+   * Marks resolved
+   * @param dlqId - The dlq id
+   */
   public async markResolved(dlqId: string): Promise<void> {
     await this.dbManager.repositories.deadLetters.updateStatus(dlqId, "resolved");
     this.logger.info("dlq_resolved", { dlq_id: dlqId });
   }
 
+    /**
+   * Gets pending entries
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the list
+   */
   public async getPendingEntries(jobId: string): Promise<DeadLetterEntry[]> {
     return this.dbManager.repositories.deadLetters.findByJobAndStatus(jobId, "pending") as Promise<DeadLetterEntry[]>;
   }
 
+    /**
+   * Gets retry entries
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the list
+   */
   public async getRetryEntries(jobId: string): Promise<DeadLetterEntry[]> {
     return this.dbManager.repositories.deadLetters.findByJobAndStatus(jobId, "retry") as Promise<DeadLetterEntry[]>;
   }
 
+    /**
+   * Gets review entries
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the list
+   */
   public async getReviewEntries(jobId: string): Promise<DeadLetterEntry[]> {
     return this.dbManager.repositories.deadLetters.findByJobAndStatus(jobId, "review") as Promise<DeadLetterEntry[]>;
   }
 
+    /**
+   * Performs the batch retry job operation.
+   * @param jobId - The job identifier
+   * @param s3Url - The s3 url
+   * @returns A promise that resolves to the result
+   */
   public async batchRetryJob(jobId: string, s3Url: string): Promise<{ success: number; failed: number }> {
     const entries = await this.getPendingEntries(jobId);
     let success = 0;

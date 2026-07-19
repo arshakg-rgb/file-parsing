@@ -5,11 +5,17 @@ import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus } from "@shared/models/job.js";
 import { createLogger } from "@utils/logger/logger.js";
 
+/**
+ * Logger instance for the module
+ */
 const logger = createLogger("reconciler");
 
 // Threshold: jobs stuck in INGESTING for more than 2 hours are considered stuck
 const STUCK_THRESHOLD_MS = 2 * 60 * 60 * 1000;
 
+/**
+ * Performs the reconcile stuck jobs operation.
+ */
 async function reconcileStuckJobs(): Promise<void> {
   await waitForDb();
   logger.info("reconciler_start");

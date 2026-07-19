@@ -11,6 +11,11 @@ import { OutputPart } from "@shared/models/job.js";
 import { repositories } from "@shared/DatabaseManager.js";
 import { gcsClient, putObject } from "@shared/GcsUtils.js";
 
+/**
+ * Estimates row bytes
+ * @param row - The row
+ * @returns The numeric result
+ */
 function estimateRowBytes(row: Record<string, unknown>): number {
   let bytes = 0;
   for (const v of Object.values(row)) {
@@ -19,17 +24,63 @@ function estimateRowBytes(row: Record<string, unknown>): number {
   return bytes + Object.keys(row).length * 16;
 }
 
+/**
+ * ParquetWriterPool is responsible for parquet writer pool operations.
+ */
 export class ParquetWriterPool {
+    /**
+   * Job Id
+   * @private
+   */
   private jobId: string;
+    /**
+   * Bucket
+   * @private
+   */
   private bucket: string;
+    /**
+   * Output Prefix
+   * @private
+   */
   private outputPrefix: string;
+    /**
+   * Watermark
+   * @private
+   */
   private watermark: number;
+    /**
+   * Buffers
+   * @private
+   */
   private buffers: { [templateId: string]: Record<string, unknown>[] };
+    /**
+   * Buffer Bytes
+   * @private
+   */
   private bufferBytes: number;
+    /**
+   * Parts
+   * @private
+   */
   private parts: OutputPart[];
+    /**
+   * Total Rows
+   * @private
+   */
   private totalRows: number;
+    /**
+   * Flush Promise
+   * @private
+   */
   private flushPromise: Promise<OutputPart[]> | null;
 
+    /**
+   * Constructs a new ParquetWriterPool instance.
+   * @param jobId - The job identifier
+   * @param bucket - The bucket
+   * @param outputPrefix - The output prefix
+   * @param watermarkBytes - The watermark bytes
+   */
   constructor(jobId: string, bucket: string, outputPrefix: string, watermarkBytes = settings.RAM_FLUSH_WATERMARK) {
     this.jobId = jobId;
     this.bucket = bucket;
@@ -42,6 +93,16 @@ export class ParquetWriterPool {
     this.flushPromise = null;
   }
 
+    /**
+   * Writes the operation
+   * @param row - The row
+   * @param templateId - The template id
+   * @param templateVersion - The template version
+   * @param byteOffset - The byte offset
+   * @param byteLength - The byte length
+   * @param lineNo - The line no
+   * @param rawLine - The raw line
+   */
   write(
     row: Record<string, unknown>,
     templateId: string,
@@ -76,6 +137,10 @@ export class ParquetWriterPool {
     this.totalRows += 1;
   }
 
+    /**
+   * Flushes the operation
+   * @returns A promise that resolves to the list
+   */
   async flush(): Promise<OutputPart[]> {
     if (this.flushPromise) {
       await this.flushPromise;
@@ -88,6 +153,10 @@ export class ParquetWriterPool {
     }
   }
 
+    /**
+   * Performs the do flush operation.
+   * @returns A promise that resolves to the list
+   */
   private async doFlush(): Promise<OutputPart[]> {
     const toFlush = this.buffers;
     this.buffers = {};
@@ -120,6 +189,12 @@ export class ParquetWriterPool {
     return flushed;
   }
 
+    /**
+   * Writes part
+   * @param templateId - The template id
+   * @param rows - The rows
+   * @returns A promise that resolves to the result
+   */
   private async writePart(templateId: string, rows: Record<string, unknown>[]): Promise<OutputPart> {
     const partId = randomUUID();
     for (const r of rows) r._part_id = partId;
@@ -167,26 +242,67 @@ export class ParquetWriterPool {
     return part;
   }
 
+    /**
+   * Gets the buffered rows.
+   * @returns The numeric result
+   */
   get bufferedRows(): number {
     return Object.values(this.buffers).reduce((a, b) => a + b.length, 0);
   }
 
+    /**
+   * Gets the buffered bytes.
+   * @returns The numeric result
+   */
   get bufferedBytes(): number {
     return this.bufferBytes;
   }
 
+    /**
+   * Gets the all part paths.
+   * @returns The list of results
+   */
   get allPartPaths(): string[] {
     return this.parts.map((p) => p.s3_path);
   }
 }
 
+/**
+ * RubbishLogWriter is responsible for rubbish log writer operations.
+ */
 export class RubbishLogWriter {
+    /**
+   * Job Id
+   * @private
+   */
   private jobId: string;
+    /**
+   * Bucket
+   * @private
+   */
   private bucket: string;
+    /**
+   * S3 Key
+   * @private
+   */
   private s3Key: string;
+    /**
+   * Buffer
+   * @private
+   */
   private buffer: string[];
+    /**
+   * Count
+   * @private
+   */
   private count: number;
 
+    /**
+   * Constructs a new RubbishLogWriter instance.
+   * @param jobId - The job identifier
+   * @param bucket - The bucket
+   * @param outputPrefix - The output prefix
+   */
   constructor(jobId: string, bucket: string, outputPrefix: string) {
     this.jobId = jobId;
     this.bucket = bucket;
@@ -195,6 +311,13 @@ export class RubbishLogWriter {
     this.count = 0;
   }
 
+    /**
+   * Writes the operation
+   * @param byteOffset - The byte offset
+   * @param lineNo - The line no
+   * @param rawLine - The raw line
+   * @param templateId - The template id
+   */
   write(byteOffset: number, lineNo: number, rawLine: string, templateId: string): void {
     this.buffer.push(
       JSON.stringify({
@@ -208,6 +331,10 @@ export class RubbishLogWriter {
     this.count += 1;
   }
 
+    /**
+   * Flushes the operation
+   * @returns A promise that resolves to the result
+   */
   async flush(): Promise<string | null> {
     if (!this.buffer.length) return null;
     const body = Buffer.from(this.buffer.join("\n"));
@@ -216,20 +343,48 @@ export class RubbishLogWriter {
     return `s3://${this.bucket}/${this.s3Key}`;
   }
 
+    /**
+   * Gets counter
+   * @returns The numeric result
+   */
   getCounter(): number {
     return this.count;
   }
 }
 
+/**
+ * DLQWriter is responsible for d l q writer operations.
+ */
 export class DLQWriter {
+    /**
+   * Job Id
+   * @private
+   */
   private jobId: string;
+    /**
+   * Count
+   * @private
+   */
   private count: number;
 
+    /**
+   * Constructs a new DLQWriter instance.
+   * @param jobId - The job identifier
+   */
   constructor(jobId: string) {
     this.jobId = jobId;
     this.count = 0;
   }
 
+    /**
+   * Writes the operation
+   * @param byteOffset - The byte offset
+   * @param byteLength - The byte length
+   * @param lineNo - The line no
+   * @param rawLine - The raw line
+   * @param failureClass - The failure class
+   * @param error - The error that occurred
+   */
   async write(byteOffset: number, byteLength: number, lineNo: number, rawLine: string, failureClass: string, error: string): Promise<void> {
     const { sendMessage } = await import("@shared/QueueService.js");
     const { FailureClass } = await import("@shared/models/job.js");
@@ -267,11 +422,20 @@ export class DLQWriter {
     this.count += 1;
   }
 
+    /**
+   * Gets counter
+   * @returns The numeric result
+   */
   getCounter(): number {
     return this.count;
   }
 }
 
+/**
+ * Builds schema
+ * @param rows - The rows
+ * @returns The parquet schema result
+ */
 export function buildSchema(rows: Record<string, unknown>[]): ParquetSchema {
   const schemaObj: SchemaDefinition = {};
   for (const row of rows) {
@@ -285,6 +449,11 @@ export function buildSchema(rows: Record<string, unknown>[]): ParquetSchema {
   return new ParquetSchema(schemaObj);
 }
 
+/**
+ * Performs the type for value operation.
+ * @param v - The v
+ * @returns The parquet type result
+ */
 function typeForValue(v: unknown): ParquetType {
   if (v === null || v === undefined) return "UTF8";
   if (typeof v === "boolean") return "BOOLEAN";

@@ -1,13 +1,33 @@
 import { randomUUID } from "crypto";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
+/**
+ * The e n d p o i n t
+ */
 const ENDPOINT = "http://localhost:4566";
+/**
+ * The r e g i o n
+ */
 const REGION = "us-east-1";
+/**
+ * The c r e d e n t i a l s
+ */
 const CREDENTIALS = { accessKeyId: "test", secretAccessKey: "test" };
+/**
+ * The d a t a_ b u c k e t
+ */
 const DATA_BUCKET = "datalead-osint";
 
+/**
+ * The s3
+ */
 const s3 = new S3Client({ endpoint: ENDPOINT, region: REGION, credentials: CREDENTIALS, forcePathStyle: true });
 
+/**
+ * Performs the generate large csv operation.
+ * @param rows - The rows
+ * @returns A promise that resolves to the result
+ */
 async function generateLargeCsv(rows: number): Promise<string> {
   const lines: string[] = ["id,name,email,created_at"];
   for (let i = 1; i <= rows; i++) {
@@ -16,6 +36,11 @@ async function generateLargeCsv(rows: number): Promise<string> {
   return lines.join("\n");
 }
 
+/**
+ * Uploads large file
+ * @param rows - The rows
+ * @returns A promise that resolves to the result
+ */
 async function uploadLargeFile(rows: number): Promise<string> {
   const csv = await generateLargeCsv(rows);
   const key = `test/perf-${rows}rows-${randomUUID()}.csv`;
@@ -24,6 +49,10 @@ async function uploadLargeFile(rows: number): Promise<string> {
   return key;
 }
 
+/**
+ * Performs the test backfill performance operation.
+ * @param rows - The rows
+ */
 async function testBackfillPerformance(rows: number): Promise<void> {
   console.log(`\n=== Testing backfill performance with ${rows} rows ===`);
   const startTime = Date.now();
@@ -70,6 +99,9 @@ async function testBackfillPerformance(rows: number): Promise<void> {
   await s3.send(new PutObjectCommand({ Bucket: DATA_BUCKET, Key: s3Key, Body: "" }));
 }
 
+/**
+ * Runs performance tests
+ */
 async function runPerformanceTests(): Promise<void> {
   console.log("Starting finalize backfill performance tests...");
   

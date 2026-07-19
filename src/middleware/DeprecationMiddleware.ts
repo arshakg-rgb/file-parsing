@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 
+/**
+ * DeprecationMiddleware is responsible for deprecation middleware operations.
+ */
 export class DeprecationMiddleware {
   /**
    * Adds deprecation warning headers to API responses

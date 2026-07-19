@@ -4,16 +4,45 @@ import Config from "@config/system-config/Config.js";
 import { decode } from "@utils/normalizers/Normalizer.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 
+/**
+ * Performs the enforce operation.
+ */
 function Enforce(): void {}
 
+/**
+ * The g c s_ r e t r i e s
+ */
 const GCS_RETRIES = 3;
+/**
+ * The g c s_ t i m e o u t_ m s
+ */
 const GCS_TIMEOUT_MS = 7200000; // Increased to 7200s (2 hours) for very large files
 
+/**
+ * FirestoreCacheUtils provides utility helpers.
+ */
 class FirestoreCacheUtils {
+    /**
+   * Singleton instance
+   * @private
+   */
   private static instance: FirestoreCacheUtils;
+    /**
+   * Storage
+   * @private
+   */
   private storage: Storage;
+    /**
+   * Config
+   * @private
+   */
   private config: Config;
 
+    /**
+   * Constructs a new FirestoreCacheUtils instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate FirestoreCacheUtils directly. Use getInstance()");
@@ -27,6 +56,10 @@ class FirestoreCacheUtils {
     });
   }
 
+    /**
+   * Gets the single instance of the FirestoreCacheUtils class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): FirestoreCacheUtils {
     if (!FirestoreCacheUtils.instance) {
       FirestoreCacheUtils.instance = new FirestoreCacheUtils(Enforce);
@@ -34,14 +67,27 @@ class FirestoreCacheUtils {
     return FirestoreCacheUtils.instance;
   }
 
+    /**
+   * Gets storage
+   * @returns The storage result
+   */
   public getStorage(): Storage {
     return this.storage;
   }
 
+    /**
+   * Gets config
+   * @returns The config result
+   */
   public getConfig(): Config {
     return this.config;
   }
 
+    /**
+   * Checks whether retryable
+   * @param err - The error that occurred
+   * @returns True if the condition is met, false otherwise
+   */
   private isRetryable(err: unknown): boolean {
     if (!err) return false;
     const code = (err as { code?: string | number }).code;
@@ -52,6 +98,13 @@ class FirestoreCacheUtils {
     return true;
   }
 
+    /**
+   * Performs the with retry operation.
+   * @param fn - The fn
+   * @param retries - The number of retries
+   * @param delay - The delay
+   * @returns A promise that resolves to the result
+   */
   private async withRetry<T>(fn: () => Promise<T>, retries = GCS_RETRIES, delay = 200): Promise<T> {
     let lastErr: unknown;
     for (let i = 0; i <= retries; i++) {
@@ -68,6 +121,12 @@ class FirestoreCacheUtils {
     throw lastErr;
   }
 
+    /**
+   * Performs the with timeout operation.
+   * @param fn - The fn
+   * @param ms - The ms
+   * @returns A promise that resolves to the result
+   */
   private async withTimeout<T>(fn: () => Promise<T>, ms: number): Promise<T> {
     return Promise.race([
       fn(),
@@ -85,6 +144,12 @@ class FirestoreCacheUtils {
     return [rest.slice(0, slash), rest.slice(slash + 1)];
   }
 
+    /**
+   * Performs the object size operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @returns A promise that resolves to the result
+   */
   public async objectSize(bucket: string, key: string): Promise<number> {
     return this.withRetry(
       () => this.withTimeout(async () => {
@@ -95,6 +160,14 @@ class FirestoreCacheUtils {
     );
   }
 
+    /**
+   * Reads range
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param start - The start
+   * @param end - The end
+   * @returns A promise that resolves to the result
+   */
   public async readRange(bucket: string, key: string, start: number, end: number): Promise<Buffer> {
     return this.withRetry(
       () => this.withTimeout(async () => {
@@ -109,6 +182,12 @@ class FirestoreCacheUtils {
     );
   }
 
+    /**
+   * Reads full
+   * @param bucket - The bucket
+   * @param key - The key
+   * @returns A promise that resolves to the result
+   */
   public async readFull(bucket: string, key: string): Promise<Buffer> {
     return this.withRetry(
       () => this.withTimeout(async () => {
@@ -119,6 +198,13 @@ class FirestoreCacheUtils {
     );
   }
 
+    /**
+   * Performs the put object operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param body - The body
+   * @param contentType - The content type
+   */
   public async putObject(
     bucket: string,
     key: string,
@@ -136,14 +222,33 @@ class FirestoreCacheUtils {
     );
   }
 
+    /**
+   * Performs the put json operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param data - The data to process
+   */
   public async putJson(bucket: string, key: string, data: Record<string, unknown>): Promise<void> {
     await this.putObject(bucket, key, Buffer.from(JSON.stringify(data, null, 2), "utf-8"), "application/json");
   }
 
+    /**
+   * Performs the put parquet operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param body - The body
+   */
   public async putParquet(bucket: string, key: string, body: Buffer): Promise<void> {
     await this.putObject(bucket, key, body, "application/octet-stream");
   }
 
+    /**
+   * Copies object
+   * @param srcBucket - The src bucket
+   * @param srcKey - The src key
+   * @param dstBucket - The dst bucket
+   * @param dstKey - The dst key
+   */
   public async copyObject(
     srcBucket: string,
     srcKey: string,
@@ -174,6 +279,13 @@ class FirestoreCacheUtils {
     }
   }
 
+    /**
+   * Performs the stream copy operation.
+   * @param srcBucket - The src bucket
+   * @param srcKey - The src key
+   * @param dstBucket - The dst bucket
+   * @param dstKey - The dst key
+   */
   private async streamCopy(
     srcBucket: string,
     srcKey: string,
@@ -220,6 +332,12 @@ class FirestoreCacheUtils {
     });
   }
 
+    /**
+   * Performs the list objects operation.
+   * @param bucket - The bucket
+   * @param prefix - The prefix
+   * @returns A promise that resolves to the list
+   */
   public async listObjects(bucket: string, prefix: string): Promise<[string, number][]> {
     return this.withRetry(
       () => this.withTimeout(async () => {
@@ -230,6 +348,14 @@ class FirestoreCacheUtils {
     );
   }
 
+    /**
+   * Performs the presigned put url operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param expiresIn - The expires in
+   * @param contentType - The content type
+   * @returns A promise that resolves to the result
+   */
   public async presignedPutUrl(bucket: string, key: string, expiresIn = 3600, contentType = "application/octet-stream"): Promise<string> {
     return this.withRetry(
       () => this.withTimeout(async () => {
@@ -247,6 +373,14 @@ class FirestoreCacheUtils {
     );
   }
 
+    /**
+   * Performs the stream lines operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param chunkSize - The chunk size
+   * @param encoding - The encoding
+   * @returns The async generator<[string, number, number]> result
+   */
   public async* streamLines(
     bucket: string,
     key: string,
@@ -289,10 +423,24 @@ class FirestoreCacheUtils {
     }
   }
 
+    /**
+   * Splits all lines
+   * @param data - The data to process
+   * @param encoding - The encoding
+   * @returns The list of results
+   */
   public splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] {
     return [...this.splitBytesToLines(data, 0, encoding, { inQuote: false })];
   }
 
+    /**
+   * Splits bytes to lines
+   * @param data - The data to process
+   * @param baseOffset - The base offset
+   * @param encoding - The encoding
+   * @param state - The state
+   * @returns The generator<[string, number, number]> result
+   */
   private* splitBytesToLines(
     data: Buffer,
     baseOffset: number,
@@ -308,6 +456,14 @@ class FirestoreCacheUtils {
     }
   }
 
+    /**
+   * Performs the scan lines operation.
+   * @param data - The data to process
+   * @param dataBase - The data base
+   * @param encoding - The encoding
+   * @param state - The state
+   * @returns The generator<[string, number, number], { line start: number; ended at boundary: boolean }, void> result
+   */
   private* scanLines(
     data: Buffer,
     dataBase: number,
@@ -372,6 +528,11 @@ class FirestoreCacheUtils {
     return { lineStart, endedAtBoundary };
   }
 
+    /**
+   * Performs the sha256 hex operation.
+   * @param data - The data to process
+   * @returns The string result
+   */
   public sha256Hex(data: Buffer): string {
     return crypto.createHash("sha256").update(data).digest("hex");
   }
@@ -387,26 +548,61 @@ export default FirestoreCacheUtils;
 // Backward compatibility wrappers
 const cacheUtils = FirestoreCacheUtils.getInstance();
 
+/**
+ * Performs the gcs client operation.
+ */
 export function gcsClient() {
   return cacheUtils.getStorage();
 }
 
+/**
+ * Parses gcs url
+ * @param url - The URL to process
+ * @returns The [string, string] result
+ */
 export function parseGcsUrl(url: string): [string, string] {
   return cacheUtils.parseGcsUrl(url);
 }
 
+/**
+ * Performs the object size operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @returns A promise that resolves to the result
+ */
 export async function objectSize(bucket: string, key: string): Promise<number> {
   return cacheUtils.objectSize(bucket, key);
 }
 
+/**
+ * Reads range
+ * @param bucket - The bucket
+ * @param key - The key
+ * @param start - The start
+ * @param end - The end
+ * @returns A promise that resolves to the result
+ */
 export async function readRange(bucket: string, key: string, start: number, end: number): Promise<Buffer> {
   return cacheUtils.readRange(bucket, key, start, end);
 }
 
+/**
+ * Reads full
+ * @param bucket - The bucket
+ * @param key - The key
+ * @returns A promise that resolves to the result
+ */
 export async function readFull(bucket: string, key: string): Promise<Buffer> {
   return cacheUtils.readFull(bucket, key);
 }
 
+/**
+ * Performs the put object operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @param body - The body
+ * @param contentType - The content type
+ */
 export async function putObject(
   bucket: string,
   key: string,
@@ -416,14 +612,33 @@ export async function putObject(
   return cacheUtils.putObject(bucket, key, body, contentType);
 }
 
+/**
+ * Performs the put json operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @param data - The data to process
+ */
 export async function putJson(bucket: string, key: string, data: Record<string, unknown>): Promise<void> {
   return cacheUtils.putJson(bucket, key, data);
 }
 
+/**
+ * Performs the put parquet operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @param body - The body
+ */
 export async function putParquet(bucket: string, key: string, body: Buffer): Promise<void> {
   return cacheUtils.putParquet(bucket, key, body);
 }
 
+/**
+ * Copies object
+ * @param srcBucket - The src bucket
+ * @param srcKey - The src key
+ * @param dstBucket - The dst bucket
+ * @param dstKey - The dst key
+ */
 export async function copyObject(
   srcBucket: string,
   srcKey: string,
@@ -433,14 +648,36 @@ export async function copyObject(
   return cacheUtils.copyObject(srcBucket, srcKey, dstBucket, dstKey);
 }
 
+/**
+ * Performs the list objects operation.
+ * @param bucket - The bucket
+ * @param prefix - The prefix
+ * @returns A promise that resolves to the list
+ */
 export async function listObjects(bucket: string, prefix: string): Promise<[string, number][]> {
   return cacheUtils.listObjects(bucket, prefix);
 }
 
+/**
+ * Performs the presigned put url operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @param expiresIn - The expires in
+ * @param contentType - The content type
+ * @returns A promise that resolves to the result
+ */
 export async function presignedPutUrl(bucket: string, key: string, expiresIn = 3600, contentType = "application/octet-stream"): Promise<string> {
   return cacheUtils.presignedPutUrl(bucket, key, expiresIn, contentType);
 }
 
+/**
+ * Performs the stream lines operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @param chunkSize - The chunk size
+ * @param encoding - The encoding
+ * @returns The async generator<[string, number, number]> result
+ */
 export async function* streamLines(
   bucket: string,
   key: string,
@@ -450,10 +687,21 @@ export async function* streamLines(
   yield* cacheUtils.streamLines(bucket, key, chunkSize, encoding);
 }
 
+/**
+ * Splits all lines
+ * @param data - The data to process
+ * @param encoding - The encoding
+ * @returns The list of results
+ */
 export function splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] {
   return cacheUtils.splitAllLines(data, encoding);
 }
 
+/**
+ * Performs the sha256 hex operation.
+ * @param data - The data to process
+ * @returns The string result
+ */
 export function sha256Hex(data: Buffer): string {
   return cacheUtils.sha256Hex(data);
 }

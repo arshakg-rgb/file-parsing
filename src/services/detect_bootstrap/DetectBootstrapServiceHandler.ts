@@ -45,12 +45,28 @@ interface ClassifyResponse {
  * @class DetectBootstrapService
  */
 export class DetectBootstrapService {
+    /**
+   * Singleton instance
+   * @private
+   */
   private static instance: DetectBootstrapService;
   
   // Instance state
   private running: boolean = false;
+    /**
+   * Total Bootstraps
+   * @private
+   */
   private totalBootstraps: number = 0;
+    /**
+   * Total Probes
+   * @private
+   */
   private totalProbes: number = 0;
+    /**
+   * Total Templates Created
+   * @private
+   */
   private totalTemplatesCreated: number = 0;
   
   // Statistics

@@ -15,17 +15,61 @@ export interface ProbeResult {
   sampleLines: string[];
 }
 
+/**
+ * AdaptiveProbing is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 export class AdaptiveProbing extends ServiceManager {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: AdaptiveProbing;
+    /**
+   * Logger instance
+   * @private
+   */
   private logger: Logger;
+    /**
+   * Gcs Utils
+   * @private
+   */
   private gcsUtils: FirestoreCacheUtils;
+    /**
+   * P R O B E_ S I Z E_ P E R_ C O U N T
+   * @private
+   */
   private readonly PROBE_SIZE_PER_COUNT = 536870912; // 512MB
+    /**
+   * P R O B E_ C O U N T_ M I N
+   * @private
+   */
   private readonly PROBE_COUNT_MIN = 1;
+    /**
+   * P R O B E_ C O U N T_ M A X
+   * @private
+   */
   private readonly PROBE_COUNT_MAX = 10;
+    /**
+   * P R O B E_ W I N D O W_ M I N_ B Y T E S
+   * @private
+   */
   private readonly PROBE_WINDOW_MIN_BYTES = 65536; // 64KB
+    /**
+   * P R O B E_ W I N D O W_ M A X_ B Y T E S
+   * @private
+   */
   private readonly PROBE_WINDOW_MAX_BYTES = 1048576; // 1MB
+    /**
+   * P R O B E_ T A R G E T_ L I N E S
+   * @private
+   */
   private readonly PROBE_TARGET_LINES = 150;
 
+    /**
+   * Constructs a new AdaptiveProbing instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate AdaptiveProbing directly. Use getInstance()");
@@ -36,6 +80,10 @@ export class AdaptiveProbing extends ServiceManager {
     this.gcsUtils = FirestoreCacheUtils.getInstance();
   }
 
+    /**
+   * Gets the single instance of the AdaptiveProbing class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): AdaptiveProbing {
     if (!AdaptiveProbing.instance) {
       AdaptiveProbing.instance = new AdaptiveProbing(Enforce);
@@ -43,6 +91,11 @@ export class AdaptiveProbing extends ServiceManager {
     return AdaptiveProbing.instance;
   }
 
+    /**
+   * Calculates probe count
+   * @param fileSize - The file size
+   * @returns The numeric result
+   */
   public calculateProbeCount(fileSize: number): number {
     const sizePerProbe = this.PROBE_SIZE_PER_COUNT;
     const idealCount = Math.ceil(fileSize / sizePerProbe);
@@ -53,6 +106,12 @@ export class AdaptiveProbing extends ServiceManager {
     );
   }
 
+    /**
+   * Calculates probe window
+   * @param avgRowWidth - The avg row width
+   * @param maxRowWidth - The max row width
+   * @returns The numeric result
+   */
   public calculateProbeWindow(avgRowWidth: number, maxRowWidth: number): number {
     const minWidth = this.PROBE_WINDOW_MIN_BYTES;
     const maxWidth = this.PROBE_WINDOW_MAX_BYTES;
@@ -63,6 +122,12 @@ export class AdaptiveProbing extends ServiceManager {
     return Math.max(minWidth, Math.min(widthBased, maxWidth));
   }
 
+    /**
+   * Performs the generate probe offsets operation.
+   * @param fileSize - The file size
+   * @param probeCount - The probe count
+   * @returns The list of results
+   */
   public generateProbeOffsets(fileSize: number, probeCount: number): number[] {
     const offsets: number[] = [];
     
@@ -86,6 +151,14 @@ export class AdaptiveProbing extends ServiceManager {
     return [...new Set(offsets)].sort((a, b) => a - b);
   }
 
+    /**
+   * Executes probe
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param offset - The byte offset
+   * @param fileSize - The file size
+   * @returns A promise that resolves to the result
+   */
   public async executeProbe(
     bucket: string,
     key: string,
@@ -141,6 +214,12 @@ export class AdaptiveProbing extends ServiceManager {
     };
   }
 
+    /**
+   * Performs the probe file operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @returns A promise that resolves to the result
+   */
   public async probeFile(bucket: string, key: string): Promise<{
     fileSize: number;
     probeCount: number;
@@ -201,6 +280,16 @@ export class AdaptiveProbing extends ServiceManager {
     };
   }
 
+    /**
+   * Performs the analyze probes operation.
+   * @param probeResults - The probe results
+   * @returns The {
+   *     is homogeneous: boolean;
+   *     likely has embedded newlines: boolean;
+   *     likely has quoted fields: boolean;
+   *     suggested delimiter: string;
+   *   } result
+   */
   public analyzeProbes(probeResults: ProbeResult[]): {
     isHomogeneous: boolean;
     likelyHasEmbeddedNewlines: boolean;

@@ -14,6 +14,10 @@ import { startHealthCheckServer } from "@utils/response/health.js";
  * Custom error for password-related failures
  */
 class PasswordError extends Error {
+    /**
+   * Constructs a new PasswordError instance.
+   * @param message - The message
+   */
   constructor(message: string) {
     super(message);
     this.name = "PasswordError";
@@ -35,14 +39,38 @@ class PasswordError extends Error {
  * @class IngestService
  */
 export class IngestService {
+    /**
+   * Singleton instance
+   * @private
+   */
   private static instance: IngestService;
   
   // Instance state
   private running: boolean = false;
+    /**
+   * Total Ingests
+   * @private
+   */
   private totalIngests: number = 0;
+    /**
+   * Total Archives Extracted
+   * @private
+   */
   private totalArchivesExtracted: number = 0;
+    /**
+   * Total Passwords Provided
+   * @private
+   */
   private totalPasswordsProvided: number = 0;
+    /**
+   * Password Cache
+   * @private
+   */
   private passwordCache: Map<string, Buffer> = new Map();
+    /**
+   * Password Attempts
+   * @private
+   */
   private passwordAttempts: Map<string, number> = new Map();
   
   // Statistics
@@ -527,6 +555,11 @@ export async function handleIngest(msg: IngestMessage): Promise<void> {
   return ingestService.handleIngest(msg);
 }
 
+/**
+ * Handles password
+ * @param jobId - The job identifier
+ * @param password - The password
+ */
 export async function handlePassword(jobId: string, password: string): Promise<void> {
   return ingestService.handlePassword(jobId, password);
 }

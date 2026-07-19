@@ -1,6 +1,11 @@
 import { Request, Response, NextFunction } from "express";
 import { CustomError } from "@errors/CustomError.js";
 
+/**
+ * Logs an error for 404 handler
+ * @param req - The HTTP request object
+ * @param res - The HTTP response object
+ */
 export function error404Handler(req: Request, res: Response): void {
   res.status(404).json({
     error: {
@@ -12,6 +17,13 @@ export function error404Handler(req: Request, res: Response): void {
   });
 }
 
+/**
+ * Logs an error for page handler
+ * @param err - The error that occurred
+ * @param req - The HTTP request object
+ * @param res - The HTTP response object
+ * @param next - The next middleware function
+ */
 export function errorPageHandler(
   err: Error,
   req: Request,

@@ -6,17 +6,61 @@ import { InstantiationError } from "@errors/InstantiationError.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 import { decode } from "@utils/normalizers/encoding.js";
 
+/**
+ * GcsUtils is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class GcsUtils extends ServiceManager {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: GcsUtils;
+    /**
+   * Logger instance
+   * @private
+   */
   private logger: Logger;
+    /**
+   * Storage
+   * @private
+   */
   private storage: Storage | null = null;
+    /**
+   * G C S_ R E T R I E S
+   * @private
+   */
   private readonly GCS_RETRIES = 3;
+    /**
+   * G C S_ T I M E O U T_ M S
+   * @private
+   */
   private readonly GCS_TIMEOUT_MS = 7200000;
+    /**
+   * F E T C H_ C H U N K_ S I Z E
+   * @private
+   */
   private readonly FETCH_CHUNK_SIZE = 1048576;
+    /**
+   * S M A L L_ F I L E_ S I N G L E_ G E T_ T H R E S H O L D
+   * @private
+   */
   private readonly SMALL_FILE_SINGLE_GET_THRESHOLD = 104857600;
+    /**
+   * M A X_ Q U O T E D_ N E W L I N E S
+   * @private
+   */
   private readonly MAX_QUOTED_NEWLINES = 100;
+    /**
+   * M A X_ L I N E_ B Y T E S
+   * @private
+   */
   private readonly MAX_LINE_BYTES = 10485760;
 
+    /**
+   * Constructs a new GcsUtils instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate GcsUtils directly. Use getInstance()");
@@ -26,6 +70,10 @@ class GcsUtils extends ServiceManager {
     this.logger = createLogger("gcs-utils");
   }
 
+    /**
+   * Gets the single instance of the GcsUtils class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): GcsUtils {
     if (!GcsUtils.instance) {
       GcsUtils.instance = new GcsUtils(Enforce);
@@ -33,6 +81,10 @@ class GcsUtils extends ServiceManager {
     return GcsUtils.instance;
   }
 
+    /**
+   * Gets storage
+   * @returns The storage result
+   */
   public getStorage(): Storage {
     if (!this.storage) {
       const config = this.getConfig();
@@ -46,6 +98,11 @@ class GcsUtils extends ServiceManager {
     return this.storage;
   }
 
+    /**
+   * Checks whether retryable
+   * @param err - The error that occurred
+   * @returns True if the condition is met, false otherwise
+   */
   private isRetryable(err: unknown): boolean {
     if (!err) return false;
     const code = (err as { code?: string | number }).code;
@@ -56,6 +113,13 @@ class GcsUtils extends ServiceManager {
     return true;
   }
 
+    /**
+   * Performs the with retry operation.
+   * @param fn - The fn
+   * @param retries - The number of retries
+   * @param delay - The delay
+   * @returns A promise that resolves to the result
+   */
   private async withRetry<T>(fn: () => Promise<T>, retries = this.GCS_RETRIES, delay = 200): Promise<T> {
     let lastErr: unknown;
     for (let i = 0; i <= retries; i++) {
@@ -72,6 +136,12 @@ class GcsUtils extends ServiceManager {
     throw lastErr;
   }
 
+    /**
+   * Performs the with timeout operation.
+   * @param fn - The fn
+   * @param ms - The ms
+   * @returns A promise that resolves to the result
+   */
   private async withTimeout<T>(fn: () => Promise<T>, ms: number): Promise<T> {
     return Promise.race([
       fn(),
@@ -79,6 +149,11 @@ class GcsUtils extends ServiceManager {
     ]);
   }
 
+    /**
+   * Parses gcs url
+   * @param url - The URL to process
+   * @returns The [string, string] result
+   */
   public parseGcsUrl(url: string): [string, string] {
     const prefix = url.startsWith("gs://") ? "gs://" : url.startsWith("s3://") ? "s3://" : null;
     if (!prefix) throw new Error(`Expected gs:// URL, got: ${url}`);
@@ -88,6 +163,12 @@ class GcsUtils extends ServiceManager {
     return [rest.slice(0, slash), rest.slice(slash + 1)];
   }
 
+    /**
+   * Performs the object size operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @returns A promise that resolves to the result
+   */
   public async objectSize(bucket: string, key: string): Promise<number> {
     return this.withRetry(
       () => this.withTimeout(async () => {
@@ -98,6 +179,14 @@ class GcsUtils extends ServiceManager {
     );
   }
 
+    /**
+   * Reads range
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param start - The start
+   * @param end - The end
+   * @returns A promise that resolves to the result
+   */
   public async readRange(bucket: string, key: string, start: number, end: number): Promise<Buffer> {
     return this.withRetry(
       () => this.withTimeout(async () => {
@@ -112,6 +201,12 @@ class GcsUtils extends ServiceManager {
     );
   }
 
+    /**
+   * Reads full
+   * @param bucket - The bucket
+   * @param key - The key
+   * @returns A promise that resolves to the result
+   */
   public async readFull(bucket: string, key: string): Promise<Buffer> {
     return this.withRetry(
       () => this.withTimeout(async () => {
@@ -122,6 +217,13 @@ class GcsUtils extends ServiceManager {
     );
   }
 
+    /**
+   * Performs the put object operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param body - The body
+   * @param contentType - The content type
+   */
   public async putObject(
     bucket: string,
     key: string,
@@ -139,14 +241,33 @@ class GcsUtils extends ServiceManager {
     );
   }
 
+    /**
+   * Performs the put json operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param data - The data to process
+   */
   public async putJson(bucket: string, key: string, data: Record<string, unknown>): Promise<void> {
     await this.putObject(bucket, key, Buffer.from(JSON.stringify(data, null, 2), "utf-8"), "application/json");
   }
 
+    /**
+   * Performs the put parquet operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param body - The body
+   */
   public async putParquet(bucket: string, key: string, body: Buffer): Promise<void> {
     await this.putObject(bucket, key, body, "application/octet-stream");
   }
 
+    /**
+   * Copies object
+   * @param srcBucket - The src bucket
+   * @param srcKey - The src key
+   * @param dstBucket - The dst bucket
+   * @param dstKey - The dst key
+   */
   public async copyObject(
     srcBucket: string,
     srcKey: string,
@@ -177,6 +298,13 @@ class GcsUtils extends ServiceManager {
     }
   }
 
+    /**
+   * Performs the stream copy operation.
+   * @param srcBucket - The src bucket
+   * @param srcKey - The src key
+   * @param dstBucket - The dst bucket
+   * @param dstKey - The dst key
+   */
   private async streamCopy(
     srcBucket: string,
     srcKey: string,
@@ -223,6 +351,12 @@ class GcsUtils extends ServiceManager {
     });
   }
 
+    /**
+   * Performs the list objects operation.
+   * @param bucket - The bucket
+   * @param prefix - The prefix
+   * @returns A promise that resolves to the list
+   */
   public async listObjects(bucket: string, prefix: string): Promise<[string, number][]> {
     return this.withRetry(
       () => this.withTimeout(async () => {
@@ -233,6 +367,14 @@ class GcsUtils extends ServiceManager {
     );
   }
 
+    /**
+   * Performs the presigned put url operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param expiresIn - The expires in
+   * @param contentType - The content type
+   * @returns A promise that resolves to the result
+   */
   public async presignedPutUrl(bucket: string, key: string, expiresIn = 3600, contentType = "application/octet-stream"): Promise<string> {
     return this.withRetry(
       () => this.withTimeout(async () => {
@@ -250,6 +392,14 @@ class GcsUtils extends ServiceManager {
     );
   }
 
+    /**
+   * Performs the stream lines operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param chunkSize - The chunk size
+   * @param encoding - The encoding
+   * @returns The async generator<[string, number, number]> result
+   */
   public async *streamLines(
     bucket: string,
     key: string,
@@ -293,10 +443,24 @@ class GcsUtils extends ServiceManager {
     }
   }
 
+    /**
+   * Splits all lines
+   * @param data - The data to process
+   * @param encoding - The encoding
+   * @returns The list of results
+   */
   public splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] {
     return [...this.splitBytesToLines(data, 0, encoding, { inQuote: false })];
   }
 
+    /**
+   * Splits bytes to lines
+   * @param data - The data to process
+   * @param baseOffset - The base offset
+   * @param encoding - The encoding
+   * @param state - The state
+   * @returns The generator<[string, number, number]> result
+   */
   private *splitBytesToLines(
     data: Buffer,
     baseOffset: number,
@@ -312,6 +476,14 @@ class GcsUtils extends ServiceManager {
     }
   }
 
+    /**
+   * Performs the scan lines operation.
+   * @param data - The data to process
+   * @param dataBase - The data base
+   * @param encoding - The encoding
+   * @param state - The state
+   * @returns The generator<[string, number, number], { line start: number; ended at boundary: boolean }, void> result
+   */
   private *scanLines(
     data: Buffer,
     dataBase: number,
@@ -376,6 +548,11 @@ class GcsUtils extends ServiceManager {
     return { lineStart, endedAtBoundary };
   }
 
+    /**
+   * Performs the sha256 hex operation.
+   * @param data - The data to process
+   * @returns The string result
+   */
   public sha256Hex(data: Buffer): string {
     return crypto.createHash("sha256").update(data).digest("hex");
   }
@@ -384,28 +561,67 @@ class GcsUtils extends ServiceManager {
 
 export default GcsUtils;
 
+/**
+ * The gcs utils
+ */
 const gcsUtils = GcsUtils.getInstance();
 
+/**
+ * Performs the gcs client operation.
+ * @returns The storage result
+ */
 export function gcsClient(): Storage {
   return gcsUtils.getStorage();
 }
 
+/**
+ * Parses gcs url
+ * @param url - The URL to process
+ * @returns The [string, string] result
+ */
 export function parseGcsUrl(url: string): [string, string] {
   return gcsUtils.parseGcsUrl(url);
 }
 
+/**
+ * Performs the object size operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @returns A promise that resolves to the result
+ */
 export function objectSize(bucket: string, key: string): Promise<number> {
   return gcsUtils.objectSize(bucket, key);
 }
 
+/**
+ * Reads range
+ * @param bucket - The bucket
+ * @param key - The key
+ * @param start - The start
+ * @param end - The end
+ * @returns A promise that resolves to the result
+ */
 export function readRange(bucket: string, key: string, start: number, end: number): Promise<Buffer> {
   return gcsUtils.readRange(bucket, key, start, end);
 }
 
+/**
+ * Reads full
+ * @param bucket - The bucket
+ * @param key - The key
+ * @returns A promise that resolves to the result
+ */
 export function readFull(bucket: string, key: string): Promise<Buffer> {
   return gcsUtils.readFull(bucket, key);
 }
 
+/**
+ * Performs the put object operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @param body - The body
+ * @param contentType - The content type
+ */
 export function putObject(
   bucket: string,
   key: string,
@@ -415,14 +631,33 @@ export function putObject(
   return gcsUtils.putObject(bucket, key, body, contentType);
 }
 
+/**
+ * Performs the put json operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @param data - The data to process
+ */
 export function putJson(bucket: string, key: string, data: Record<string, unknown>): Promise<void> {
   return gcsUtils.putJson(bucket, key, data);
 }
 
+/**
+ * Performs the put parquet operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @param body - The body
+ */
 export function putParquet(bucket: string, key: string, body: Buffer): Promise<void> {
   return gcsUtils.putParquet(bucket, key, body);
 }
 
+/**
+ * Copies object
+ * @param srcBucket - The src bucket
+ * @param srcKey - The src key
+ * @param dstBucket - The dst bucket
+ * @param dstKey - The dst key
+ */
 export function copyObject(
   srcBucket: string,
   srcKey: string,
@@ -432,14 +667,36 @@ export function copyObject(
   return gcsUtils.copyObject(srcBucket, srcKey, dstBucket, dstKey);
 }
 
+/**
+ * Performs the list objects operation.
+ * @param bucket - The bucket
+ * @param prefix - The prefix
+ * @returns A promise that resolves to the list
+ */
 export function listObjects(bucket: string, prefix: string): Promise<[string, number][]> {
   return gcsUtils.listObjects(bucket, prefix);
 }
 
+/**
+ * Performs the presigned put url operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @param expiresIn - The expires in
+ * @param contentType - The content type
+ * @returns A promise that resolves to the result
+ */
 export function presignedPutUrl(bucket: string, key: string, expiresIn = 3600, contentType = "application/octet-stream"): Promise<string> {
   return gcsUtils.presignedPutUrl(bucket, key, expiresIn, contentType);
 }
 
+/**
+ * Performs the stream lines operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @param chunkSize - The chunk size
+ * @param encoding - The encoding
+ * @returns The async generator<[string, number, number]> result
+ */
 export async function* streamLines(
   bucket: string,
   key: string,
@@ -449,10 +706,21 @@ export async function* streamLines(
   yield* gcsUtils.streamLines(bucket, key, chunkSize, encoding);
 }
 
+/**
+ * Splits all lines
+ * @param data - The data to process
+ * @param encoding - The encoding
+ * @returns The list of results
+ */
 export function splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] {
   return gcsUtils.splitAllLines(data, encoding);
 }
 
+/**
+ * Performs the sha256 hex operation.
+ * @param data - The data to process
+ * @returns The string result
+ */
 export function sha256Hex(data: Buffer): string {
   return gcsUtils.sha256Hex(data);
 }

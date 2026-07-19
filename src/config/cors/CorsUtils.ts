@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from "express";
 
+/**
+ * CorsUtils provides utility helpers.
+ */
 class CorsUtils {
   /**
    * Setup CORS middleware

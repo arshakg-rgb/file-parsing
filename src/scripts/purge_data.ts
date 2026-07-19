@@ -1,8 +1,14 @@
 import MySqlManager from "@config/db/MySqlManager.js";
 import { createLogger } from "@utils/logger/logger.js";
 
+/**
+ * Logger instance for the module
+ */
 const logger = createLogger("purge-data");
 
+/**
+ * Performs the purge database operation.
+ */
 export async function purgeDatabase(): Promise<void> {
   logger.info("Starting database purge...");
 
@@ -29,6 +35,9 @@ export async function purgeDatabase(): Promise<void> {
   logger.info("Database purge complete");
 }
 
+/**
+ * Main entry point of the application
+ */
 async function main() {
   try {
     await purgeDatabase();

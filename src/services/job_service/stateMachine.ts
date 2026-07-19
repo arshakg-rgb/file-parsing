@@ -7,17 +7,37 @@ import { randomUUID } from "crypto";
 import { SourceType } from "@shared/models/job.js";
 import { finalizeOutput } from "./FinalizationService.js";
 
+/**
+ * Class representing a transition error error.
+ */
 export class TransitionError extends Error {
+    /**
+   * Constructs a new TransitionError instance.
+   * @param message - The message
+   */
   constructor(message: string) {
     super(message);
     this.name = "TransitionError";
   }
 }
 
+/**
+ * Gets job
+ * @param jobId - The job identifier
+ * @returns A promise that resolves to the result
+ */
 export async function getJob(jobId: string): Promise<ParseJobRow | undefined> {
   return repositories.jobs.findById(jobId) as Promise<ParseJobRow | undefined>;
 }
 
+/**
+ * Performs the transition operation.
+ * @param jobId - The job identifier
+ * @param newStatus - The new status
+ * @param error - The error that occurred
+ * @param extraFields - The extra fields
+ * @returns A promise that resolves to the result
+ */
 export async function transition(
   jobId: string,
   newStatus: JobStatus,
@@ -70,6 +90,10 @@ export async function transition(
   return (await getJob(jobId))!;
 }
 
+/**
+ * Handles event
+ * @param event - The event
+ */
 export async function handleEvent(event: JobEvent): Promise<void> {
   const etype = event.event_type;
 
@@ -102,6 +126,10 @@ export async function handleEvent(event: JobEvent): Promise<void> {
   }
 }
 
+/**
+ * Creates child job
+ * @param event - The event
+ */
 async function createChildJob(event: JobEvent): Promise<void> {
   const data = event.data as unknown as EntryDiscoveredData;
   const now = new Date().toISOString();
@@ -138,6 +166,10 @@ async function createChildJob(event: JobEvent): Promise<void> {
   console.log("child_job_created", { parent: data.parent_job_id, child: childId });
 }
 
+/**
+ * Handles the parsing completed
+ * @param event - The event
+ */
 async function onParsingCompleted(event: JobEvent): Promise<void> {
   const data = event.data as unknown as ParsingCompletedData;
   console.log("parsing_completed_received", { job_id: event.job_id, parsed: data.parsed, dropped: data.dropped_rubbish, failed: data.failed, part_count: data.part_s3_paths.length });

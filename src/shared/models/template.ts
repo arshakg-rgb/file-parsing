@@ -25,6 +25,10 @@ export interface FieldLocator {
   key?: string;
 }
 
+/**
+ * Validates field locator
+ * @param loc - The loc
+ */
 export function validateFieldLocator(loc: FieldLocator): void {
   const set = [loc.index, loc.regex, loc.key].filter((v) => v !== null && v !== undefined);
   if (set.length !== 1) {
@@ -61,6 +65,10 @@ export interface Template {
   updated_at: string;
 }
 
+/**
+ * Validates template
+ * @param t - The t
+ */
 export function validateTemplate(t: Template): void {
   if (t.kind === TemplateKind.RECORD && !t.record) {
     throw new Error("Template with kind=record must have record data");
@@ -89,6 +97,13 @@ export interface ClassifyResponse {
   reasoning?: string;
 }
 
+/**
+ * Performs the make record template operation.
+ * @param record - The record
+ * @param fingerprint - The fingerprint
+ * @param source - The source
+ * @returns The template result
+ */
 export function makeRecordTemplate(
   record: RecordTemplateData,
   fingerprint: string,
@@ -107,6 +122,13 @@ export function makeRecordTemplate(
   };
 }
 
+/**
+ * Performs the make rubbish template operation.
+ * @param rubbish - The rubbish
+ * @param fingerprint - The fingerprint
+ * @param source - The source
+ * @returns The template result
+ */
 export function makeRubbishTemplate(
   rubbish: RubbishTemplateData,
   fingerprint: string,
@@ -128,10 +150,20 @@ export function makeRubbishTemplate(
   };
 }
 
+/**
+ * Checks whether record
+ * @param t - The t
+ * @returns True if the condition is met, false otherwise
+ */
 export function isRecord(t: Template): boolean {
   return t.kind === TemplateKind.RECORD;
 }
 
+/**
+ * Checks whether rubbish
+ * @param t - The t
+ * @returns True if the condition is met, false otherwise
+ */
 export function isRubbish(t: Template): boolean {
   return t.kind === TemplateKind.RUBBISH;
 }

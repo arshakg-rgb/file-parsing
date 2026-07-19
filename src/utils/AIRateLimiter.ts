@@ -3,15 +3,35 @@
  * Implements token bucket algorithm with RPM and burst limits
  */
 export class AIRateLimiter {
+    /**
+   * Requests
+   * @private
+   */
   private requests: number[] = [];
+    /**
+   * Rpm
+   * @private
+   */
   private rpm: number;
+    /**
+   * Burst
+   * @private
+   */
   private burst: number;
 
+    /**
+   * Constructs a new AIRateLimiter instance.
+   * @param rpm - The rpm
+   * @param burst - The burst
+   */
   constructor(rpm: number, burst: number) {
     this.rpm = rpm;
     this.burst = burst;
   }
 
+    /**
+   * Acquires the operation
+   */
   async acquire(): Promise<void> {
     const now = Date.now();
     const oneMinuteAgo = now - 60000;

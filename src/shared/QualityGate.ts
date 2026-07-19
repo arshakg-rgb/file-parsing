@@ -13,12 +13,36 @@ export interface QualityMetrics {
   failedLineRatio: number;
 }
 
+/**
+ * QualityGate is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 export class QualityGate extends ServiceManager {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: QualityGate;
+    /**
+   * Logger instance
+   * @private
+   */
   private logger: Logger;
+    /**
+   * Db Manager
+   * @private
+   */
   private dbManager: MySqlManager;
+    /**
+   * F A I L E D_ L I N E_ R A T I O_ T H R E S H O L D
+   * @private
+   */
   private readonly FAILED_LINE_RATIO_THRESHOLD: number;
 
+    /**
+   * Constructs a new QualityGate instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate QualityGate directly. Use getInstance()");
@@ -30,6 +54,10 @@ export class QualityGate extends ServiceManager {
     this.FAILED_LINE_RATIO_THRESHOLD = 0.1;
   }
 
+    /**
+   * Gets the single instance of the QualityGate class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): QualityGate {
     if (!QualityGate.instance) {
       QualityGate.instance = new QualityGate(Enforce);
@@ -37,6 +65,11 @@ export class QualityGate extends ServiceManager {
     return QualityGate.instance;
   }
 
+    /**
+   * Calculates metrics
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the result
+   */
   public async calculateMetrics(jobId: string): Promise<QualityMetrics> {
     const counts = await this.dbManager.repositories.jobs.getCounts(jobId);
     
@@ -57,6 +90,11 @@ export class QualityGate extends ServiceManager {
     };
   }
 
+    /**
+   * Performs the passes quality gate operation.
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the result
+   */
   public async passesQualityGate(jobId: string): Promise<{ passes: boolean; reason?: string }> {
     const metrics = await this.calculateMetrics(jobId);
     
@@ -76,6 +114,10 @@ export class QualityGate extends ServiceManager {
     return { passes: true };
   }
 
+    /**
+   * Performs the apply quality gate operation.
+   * @param jobId - The job identifier
+   */
   public async applyQualityGate(jobId: string): Promise<void> {
     const { passes, reason } = await this.passesQualityGate(jobId);
     
@@ -87,6 +129,11 @@ export class QualityGate extends ServiceManager {
     }
   }
 
+    /**
+   * Gets batch quality stats
+   * @param batchId - The batch identifier
+   * @returns A promise that resolves to the result
+   */
   public async getBatchQualityStats(batchId: string): Promise<{
     totalJobs: number;
     passedJobs: number;

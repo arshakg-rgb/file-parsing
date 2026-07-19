@@ -12,8 +12,14 @@ import CorsUtils from "@config/cors/CorsUtils.js";
 import ApiRouter from "@routes/ApiRouter.js";
 import { DeprecationMiddleware } from "@middleware/DeprecationMiddleware.js";
 
+/**
+ * Logger instance for the module
+ */
 const logger: Logger = createLogger("app");
 
+/**
+ * Application entry point class.
+ */
 export class App {
   /**
    * The Express application instance.
@@ -33,6 +39,10 @@ export class App {
    */
   private serviceManagers: ServiceManager[];
 
+    /**
+   * Constructs a new App instance.
+   * @param serviceManagers - The serviceManagers arguments
+   */
   constructor(...serviceManagers: ServiceManager[]) {
     this.app = express();
     this.initializeApp();

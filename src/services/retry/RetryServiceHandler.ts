@@ -7,20 +7,39 @@ import { DLQMessage } from "@shared/models/job.js";
  * This maintains backward compatibility while using the new service pattern
  */
 export class RetryService implements IRetry {
+    /**
+   * Service
+   * @private
+   */
   private service: RetryServiceImpl;
 
+    /**
+   * Constructs a new RetryService instance.
+   */
   constructor() {
     this.service = RetryServiceImpl.getInstance();
   }
 
+    /**
+   * Processes retry
+   * @param req - The HTTP request object
+   * @returns A promise that resolves to the result
+   */
   async processRetry(req: RetryRequest): Promise<RetryResponse> {
     return this.service.processRetry(req);
   }
 
+    /**
+   * Handles dlq entry
+   * @param msg - The msg
+   */
   async handleDlqEntry(msg: DLQMessage): Promise<void> {
     return this.service.handleDlqEntry(msg);
   }
 
+    /**
+   * Performs the consumer loop operation.
+   */
   async consumerLoop(): Promise<void> {
     return this.service.consumerLoop();
   }
@@ -33,10 +52,17 @@ export { IRetry, RetryRequest, RetryResponse } from "@service/retry/io/IRetry.js
 // Backward compatibility wrappers
 const retryService = new RetryService();
 
+/**
+ * Handles dlq entry
+ * @param msg - The msg
+ */
 export async function handleDlqEntry(msg: DLQMessage): Promise<void> {
   return retryService.handleDlqEntry(msg);
 }
 
+/**
+ * Performs the consumer loop operation.
+ */
 export async function consumerLoop(): Promise<void> {
   return retryService.consumerLoop();
 }

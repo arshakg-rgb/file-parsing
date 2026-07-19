@@ -49,17 +49,53 @@ function extractJsonFromMarkdown(raw: string): string {
  * @class AiClassifierService
  */
 export class AiClassifierService {
+    /**
+   * Singleton instance
+   * @private
+   */
   private static instance: AiClassifierService;
   
   // Instance state
   private running: boolean = false;
+    /**
+   * Total Classifications
+   * @private
+   */
   private totalClassifications: number = 0;
+    /**
+   * Cache Hits
+   * @private
+   */
   private cacheHits: number = 0;
+    /**
+   * Cache Misses
+   * @private
+   */
   private cacheMisses: number = 0;
+    /**
+   * Vertex Ai Calls
+   * @private
+   */
   private vertexAiCalls: number = 0;
+    /**
+   * Mock Classifications
+   * @private
+   */
   private mockClassifications: number = 0;
+    /**
+   * Csv Parse Successes
+   * @private
+   */
   private csvParseSuccesses: number = 0;
+    /**
+   * Csv Parse Failures
+   * @private
+   */
   private csvParseFailures: number = 0;
+    /**
+   * Gen A I Client
+   * @private
+   */
   private genAIClient: GoogleGenAI | null = null;
   
   /**
@@ -142,6 +178,12 @@ export class AiClassifierService {
     return this.genAIClient;
   }
 
+    /**
+   * Performs the ask vertex a i operation.
+   * @param prompt - The prompt
+   * @param timeoutMs - The timeout in milliseconds
+   * @returns A promise that resolves to the result
+   */
   private async askVertexAI(prompt: string, timeoutMs: number = 30000): Promise<string> {
     const MODEL = settings.VERTEX_MODEL || "gemini-2.5-flash";
     const ai = this.getGenAIClient();

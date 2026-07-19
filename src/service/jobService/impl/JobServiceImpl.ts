@@ -3,20 +3,46 @@ import { InstantiationError } from "@errors/InstantiationError.js";
 import { receiveMessages, deleteMessage } from "@shared/QueueService.js";
 import Config from "@config/system-config/Config.js";
 
+/**
+ * Performs the enforce operation.
+ */
 function Enforce(): void {}
 
+/**
+ * The config
+ */
 const config = Config.getInstance();
 
+/**
+ * JobServiceImpl implements the service interface.
+ */
 export class JobServiceImpl implements IJobService {
+    /**
+   * Singleton instance
+   * @private
+   */
   private static instance: JobServiceImpl;
+    /**
+   * Is Running
+   * @private
+   */
   private isRunning: boolean = false;
 
+    /**
+   * Constructs a new JobServiceImpl instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate JobServiceImpl directly. Use getInstance()");
     }
   }
 
+    /**
+   * Gets the single instance of the JobServiceImpl class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): JobServiceImpl {
     if (!JobServiceImpl.instance) {
       JobServiceImpl.instance = new JobServiceImpl(Enforce);
@@ -24,12 +50,18 @@ export class JobServiceImpl implements IJobService {
     return JobServiceImpl.instance;
   }
 
+    /**
+   * Initializes the service
+   */
   public async initialize(): Promise<void> {
     console.log("Initializing JobServiceImpl...");
     // Database initialization
     // await initializeDatabase();
   }
 
+    /**
+   * Starts event consumer
+   */
   public async startEventConsumer(): Promise<void> {
     if (this.isRunning) {
       console.warn("Event consumer is already running");
@@ -41,6 +73,9 @@ export class JobServiceImpl implements IJobService {
     await this.eventConsumerLoop();
   }
 
+    /**
+   * Performs the event consumer loop operation.
+   */
   private async eventConsumerLoop(): Promise<void> {
     while (this.isRunning) {
       try {
@@ -67,6 +102,10 @@ export class JobServiceImpl implements IJobService {
     }
   }
 
+    /**
+   * Handles event
+   * @param event - The event
+   */
   public async handleEvent(event: JobEvent): Promise<void> {
     console.log("Handling event:", event);
     // Import and use the actual event handler from stateMachine
@@ -74,6 +113,9 @@ export class JobServiceImpl implements IJobService {
     // await handleEvent(event);
   }
 
+    /**
+   * Stops the service gracefully
+   */
   public async shutdown(): Promise<void> {
     console.log("Shutting down JobServiceImpl...");
     this.isRunning = false;

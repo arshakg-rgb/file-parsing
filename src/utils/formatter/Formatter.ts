@@ -1,5 +1,8 @@
 import { createLogger } from "@utils/logger/Log.js";
 
+/**
+ * Logger instance for the module
+ */
 const logger = createLogger("format_detector");
 
 export enum LineFormat {

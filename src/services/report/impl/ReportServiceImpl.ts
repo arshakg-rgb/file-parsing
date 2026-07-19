@@ -15,12 +15,36 @@ import { startHealthCheckServer } from "@utils/response/health.js";
 import { ReportService } from "@service/report/ReportService.js";
 import { IReport, ReportRequest, ReportResponse } from "@service/report/io/IReport.js";
 
+/**
+ * ReportServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class ReportServiceImpl extends ServiceManager implements ReportService {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: ReportServiceImpl;
+    /**
+   * Logger instance
+   * @private
+   */
   private logger: Logger;
+    /**
+   * Gcs Utils
+   * @private
+   */
   private gcsUtils: FirestoreCacheUtils;
+    /**
+   * Db Manager
+   * @private
+   */
   private dbManager: MySqlManager;
 
+    /**
+   * Constructs a new ReportServiceImpl instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate ReportServiceImpl directly. Use getInstance()");
@@ -36,6 +60,10 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
     }
   }
 
+    /**
+   * Gets the single instance of the ReportServiceImpl class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): ReportServiceImpl {
     if (!ReportServiceImpl.instance) {
       ReportServiceImpl.instance = new ReportServiceImpl(Enforce);
@@ -43,31 +71,63 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
     return ReportServiceImpl.instance;
   }
 
+    /**
+   * Gets logger
+   * @returns The logger result
+   */
   public getLogger(): Logger {
     return this.logger;
   }
 
+    /**
+   * Gets gcs utils
+   * @returns The firestore cache utils result
+   */
   public getGcsUtils(): FirestoreCacheUtils {
     return this.gcsUtils;
   }
 
+    /**
+   * Gets db manager
+   * @returns The my sql manager result
+   */
   public getDbManager(): MySqlManager {
     return this.dbManager;
   }
 
+    /**
+   * Processes report
+   * @param req - The HTTP request object
+   * @returns A promise that resolves to the result
+   */
   public async processReport(req: ReportRequest): Promise<ReportResponse> {
     // Placeholder implementation
     return { success: true };
   }
 
+    /**
+   * Emits the operation
+   * @param jobId - The job identifier
+   * @param eventType - The event type
+   * @param data - The data to process
+   */
   private emit(jobId: string, eventType: EventType, data: Record<string, unknown>) {
     publishEvent(makeJobEvent(eventType, jobId, "report", data));
   }
 
+    /**
+   * Performs the total failed operation.
+   * @param counts - The counts
+   * @returns The numeric result
+   */
   private totalFailed(counts: JobCounts): number {
     return Object.values(counts.failed_by_class || {}).reduce((a, b) => a + b, 0);
   }
 
+    /**
+   * Performs the generate report operation.
+   * @param msg - The msg
+   */
   public async generateReport(msg: ReportMessage): Promise<void> {
     const jobId = msg.job_id;
     this.logger.info("report_start", { job_id: jobId, status: msg.status });
@@ -137,18 +197,38 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
     this.emit(jobId, EventType.REPORTING_COMPLETED, { counts: msg.counts });
   }
 
+    /**
+   * Gets job
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the result
+   */
   private async getJob(jobId: string): Promise<ParseJobAttributes | null> {
     return this.dbManager.repositories.jobs.findById(jobId);
   }
 
+    /**
+   * Gets parts
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the list
+   */
   private async getParts(jobId: string): Promise<OutputPartAttributes[]> {
     return this.dbManager.repositories.outputParts.findByJob(jobId);
   }
 
+    /**
+   * Gets batch jobs
+   * @param batchId - The batch identifier
+   * @returns A promise that resolves to the list
+   */
   private async getBatchJobs(batchId: string): Promise<ParseJobAttributes[]> {
     return this.dbManager.repositories.jobs.findByBatchId(batchId);
   }
 
+    /**
+   * Writes batch rollup
+   * @param batchId - The batch identifier
+   * @param jobs - The jobs
+   */
   private async writeBatchRollup(batchId: string, jobs: ParseJobAttributes[]): Promise<void> {
     const rollup = {
       batch_id: batchId,
@@ -168,6 +248,9 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
     metrics.increment("report.batch_rollup", 1);
   }
 
+    /**
+   * Performs the consumer loop operation.
+   */
   public async consumerLoop(): Promise<void> {
     await this.dbManager.initialize();
     this.logger.info("report_consumer_started");

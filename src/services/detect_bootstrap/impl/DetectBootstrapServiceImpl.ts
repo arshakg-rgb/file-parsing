@@ -17,12 +17,36 @@ import { mockClassify } from "@service/ai_classifier/mock.js";
 import { DetectBootstrapService } from "@service/detect_bootstrap/DetectBootstrapService.js";
 import { IDetectBootstrap, ClassifyRequest, ClassifyResponse } from "@service/detect_bootstrap/io/IDetectBootstrap.js";
 
+/**
+ * DetectBootstrapServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstrapService {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: DetectBootstrapServiceImpl;
+    /**
+   * Logger instance
+   * @private
+   */
   private logger: Logger;
+    /**
+   * Gcs Utils
+   * @private
+   */
   private gcsUtils: FirestoreCacheUtils;
+    /**
+   * Classify
+   * @private
+   */
   private classify: (req: ClassifyRequest) => Promise<ClassifyResponse>;
 
+    /**
+   * Constructs a new DetectBootstrapServiceImpl instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate DetectBootstrapServiceImpl directly. Use getInstance()");
@@ -54,6 +78,10 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     }
   }
 
+    /**
+   * Gets the single instance of the DetectBootstrapServiceImpl class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): DetectBootstrapServiceImpl {
     if (!DetectBootstrapServiceImpl.instance) {
       DetectBootstrapServiceImpl.instance = new DetectBootstrapServiceImpl(Enforce);
@@ -61,22 +89,46 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     return DetectBootstrapServiceImpl.instance;
   }
 
+    /**
+   * Gets logger
+   * @returns The logger result
+   */
   public getLogger(): Logger {
     return this.logger;
   }
 
+    /**
+   * Gets gcs utils
+   * @returns The firestore cache utils result
+   */
   public getGcsUtils(): FirestoreCacheUtils {
     return this.gcsUtils;
   }
 
+    /**
+   * Detects bootstrap
+   * @param req - The HTTP request object
+   * @returns A promise that resolves to the result
+   */
   public async detectBootstrap(req: ClassifyRequest): Promise<ClassifyResponse> {
     return this.classify(req);
   }
 
+    /**
+   * Classifies line
+   * @param req - The HTTP request object
+   * @returns A promise that resolves to the result
+   */
   public async classifyLine(req: ClassifyRequest): Promise<ClassifyResponse> {
     return this.classify(req);
   }
 
+    /**
+   * Computes window size
+   * @param avgRowBytes - The avg row bytes
+   * @param maxRowBytes - The max row bytes
+   * @returns The numeric result
+   */
   public computeWindowSize(avgRowBytes: number, maxRowBytes: number): number {
     const config = this.getConfig();
     return Math.min(
@@ -85,6 +137,12 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     );
   }
 
+    /**
+   * Computes probe offsets
+   * @param fileSize - The file size
+   * @param windowSize - The window size
+   * @returns The list of results
+   */
   public computeProbeOffsets(fileSize: number, windowSize: number): number[] {
     const config = this.getConfig();
     const count = Math.max(config.settings.PROBE_COUNT_MIN, Math.min(config.settings.PROBE_COUNT_MAX, Math.floor(fileSize / config.settings.PROBE_SIZE_PER_COUNT)));
@@ -95,6 +153,11 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     return [...new Set(offsets)].sort((a, b) => a - b);
   }
 
+    /**
+   * Detects encoding
+   * @param raw - The raw
+   * @returns The string result
+   */
   public detectEncoding(raw: Buffer): string {
     // Prefer UTF-8 when the bytes actually validate as UTF-8
     if (isLikelyUtf8(raw.subarray(0, 65536))) return "utf-8";
@@ -102,6 +165,12 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     return normalizeEncoding(result.encoding);
   }
 
+    /**
+   * Performs the measure row width operation.
+   * @param raw - The raw
+   * @param encoding - The encoding
+   * @returns The [number, number] result
+   */
   public measureRowWidth(raw: Buffer, encoding: string): [number, number] {
     const text = decode(raw, encoding);
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
@@ -111,6 +180,12 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     return [avg, Math.max(...sizes)];
   }
 
+    /**
+   * Performs the fingerprint probe operation.
+   * @param raw - The raw
+   * @param encoding - The encoding
+   * @returns The string result
+   */
   public fingerprintProbe(raw: Buffer, encoding: string): string {
     const text = decode(raw, encoding);
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
@@ -132,11 +207,22 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     return crypto.createHash("sha256").update(`text|${first.length}|${encoding}`).digest("hex").slice(0, 24);
   }
 
+    /**
+   * Extracts sample lines
+   * @param raw - The raw
+   * @param encoding - The encoding
+   * @param n - The n
+   * @returns The list of results
+   */
   public extractSampleLines(raw: Buffer, encoding: string, n: number): string[] {
     const text = decode(raw, encoding);
     return text.split(/\r?\n/).filter((l) => l.trim()).slice(0, n);
   }
 
+    /**
+   * Bootstraps job
+   * @param msg - The msg
+   */
   public async bootstrapJob(msg: ClassifyMessage): Promise<void> {
     await templateRegistry.loadFromDatabase();
 
@@ -252,6 +338,12 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     }
   }
 
+    /**
+   * Emits the operation
+   * @param jobId - The job identifier
+   * @param eventType - The event type
+   * @param data - The data to process
+   */
   private emit(jobId: string, eventType: EventType, data: Record<string, unknown>) {
     publishEvent(makeJobEvent(eventType, jobId, "detect_bootstrap", data));
   }

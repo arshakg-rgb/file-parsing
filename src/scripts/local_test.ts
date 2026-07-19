@@ -26,15 +26,33 @@ import fs from "fs/promises";
 // ─────────────────────────────────────────────────────────────────────────────
 
 function pass(label: string) { console.log(`  ✅  ${label}`); }
+/**
+ * Performs the fail operation.
+ * @param label - The label
+ * @param err - The error that occurred
+ */
 function fail(label: string, err: unknown) { console.error(`  ❌  ${label}:`, err); }
 
+/**
+ * The _passed
+ */
 let _passed = 0, _failed = 0;
 
+/**
+ * Checks the operation
+ * @param label - The label
+ * @param fn - The fn
+ */
 function check(label: string, fn: () => void) {
   try { fn(); _passed++; pass(label); }
   catch (e) { _failed++; fail(label, e); }
 }
 
+/**
+ * Checks async
+ * @param label - The label
+ * @param fn - The fn
+ */
 async function checkAsync(label: string, fn: () => Promise<void>) {
   try { await fn(); _passed++; pass(label); }
   catch (e) { _failed++; fail(label, e); }
@@ -79,19 +97,50 @@ check("nested path preserved", () => {
 
 console.log("\n=== 2. parquetWriter output path ===");
 
+/**
+ * The d a t a_ b u c k e t
+ */
 const DATA_BUCKET = "datalead-osint";
 
+/**
+ * MockOutputBuffer is responsible for mock output buffer operations.
+ */
 class MockOutputBuffer {
+    /**
+   * Rows
+   * @private
+   */
   private rows: Record<string, unknown>[] = [];
+    /**
+   * Part Id
+   * @private
+   */
   private partId: string;
+    /**
+   * Uploaded Paths
+   * @private
+   */
   private uploadedPaths: string[] = [];
 
+    /**
+   * Constructs a new MockOutputBuffer instance.
+   * @param jobId - The job identifier
+   * @param templateId - The template id
+   */
   constructor(private jobId: string, private templateId: string) {
     this.partId = `${jobId}-${templateId}-${Date.now()}`;
   }
 
+    /**
+   * Adds row
+   * @param row - The row
+   */
   addRow(row: Record<string, unknown>) { this.rows.push(row); }
 
+    /**
+   * Flushes the operation
+   * @returns A promise that resolves to the result
+   */
   async flush(): Promise<string | null> {
     if (this.rows.length === 0) return null;
     const gcsPath = `gs://${DATA_BUCKET}/output/${this.partId}.parquet`; // THE FIX
@@ -100,6 +149,9 @@ class MockOutputBuffer {
     return gcsPath;
   }
 
+    /**
+   * Gets uploaded paths
+   */
   getUploadedPaths() { return this.uploadedPaths; }
 }
 
@@ -125,6 +177,11 @@ await checkAsync("OLD bug reproduced: missing gs:// prefix would throw in finali
 
 console.log("\n=== 3. detectArchiveType ===");
 
+/**
+ * Detects archive type
+ * @param header - The header
+ * @returns The string | null result
+ */
 function detectArchiveType(header: Buffer): string | null {
   if (header.length < 4) return null;
   if (header[0] === 0x52 && header[1] === 0x61 && header[2] === 0x72 && header[3] === 0x21) return "rar";
@@ -163,6 +220,11 @@ check("Short buffer returns null without crash", () => {
 
 console.log("\n=== 4. Ingest error-handling – ack logic ===");
 
+/**
+ * Checks whether ack ingest error
+ * @param errorStr - The error str
+ * @returns True if the condition is met, false otherwise
+ */
 function shouldAckIngestError(errorStr: string): boolean {
   return (
     (errorStr.includes("Job") && errorStr.includes("not found")) ||
@@ -192,6 +254,11 @@ check("'No such object' → NOT acked (file might appear later)", () => {
 
 console.log("\n=== 5. Stream-parser error guard ===");
 
+/**
+ * Checks whether ack parser error
+ * @param errorStr - The error str
+ * @returns True if the condition is met, false otherwise
+ */
 function shouldAckParserError(errorStr: string): boolean {
   return errorStr.includes("Job") &&
     (errorStr.includes("not found") || errorStr.includes("cannot transition"));
@@ -216,9 +283,20 @@ check("parser: parseGcsUrl error → NOT acked", () => {
 
 console.log("\n=== 6. Upload vs ingested GCS path ===");
 
+/**
+ * The b u c k e t
+ */
 const BUCKET = "datalead-osint";
 
+/**
+ * Uploads path
+ * @param jobId - The job identifier
+ */
 function uploadPath(jobId: string) { return `gs://${BUCKET}/uploads/${jobId}/source`; }
+/**
+ * Performs the ingested path operation.
+ * @param jobId - The job identifier
+ */
 function ingestedPath(jobId: string) { return `gs://${BUCKET}/ingested/${jobId}/source`; }
 
 check("upload path is parseable as GCS URL", () => {
@@ -273,10 +351,21 @@ interface ParseCounts {
   failed_by_class: Record<string, number>;
 }
 
+/**
+ * Performs the total failed operation.
+ * @param counts - The counts
+ * @returns The numeric result
+ */
 function totalFailed(counts: ParseCounts): number {
   return Object.values(counts.failed_by_class).reduce((a, b) => a + b, 0);
 }
 
+/**
+ * Performs the quality gate passes operation.
+ * @param counts - The counts
+ * @param minParseRatio - The min parse ratio
+ * @returns True if the operation succeeds, false otherwise
+ */
 function qualityGatePasses(counts: ParseCounts, minParseRatio = 0.5): boolean {
   const total = counts.parsed + counts.dropped_rubbish + totalFailed(counts);
   if (total === 0) return false;
@@ -307,6 +396,12 @@ console.log("\n=== 9. CSV parse simulation ===");
 
 interface FieldSpec { fields: string[] }
 
+/**
+ * Classifies line
+ * @param line - The line to process
+ * @param fieldSpec - The field spec
+ * @returns The "parsed" | "rubbish" | "uncertain" result
+ */
 function classifyLine(line: string, fieldSpec: string[]): "parsed" | "rubbish" | "uncertain" {
   if (line.trim() === "") return "rubbish";
   if (line.length > 64 * 1024) return "uncertain";
@@ -316,6 +411,9 @@ function classifyLine(line: string, fieldSpec: string[]): "parsed" | "rubbish" |
   return "uncertain";
 }
 
+/**
+ * The c s v_ l i n e s
+ */
 const CSV_LINES = [
   "email,name,surname,phone",           // header – will classify as parsed (4 parts = 4 fields)
   "john@example.com,John,Doe,555-1234",
@@ -324,6 +422,9 @@ const CSV_LINES = [
   "alice@example.com,Alice,Johnson,555-3456",
   "bob@example.com,Bob,Wilson,555-7890",
 ];
+/**
+ * The f i e l d_ s p e c
+ */
 const FIELD_SPEC = ["email", "name", "surname", "phone"];
 
 await checkAsync("CSV: all 6 lines classified correctly", async () => {
@@ -384,6 +485,9 @@ console.log("\n=== 11. State machine transitions ===");
 type Status = "queued" | "ingesting" | "awaiting_password" | "detecting" |
   "parsing" | "loading" | "reporting" | "done" | "partial" | "held" | "failed";
 
+/**
+ * The v a l i d_ t r a n s i t i o n s
+ */
 const VALID_TRANSITIONS: Record<Status, Status[]> = {
   queued: ["ingesting", "failed"],
   ingesting: ["detecting", "awaiting_password", "done", "failed"],
@@ -398,6 +502,12 @@ const VALID_TRANSITIONS: Record<Status, Status[]> = {
   failed: [],
 };
 
+/**
+ * Checks whether transition
+ * @param from - The from
+ * @param to - The to
+ * @returns True if the condition is met, false otherwise
+ */
 function canTransition(from: Status, to: Status): boolean {
   return VALID_TRANSITIONS[from]?.includes(to) ?? false;
 }
@@ -427,6 +537,12 @@ check("failed → ingesting: BLOCKED (terminal state)", () => {
 
 console.log("\n=== 12. AI classify timeout guard ===");
 
+/**
+ * Classifies with timeout
+ * @param classifyFn - The classify fn
+ * @param timeoutMs - The timeout in milliseconds
+ * @returns A promise that resolves to the result
+ */
 async function classifyWithTimeout(
   classifyFn: () => Promise<{ kind: string }>,
   timeoutMs: number
@@ -575,6 +691,11 @@ await checkAsync("waitForDb throws after max attempts (DB never ready)", async (
 
 console.log("\n=== 15. Vertex AI JSON extraction ===");
 
+/**
+ * Extracts json
+ * @param text - The text
+ * @returns The record<string, unknown> result
+ */
 function extractJson(text: string): Record<string, unknown> {
   const fence = /\`\`\`(?:json)?\s*(\{[\s\S]*?\})\s*\`\`\`/.exec(text);
   if (fence) return JSON.parse(fence[1]) as Record<string, unknown>;
@@ -656,6 +777,9 @@ check("extractJson handles nested JSON objects", () => {
 
 console.log("\n=== 16. Encoding normalization / safe decode ===");
 
+/**
+ * The { decode, buffer encoding for, normalize encoding, is likely utf8 }
+ */
 const { decode, bufferEncodingFor, normalizeEncoding, isLikelyUtf8 } = await import("@utils/normalizers/encoding.js");
 
 check("decode never throws for labels that crashed prod (latin-1, iso-8859-1, cp1252, windows-1252, iso-8859-2, unknown)", () => {
@@ -713,8 +837,19 @@ check("UTF-8 content round-trips correctly (not mojibake) once detected as utf-8
 
 console.log("\n=== 17. Ordered line classifier ===");
 
+/**
+ * The {  line classifier }
+ */
 const { LineClassifier } = await import("@service/stream_parser/LineClassifier.js");
+/**
+ * The f s
+ */
 const FS = ["email", "name", "phone", "address"];
+/**
+ * The classify one
+ * @param fields - The fields
+ * @param line - The line to process
+ */
 const classifyOne = (fields: string[], line: string) =>
   new LineClassifier("test", fields, [], []).classify(line, 0, line.length);
 
@@ -823,8 +958,18 @@ check("field_spec normalization: array / JSON-array string / JSON-{fields} strin
 
 console.log("\n=== 18. Line-splitting recovery + CSV output ===");
 
+/**
+ * The { split all lines }
+ */
 const { splitAllLines } = await import("@shared/GcsUtils.js");
+/**
+ * The { csv escape cell }
+ */
 const { csvEscapeCell } = await import("@shared/CsvOutputWriter.js");
+/**
+ * The split lines
+ * @param s - The s
+ */
 const splitLines = (s: string) => splitAllLines(Buffer.from(s, "utf-8")).map((t) => t[0]);
 
 check("stray/unbalanced quote does NOT swallow following lines", () => {

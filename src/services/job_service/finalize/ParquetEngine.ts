@@ -10,6 +10,9 @@ export interface ParquetRow {
   [key: string]: unknown;
 }
 
+/**
+ * ParquetEngine is responsible for parquet engine operations.
+ */
 export class ParquetEngine {
   /**
    * Convert values that parquetjs cannot write directly (objects, arrays, BigInt,
@@ -46,6 +49,11 @@ export class ParquetEngine {
     return JSON.stringify(value);
   }
 
+    /**
+   * Builds schema
+   * @param rows - The rows
+   * @returns The parquet schema result
+   */
   static buildSchema(rows: ParquetRow[]): ParquetSchema {
     const schemaObj: SchemaDefinition = {};
     for (const row of rows) {
@@ -71,6 +79,12 @@ export class ParquetEngine {
     return new ParquetSchema(schemaObj);
   }
 
+    /**
+   * Reads rows
+   * @param storage - The storage
+   * @param storagePath - The storage path
+   * @returns A promise that resolves to the list
+   */
   static async readRows(storage: IObjectStorage, storagePath: StoragePath): Promise<ParquetRow[]> {
     const buffer = await storage.read(storagePath);
     const reader = await ParquetReader.openBuffer(buffer);
@@ -84,6 +98,12 @@ export class ParquetEngine {
     return rows;
   }
 
+    /**
+   * Writes rows
+   * @param storage - The storage
+   * @param storagePath - The storage path
+   * @param rows - The rows
+   */
   static async writeRows(storage: IObjectStorage, storagePath: StoragePath, rows: ParquetRow[]): Promise<void> {
     if (rows.length === 0) {
       return;

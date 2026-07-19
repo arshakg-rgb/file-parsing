@@ -5,6 +5,11 @@ import Config from "@config/system-config/Config.js";
 import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 
+/**
+ * Performs the csv escape cell operation.
+ * @param v - The v
+ * @returns The string result
+ */
 export function csvEscapeCell(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (typeof v === "bigint") return String(v);
@@ -17,20 +22,72 @@ export function csvEscapeCell(v: unknown): string {
   return /[",\r\n]/.test(s) ? "\"" + s.replace(/"/g, "\"\"") + "\"" : s;
 }
 
+/**
+ * CsvOutputWriter is responsible for csv output writer operations.
+ */
 export class CsvOutputWriter {
+    /**
+   * Tmp Path
+   * @private
+   */
   private readonly tmpPath: string;
+    /**
+   * Columns
+   * @private
+   */
   private readonly columns: string[];
+    /**
+   * Logger instance
+   * @private
+   */
   private readonly logger: Logger;
+    /**
+   * Gcs Utils
+   * @private
+   */
   private readonly gcsUtils: FirestoreCacheUtils;
+    /**
+   * Config
+   * @private
+   */
   private readonly config: Config;
 
+    /**
+   * Row Count
+   * @private
+   */
   private rowCount = 0;
+    /**
+   * Failed
+   * @private
+   */
   private failed = false;
+    /**
+   * Header Written
+   * @private
+   */
   private headerWritten = false;
+    /**
+   * Pending
+   * @private
+   */
   private pending: string[] = [];
+    /**
+   * Pending Bytes
+   * @private
+   */
   private pendingBytes = 0;
+    /**
+   * The f l u s h_ t h r e s h o l d_ b y t e s value
+   * @private
+   */
   private static readonly FLUSH_THRESHOLD_BYTES = 8 * 1024 * 1024;
 
+    /**
+   * Constructs a new CsvOutputWriter instance.
+   * @param jobId - The job identifier
+   * @param fieldSpec - The field spec
+   */
   constructor(private readonly jobId: string, fieldSpec: string[]) {
     this.columns = fieldSpec && fieldSpec.length > 0 ? fieldSpec : ["value"];
     this.tmpPath = path.join(os.tmpdir(), `${jobId}-output.csv`);
@@ -46,6 +103,11 @@ export class CsvOutputWriter {
     return vals.map((v) => csvEscapeCell(v)).join(",") + "\r\n";
   }
 
+    /**
+   * Adds row
+   * @param row - The row
+   * @param _lineNo - The _line no
+   */
   addRow(row: Record<string, unknown>, _lineNo?: number): void {
     if (this.failed) return;
     try {
@@ -66,6 +128,9 @@ export class CsvOutputWriter {
     }
   }
 
+    /**
+   * Flushes pending
+   */
   private flushPending(): void {
     if (!this.pending.length) return;
     try {
@@ -78,6 +143,10 @@ export class CsvOutputWriter {
     }
   }
 
+    /**
+   * Flushes the operation
+   * @returns A promise that resolves to the result
+   */
   async flush(): Promise<string | null> {
     if (this.rowCount === 0 || this.failed) {
       await this.cleanup();
@@ -99,6 +168,9 @@ export class CsvOutputWriter {
     }
   }
 
+    /**
+   * Performs the cleanup operation.
+   */
   private async cleanup(): Promise<void> {
     this.pending = [];
     this.pendingBytes = 0;

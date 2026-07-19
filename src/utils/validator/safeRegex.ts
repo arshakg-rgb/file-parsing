@@ -2,11 +2,31 @@ import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 
+/**
+ * SafeRegexService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class SafeRegexService extends ServiceManager {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: SafeRegexService;
+    /**
+   * M A X_ R E G E X_ S O U R C E_ L E N G T H
+   * @private
+   */
   private readonly MAX_REGEX_SOURCE_LENGTH = 1024;
+    /**
+   * M A X_ R E G E X_ L I N E_ L E N G T H
+   * @private
+   */
   private readonly MAX_REGEX_LINE_LENGTH = 64 * 1024;
 
+    /**
+   * Constructs a new SafeRegexService instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate SafeRegexService directly. Use getInstance()");
@@ -14,6 +34,10 @@ class SafeRegexService extends ServiceManager {
     super(enforce);
   }
 
+    /**
+   * Gets the single instance of the SafeRegexService class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): SafeRegexService {
     if (!SafeRegexService.instance) {
       SafeRegexService.instance = new SafeRegexService(Enforce);
@@ -21,6 +45,11 @@ class SafeRegexService extends ServiceManager {
     return SafeRegexService.instance;
   }
 
+    /**
+   * Checks whether safe regex source
+   * @param source - The source
+   * @returns True if the condition is met, false otherwise
+   */
   private isSafeRegexSource(source: string): boolean {
     if (!source || source.length > this.MAX_REGEX_SOURCE_LENGTH) return false;
 
@@ -62,6 +91,11 @@ class SafeRegexService extends ServiceManager {
     return true;
   }
 
+    /**
+   * Performs the safe regex operation.
+   * @param source - The source
+   * @returns The reg exp | null result
+   */
   public safeRegex(source: string): RegExp | null {
     if (!this.isSafeRegexSource(source)) return null;
     try {
@@ -71,6 +105,12 @@ class SafeRegexService extends ServiceManager {
     }
   }
 
+    /**
+   * Performs the safe regex test operation.
+   * @param source - The source
+   * @param line - The line to process
+   * @returns True if the operation succeeds, false otherwise
+   */
   public safeRegexTest(source: string, line: string): boolean {
     if (line.length > this.MAX_REGEX_LINE_LENGTH) return false;
     const re = this.safeRegex(source);
@@ -82,12 +122,26 @@ class SafeRegexService extends ServiceManager {
 
 export default SafeRegexService;
 
+/**
+ * The safe regex service
+ */
 const safeRegexService = SafeRegexService.getInstance();
 
+/**
+ * Performs the safe regex operation.
+ * @param source - The source
+ * @returns The reg exp | null result
+ */
 export function safeRegex(source: string): RegExp | null {
   return safeRegexService.safeRegex(source);
 }
 
+/**
+ * Performs the safe regex test operation.
+ * @param source - The source
+ * @param line - The line to process
+ * @returns True if the operation succeeds, false otherwise
+ */
 export function safeRegexTest(source: string, line: string): boolean {
   return safeRegexService.safeRegexTest(source, line);
 }

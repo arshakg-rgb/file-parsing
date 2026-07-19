@@ -7,20 +7,39 @@ import { LoadMessage } from "@shared/models/job.js";
  * This maintains backward compatibility while using the new service pattern
  */
 export class LoadService implements ILoad {
+    /**
+   * Service
+   * @private
+   */
   private service: LoadServiceImpl;
 
+    /**
+   * Constructs a new LoadService instance.
+   */
   constructor() {
     this.service = LoadServiceImpl.getInstance();
   }
 
+    /**
+   * Processes load
+   * @param req - The HTTP request object
+   * @returns A promise that resolves to the result
+   */
   async processLoad(req: LoadRequest): Promise<LoadResponse> {
     return this.service.processLoad(req);
   }
 
+    /**
+   * Loads job
+   * @param msg - The msg
+   */
   async loadJob(msg: LoadMessage): Promise<void> {
     return this.service.loadJob(msg);
   }
 
+    /**
+   * Performs the consumer loop operation.
+   */
   async consumerLoop(): Promise<void> {
     return this.service.consumerLoop();
   }
@@ -33,10 +52,17 @@ export { ILoad, LoadRequest, LoadResponse } from "@service/load/io/ILoad.js";
 // Backward compatibility wrappers
 const loadService = new LoadService();
 
+/**
+ * Loads job
+ * @param msg - The msg
+ */
 export async function loadJob(msg: LoadMessage): Promise<void> {
   return loadService.loadJob(msg);
 }
 
+/**
+ * Performs the consumer loop operation.
+ */
 export async function consumerLoop(): Promise<void> {
   return loadService.consumerLoop();
 }

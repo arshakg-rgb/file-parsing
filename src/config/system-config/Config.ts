@@ -8,27 +8,70 @@ dotenv.config({ path: path.resolve(".env.local") });
 // Fall back to sibling Python project's env for shared infra settings
 dotenv.config({ path: path.resolve("../file-parsing-pipeline/.env.local") });
 
+/**
+ * Gets number
+ * @param name - The name value
+ * @param fallback - The fallback
+ * @returns The numeric result
+ */
 function getNumber(name: string, fallback: number): number {
   const v = process.env[name];
   return v !== undefined ? Number(v) : fallback;
 }
 
+/**
+ * Gets string
+ * @param name - The name value
+ * @param fallback - The fallback
+ * @returns The string result
+ */
 function getString(name: string, fallback: string): string {
   return process.env[name] ?? fallback;
 }
 
+/**
+ * Gets optional string
+ * @param name - The name value
+ * @returns The string | undefined result
+ */
 function getOptionalString(name: string): string | undefined {
   const v = process.env[name];
   return v === "" ? undefined : v;
 }
 
+/**
+ * Config is responsible for config operations.
+ */
 class Config {
+    /**
+   * Singleton instance
+   * @private
+   */
   private static instance: Config;
+    /**
+   * _app Config
+   * @private
+   */
   private _appConfig: IAppConfig;
+    /**
+   * _common Config
+   * @private
+   */
   private _commonConfig: unknown;
+    /**
+   * _auth Config
+   * @private
+   */
   private _authConfig: unknown;
+    /**
+   * _database Config
+   * @private
+   */
   private _databaseConfig: IDatabaseConfig;
 
+    /**
+   * Constructs a new Config instance.
+   */
   private constructor() {
     this._appConfig = {
       name: getString("APP_NAME", "file-parsing-pipeline"),
@@ -57,6 +100,10 @@ class Config {
     };
   }
 
+    /**
+   * Gets the single instance of the Config class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): Config {
     if (!Config.instance) {
       Config.instance = new Config();
@@ -64,18 +111,34 @@ class Config {
     return Config.instance;
   }
 
+    /**
+   * Gets the app config.
+   * @returns The i app config result
+   */
   public get appConfig(): IAppConfig {
     return this._appConfig;
   }
 
+    /**
+   * Gets the common config.
+   * @returns The unknown result
+   */
   public get commonConfig(): unknown {
     return this._commonConfig;
   }
 
+    /**
+   * Gets the auth config.
+   * @returns The unknown result
+   */
   public get authConfig(): unknown {
     return this._authConfig;
   }
 
+    /**
+   * Gets the database config.
+   * @returns The i database config result
+   */
   public get databaseConfig(): IDatabaseConfig {
     return this._databaseConfig;
   }

@@ -5,7 +5,13 @@ import { sendRaw } from "@shared/QueueService.js";
 import { putObject, parseGcsUrl } from "@shared/GcsUtils.js";
 import { createLogger } from "@utils/logger/logger.js";
 
+/**
+ * Logger instance for the module
+ */
 const logger = createLogger("ingest-http");
+/**
+ * The app
+ */
 const app = express();
 app.use(express.json());
 

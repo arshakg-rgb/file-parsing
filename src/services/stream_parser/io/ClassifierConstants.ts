@@ -44,6 +44,9 @@ export const HEADER_MATCH_RATIO = 0.5;
  * Phone number digit range for validation
  */
 export const PHONE_MIN_DIGITS = 10;
+/**
+ * The p h o n e_ m a x_ d i g i t s
+ */
 export const PHONE_MAX_DIGITS = 15;
 
 /**

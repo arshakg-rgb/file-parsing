@@ -5,6 +5,9 @@ import { classifyAi } from "./AiClassifierServiceHandler.js";
 import { mockClassify } from "./mock.js";
 import { ensureTableExists, listAll, warmCache } from "./templateRegistry.js";
 
+/**
+ * The app
+ */
 const app = express();
 app.use(express.json());
 
@@ -42,6 +45,9 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ detail: err.message });
 });
 
+/**
+ * The p o r t
+ */
 const PORT = process.env.PORT || 8001;
 warmCache().then(() => {
   app.listen(PORT, () => {

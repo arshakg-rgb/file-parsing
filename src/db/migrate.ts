@@ -3,7 +3,13 @@ import { join } from "path";
 import { fileURLToPath } from "url";
 import MySqlManager from "@config/db/MySqlManager.js";
 
+/**
+ * The __filename
+ */
 const __filename = fileURLToPath(import.meta.url);
+/**
+ * The __dirname
+ */
 const __dirname = join(__filename, "..");
 
 interface Migration {
@@ -12,8 +18,15 @@ interface Migration {
   up: string;
 }
 
+/**
+ * The m i g r a t i o n s_ d i r
+ */
 const MIGRATIONS_DIR = join(__dirname, "migrations");
 
+/**
+ * Loads migrations
+ * @returns A promise that resolves to the list
+ */
 async function loadMigrations(): Promise<Migration[]> {
   const migrations: Migration[] = [];
   const files = await readdir(MIGRATIONS_DIR);
@@ -29,6 +42,11 @@ async function loadMigrations(): Promise<Migration[]> {
   return migrations.sort((a, b) => a.version - b.version);
 }
 
+/**
+ * Splits statements
+ * @param sql - The sql
+ * @returns The list of results
+ */
 function splitStatements(sql: string): string[] {
   return sql
     .split("\n")
@@ -39,14 +57,28 @@ function splitStatements(sql: string): string[] {
     .filter((s) => s.length > 0);
 }
 
+/**
+ * Gets applied versions
+ * @param db - The db
+ * @returns A promise that resolves to the list
+ */
 async function getAppliedVersions(db: MySqlManager): Promise<number[]> {
   return db.repositories.schemaMigrations.getAppliedVersions();
 }
 
+/**
+ * Ensures migration table
+ * @param db - The db
+ */
 async function ensureMigrationTable(db: MySqlManager): Promise<void> {
   await db.models.SchemaMigration.sync({ force: false });
 }
 
+/**
+ * Runs migration
+ * @param db - The db
+ * @param migration - The migration
+ */
 async function runMigration(db: MySqlManager, migration: Migration): Promise<void> {
   const statements = splitStatements(migration.up);
   await db.sequelize.transaction(async (transaction) => {
@@ -62,6 +94,9 @@ async function runMigration(db: MySqlManager, migration: Migration): Promise<voi
   console.log(`Migration ${migration.version} applied: ${migration.description}`);
 }
 
+/**
+ * Performs the migrate operation.
+ */
 export async function migrate(): Promise<void> {
   const db = MySqlManager.getInstance();
   await db.initialize();

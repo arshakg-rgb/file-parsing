@@ -3,9 +3,21 @@ import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { metrics } from "./metrics.js";
 
+/**
+ * PrometheusService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class PrometheusService extends ServiceManager {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: PrometheusService;
 
+    /**
+   * Constructs a new PrometheusService instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate PrometheusService directly. Use getInstance()");
@@ -13,6 +25,10 @@ class PrometheusService extends ServiceManager {
     super(enforce);
   }
 
+    /**
+   * Gets the single instance of the PrometheusService class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): PrometheusService {
     if (!PrometheusService.instance) {
       PrometheusService.instance = new PrometheusService(Enforce);
@@ -20,6 +36,10 @@ class PrometheusService extends ServiceManager {
     return PrometheusService.instance;
   }
 
+    /**
+   * Formats prometheus metrics
+   * @returns The string result
+   */
   public formatPrometheusMetrics(): string {
     const lines: string[] = [];
     const snapshot = metrics.toJSON() as {
@@ -68,8 +88,15 @@ class PrometheusService extends ServiceManager {
 
 export default PrometheusService;
 
+/**
+ * The prometheus service
+ */
 const prometheusService = PrometheusService.getInstance();
 
+/**
+ * Formats prometheus metrics
+ * @returns The string result
+ */
 export function formatPrometheusMetrics(): string {
   return prometheusService.formatPrometheusMetrics();
 }

@@ -13,6 +13,12 @@ const TEST_CSV = `email,name,surname,phone
 john.doe@example.com,John,Doe,555-1234
 jane.smith@example.com,Jane,Smith,555-5678`;
 
+/**
+ * Creates job from g c s
+ * @param gcsUrl - The gcs url
+ * @param fieldSpec - The field spec
+ * @returns A promise that resolves to the result
+ */
 async function createJobFromGCS(gcsUrl: string, fieldSpec: string[]): Promise<{ job_id: string }> {
   const response = await fetch(`${JOB_SERVICE_URL}`, {
     method: "POST",
@@ -34,6 +40,12 @@ async function createJobFromGCS(gcsUrl: string, fieldSpec: string[]): Promise<{ 
   return data;
 }
 
+/**
+ * Uploads file
+ * @param presignedUrl - The presigned url
+ * @param content - The content
+ * @returns A promise that resolves to the result
+ */
 async function uploadFile(presignedUrl: string, content: string): Promise<number> {
   const response = await fetch(presignedUrl, {
     method: "PUT",
@@ -55,6 +67,11 @@ interface JobStatusResponse {
   counts?: { parsed?: number };
 }
 
+/**
+ * Gets job status
+ * @param jobId - The job identifier
+ * @returns A promise that resolves to the result
+ */
 async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
   const response = await fetch(`${JOB_SERVICE_URL}/${jobId}`);
 
@@ -65,6 +82,9 @@ async function getJobStatus(jobId: string): Promise<JobStatusResponse> {
   return response.json() as Promise<JobStatusResponse>;
 }
 
+/**
+ * Main entry point of the application
+ */
 async function main() {
   console.log("Starting production end-to-end test...");
 

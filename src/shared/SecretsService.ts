@@ -3,10 +3,26 @@ import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 
+/**
+ * SecretsService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class SecretsService extends ServiceManager {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: SecretsService;
+    /**
+   * Secrets Client
+   * @private
+   */
   private secretsClient: SecretsManagerClient | null = null;
 
+    /**
+   * Constructs a new SecretsService instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate SecretsService directly. Use getInstance()");
@@ -14,6 +30,10 @@ class SecretsService extends ServiceManager {
     super(enforce);
   }
 
+    /**
+   * Gets the single instance of the SecretsService class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): SecretsService {
     if (!SecretsService.instance) {
       SecretsService.instance = new SecretsService(Enforce);
@@ -21,6 +41,10 @@ class SecretsService extends ServiceManager {
     return SecretsService.instance;
   }
 
+    /**
+   * Gets secrets client
+   * @returns The secrets manager client result
+   */
   private getSecretsClient(): SecretsManagerClient {
     if (!this.secretsClient) {
       const region = process.env.AWS_REGION || "us-east-1";
@@ -33,6 +57,11 @@ class SecretsService extends ServiceManager {
     return this.secretsClient;
   }
 
+    /**
+   * Gets secret
+   * @param secretName - The secret name
+   * @returns A promise that resolves to the result
+   */
   public async getSecret(secretName: string): Promise<string | null> {
     const envVar = secretName.toUpperCase().replace(/-/g, "_");
     if (process.env[envVar]) {
@@ -63,6 +92,11 @@ class SecretsService extends ServiceManager {
     }
   }
 
+    /**
+   * Gets secret json
+   * @param secretName - The secret name
+   * @returns A promise that resolves to the result
+   */
   public async getSecretJson<T = Record<string, unknown>>(secretName: string): Promise<T | null> {
     const secret = await this.getSecret(secretName);
     if (!secret) return null;
@@ -74,6 +108,9 @@ class SecretsService extends ServiceManager {
     }
   }
 
+    /**
+   * Loads all secrets
+   */
   public async loadAllSecrets(): Promise<void> {
     const secretMappings: Record<string, string> = {
       DATABASE_URL: "database-url",
@@ -95,16 +132,32 @@ class SecretsService extends ServiceManager {
 
 export default SecretsService;
 
+/**
+ * The secrets service
+ */
 const secretsService = SecretsService.getInstance();
 
+/**
+ * Gets secret
+ * @param secretName - The secret name
+ * @returns A promise that resolves to the result
+ */
 export async function getSecret(secretName: string): Promise<string | null> {
   return secretsService.getSecret(secretName);
 }
 
+/**
+ * Gets secret json
+ * @param secretName - The secret name
+ * @returns A promise that resolves to the result
+ */
 export async function getSecretJson<T = Record<string, unknown>>(secretName: string): Promise<T | null> {
   return secretsService.getSecretJson<T>(secretName);
 }
 
+/**
+ * Loads all secrets
+ */
 export async function loadAllSecrets(): Promise<void> {
   return secretsService.loadAllSecrets();
 }

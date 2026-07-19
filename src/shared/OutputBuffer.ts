@@ -8,6 +8,12 @@ export interface OutputRow {
   [key: string]: unknown;
 }
 
+/**
+ * Sanitizes parquet value
+ * @param value - The value to use
+ * @param isRecord - The is record
+ * @returns The unknown result
+ */
 function sanitizeParquetValue(value: unknown, isRecord = false): unknown {
   if (value === null || value === undefined) return value;
   if (typeof value === "bigint") return Number(value);
@@ -37,6 +43,11 @@ function sanitizeParquetValue(value: unknown, isRecord = false): unknown {
   return JSON.stringify(value);
 }
 
+/**
+ * Performs the type for value operation.
+ * @param v - The v
+ * @returns The parquet type result
+ */
 function typeForValue(v: unknown): ParquetType {
   const value = sanitizeParquetValue(v, false);
   if (value === null || value === undefined) return "UTF8";
@@ -46,6 +57,11 @@ function typeForValue(v: unknown): ParquetType {
   return "UTF8";
 }
 
+/**
+ * Builds schema
+ * @param rows - The rows
+ * @returns The parquet schema result
+ */
 function buildSchema(rows: Record<string, unknown>[]): ParquetSchema {
   const schemaObj: SchemaDefinition = {};
   for (const row of rows) {
@@ -59,20 +75,56 @@ function buildSchema(rows: Record<string, unknown>[]): ParquetSchema {
   return new ParquetSchema(schemaObj);
 }
 
+/**
+ * OutputBuffer is responsible for output buffer operations.
+ */
 export class OutputBuffer {
+    /**
+   * Rows
+   * @private
+   */
   private rows: OutputRow[] = [];
+    /**
+   * Template Id
+   * @private
+   */
   private templateId: string;
+    /**
+   * Part Id
+   * @private
+   */
   private partId: string;
+    /**
+   * Job Id
+   * @private
+   */
   private jobId: string;
+    /**
+   * Flush Promise
+   * @private
+   */
   private flushPromise: Promise<string | null> | null = null;
+    /**
+   * Flush Counter
+   * @private
+   */
   private flushCounter = 0;
 
+    /**
+   * Constructs a new OutputBuffer instance.
+   * @param jobId - The job identifier
+   * @param templateId - The template id
+   */
   constructor(jobId: string, templateId: string) {
     this.jobId = jobId;
     this.templateId = templateId;
     this.partId = `${jobId}-${templateId}-${Date.now()}`;
   }
 
+    /**
+   * Adds row
+   * @param row - The row
+   */
   addRow(row: OutputRow): void {
     this.rows.push(row);
 
@@ -83,6 +135,10 @@ export class OutputBuffer {
     }
   }
 
+    /**
+   * Flushes the operation
+   * @returns A promise that resolves to the result
+   */
   async flush(): Promise<string | null> {
     if (this.rows.length === 0) {
       return null;
@@ -125,16 +181,27 @@ export class OutputBuffer {
     }
   }
 
+    /**
+   * Waits for for pending flush
+   */
   async waitForPendingFlush(): Promise<void> {
     if (this.flushPromise) {
       await this.flushPromise;
     }
   }
 
+    /**
+   * Gets part id
+   * @returns The string result
+   */
   getPartId(): string {
     return this.partId;
   }
 
+    /**
+   * Gets row count
+   * @returns The numeric result
+   */
   getRowCount(): number {
     return this.rows.length;
   }

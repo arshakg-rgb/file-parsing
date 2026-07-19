@@ -1,3 +1,6 @@
+/**
+ * The c o m m o n_ c o n s t a n t s
+ */
 export const COMMON_CONSTANTS = {
   DEFAULT_PAGE_SIZE: 10,
   MAX_PAGE_SIZE: 100,
@@ -5,6 +8,9 @@ export const COMMON_CONSTANTS = {
   CACHE_TTL: 3600,
 } as const;
 
+/**
+ * The a p i_ r e s p o n s e_ c o d e s
+ */
 export const API_RESPONSE_CODES = {
   SUCCESS: 200,
   CREATED: 201,
@@ -16,6 +22,9 @@ export const API_RESPONSE_CODES = {
   SERVICE_UNAVAILABLE: 503,
 } as const;
 
+/**
+ * The s t a t u s_ c o d e s
+ */
 export const STATUS_CODES = {
   ACTIVE: "active",
   INACTIVE: "inactive",
@@ -25,6 +34,9 @@ export const STATUS_CODES = {
   CANCELLED: "cancelled",
 } as const;
 
+/**
+ * The constants
+ */
 export const Constants = {
   SIGINT: "SIGINT",
   SIGTERM: "SIGTERM",

@@ -13,6 +13,9 @@
 
 import { TextDecoder } from "node:util";
 
+/**
+ * The n a t i v e
+ */
 const NATIVE: Record<string, BufferEncoding> = {
   "utf-8": "utf8",
   "utf8": "utf8",
@@ -62,7 +65,15 @@ export function bufferEncodingFor(label?: string | null): BufferEncoding {
   return NATIVE[normalizeEncoding(label)] ?? "latin1";
 }
 
+/**
+ * The _decoders
+ */
 const _decoders = new Map<string, TextDecoder | null>();
+/**
+ * Performs the decoder for operation.
+ * @param label - The label
+ * @returns The text decoder | null result
+ */
 function decoderFor(label: string): TextDecoder | null {
   if (_decoders.has(label)) return _decoders.get(label)!;
   let dec: TextDecoder | null = null;

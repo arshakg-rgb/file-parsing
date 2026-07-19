@@ -25,11 +25,33 @@ import { normalizeEncoding, isLikelyUtf8 } from "@utils/normalizers/encoding.js"
  * Lazy initialized to save resources when AI is disabled
  */
 class AIRateLimiter {
+    /**
+   * Requests
+   * @private
+   */
   private requests: number[] = [];
+    /**
+   * Rpm
+   * @private
+   */
   private rpm: number;
+    /**
+   * Burst
+   * @private
+   */
   private burst: number;
+    /**
+   * Logger instance
+   * @private
+   */
   private logger: Logger;
 
+    /**
+   * Constructs a new AIRateLimiter instance.
+   * @param rpm - The rpm
+   * @param burst - The burst
+   * @param logger - The logger
+   */
   constructor(rpm: number, burst: number, logger: Logger) {
     this.rpm = rpm;
     this.burst = burst;
@@ -107,14 +129,38 @@ class AIRateLimiter {
  * @class StreamParserService
  */
 export class StreamParserService {
+    /**
+   * Singleton instance
+   * @private
+   */
   private static instance: StreamParserService;
   
   // Instance state
   private running: boolean = false;
+    /**
+   * Current Job
+   * @private
+   */
   private currentJob: Promise<void> | null = null;
+    /**
+   * Ai Rate Limiter
+   * @private
+   */
   private aiRateLimiter: AIRateLimiter | null = null;
+    /**
+   * Template Cache
+   * @private
+   */
   private templateCache: Map<string, Map<string, Template>> = new Map();
+    /**
+   * Parse Count
+   * @private
+   */
   private parseCount: number = 0;
+    /**
+   * Last Cache Flush
+   * @private
+   */
   private lastCacheFlush: number = Date.now();
   
   // Statistics

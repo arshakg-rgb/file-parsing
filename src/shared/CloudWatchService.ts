@@ -4,12 +4,36 @@ import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 
+/**
+ * CloudWatchService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class CloudWatchService extends ServiceManager {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: CloudWatchService;
+    /**
+   * Logs Client
+   * @private
+   */
   private logsClient: CloudWatchLogsClient | null = null;
+    /**
+   * Sequence Tokens
+   * @private
+   */
   private sequenceTokens: Map<string, string> = new Map();
+    /**
+   * Logger instance
+   * @private
+   */
   private logger: Logger;
 
+    /**
+   * Constructs a new CloudWatchService instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate CloudWatchService directly. Use getInstance()");
@@ -19,6 +43,10 @@ class CloudWatchService extends ServiceManager {
     this.logger = createLogger("cloudwatch");
   }
 
+    /**
+   * Gets the single instance of the CloudWatchService class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): CloudWatchService {
     if (!CloudWatchService.instance) {
       CloudWatchService.instance = new CloudWatchService(Enforce);
@@ -26,6 +54,10 @@ class CloudWatchService extends ServiceManager {
     return CloudWatchService.instance;
   }
 
+    /**
+   * Gets logs client
+   * @returns The cloud watch logs client result
+   */
   private getLogsClient(): CloudWatchLogsClient {
     if (!this.logsClient) {
       const region = process.env.AWS_REGION || "us-east-1";
@@ -38,10 +70,20 @@ class CloudWatchService extends ServiceManager {
     return this.logsClient;
   }
 
+    /**
+   * Gets sequence token key
+   * @param logGroupName - The log group name
+   * @param logStreamName - The log stream name
+   * @returns The string result
+   */
   private getSequenceTokenKey(logGroupName: string, logStreamName: string): string {
     return `${logGroupName}:${logStreamName}`;
   }
 
+    /**
+   * Ensures log group
+   * @param logGroupName - The log group name
+   */
   public async ensureLogGroup(logGroupName: string): Promise<void> {
     try {
       const client = this.getLogsClient();
@@ -57,6 +99,11 @@ class CloudWatchService extends ServiceManager {
     }
   }
 
+    /**
+   * Ensures log stream
+   * @param logGroupName - The log group name
+   * @param logStreamName - The log stream name
+   */
   public async ensureLogStream(logGroupName: string, logStreamName: string): Promise<void> {
     try {
       const client = this.getLogsClient();
@@ -72,6 +119,13 @@ class CloudWatchService extends ServiceManager {
     }
   }
 
+    /**
+   * Sends to cloud watch
+   * @param logGroupName - The log group name
+   * @param logStreamName - The log stream name
+   * @param message - The message
+   * @param timestamp - The timestamp
+   */
   public async sendToCloudWatch(
     logGroupName: string,
     logStreamName: string,
@@ -110,6 +164,12 @@ class CloudWatchService extends ServiceManager {
     this.logger.debug("log_event_sent", { logGroupName, logStreamName });
   }
 
+    /**
+   * Sends json to cloud watch
+   * @param logGroupName - The log group name
+   * @param logStreamName - The log stream name
+   * @param data - The data to process
+   */
   public async sendJsonToCloudWatch(
     logGroupName: string,
     logStreamName: string,
@@ -118,6 +178,11 @@ class CloudWatchService extends ServiceManager {
     await this.sendToCloudWatch(logGroupName, logStreamName, JSON.stringify(data));
   }
 
+    /**
+   * Checks log group exists
+   * @param logGroupName - The log group name
+   * @returns True if the operation succeeds, false otherwise
+   */
   public async checkLogGroupExists(logGroupName: string): Promise<boolean> {
     try {
       const client = this.getLogsClient();
@@ -136,16 +201,35 @@ class CloudWatchService extends ServiceManager {
 
 export default CloudWatchService;
 
+/**
+ * The cloud watch service
+ */
 const cloudWatchService = CloudWatchService.getInstance();
 
+/**
+ * Ensures log group
+ * @param logGroupName - The log group name
+ */
 export async function ensureLogGroup(logGroupName: string): Promise<void> {
   return cloudWatchService.ensureLogGroup(logGroupName);
 }
 
+/**
+ * Ensures log stream
+ * @param logGroupName - The log group name
+ * @param logStreamName - The log stream name
+ */
 export async function ensureLogStream(logGroupName: string, logStreamName: string): Promise<void> {
   return cloudWatchService.ensureLogStream(logGroupName, logStreamName);
 }
 
+/**
+ * Sends to cloud watch
+ * @param logGroupName - The log group name
+ * @param logStreamName - The log stream name
+ * @param message - The message
+ * @param timestamp - The timestamp
+ */
 export async function sendToCloudWatch(
   logGroupName: string,
   logStreamName: string,
@@ -155,6 +239,12 @@ export async function sendToCloudWatch(
   return cloudWatchService.sendToCloudWatch(logGroupName, logStreamName, message, timestamp);
 }
 
+/**
+ * Sends json to cloud watch
+ * @param logGroupName - The log group name
+ * @param logStreamName - The log stream name
+ * @param data - The data to process
+ */
 export async function sendJsonToCloudWatch(
   logGroupName: string,
   logStreamName: string,

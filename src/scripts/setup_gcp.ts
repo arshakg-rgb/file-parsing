@@ -5,6 +5,9 @@
 import { PubSub } from "@google-cloud/pubsub";
 import { settings } from "@shared/Settings.js";
 
+/**
+ * The t o p i c s
+ */
 const TOPICS = [
   "fpp-ingest",
   "fpp-classify",
@@ -15,6 +18,11 @@ const TOPICS = [
   "fpp-job-events",
 ];
 
+/**
+ * Ensures topic
+ * @param pubsub - The pubsub
+ * @param name - The name value
+ */
 async function ensureTopic(pubsub: PubSub, name: string): Promise<void> {
   try {
     await pubsub.createTopic({ name: `projects/${settings.GCP_PROJECT_ID}/topics/${name}`, messageRetentionDuration: { seconds: 604800 } });
@@ -29,6 +37,11 @@ async function ensureTopic(pubsub: PubSub, name: string): Promise<void> {
   }
 }
 
+/**
+ * Ensures subscription
+ * @param pubsub - The pubsub
+ * @param topicName - The topic name
+ */
 async function ensureSubscription(pubsub: PubSub, topicName: string): Promise<void> {
   const subName = `${topicName}-sub`;
   try {
@@ -55,6 +68,9 @@ async function ensureSubscription(pubsub: PubSub, topicName: string): Promise<vo
   }
 }
 
+/**
+ * Main entry point of the application
+ */
 async function main() {
   const pubsub = new PubSub({
     projectId: settings.GCP_PROJECT_ID,

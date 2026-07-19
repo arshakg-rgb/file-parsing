@@ -13,12 +13,36 @@ import { startHealthCheckServer } from "@utils/response/health.js";
 import { RetryService } from "@service/retry/RetryService.js";
 import { IRetry, RetryRequest, RetryResponse } from "@service/retry/io/IRetry.js";
 
+/**
+ * RetryServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class RetryServiceImpl extends ServiceManager implements RetryService {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: RetryServiceImpl;
+    /**
+   * Logger instance
+   * @private
+   */
   private logger: Logger;
+    /**
+   * Db Manager
+   * @private
+   */
   private dbManager: MySqlManager;
+    /**
+   * A L T_ E N C O D I N G S
+   * @private
+   */
   private ALT_ENCODINGS = ["utf-8", "iso-8859-1", "cp1252", "utf-16"];
 
+    /**
+   * Constructs a new RetryServiceImpl instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate RetryServiceImpl directly. Use getInstance()");
@@ -33,6 +57,10 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     }
   }
 
+    /**
+   * Gets the single instance of the RetryServiceImpl class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): RetryServiceImpl {
     if (!RetryServiceImpl.instance) {
       RetryServiceImpl.instance = new RetryServiceImpl(Enforce);
@@ -40,19 +68,36 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     return RetryServiceImpl.instance;
   }
 
+    /**
+   * Gets logger
+   * @returns The logger result
+   */
   public getLogger(): Logger {
     return this.logger;
   }
 
+    /**
+   * Gets db manager
+   * @returns The my sql manager result
+   */
   public getDbManager(): MySqlManager {
     return this.dbManager;
   }
 
+    /**
+   * Processes retry
+   * @param req - The HTTP request object
+   * @returns A promise that resolves to the result
+   */
   public async processRetry(req: RetryRequest): Promise<RetryResponse> {
     // Placeholder implementation
     return { success: true };
   }
 
+    /**
+   * Handles dlq entry
+   * @param msg - The msg
+   */
   public async handleDlqEntry(msg: DLQMessage): Promise<void> {
     await templateRegistry.loadFromDatabase();
 
@@ -102,6 +147,12 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     }
   }
 
+    /**
+   * Retries encoding
+   * @param rawBytes - The raw bytes
+   * @param msg - The msg
+   * @returns A promise that resolves to the result
+   */
   private async retryEncoding(rawBytes: Buffer, msg: DLQMessage): Promise<ClassifyResult | null> {
     for (const enc of this.ALT_ENCODINGS) {
       try {
@@ -114,11 +165,23 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     return null;
   }
 
+    /**
+   * Retries after template update
+   * @param rawBytes - The raw bytes
+   * @param msg - The msg
+   * @returns A promise that resolves to the result
+   */
   private async retryAfterTemplateUpdate(rawBytes: Buffer, msg: DLQMessage): Promise<ClassifyResult | null> {
     const line = rawBytes.toString("utf-8", 0, rawBytes.length);
     return await this.classifyLine(line, msg);
   }
 
+    /**
+   * Retries broad coercion
+   * @param rawBytes - The raw bytes
+   * @param msg - The msg
+   * @returns A promise that resolves to the result
+   */
   private async retryBroadCoercion(rawBytes: Buffer, msg: DLQMessage): Promise<ClassifyResult | null> {
     const line = rawBytes.toString("utf-8", 0, rawBytes.length);
     const result = await this.classifyLine(line, msg);
@@ -127,6 +190,12 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     return { verdict: "parsed", row: Object.fromEntries(fieldSpec.map((f) => [f, null])), template_id: "coerced" };
   }
 
+    /**
+   * Classifies line
+   * @param line - The line to process
+   * @param msg - The msg
+   * @returns A promise that resolves to the result
+   */
   private async classifyLine(line: string, msg: DLQMessage): Promise<ClassifyResult | null> {
     const fieldSpec = await this.getFieldSpec(msg.job_id);
     const recordTemplates = templateRegistry.getAllRecordTemplates();
@@ -145,19 +214,39 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     return null;
   }
 
+    /**
+   * Gets field spec
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the list
+   */
   private async getFieldSpec(jobId: string): Promise<string[]> {
     return this.dbManager.repositories.jobs.getFieldSpec(jobId);
   }
 
+    /**
+   * Gets dead letter
+   * @param dlqId - The dlq id
+   * @returns A promise that resolves to the result
+   */
   private async getDeadLetter(dlqId: string): Promise<DeadLetterAttributes | null> {
     return this.dbManager.repositories.deadLetters.findById(dlqId);
   }
 
+    /**
+   * Updates dead letter status
+   * @param dlqId - The dlq id
+   * @param status - The status
+   * @param attempts - The attempts
+   */
   private async updateDeadLetterStatus(dlqId: string | undefined, status: string, attempts?: number): Promise<void> {
     if (!dlqId) return;
     await this.dbManager.repositories.deadLetters.updateStatus(dlqId, status, { attempts });
   }
 
+    /**
+   * Marks for review
+   * @param msg - The msg
+   */
   private async markForReview(msg: DLQMessage): Promise<void> {
     await this.updateDeadLetterStatus(msg.dlq_id, "review");
     this.logger.warn("line_marked_for_review", {
@@ -169,6 +258,11 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     metrics.increment("retry.marked_for_review", 1, { failure_class: msg.failure_class });
   }
 
+    /**
+   * Emits recovered
+   * @param msg - The msg
+   * @param result - The result
+   */
   private async emitRecovered(msg: DLQMessage, result: ClassifyResult): Promise<void> {
     await this.updateDeadLetterStatus(msg.dlq_id, "recovered");
     const loadMsg: LoadMessage = {
@@ -184,6 +278,11 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     await sendMessage(config.settings.LOAD_QUEUE_URL, loadMsg, 0, msg.job_id);
   }
 
+    /**
+   * Performs the re enqueue operation.
+   * @param msg - The msg
+   * @param delaySeconds - The delay seconds
+   */
   private async reEnqueue(msg: DLQMessage, delaySeconds: number): Promise<void> {
     const nextAttempts = msg.attempts + 1;
     await this.updateDeadLetterStatus(msg.dlq_id, "pending", nextAttempts);
@@ -198,6 +297,9 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     metrics.increment("retry.re_enqueued", 1);
   }
 
+    /**
+   * Performs the consumer loop operation.
+   */
   public async consumerLoop(): Promise<void> {
     await this.dbManager.initialize();
     this.logger.info("retry_consumer_started");

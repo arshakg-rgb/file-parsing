@@ -13,17 +13,61 @@ import { startHealthCheckServer } from "@utils/response/health.js";
 import { ArchiveEntryConsumerService } from "@service/archive_entry_consumer/ArchiveEntryConsumerService.js";
 import { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryResponse } from "@service/archive_entry_consumer/io/IArchiveEntryConsumer.js";
 
+/**
+ * ArchiveEntryConsumerServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveEntryConsumerService {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: ArchiveEntryConsumerServiceImpl;
+    /**
+   * Logger instance
+   * @private
+   */
   private logger: Logger;
+    /**
+   * Gcs Utils
+   * @private
+   */
   private gcsUtils: FirestoreCacheUtils;
+    /**
+   * Password Cache
+   * @private
+   */
   private passwordCache: Map<string, Buffer>;
+    /**
+   * Password Attempts
+   * @private
+   */
   private passwordAttempts: Map<string, number>;
+    /**
+   * M A X_ R E T R I E S
+   * @private
+   */
   private MAX_RETRIES = 3;
+    /**
+   * R E T R Y_ D E L A Y_ M S
+   * @private
+   */
   private RETRY_DELAY_MS = 5 * 60 * 1000;
+    /**
+   * M A X_ T O T A L_ U N C O M P R E S S E D
+   * @private
+   */
   private MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024;
+    /**
+   * C O N C U R R E N T_ M E S S A G E S
+   * @private
+   */
   private CONCURRENT_MESSAGES = 3;
 
+    /**
+   * Constructs a new ArchiveEntryConsumerServiceImpl instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate ArchiveEntryConsumerServiceImpl directly. Use getInstance()");
@@ -40,6 +84,10 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
     }
   }
 
+    /**
+   * Gets the single instance of the ArchiveEntryConsumerServiceImpl class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): ArchiveEntryConsumerServiceImpl {
     if (!ArchiveEntryConsumerServiceImpl.instance) {
       ArchiveEntryConsumerServiceImpl.instance = new ArchiveEntryConsumerServiceImpl(Enforce);
@@ -47,14 +95,27 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
     return ArchiveEntryConsumerServiceImpl.instance;
   }
 
+    /**
+   * Gets logger
+   * @returns The logger result
+   */
   public getLogger(): Logger {
     return this.logger;
   }
 
+    /**
+   * Gets gcs utils
+   * @returns The firestore cache utils result
+   */
   public getGcsUtils(): FirestoreCacheUtils {
     return this.gcsUtils;
   }
 
+    /**
+   * Processes entry
+   * @param req - The HTTP request object
+   * @returns A promise that resolves to the result
+   */
   public async processEntry(req: ArchiveEntryRequest): Promise<ArchiveEntryResponse> {
     // This is a placeholder - the actual implementation would be more complex
     // For now, we'll just delegate to the existing extractSingleRarEntry method

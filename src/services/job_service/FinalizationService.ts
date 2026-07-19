@@ -15,11 +15,34 @@ export type { FinalizeResult } from "@service/job_service/io/IFinalizationServic
  * Composes repository, storage, Parquet, and line-mapping concerns.
  */
 class FinalizationService {
+    /**
+   * Repository
+   * @private
+   */
   private readonly repository: FinalizeRepository;
+    /**
+   * Storage
+   * @private
+   */
   private readonly storage: IObjectStorage;
+    /**
+   * Engine
+   * @private
+   */
   private readonly engine: typeof ParquetEngine;
+    /**
+   * Line Mapper
+   * @private
+   */
   private readonly lineMapper: LineNumberMapper;
 
+    /**
+   * Constructs a new FinalizationService instance.
+   * @param repository - The repository
+   * @param storage - The storage
+   * @param engine - The engine
+   * @param lineMapper - The line mapper
+   */
   constructor(
     repository: FinalizeRepository = new FinalizeRepository(),
     storage: IObjectStorage = new GcsObjectStorage(),
@@ -32,6 +55,13 @@ class FinalizationService {
     this.lineMapper = lineMapper;
   }
 
+    /**
+   * Performs the finalize output operation.
+   * @param jobId - The job identifier
+   * @param partPaths - The part paths
+   * @param bucket - The bucket
+   * @returns A promise that resolves to the result
+   */
   async finalizeOutput(jobId: string, partPaths: string[], bucket: string): Promise<FinalizeResult> {
     if (!partPaths.length) {
       return { failed: false, paths: [] };
@@ -77,6 +107,13 @@ class FinalizationService {
     return { failed: false, paths: mergedPaths };
   }
 
+    /**
+   * Merges group
+   * @param jobId - The job identifier
+   * @param group - The group
+   * @param bucket - The bucket
+   * @returns A promise that resolves to the list
+   */
   private async mergeGroup(
     jobId: string,
     group: { templateId: string; paths: StoragePath[]; protocol: GcsProtocol },
@@ -103,6 +140,11 @@ class FinalizationService {
     return [mergedPath.toString()];
   }
 
+    /**
+   * Groups by template
+   * @param partPaths - The part paths
+   * @returns The map<string, { template id: string; paths:  storage path[]; protocol:  gcs protocol }> result
+   */
   private groupByTemplate(
     partPaths: string[]
   ): Map<string, { templateId: string; paths: StoragePath[]; protocol: GcsProtocol }> {
@@ -120,6 +162,11 @@ class FinalizationService {
     return groups;
   }
 
+    /**
+   * Extracts template id
+   * @param key - The key
+   * @returns The string result
+   */
   private extractTemplateId(key: string): string {
     const filename = key.split("/").pop() || "";
     const parts = filename.split("-");
@@ -131,6 +178,11 @@ class FinalizationService {
     return "unknown";
   }
 
+    /**
+   * Performs the total part size operation.
+   * @param paths - The paths
+   * @returns A promise that resolves to the result
+   */
   private async totalPartSize(paths: StoragePath[]): Promise<number> {
     let total = 0;
     for (const p of paths) {
@@ -139,6 +191,11 @@ class FinalizationService {
     return total;
   }
 
+    /**
+   * Merges rows
+   * @param paths - The paths
+   * @returns A promise that resolves to the list
+   */
   private async mergeRows(paths: StoragePath[]): Promise<ParquetRow[]> {
     const rows: ParquetRow[] = [];
     for (const p of paths) {
@@ -147,6 +204,10 @@ class FinalizationService {
     return rows;
   }
 
+    /**
+   * Normalizes line numbers
+   * @param rows - The rows
+   */
   private normalizeLineNumbers(rows: ParquetRow[]): void {
     rows.sort((a, b) => Number(a._line_no ?? 0) - Number(b._line_no ?? 0));
     let nextLineNo = 1;
@@ -158,6 +219,11 @@ class FinalizationService {
     }
   }
 
+    /**
+   * Performs the backfill line numbers operation.
+   * @param jobId - The job identifier
+   * @param mergedPaths - The merged paths
+   */
   private async backfillLineNumbers(jobId: string, mergedPaths: StoragePath[]): Promise<void> {
     const job = await this.repository.getJob(jobId);
     if (!job?.s3_url) {
@@ -233,6 +299,13 @@ class FinalizationService {
     }
   }
 
+    /**
+   * Updates rubbish log
+   * @param jobId - The job identifier
+   * @param rubbishLogPath - The rubbish log path
+   * @param entries - The entries
+   * @param lineMap - The line map
+   */
   private async updateRubbishLog(
     jobId: string,
     rubbishLogPath: string,
@@ -263,6 +336,11 @@ class FinalizationService {
     }
   }
 
+    /**
+   * Performs the backfill parquet operation.
+   * @param storagePath - The storage path
+   * @param lineMap - The line map
+   */
   private async backfillParquet(storagePath: StoragePath, lineMap: Map<number, number>): Promise<void> {
     try {
       const rows = await this.engine.readRows(this.storage, storagePath);
@@ -284,6 +362,13 @@ class FinalizationService {
   }
 }
 
+/**
+ * Performs the finalize output operation.
+ * @param jobId - The job identifier
+ * @param partPaths - The part paths
+ * @param bucket - The bucket
+ * @returns A promise that resolves to the result
+ */
 export async function finalizeOutput(jobId: string, partPaths: string[], bucket: string): Promise<FinalizeResult> {
   const service = new FinalizationService();
   return service.finalizeOutput(jobId, partPaths, bucket);

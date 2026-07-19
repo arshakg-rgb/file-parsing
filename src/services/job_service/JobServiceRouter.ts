@@ -7,6 +7,9 @@ import { sendRaw } from "@shared/QueueService.js";
 import { presignedPutUrl } from "@shared/GcsUtils.js";
 import { transition } from "./stateMachine.js";
 
+/**
+ * The router
+ */
 export const router = Router({ mergeParams: true });
 
 router.post("/jobs", async (req: Request, res: Response, next: NextFunction) => {

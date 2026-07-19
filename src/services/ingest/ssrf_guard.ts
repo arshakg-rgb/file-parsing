@@ -3,8 +3,14 @@ import dns from "dns";
 import { promisify } from "util";
 import { settings } from "@shared/Settings.js";
 
+/**
+ * The dns lookup
+ */
 const dnsLookup = promisify(dns.lookup);
 
+/**
+ * The b l o c k e d_ n e t w o r k s
+ */
 const BLOCKED_NETWORKS = new Set([
   "10.0.0.0/8",
   "172.16.0.0/12",
@@ -18,8 +24,16 @@ const BLOCKED_NETWORKS = new Set([
   "203.0.113.0/24",
 ]);
 
+/**
+ * The b l o c k e d_ v6
+ */
 const BLOCKED_V6 = new Set(["::1/128", "fc00::/7", "fe80::/10", "::ffff:0:0/96"]);
 
+/**
+ * Checks whether blocked ip
+ * @param ip - The ip
+ * @returns True if the condition is met, false otherwise
+ */
 function isBlockedIp(ip: string): boolean {
   if (ip.includes(":")) {
     for (const net of BLOCKED_V6) {
@@ -33,6 +47,12 @@ function isBlockedIp(ip: string): boolean {
   return false;
 }
 
+/**
+ * Checks whether in network
+ * @param ip - The ip
+ * @param network - The network
+ * @returns True if the condition is met, false otherwise
+ */
 function isInNetwork(ip: string, network: string): boolean {
   const [net, prefix] = network.split("/");
   const bits = parseInt(prefix, 10);
@@ -45,6 +65,11 @@ function isInNetwork(ip: string, network: string): boolean {
   return (ipNum & mask) === (netNum & mask);
 }
 
+/**
+ * Expands i pv6
+ * @param ip - The ip
+ * @returns The number[] | null result
+ */
 function expandIPv6(ip: string): number[] | null {
   let parts = ip.split(":");
   if (parts[parts.length - 1].includes(".")) {
@@ -71,6 +96,13 @@ function expandIPv6(ip: string): number[] | null {
   return groups;
 }
 
+/**
+ * Checks whether in network v6
+ * @param ip - The ip
+ * @param net - The net
+ * @param bits - The bits
+ * @returns True if the condition is met, false otherwise
+ */
 function isInNetworkV6(ip: string, net: string, bits: number): boolean {
   const ipGroups = expandIPv6(ip);
   const netGroups = expandIPv6(net);
@@ -81,17 +113,33 @@ function isInNetworkV6(ip: string, net: string, bits: number): boolean {
   return (ipBig & mask) === (netBig & mask);
 }
 
+/**
+ * Performs the ipv6 to big int operation.
+ * @param groups - The groups
+ * @returns The bigint result
+ */
 function ipv6ToBigInt(groups: number[]): bigint {
   return groups.reduce((acc, g) => (acc << 16n) | BigInt(g), 0n);
 }
 
+/**
+ * Class representing a s s r f error error.
+ */
 export class SSRFError extends Error {
+    /**
+   * Constructs a new SSRFError instance.
+   * @param message - The message
+   */
   constructor(message: string) {
     super(message);
     this.name = "SSRFError";
   }
 }
 
+/**
+ * Checks url
+ * @param url - The URL to process
+ */
 export async function checkUrl(url: string): Promise<void> {
   const parsed = new URL(url);
   // Allow gs:// URLs (internal GCS) - no SSRF risk
@@ -124,6 +172,11 @@ export async function checkUrl(url: string): Promise<void> {
   }
 }
 
+/**
+ * Fetches url stream
+ * @param url - The URL to process
+ * @returns The async generator< buffer> result
+ */
 export async function* fetchUrlStream(url: string): AsyncGenerator<Buffer> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), settings.FETCH_TIMEOUT_SECONDS * 1000);

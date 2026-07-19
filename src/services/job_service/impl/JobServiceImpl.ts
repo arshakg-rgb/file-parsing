@@ -11,11 +11,31 @@ import { createTables } from "@shared/DatabaseManager.js";
 import { JobService } from "@service/job_service/JobService.js";
 import { IJobService, JobRequest, JobResponse } from "@service/job_service/io/IJobService.js";
 
+/**
+ * JobServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class JobServiceImpl extends ServiceManager implements JobService {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: JobServiceImpl;
+    /**
+   * The Express application instance
+   * @private
+   */
   private app: express.Express;
+    /**
+   * Db Manager
+   * @private
+   */
   private dbManager: MySqlManager;
 
+    /**
+   * Constructs a new JobServiceImpl instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate JobServiceImpl directly. Use getInstance()");
@@ -27,6 +47,10 @@ class JobServiceImpl extends ServiceManager implements JobService {
     this.setupApp();
   }
 
+    /**
+   * Gets the single instance of the JobServiceImpl class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): JobServiceImpl {
     if (!JobServiceImpl.instance) {
       JobServiceImpl.instance = new JobServiceImpl(Enforce);
@@ -34,6 +58,9 @@ class JobServiceImpl extends ServiceManager implements JobService {
     return JobServiceImpl.instance;
   }
 
+    /**
+   * Sets up app
+   */
   private setupApp(): void {
     this.app.use(express.json());
     this.app.use("/v1", router);
@@ -62,11 +89,19 @@ class JobServiceImpl extends ServiceManager implements JobService {
     });
   }
 
+    /**
+   * Processes job
+   * @param req - The HTTP request object
+   * @returns A promise that resolves to the result
+   */
   public async processJob(req: JobRequest): Promise<JobResponse> {
     // Placeholder implementation
     return { success: true };
   }
 
+    /**
+   * Performs the event consumer loop operation.
+   */
   public async eventConsumerLoop(): Promise<void> {
     const config = this.getConfig();
     while (true) {
@@ -98,6 +133,9 @@ class JobServiceImpl extends ServiceManager implements JobService {
     }
   }
 
+    /**
+   * Initializes database
+   */
   public async initializeDatabase(): Promise<void> {
     try {
       console.log("Running database migration...");
@@ -110,6 +148,9 @@ class JobServiceImpl extends ServiceManager implements JobService {
     }
   }
 
+    /**
+   * Starts the operation
+   */
   public async start(): Promise<void> {
     const config = this.getConfig();
     const PORT = process.env.PORT || 8080;
@@ -125,6 +166,9 @@ class JobServiceImpl extends ServiceManager implements JobService {
     this.eventConsumerLoop();
   }
 
+    /**
+   * Stops the operation
+   */
   public async stop(): Promise<void> {
     // Placeholder for cleanup
   }

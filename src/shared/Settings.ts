@@ -6,20 +6,40 @@ dotenv.config({ path: path.resolve(".env.local") });
 // Fall back to sibling Python project's env for shared infra settings
 dotenv.config({ path: path.resolve("../file-parsing-pipeline/.env.local") });
 
+/**
+ * Gets number
+ * @param name - The name value
+ * @param fallback - The fallback
+ * @returns The numeric result
+ */
 function getNumber(name: string, fallback: number): number {
   const v = process.env[name];
   return v !== undefined ? Number(v) : fallback;
 }
 
+/**
+ * Gets string
+ * @param name - The name value
+ * @param fallback - The fallback
+ * @returns The string result
+ */
 function getString(name: string, fallback: string): string {
   return process.env[name] ?? fallback;
 }
 
+/**
+ * Gets optional string
+ * @param name - The name value
+ * @returns The string | undefined result
+ */
 function getOptionalString(name: string): string | undefined {
   const v = process.env[name];
   return v === "" ? undefined : v;
 }
 
+/**
+ * Application settings
+ */
 export const settings = {
   // ---- Google Cloud Platform ----
   GCP_PROJECT_ID: getString("GCP_PROJECT_ID", "data-etl-499916"),

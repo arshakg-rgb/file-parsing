@@ -1,5 +1,8 @@
 import { createTables, pool } from "@shared/DatabaseManager.js";
 
+/**
+ * Main entry point of the application
+ */
 async function main() {
   console.log("Creating database tables...");
   await createTables();

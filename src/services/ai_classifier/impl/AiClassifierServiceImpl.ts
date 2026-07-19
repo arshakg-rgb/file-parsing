@@ -16,6 +16,9 @@ import {
 
 type RawClassifyResponse = Record<string, unknown>;
 
+/**
+ * The s y s t e m_ p r o m p t
+ */
 const SYSTEM_PROMPT = `You are a data-parsing assistant embedded in a production file-parsing pipeline.
 A streaming parser has encountered a line that matches NO known template.
 
@@ -67,10 +70,26 @@ If rubbish-signature:
 If uncertain:
 {"kind": "uncertain"}`;
 
+/**
+ * AiClassifierServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class AiClassifierServiceImpl extends ServiceManager implements AiClassifierService {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: AiClassifierServiceImpl;
+    /**
+   * Ai
+   * @private
+   */
   private ai: GoogleGenAI;
 
+    /**
+   * Constructs a new AiClassifierServiceImpl instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate AiClassifierServiceImpl directly. Use getInstance()");
@@ -88,6 +107,10 @@ class AiClassifierServiceImpl extends ServiceManager implements AiClassifierServ
     });
   }
 
+    /**
+   * Gets the single instance of the AiClassifierServiceImpl class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): AiClassifierServiceImpl {
     if (!AiClassifierServiceImpl.instance) {
       AiClassifierServiceImpl.instance = new AiClassifierServiceImpl(Enforce);
@@ -122,12 +145,22 @@ class AiClassifierServiceImpl extends ServiceManager implements AiClassifierServ
       ?? "";
   }
 
+    /**
+   * Builds user prompt
+   * @param req - The HTTP request object
+   * @returns The string result
+   */
   public buildUserPrompt(req: ClassifyRequest): string {
     return `Target fields to extract: ${req.field_spec.join(", ")}\n\nUnknown line to classify:\n${req.unknown_line}\n\nSurrounding context lines:\n${req.context_lines?.join("\n") || "(none)"}
 
 IMPORTANT: You must respond with a template definition (kind, template.field_map, etc.) as specified in the system prompt. Do NOT extract the data from this line - create a reusable template that can parse this line and similar lines.`;
   }
 
+    /**
+   * Extracts json
+   * @param text - The text
+   * @returns The raw classify response result
+   */
   public extractJson(text: string): RawClassifyResponse {
     // Try markdown code fence first (```json or ```)
     const fence = /\`\`\`(?:json)?\s*(\{[\s\S]*?\})\s*\`\`\`/.exec(text);
@@ -153,6 +186,12 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     throw new Error(`No JSON found in model output. Response: ${text.slice(0, 200)}...`);
   }
 
+    /**
+   * Performs the fingerprint operation.
+   * @param line - The line to process
+   * @param raw - The raw
+   * @returns The string result
+   */
   public fingerprint(line: string, raw: RawClassifyResponse): string {
     const t = (raw.template || {}) as Record<string, unknown>;
     const parts = [(raw.kind as string) || "unknown", (t.structure as string) || "", (t.delimiter as string) || "", (t.quote_char as string) || ""];
@@ -161,6 +200,11 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     return crypto.createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 24);
   }
 
+    /**
+   * Performs the quick fingerprint operation.
+   * @param line - The line to process
+   * @returns The string result
+   */
   public quickFingerprint(line: string): string {
     try {
       const parsed = JSON.parse(line);
@@ -180,6 +224,13 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     return crypto.createHash("sha256").update(`text|${line.length}`).digest("hex").slice(0, 24);
   }
 
+    /**
+   * Builds template from raw
+   * @param raw - The raw
+   * @param kindStr - The kind str
+   * @param line - The line to process
+   * @returns The record template |  rubbish template | null result
+   */
   public buildTemplateFromRaw(raw: RawClassifyResponse, kindStr: string, line: string): RecordTemplate | RubbishTemplate | null {
     try {
       const fp = this.fingerprint(line, raw);
@@ -224,6 +275,11 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     return null;
   }
 
+    /**
+   * Calls vertex a i
+   * @param prompt - The prompt
+   * @returns A promise that resolves to the result
+   */
   public async callVertexAI(prompt: string): Promise<RawClassifyResponse> {
     try {
       console.log("vertex_ai_request_start", { promptLength: prompt.length });
@@ -238,6 +294,12 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     }
   }
 
+    /**
+   * Performs the try parse as c s v operation.
+   * @param line - The line to process
+   * @param fieldSpec - The field spec
+   * @returns The c s v parse result result
+   */
   public tryParseAsCSV(line: string, fieldSpec: string[]): CSVParseResult {
     const delimiters = [",", ";", "\t", "|"];
     
@@ -267,6 +329,13 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     return { success: false, delimiter: "", fields: [] };
   }
 
+    /**
+   * Creates template from c s v
+   * @param line - The line to process
+   * @param fieldSpec - The field spec
+   * @param delimiter - The delimiter
+   * @returns The record template result
+   */
   public createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: string): RecordTemplate {
     const fieldMap: Record<string, { locator: string; type: string }> = {};
     
@@ -295,6 +364,11 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     return template;
   }
 
+    /**
+   * Classifies ai
+   * @param req - The HTTP request object
+   * @returns A promise that resolves to the result
+   */
   public async classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> {
     await templateRegistry.loadFromDatabase();
 
@@ -363,6 +437,12 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     }
   }
 
+    /**
+   * Validates template
+   * @param req - The HTTP request object
+   * @param tmpl - The tmpl
+   * @returns True if the operation succeeds, false otherwise
+   */
   public async validateTemplate(req: ClassifyRequest, tmpl: RecordTemplate): Promise<boolean> {
     try {
       // Basic validation: ensure template can extract fields from the line

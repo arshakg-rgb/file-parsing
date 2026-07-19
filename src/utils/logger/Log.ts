@@ -1,5 +1,8 @@
 import Config from "@config/system-config/Config.js";
 
+/**
+ * The config
+ */
 const config = Config.getInstance();
 
 export interface LogContext {
@@ -7,15 +10,37 @@ export interface LogContext {
   [key: string]: unknown;
 }
 
+/**
+ * Logger is responsible for logger operations.
+ */
 export class Logger {
+    /**
+   * Service
+   * @private
+   */
   private service: string;
+    /**
+   * Loki Enabled
+   * @private
+   */
   private lokiEnabled: boolean;
 
+    /**
+   * Constructs a new Logger instance.
+   * @param service - The service
+   */
   constructor(service: string) {
     this.service = service;
     this.lokiEnabled = !!(config.settings.LOKI_HOST && config.settings.LOKI_USERNAME && config.settings.LOKI_PASSWORD);
   }
 
+    /**
+   * Formats the operation
+   * @param level - The level
+   * @param message - The message
+   * @param context - The context object
+   * @returns The string result
+   */
   private format(level: string, message: string, context: LogContext = {}): string {
     const logEntry = {
       timestamp: new Date().toISOString(),
@@ -27,6 +52,12 @@ export class Logger {
     return JSON.stringify(logEntry);
   }
 
+    /**
+   * Sends to loki
+   * @param level - The level
+   * @param message - The message
+   * @param context - The context object
+   */
   private async sendToLoki(level: string, message: string, context: LogContext = {}): Promise<void> {
     if (!this.lokiEnabled) {
       return;
@@ -73,18 +104,34 @@ export class Logger {
     }
   }
 
+    /**
+   * Logs information about the operation
+   * @param message - The message
+   * @param context - The context object
+   */
   info(message: string, context: LogContext = {}): void {
     const formatted = this.format("info", message, context);
     console.log(formatted);
     this.sendToLoki("info", message, context).catch(() => {});
   }
 
+    /**
+   * Warns about the operation
+   * @param message - The message
+   * @param context - The context object
+   */
   warn(message: string, context: LogContext = {}): void {
     const formatted = this.format("warn", message, context);
     console.warn(formatted);
     this.sendToLoki("warn", message, context).catch(() => {});
   }
 
+    /**
+   * Logs an error for the operation
+   * @param message - The message
+   * @param context - The context object
+   * @param error - The error that occurred
+   */
   error(message: string, context: LogContext = {}, error?: Error): void {
     const entry = this.format("error", message, {
       ...context,
@@ -97,6 +144,11 @@ export class Logger {
     }).catch(() => {});
   }
 
+    /**
+   * Debugs the operation
+   * @param message - The message
+   * @param context - The context object
+   */
   debug(message: string, context: LogContext = {}): void {
     if (process.env.LOG_LEVEL === "debug") {
       const formatted = this.format("debug", message, context);
@@ -106,6 +158,11 @@ export class Logger {
   }
 }
 
+/**
+ * Creates logger
+ * @param service - The service
+ * @returns The logger result
+ */
 export function createLogger(service: string): Logger {
   return new Logger(service);
 }

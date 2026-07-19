@@ -1,15 +1,37 @@
 import { Express, Router } from "express";
 import { InstantiationError } from "@errors/InstantiationError.js";
 
+/**
+ * ApiRouter is responsible for api router operations.
+ */
 class ApiRouter {
+    /**
+   * Singleton instance
+   * @private
+   */
   private static instance: ApiRouter;
+    /**
+   * Router
+   * @private
+   */
   private router: Router;
+    /**
+   * Versioned Routes
+   * @private
+   */
   private versionedRoutes: Map<string, Router> = new Map();
 
+    /**
+   * Constructs a new ApiRouter instance.
+   */
   private constructor() {
     this.router = Router();
   }
 
+    /**
+   * Gets the single instance of the ApiRouter class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): ApiRouter {
     if (!ApiRouter.instance) {
       ApiRouter.instance = new ApiRouter();
@@ -17,6 +39,10 @@ class ApiRouter {
     return ApiRouter.instance;
   }
 
+    /**
+   * Gets router
+   * @returns The router result
+   */
   public getRouter(): Router {
     return this.router;
   }
@@ -42,6 +68,9 @@ class ApiRouter {
     console.log("Versioned routes initialized");
   }
 
+    /**
+   * Sets up v1 routes
+   */
   private setupV1Routes(): void {
     const v1Router = this.versionedRoutes.get("v1")!;
     
@@ -58,6 +87,9 @@ class ApiRouter {
     // v1Router.use("/jobService", jobServiceRoutes);
   }
 
+    /**
+   * Sets up v2 routes
+   */
   private setupV2Routes(): void {
     const v2Router = this.versionedRoutes.get("v2")!;
     

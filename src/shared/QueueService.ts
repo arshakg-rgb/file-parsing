@@ -9,18 +9,62 @@ export interface QueueMessage<T> {
   receiptHandle: string;
 }
 
+/**
+ * QueueService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
 class QueueService extends ServiceManager {
+    /**
+   * Singleton instance
+   * @private
+   */
   protected static instance: QueueService;
+    /**
+   * Logger instance
+   * @private
+   */
   private logger: Logger;
+    /**
+   * Q U E U E_ R E T R I E S
+   * @private
+   */
   private readonly QUEUE_RETRIES = 3;
+    /**
+   * Q U E U E_ R E T R Y_ D E L A Y
+   * @private
+   */
   private readonly QUEUE_RETRY_DELAY = 200;
+    /**
+   * Q U E U E_ T I M E O U T_ S E N D
+   * @private
+   */
   private readonly QUEUE_TIMEOUT_SEND = 60000;
+    /**
+   * Q U E U E_ T I M E O U T_ R E C E I V E
+   * @private
+   */
   private readonly QUEUE_TIMEOUT_RECEIVE = 120000;
   
+    /**
+   * Pub Publisher
+   * @private
+   */
   private pubPublisher: unknown = null;
+    /**
+   * Pub Subscriber
+   * @private
+   */
   private pubSubscriber: unknown = null;
+    /**
+   * Sqs Client
+   * @private
+   */
   private sqsClient: unknown = null;
 
+    /**
+   * Constructs a new QueueService instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate QueueService directly. Use getInstance()");
@@ -30,6 +74,10 @@ class QueueService extends ServiceManager {
     this.logger = createLogger("queue-utils");
   }
 
+    /**
+   * Gets the single instance of the QueueService class.
+   * @returns The single instance of the class
+   */
   public static getInstance(): QueueService {
     if (!QueueService.instance) {
       QueueService.instance = new QueueService(Enforce);
@@ -37,6 +85,11 @@ class QueueService extends ServiceManager {
     return QueueService.instance;
   }
 
+    /**
+   * Checks whether retryable
+   * @param err - The error that occurred
+   * @returns True if the condition is met, false otherwise
+   */
   private isRetryable(err: unknown): boolean {
     if (!err) return false;
     const code = (err as { code?: string | number }).code;
@@ -47,6 +100,12 @@ class QueueService extends ServiceManager {
     return true;
   }
 
+    /**
+   * Performs the with timeout operation.
+   * @param fn - The fn
+   * @param ms - The ms
+   * @returns A promise that resolves to the result
+   */
   private async withTimeout<T>(fn: () => Promise<T>, ms: number): Promise<T> {
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -68,6 +127,13 @@ class QueueService extends ServiceManager {
     });
   }
 
+    /**
+   * Performs the with retry operation.
+   * @param fn - The fn
+   * @param retries - The number of retries
+   * @param delay - The delay
+   * @returns A promise that resolves to the result
+   */
   private async withRetry<T>(fn: () => Promise<T>, retries = this.QUEUE_RETRIES, delay = this.QUEUE_RETRY_DELAY): Promise<T> {
     let lastErr: unknown;
     for (let i = 0; i <= retries; i++) {
@@ -84,11 +150,18 @@ class QueueService extends ServiceManager {
     throw lastErr;
   }
 
+    /**
+   * Checks whether pub sub
+   * @returns True if the condition is met, false otherwise
+   */
   private isPubSub(): boolean {
     const config = this.getConfig();
     return config.settings.QUEUE_BACKEND === "pubsub";
   }
 
+    /**
+   * Gets pub publisher
+   */
   private async getPubPublisher() {
     if (this.pubPublisher) return this.pubPublisher;
     const config = this.getConfig();
@@ -100,6 +173,9 @@ class QueueService extends ServiceManager {
     return this.pubPublisher;
   }
 
+    /**
+   * Gets pub subscriber
+   */
   private async getPubSubscriber() {
     if (this.pubSubscriber) return this.pubSubscriber;
     const config = this.getConfig();
@@ -111,18 +187,31 @@ class QueueService extends ServiceManager {
     return this.pubSubscriber;
   }
 
+    /**
+   * Performs the topic path operation.
+   * @param q - The q
+   * @returns The string result
+   */
   private topicPath(q: string): string {
     const config = this.getConfig();
     if (q.startsWith("projects/")) return q;
     return `projects/${config.settings.GCP_PROJECT_ID}/topics/${q.split("/").pop()!.replace(/\.fifo$/, "")}`;
   }
 
+    /**
+   * Performs the subscription path operation.
+   * @param q - The q
+   * @returns The string result
+   */
   private subscriptionPath(q: string): string {
     const config = this.getConfig();
     if (q.includes("/subscriptions/")) return q;
     return `projects/${config.settings.GCP_PROJECT_ID}/subscriptions/${q.split("/").pop()!.replace(/\.fifo$/, "")}-sub`;
   }
 
+    /**
+   * Gets sqs client
+   */
   private async getSqsClient() {
     if (this.sqsClient) return this.sqsClient;
     const { SQSClient } = await import("@aws-sdk/client-sqs");
@@ -136,6 +225,13 @@ class QueueService extends ServiceManager {
     return this.sqsClient;
   }
 
+    /**
+   * Performs the pub send operation.
+   * @param queueUrl - The queue url
+   * @param payload - The payload
+   * @param groupId - The group id
+   * @returns A promise that resolves to the result
+   */
   private async pubSend(queueUrl: string, payload: object, groupId: string): Promise<string> {
     return this.withRetry(async () => {
       const data = Buffer.from(JSON.stringify(payload)).toString("base64");
@@ -155,6 +251,14 @@ class QueueService extends ServiceManager {
     });
   }
 
+    /**
+   * Performs the pub receive operation.
+   * @param queueUrl - The queue url
+   * @param parser - The parser
+   * @param max - The max
+   * @param wait - The wait
+   * @returns A promise that resolves to the list
+   */
   private async pubReceive<T>(queueUrl: string, parser: (b: string) => T, max: number, wait: number): Promise<QueueMessage<T>[]> {
     const sub = (await this.getPubSubscriber()) as unknown as { pull: (opts: { subscription: string; maxMessages: number }) => Promise<[{ receivedMessages?: { ackId?: string; message?: { data?: string } }[] }]> };
     const subscription = this.subscriptionPath(queueUrl);
@@ -180,6 +284,11 @@ class QueueService extends ServiceManager {
     return [];
   }
 
+    /**
+   * Performs the pub delete operation.
+   * @param queueUrl - The queue url
+   * @param ackId - The ack id
+   */
   private async pubDelete(queueUrl: string, ackId: string): Promise<void> {
     if (!ackId) return;
     await this.withRetry(async () => {
@@ -191,6 +300,14 @@ class QueueService extends ServiceManager {
     });
   }
 
+    /**
+   * Performs the sqs send operation.
+   * @param queueUrl - The queue url
+   * @param payload - The payload
+   * @param delay - The delay
+   * @param groupId - The group id
+   * @returns A promise that resolves to the result
+   */
   private async sqsSend(queueUrl: string, payload: object, delay: number, groupId: string): Promise<string> {
     return this.withRetry(async () => {
       const params: SendMessageCommandInput = {
@@ -215,6 +332,14 @@ class QueueService extends ServiceManager {
     });
   }
 
+    /**
+   * Performs the sqs receive operation.
+   * @param queueUrl - The queue url
+   * @param parser - The parser
+   * @param max - The max
+   * @param wait - The wait
+   * @returns A promise that resolves to the list
+   */
   private async sqsReceive<T>(queueUrl: string, parser: (b: string) => T, max: number, wait: number): Promise<QueueMessage<T>[]> {
     return this.withRetry(async () => {
       const { ReceiveMessageCommand } = await import("@aws-sdk/client-sqs");
@@ -236,6 +361,11 @@ class QueueService extends ServiceManager {
     });
   }
 
+    /**
+   * Performs the sqs delete operation.
+   * @param queueUrl - The queue url
+   * @param receiptHandle - The receipt handle
+   */
   private async sqsDelete(queueUrl: string, receiptHandle: string): Promise<void> {
     if (!receiptHandle) return;
     await this.withRetry(async () => {
@@ -248,6 +378,14 @@ class QueueService extends ServiceManager {
     });
   }
 
+    /**
+   * Sends message
+   * @param queueUrl - The queue url
+   * @param payload - The payload
+   * @param delaySeconds - The delay seconds
+   * @param messageGroupId - The message group id
+   * @returns A promise that resolves to the result
+   */
   public async sendMessage(
     queueUrl: string,
     payload: object,
@@ -260,10 +398,25 @@ class QueueService extends ServiceManager {
       : this.sqsSend(queueUrl, payload, delaySeconds, gid);
   }
 
+    /**
+   * Sends raw
+   * @param queueUrl - The queue url
+   * @param body - The body
+   * @param delaySeconds - The delay seconds
+   * @returns A promise that resolves to the result
+   */
   public async sendRaw(queueUrl: string, body: Record<string, unknown>, delaySeconds = 0): Promise<string> {
     return this.sendMessage(queueUrl, body, delaySeconds, (body.job_id as string | undefined) ?? "default");
   }
 
+    /**
+   * Receives messages
+   * @param queueUrl - The queue url
+   * @param parser - The parser
+   * @param maxMessages - The max messages
+   * @param waitSeconds - The wait seconds
+   * @returns A promise that resolves to the list
+   */
   public async receiveMessages<T extends object>(
     queueUrl: string,
     parser: (body: string) => T,
@@ -275,12 +428,22 @@ class QueueService extends ServiceManager {
       : this.sqsReceive(queueUrl, parser, maxMessages, waitSeconds);
   }
 
+    /**
+   * Deletes message
+   * @param queueUrl - The queue url
+   * @param receiptHandle - The receipt handle
+   */
   public async deleteMessage(queueUrl: string, receiptHandle: string): Promise<void> {
     return this.isPubSub()
       ? this.pubDelete(queueUrl, receiptHandle)
       : this.sqsDelete(queueUrl, receiptHandle);
   }
 
+    /**
+   * Publishes event
+   * @param event - The event
+   * @returns A promise that resolves to the result
+   */
   public async publishEvent(event: object): Promise<string | null> {
     const config = this.getConfig();
     return this.sendMessage(config.settings.JOB_EVENTS_QUEUE_URL, event, 0, ((event as Record<string, unknown>).job_id as string | undefined) ?? "default").catch((err) => {
@@ -292,8 +455,19 @@ class QueueService extends ServiceManager {
 
 export default QueueService;
 
+/**
+ * The queue service
+ */
 const queueService = QueueService.getInstance();
 
+/**
+ * Sends message
+ * @param queueUrl - The queue url
+ * @param payload - The payload
+ * @param delaySeconds - The delay seconds
+ * @param messageGroupId - The message group id
+ * @returns A promise that resolves to the result
+ */
 export async function sendMessage(
   queueUrl: string,
   payload: object,
@@ -303,10 +477,25 @@ export async function sendMessage(
   return queueService.sendMessage(queueUrl, payload, delaySeconds, messageGroupId);
 }
 
+/**
+ * Sends raw
+ * @param queueUrl - The queue url
+ * @param body - The body
+ * @param delaySeconds - The delay seconds
+ * @returns A promise that resolves to the result
+ */
 export async function sendRaw(queueUrl: string, body: Record<string, unknown>, delaySeconds = 0): Promise<string> {
   return queueService.sendRaw(queueUrl, body, delaySeconds);
 }
 
+/**
+ * Receives messages
+ * @param queueUrl - The queue url
+ * @param parser - The parser
+ * @param maxMessages - The max messages
+ * @param waitSeconds - The wait seconds
+ * @returns A promise that resolves to the list
+ */
 export async function receiveMessages<T extends object>(
   queueUrl: string,
   parser: (body: string) => T,
@@ -316,10 +505,20 @@ export async function receiveMessages<T extends object>(
   return queueService.receiveMessages(queueUrl, parser, maxMessages, waitSeconds);
 }
 
+/**
+ * Deletes message
+ * @param queueUrl - The queue url
+ * @param receiptHandle - The receipt handle
+ */
 export async function deleteMessage(queueUrl: string, receiptHandle: string): Promise<void> {
   return queueService.deleteMessage(queueUrl, receiptHandle);
 }
 
+/**
+ * Publishes event
+ * @param event - The event
+ * @returns A promise that resolves to the result
+ */
 export async function publishEvent(event: object): Promise<string | null> {
   return queueService.publishEvent(event);
 }

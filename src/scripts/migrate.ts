@@ -1,5 +1,8 @@
 import { createTables, pool, waitForDb } from "@shared/DatabaseManager.js";
 
+/**
+ * Main entry point of the application
+ */
 async function main(): Promise<void> {
   console.log("Starting database migration...");
   try {

@@ -12,6 +12,9 @@ export { JobStatus } from "@enum/JobStatus.js";
 export { FailureClass } from "@enum/FailureClass.js";
 export { DLQStatus } from "@enum/DLQStatus.js";
 
+/**
+ * The v a l i d_ t r a n s i t i o n s
+ */
 export const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
   [JobStatus.QUEUED]: [JobStatus.INGESTING, JobStatus.DETECTING, JobStatus.FAILED],
   [JobStatus.INGESTING]: [JobStatus.AWAITING_PASSWORD, JobStatus.DETECTING, JobStatus.DONE, JobStatus.FAILED],
@@ -27,6 +30,9 @@ export const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
   [JobStatus.FAILED]: [],
 };
 
+/**
+ * The t e r m i n a l_ s t a t u s e s
+ */
 export const TERMINAL_STATUSES = new Set([
   JobStatus.DONE,
   JobStatus.PARTIAL,
@@ -42,6 +48,11 @@ export interface JobCounts {
   rubbish_log_path?: string;
 }
 
+/**
+ * Performs the total failed operation.
+ * @param counts - The counts
+ * @returns The numeric result
+ */
 export function totalFailed(counts: JobCounts): number {
   return Object.values(counts.failed_by_class).reduce((a, b) => a + b, 0);
 }
@@ -77,6 +88,10 @@ export interface ParseJob {
   updated_at: string;
 }
 
+/**
+ * Performs the default parse job operation.
+ * @returns The parse job result
+ */
 export function defaultParseJob(): ParseJob {
   const now = new Date().toISOString();
   return {
@@ -94,10 +109,21 @@ export function defaultParseJob(): ParseJob {
   };
 }
 
+/**
+ * Checks whether transition to
+ * @param current - The current
+ * @param next - The next middleware function
+ * @returns True if the condition is met, false otherwise
+ */
 export function canTransitionTo(current: JobStatus, next: JobStatus): boolean {
   return VALID_TRANSITIONS[current]?.includes(next) ?? false;
 }
 
+/**
+ * Checks whether terminal
+ * @param status - The status
+ * @returns True if the condition is met, false otherwise
+ */
 export function isTerminal(status: JobStatus): boolean {
   return TERMINAL_STATUSES.has(status);
 }
