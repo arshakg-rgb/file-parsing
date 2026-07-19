@@ -1,4 +1,4 @@
-import { getJob, repositories, type ParseJobRow, type DeadLetterRow } from "../../../shared/db.js";
+import { getJob, repositories, type ParseJobRow, type DeadLetterRow } from "../../../shared/DatabaseManager.js";
 import { DeadLetter } from "./DeadLetter.js";
 
 export class FinalizeRepository {

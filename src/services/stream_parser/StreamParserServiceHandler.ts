@@ -1,21 +1,21 @@
 import { Template } from "../../shared/models/template.js";
-import { settings } from "../../shared/config.js";
+import { settings } from "../../shared/Settings.js";
 import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js";
 import { JobStatus, ParseMessage, FailureClass, JobCounts, totalFailed, ColumnMap } from "../../shared/models/job.js";
-import { receiveMessages, deleteMessage, publishEvent } from "../../shared/queueUtils.js";
-import { parseGcsUrl, streamLines, objectSize, readRange } from "../../shared/gcsUtils.js";
+import { receiveMessages, deleteMessage, publishEvent } from "../../shared/QueueService.js";
+import { parseGcsUrl, streamLines, objectSize, readRange } from "../../shared/GcsUtils.js";
 import { LineClassifier } from "./LineClassifier.js";
-import { templateRegistry } from "../../shared/templateRegistry.js";
-import { OutputManager } from "../../shared/parquetWriter.js";
-import { CsvOutputWriter } from "../../shared/csvOutputWriter.js";
-import { DLQManager } from "../../shared/dlqManager.js";
-import { TraceSystem } from "../../shared/traceSystem.js";
-import { QualityGate } from "../../shared/qualityGate.js";
-import { AdaptiveProbing } from "../../shared/probing.js";
+import { templateRegistry } from "../../shared/TemplateRegistryService.js";
+import { OutputManager } from "../../shared/OutputManager.js";
+import { CsvOutputWriter } from "../../shared/CsvOutputWriter.js";
+import { DLQManager } from "../../shared/DLQManager.js";
+import { TraceSystem } from "../../shared/TraceSystem.js";
+import { QualityGate } from "../../shared/QualityGate.js";
+import { AdaptiveProbing } from "../../shared/AdaptiveProbing.js";
 import { createLogger, Logger } from "../../utils/logger/logger.js";
 import { metrics } from "../../utils/response/metrics.js";
 import { startHealthCheckServer } from "../../utils/response/health.js";
-import { waitForDb } from "../../shared/db.js";
+import { waitForDb } from "../../shared/DatabaseManager.js";
 import jschardet from "jschardet";
 import { normalizeEncoding, isLikelyUtf8 } from "../../utils/normalizers/encoding.js";
 
@@ -325,7 +325,7 @@ export class StreamParserService {
 
     // Adaptive probing to detect file structure
     const fileSize = msg.size || (await objectSize(bucket, key));
-    const probing = new AdaptiveProbing();
+    const probing = AdaptiveProbing.getInstance();
     const probeCount = probing.calculateProbeCount(fileSize);
     const probeOffsets = probing.generateProbeOffsets(fileSize, probeCount);
     
@@ -379,9 +379,9 @@ export class StreamParserService {
     const classifier = new LineClassifier(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap);
     const outputManager = new OutputManager();
     const csvWriter = new CsvOutputWriter(jobId, fieldSpec);
-    const dlqManager = new DLQManager();
-    const traceSystem = new TraceSystem();
-    const qualityGate = new QualityGate();
+    const dlqManager = DLQManager.getInstance();
+    const traceSystem = TraceSystem.getInstance();
+    const qualityGate = QualityGate.getInstance();
 
     const counts: JobCounts = { parsed: 0, dropped_rubbish: 0, failed_by_class: {} };
     let lineNo = 0;

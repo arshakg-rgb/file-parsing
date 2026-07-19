@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { settings } from "../../shared/config.js";
+import { settings } from "../../shared/Settings.js";
 import { FinalizeRepository } from "./finalize/FinalizeRepository.js";
 import { GcsObjectStorage } from "./finalize/GcsObjectStorage.js";
 import { IObjectStorage } from "./finalize/IObjectStorage.js";

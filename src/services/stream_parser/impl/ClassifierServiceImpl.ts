@@ -1,6 +1,6 @@
-import { settings } from "../../../shared/config.js";
+import { settings } from "../../../shared/Settings.js";
 import { FailureClass } from "../../../shared/models/job.js";
-import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../../shared/templateRegistry.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../../shared/TemplateRegistryService.js";
 import { safeRegex, safeRegexTest } from "../../../utils/validator/safeRegex.js";
 import ServiceManager from "../../../config/ServiceManager.js";
 import { Enforce } from "../../../config/ServiceManager.js";

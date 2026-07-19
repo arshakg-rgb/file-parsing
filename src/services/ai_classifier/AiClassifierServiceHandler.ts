@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { GoogleGenAI } from "@google/genai";
-import { settings } from "../../shared/config.js";
-import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
+import { settings } from "../../shared/Settings.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/TemplateRegistryService.js";
 import { ClassifyRequest, ClassifyResponse, FieldLocator, CSVParseResult, AIVerdict } from "./io/IAiClassifier.js";
 
 /**

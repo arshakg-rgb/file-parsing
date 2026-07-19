@@ -1,4 +1,4 @@
-import { RecordTemplate, RubbishTemplate } from "../../../shared/templateRegistry.js";
+import { RecordTemplate, RubbishTemplate } from "../../../shared/TemplateRegistryService.js";
 
 export interface ClassifyRequest {
   unknown_line: string;

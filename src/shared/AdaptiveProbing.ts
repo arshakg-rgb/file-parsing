@@ -15,8 +15,8 @@ export interface ProbeResult {
   sampleLines: string[];
 }
 
-class ProbingService extends ServiceManager {
-  protected static instance: ProbingService;
+export class AdaptiveProbing extends ServiceManager {
+  protected static instance: AdaptiveProbing;
   private logger: Logger;
   private gcsUtils: FirestoreCacheUtils;
   private readonly PROBE_SIZE_PER_COUNT = 536870912; // 512MB
@@ -28,7 +28,7 @@ class ProbingService extends ServiceManager {
 
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate ProbingService directly. Use getInstance()");
+      throw new InstantiationError("Cannot instantiate AdaptiveProbing directly. Use getInstance()");
     }
     super(enforce);
     
@@ -36,11 +36,11 @@ class ProbingService extends ServiceManager {
     this.gcsUtils = FirestoreCacheUtils.getInstance();
   }
 
-  public static getInstance(): ProbingService {
-    if (!ProbingService.instance) {
-      ProbingService.instance = new ProbingService(Enforce);
+  public static getInstance(): AdaptiveProbing {
+    if (!AdaptiveProbing.instance) {
+      AdaptiveProbing.instance = new AdaptiveProbing(Enforce);
     }
-    return ProbingService.instance;
+    return AdaptiveProbing.instance;
   }
 
   public calculateProbeCount(fileSize: number): number {
@@ -254,50 +254,4 @@ class ProbingService extends ServiceManager {
 }
 
 
-export default ProbingService;
-
-const probingService = ProbingService.getInstance();
-
-export class AdaptiveProbing {
-  calculateProbeCount(fileSize: number): number {
-    return probingService.calculateProbeCount(fileSize);
-  }
-
-  calculateProbeWindow(avgRowWidth: number, maxRowWidth: number): number {
-    return probingService.calculateProbeWindow(avgRowWidth, maxRowWidth);
-  }
-
-  generateProbeOffsets(fileSize: number, probeCount: number): number[] {
-    return probingService.generateProbeOffsets(fileSize, probeCount);
-  }
-
-  async executeProbe(
-    bucket: string,
-    key: string,
-    offset: number,
-    fileSize: number
-  ): Promise<ProbeResult> {
-    return probingService.executeProbe(bucket, key, offset, fileSize);
-  }
-
-  async probeFile(bucket: string, key: string): Promise<{
-    fileSize: number;
-    probeCount: number;
-    probeResults: ProbeResult[];
-    finalWindow: number;
-    encoding: string;
-    avgRowWidth: number;
-    maxRowWidth: number;
-  }> {
-    return probingService.probeFile(bucket, key);
-  }
-
-  analyzeProbes(probeResults: ProbeResult[]): {
-    isHomogeneous: boolean;
-    likelyHasEmbeddedNewlines: boolean;
-    likelyHasQuotedFields: boolean;
-    suggestedDelimiter: string;
-  } {
-    return probingService.analyzeProbes(probeResults);
-  }
-}
+export default AdaptiveProbing;

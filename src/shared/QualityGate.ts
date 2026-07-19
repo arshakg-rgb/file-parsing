@@ -13,15 +13,15 @@ export interface QualityMetrics {
   failedLineRatio: number;
 }
 
-class QualityGateService extends ServiceManager {
-  protected static instance: QualityGateService;
+export class QualityGate extends ServiceManager {
+  protected static instance: QualityGate;
   private logger: Logger;
   private dbManager: MySqlManager;
   private readonly FAILED_LINE_RATIO_THRESHOLD: number;
 
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate QualityGateService directly. Use getInstance()");
+      throw new InstantiationError("Cannot instantiate QualityGate directly. Use getInstance()");
     }
     super(enforce);
     
@@ -30,11 +30,11 @@ class QualityGateService extends ServiceManager {
     this.FAILED_LINE_RATIO_THRESHOLD = 0.1;
   }
 
-  public static getInstance(): QualityGateService {
-    if (!QualityGateService.instance) {
-      QualityGateService.instance = new QualityGateService(Enforce);
+  public static getInstance(): QualityGate {
+    if (!QualityGate.instance) {
+      QualityGate.instance = new QualityGate(Enforce);
     }
-    return QualityGateService.instance;
+    return QualityGate.instance;
   }
 
   public async calculateMetrics(jobId: string): Promise<QualityMetrics> {
@@ -98,31 +98,4 @@ class QualityGateService extends ServiceManager {
 }
 
 
-export default QualityGateService;
-
-const qualityGateService = QualityGateService.getInstance();
-
-export class QualityGate {
-  private readonly FAILED_LINE_RATIO_THRESHOLD = 0.1;
-
-  async calculateMetrics(jobId: string): Promise<QualityMetrics> {
-    return qualityGateService.calculateMetrics(jobId);
-  }
-
-  async passesQualityGate(jobId: string): Promise<{ passes: boolean; reason?: string }> {
-    return qualityGateService.passesQualityGate(jobId);
-  }
-
-  async applyQualityGate(jobId: string): Promise<void> {
-    return qualityGateService.applyQualityGate(jobId);
-  }
-
-  async getBatchQualityStats(batchId: string): Promise<{
-    totalJobs: number;
-    passedJobs: number;
-    heldJobs: number;
-    failedJobs: number;
-  }> {
-    return qualityGateService.getBatchQualityStats(batchId);
-  }
-}
+export default QualityGate;

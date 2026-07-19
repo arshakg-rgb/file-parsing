@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { RecordTemplate, RubbishTemplate } from "../../../shared/templateRegistry.js";
+import { RecordTemplate, RubbishTemplate } from "../../../shared/TemplateRegistryService.js";
 import type { MockClassifyRequest, MockClassifyResponse } from "../io/IMockClassifier.js";
 
 export class MockClassifier {

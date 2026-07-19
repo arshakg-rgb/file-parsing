@@ -1,4 +1,4 @@
-import { createTables, pool } from "../shared/db.js";
+import { createTables, pool } from "../shared/DatabaseManager.js";
 
 async function main() {
   console.log("Creating database tables...");

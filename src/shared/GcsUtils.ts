@@ -6,8 +6,8 @@ import { InstantiationError } from "../errors/InstantiationError.js";
 import { createLogger, Logger } from "../utils/logger/logger.js";
 import { decode } from "../utils/normalizers/encoding.js";
 
-class GcsUtilsService extends ServiceManager {
-  protected static instance: GcsUtilsService;
+class GcsUtils extends ServiceManager {
+  protected static instance: GcsUtils;
   private logger: Logger;
   private storage: Storage | null = null;
   private readonly GCS_RETRIES = 3;
@@ -19,18 +19,18 @@ class GcsUtilsService extends ServiceManager {
 
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate GcsUtilsService directly. Use getInstance()");
+      throw new InstantiationError("Cannot instantiate GcsUtils directly. Use getInstance()");
     }
     super(enforce);
     
     this.logger = createLogger("gcs-utils");
   }
 
-  public static getInstance(): GcsUtilsService {
-    if (!GcsUtilsService.instance) {
-      GcsUtilsService.instance = new GcsUtilsService(Enforce);
+  public static getInstance(): GcsUtils {
+    if (!GcsUtils.instance) {
+      GcsUtils.instance = new GcsUtils(Enforce);
     }
-    return GcsUtilsService.instance;
+    return GcsUtils.instance;
   }
 
   public getStorage(): Storage {
@@ -382,28 +382,28 @@ class GcsUtilsService extends ServiceManager {
 }
 
 
-export default GcsUtilsService;
+export default GcsUtils;
 
-const gcsUtilsService = GcsUtilsService.getInstance();
+const gcsUtils = GcsUtils.getInstance();
 
 export function gcsClient(): Storage {
-  return gcsUtilsService.getStorage();
+  return gcsUtils.getStorage();
 }
 
 export function parseGcsUrl(url: string): [string, string] {
-  return gcsUtilsService.parseGcsUrl(url);
+  return gcsUtils.parseGcsUrl(url);
 }
 
 export function objectSize(bucket: string, key: string): Promise<number> {
-  return gcsUtilsService.objectSize(bucket, key);
+  return gcsUtils.objectSize(bucket, key);
 }
 
 export function readRange(bucket: string, key: string, start: number, end: number): Promise<Buffer> {
-  return gcsUtilsService.readRange(bucket, key, start, end);
+  return gcsUtils.readRange(bucket, key, start, end);
 }
 
 export function readFull(bucket: string, key: string): Promise<Buffer> {
-  return gcsUtilsService.readFull(bucket, key);
+  return gcsUtils.readFull(bucket, key);
 }
 
 export function putObject(
@@ -412,15 +412,15 @@ export function putObject(
   body: Buffer,
   contentType = "application/octet-stream"
 ): Promise<void> {
-  return gcsUtilsService.putObject(bucket, key, body, contentType);
+  return gcsUtils.putObject(bucket, key, body, contentType);
 }
 
 export function putJson(bucket: string, key: string, data: Record<string, unknown>): Promise<void> {
-  return gcsUtilsService.putJson(bucket, key, data);
+  return gcsUtils.putJson(bucket, key, data);
 }
 
 export function putParquet(bucket: string, key: string, body: Buffer): Promise<void> {
-  return gcsUtilsService.putParquet(bucket, key, body);
+  return gcsUtils.putParquet(bucket, key, body);
 }
 
 export function copyObject(
@@ -429,15 +429,15 @@ export function copyObject(
   dstBucket: string,
   dstKey: string
 ): Promise<void> {
-  return gcsUtilsService.copyObject(srcBucket, srcKey, dstBucket, dstKey);
+  return gcsUtils.copyObject(srcBucket, srcKey, dstBucket, dstKey);
 }
 
 export function listObjects(bucket: string, prefix: string): Promise<[string, number][]> {
-  return gcsUtilsService.listObjects(bucket, prefix);
+  return gcsUtils.listObjects(bucket, prefix);
 }
 
 export function presignedPutUrl(bucket: string, key: string, expiresIn = 3600, contentType = "application/octet-stream"): Promise<string> {
-  return gcsUtilsService.presignedPutUrl(bucket, key, expiresIn, contentType);
+  return gcsUtils.presignedPutUrl(bucket, key, expiresIn, contentType);
 }
 
 export async function* streamLines(
@@ -446,15 +446,15 @@ export async function* streamLines(
   chunkSize = 1048576,
   encoding = "utf-8"
 ): AsyncGenerator<[string, number, number]> {
-  yield* gcsUtilsService.streamLines(bucket, key, chunkSize, encoding);
+  yield* gcsUtils.streamLines(bucket, key, chunkSize, encoding);
 }
 
 export function splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] {
-  return gcsUtilsService.splitAllLines(data, encoding);
+  return gcsUtils.splitAllLines(data, encoding);
 }
 
 export function sha256Hex(data: Buffer): string {
-  return gcsUtilsService.sha256Hex(data);
+  return gcsUtils.sha256Hex(data);
 }
 
 export { parseGcsUrl as parseS3Url };

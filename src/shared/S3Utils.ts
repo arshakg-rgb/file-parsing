@@ -14,4 +14,4 @@ export {
   streamLines,
   sha256Hex,
   listObjects,
-} from "./gcsUtils.js";
+} from "./GcsUtils.js";

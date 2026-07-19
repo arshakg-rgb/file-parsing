@@ -2,53 +2,19 @@ import os from "os";
 import path from "path";
 import fs from "fs";
 import Config from "../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../config/ServiceManager.js";
-import { InstantiationError } from "../errors/InstantiationError.js";
 import FirestoreCacheUtils from "../utils/cache/FirestoreCacheUtils.js";
 import { createLogger, Logger } from "../utils/logger/logger.js";
 
-class CsvOutputService extends ServiceManager {
-  protected static instance: CsvOutputService;
-  private logger: Logger;
-  private gcsUtils: FirestoreCacheUtils;
-
-  private constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate CsvOutputService directly. Use getInstance()");
-    }
-    super(enforce);
-    
-    this.logger = createLogger("csv-output");
-    this.gcsUtils = FirestoreCacheUtils.getInstance();
-  }
-
-  public static getInstance(): CsvOutputService {
-    if (!CsvOutputService.instance) {
-      CsvOutputService.instance = new CsvOutputService(Enforce);
-    }
-    return CsvOutputService.instance;
-  }
-
-  public static escapeCell(v: unknown): string {
-    if (v === null || v === undefined) return "";
-    if (typeof v === "bigint") return String(v);
-    let s: string;
-    if (Array.isArray(v) || (typeof v === "object" && !(v instanceof Date))) {
-      s = JSON.stringify(v);
-    } else {
-      s = String(v);
-    }
-    return /[",\r\n]/.test(s) ? "\"" + s.replace(/"/g, "\"\"") + "\"" : s;
-  }
-}
-
-
-export default CsvOutputService;
-
-const csvOutputService = CsvOutputService.getInstance();
-
 export function csvEscapeCell(v: unknown): string {
-  return CsvOutputService.escapeCell(v);
+  if (v === null || v === undefined) return "";
+  if (typeof v === "bigint") return String(v);
+  let s: string;
+  if (Array.isArray(v) || (typeof v === "object" && !(v instanceof Date))) {
+    s = JSON.stringify(v);
+  } else {
+    s = String(v);
+  }
+  return /[",\r\n]/.test(s) ? "\"" + s.replace(/"/g, "\"\"") + "\"" : s;
 }
 
 export class CsvOutputWriter {

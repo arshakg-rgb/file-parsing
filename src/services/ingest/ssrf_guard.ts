@@ -1,7 +1,7 @@
 import { isIP } from "net";
 import dns from "dns";
 import { promisify } from "util";
-import { settings } from "../../shared/config.js";
+import { settings } from "../../shared/Settings.js";
 
 const dnsLookup = promisify(dns.lookup);
 

@@ -7,8 +7,8 @@ import { EventType, JobEvent, makeJobEvent } from "../../../shared/models/events
 import { JobStatus, ReportMessage, JobCounts, JobTimings } from "../../../shared/models/job.js";
 import type { ParseJobAttributes } from "../../../config/db/models/ParseJob.js";
 import type { OutputPartAttributes } from "../../../config/db/models/OutputPart.js";
-import { receiveMessages, deleteMessage, publishEvent } from "../../../shared/queueUtils.js";
-import { QualityGate } from "../../../shared/qualityGate.js";
+import { receiveMessages, deleteMessage, publishEvent } from "../../../shared/QueueService.js";
+import { QualityGate } from "../../../shared/QualityGate.js";
 import { createLogger, Logger } from "../../../utils/logger/logger.js";
 import { metrics } from "../../../utils/response/metrics.js";
 import { startHealthCheckServer } from "../../../utils/response/health.js";
@@ -80,7 +80,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
     const parts = await this.getParts(jobId);
     const batchSiblings = jobRow.batch_id ? await this.getBatchJobs(jobRow.batch_id) : [];
 
-    const qualityGate = new QualityGate();
+    const qualityGate = QualityGate.getInstance();
     const qualityMetrics = await qualityGate.calculateMetrics(jobId);
     const qualityCheck = await qualityGate.passesQualityGate(jobId);
 

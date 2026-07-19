@@ -29,8 +29,8 @@ export enum FailureClass {
   EXTRACTION_ERROR = "extraction_error",
 }
 
-class DLQManagerService extends ServiceManager {
-  protected static instance: DLQManagerService;
+export class DLQManager extends ServiceManager {
+  protected static instance: DLQManager;
   private logger: Logger;
   private dbManager: MySqlManager;
   private gcsUtils: FirestoreCacheUtils;
@@ -38,7 +38,7 @@ class DLQManagerService extends ServiceManager {
 
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate DLQManagerService directly. Use getInstance()");
+      throw new InstantiationError("Cannot instantiate DLQManager directly. Use getInstance()");
     }
     super(enforce);
     
@@ -47,11 +47,11 @@ class DLQManagerService extends ServiceManager {
     this.gcsUtils = FirestoreCacheUtils.getInstance();
   }
 
-  public static getInstance(): DLQManagerService {
-    if (!DLQManagerService.instance) {
-      DLQManagerService.instance = new DLQManagerService(Enforce);
+  public static getInstance(): DLQManager {
+    if (!DLQManager.instance) {
+      DLQManager.instance = new DLQManager(Enforce);
     }
-    return DLQManagerService.instance;
+    return DLQManager.instance;
   }
 
   public async addEntry(
@@ -166,52 +166,4 @@ class DLQManagerService extends ServiceManager {
 }
 
 
-export default DLQManagerService;
-
-const dlqManagerService = DLQManagerService.getInstance();
-
-export class DLQManager {
-  async addEntry(
-    jobId: string,
-    byteOffset: number,
-    byteLength: number,
-    lineNo: number,
-    rawBytes: string,
-    failureClass: FailureClass,
-    error: string
-  ): Promise<string | null> {
-    return dlqManagerService.addEntry(jobId, byteOffset, byteLength, lineNo, rawBytes, failureClass, error);
-  }
-
-  async fetchFailedLine(dlqEntry: DeadLetterEntry, s3Url: string): Promise<string> {
-    return dlqManagerService.fetchFailedLine(dlqEntry, s3Url);
-  }
-
-  async retryEntry(dlqId: string, s3Url: string): Promise<boolean> {
-    return dlqManagerService.retryEntry(dlqId, s3Url);
-  }
-
-  async markForReview(dlqId: string): Promise<void> {
-    return dlqManagerService.markForReview(dlqId);
-  }
-
-  async markResolved(dlqId: string): Promise<void> {
-    return dlqManagerService.markResolved(dlqId);
-  }
-
-  async getPendingEntries(jobId: string): Promise<DeadLetterEntry[]> {
-    return dlqManagerService.getPendingEntries(jobId);
-  }
-
-  async getRetryEntries(jobId: string): Promise<DeadLetterEntry[]> {
-    return dlqManagerService.getRetryEntries(jobId);
-  }
-
-  async getReviewEntries(jobId: string): Promise<DeadLetterEntry[]> {
-    return dlqManagerService.getReviewEntries(jobId);
-  }
-
-  async batchRetryJob(jobId: string, s3Url: string): Promise<{ success: number; failed: number }> {
-    return dlqManagerService.batchRetryJob(jobId, s3Url);
-  }
-}
+export default DLQManager;

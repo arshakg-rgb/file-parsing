@@ -10,11 +10,11 @@ import NodeStreamZip from "node-stream-zip";
 import { extract as extractTar } from "tar";
 import Seven from "node-7z";
 import { once } from "node:events";
-import { settings } from "../../shared/config.js";
-import { parseGcsUrl as parseS3Url, objectSize, readFull, readRange, putObject, listObjects, copyObject, gcsClient } from "../../shared/gcsUtils.js";
-import { pool, createPendingArchiveEntry } from "../../shared/db.js";
+import { settings } from "../../shared/Settings.js";
+import { parseGcsUrl as parseS3Url, objectSize, readFull, readRange, putObject, listObjects, copyObject, gcsClient } from "../../shared/GcsUtils.js";
+import { pool, createPendingArchiveEntry } from "../../shared/DatabaseManager.js";
 import { fetchUrlStream } from "./ssrf_guard.js";
-import { sendRaw } from "../../shared/queueUtils.js";
+import { sendRaw } from "../../shared/QueueService.js";
 
 const gunzip = promisify(zlib.gunzip);
 

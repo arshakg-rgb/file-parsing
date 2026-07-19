@@ -12,7 +12,7 @@ import type { RubbishLogAttributes, RubbishLogCreationAttributes } from "../mode
 import type { TemplateAttributes, TemplateCreationAttributes } from "../models/Template.js";
 import type { SchemaMigrationAttributes, SchemaMigrationCreationAttributes } from "../models/SchemaMigration.js";
 import type { JobCounts } from "../../../shared/models/job.js";
-import type { RecordTemplate, RubbishTemplate } from "../../../shared/templateRegistry.js";
+import type { RecordTemplate, RubbishTemplate } from "../../../shared/TemplateRegistryService.js";
 
 export class JobRepository {
   constructor(private models: DatabaseModels) {}

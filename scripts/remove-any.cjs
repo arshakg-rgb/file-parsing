@@ -18,12 +18,12 @@ const importSource = {
   ClassifyResponse: "shared/models/template.js",
   AIVerdict: "shared/models/template.js",
   Template: "shared/models/template.js",
-  RecordTemplate: "shared/templateRegistry.js",
-  RubbishTemplate: "shared/templateRegistry.js",
-  TemplateKind: "shared/templateRegistry.js",
+  RecordTemplate: "shared/TemplateRegistryService.js",
+  RubbishTemplate: "shared/TemplateRegistryService.js",
+  TemplateKind: "shared/TemplateRegistryService.js",
   FieldLocator: "shared/models/template.js",
   ParquetRow: "services/job_service/finalize/ParquetEngine.js",
-  TraceRecord: "shared/traceSystem.js",
+  TraceRecord: "shared/TraceSystem.js",
   SQSClientConfig: "@aws-sdk/client-sqs",
   SendMessageCommandInput: "@aws-sdk/client-sqs",
   ReceiveMessageCommandInput: "@aws-sdk/client-sqs",
@@ -34,8 +34,8 @@ const importSource = {
   OutputPartCreationAttributes: "config/db/models/OutputPart.js",
   DeadLetterAttributes: "config/db/models/DeadLetter.js",
   ParseJobAttributes: "config/db/models/ParseJob.js",
-  ParseJobRow: "shared/db.js",
-  OutputPartRow: "shared/db.js",
+  ParseJobRow: "shared/DatabaseManager.js",
+  OutputPartRow: "shared/DatabaseManager.js",
 };
 
 function relativeImport(fromFile, srcRelative) {
@@ -141,7 +141,7 @@ function buildReplacementMap(sourceFile, filePath) {
           replaceRange(start, end, "OutputPartCreationAttributes", "OutputPartCreationAttributes");
         } else if (left === "row" && relPath.includes("FinalizeRepository")) {
           replaceRange(start, end, "DeadLetterRow", "DeadLetterRow");
-        } else if (left === "template" && relPath.includes("templateRegistry")) {
+        } else if (left === "template" && relPath.includes("TemplateRegistry")) {
           replaceRange(start, end, "RecordTemplate | RubbishTemplate"); // no import, already imported in those files
         } else {
           replaceRange(start, end, "unknown");
@@ -204,15 +204,15 @@ function buildReplacementMap(sourceFile, filePath) {
       } else if (varName === "err" || varName === "lastErr") replaceRange(start, end, "unknown");
       else if (varName === "message") replaceRange(start, end, "Record<string, unknown>");
       else if (varName === "params") {
-        if (relPath.includes("cloudwatch")) replaceRange(start, end, "PutLogEventsCommandInput", "PutLogEventsCommandInput");
-        else if (relPath.includes("queueUtils")) replaceRange(start, end, "SendMessageCommandInput | ReceiveMessageCommandInput", "SendMessageCommandInput");
+        if (relPath.includes("CloudWatch")) replaceRange(start, end, "PutLogEventsCommandInput", "PutLogEventsCommandInput");
+        else if (relPath.includes("QueueService")) replaceRange(start, end, "SendMessageCommandInput | ReceiveMessageCommandInput", "SendMessageCommandInput");
         else replaceRange(start, end, "Record<string, unknown>");
       } else if (varName === "cfg") replaceRange(start, end, "SQSClientConfig", "SQSClientConfig");
       else if (varName === "client") {
         if (relPath.includes("scripts")) replaceRange(start, end, "PoolClient", "PoolClient");
         else replaceRange(start, end, "unknown");
       } else if (varName === "m") {
-        if (relPath.includes("queueUtils")) replaceRange(start, end, "Message", "Message");
+        if (relPath.includes("QueueService")) replaceRange(start, end, "Message", "Message");
         else replaceRange(start, end, "unknown");
       } else if (varName === "arr") replaceRange(start, end, "unknown[]");
       else if (varName === "f") replaceRange(start, end, "unknown");
@@ -220,8 +220,8 @@ function buildReplacementMap(sourceFile, filePath) {
       else if (varName === "schemaObj") replaceRange(start, end, "Record<string, unknown>");
       else if (varName === "row") {
         if (relPath.includes("ParquetEngine")) replaceRange(start, end, "ParquetRow", "ParquetRow");
-        else if (relPath.includes("traceSystem")) replaceRange(start, end, "TraceRecord", "TraceRecord");
-        else if (relPath.includes("dlqManager") && parent && ts.isTypeReferenceNode(parent) && parent.typeName && parent.typeName.text === "Promise") replaceRange(start, end, "DeadLetterEntry[]");
+        else if (relPath.includes("TraceSystem")) replaceRange(start, end, "TraceRecord", "TraceRecord");
+        else if (relPath.includes("DLQManager") && parent && ts.isTypeReferenceNode(parent) && parent.typeName && parent.typeName.text === "Promise") replaceRange(start, end, "DeadLetterEntry[]");
         else replaceRange(start, end, "unknown");
       } else if (varName === "fatal") replaceRange(start, end, "Error | null");
       else if (varName === "templateCache") replaceRange(start, end, "Map<string, Template>", "Template");

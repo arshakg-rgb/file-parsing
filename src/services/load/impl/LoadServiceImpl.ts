@@ -5,7 +5,7 @@ import FirestoreCacheUtils from "../../../utils/cache/FirestoreCacheUtils.js";
 import MySqlManager from "../../../config/db/MySqlManager.js";
 import { EventType, JobEvent, makeJobEvent } from "../../../shared/models/events.js";
 import { JobStatus, LoadMessage } from "../../../shared/models/job.js";
-import { receiveMessages, deleteMessage, publishEvent } from "../../../shared/queueUtils.js";
+import { receiveMessages, deleteMessage, publishEvent } from "../../../shared/QueueService.js";
 import { ParquetReader } from "@dsnp/parquetjs";
 import { createLogger, Logger } from "../../../utils/logger/logger.js";
 import { metrics } from "../../../utils/response/metrics.js";

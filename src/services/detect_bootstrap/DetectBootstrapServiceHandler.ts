@@ -1,16 +1,16 @@
 import crypto from "crypto";
 import jschardet from "jschardet";
-import { settings } from "../../shared/config.js";
+import { settings } from "../../shared/Settings.js";
 import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js";
 import { JobStatus, ClassifyMessage, ParseMessage, SourceType } from "../../shared/models/job.js";
-import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "../../shared/queueUtils.js";
-import { parseGcsUrl, objectSize, readRange } from "../../shared/gcsUtils.js";
+import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "../../shared/QueueService.js";
+import { parseGcsUrl, objectSize, readRange } from "../../shared/GcsUtils.js";
 import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "../../utils/normalizers/encoding.js";
-import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/TemplateRegistryService.js";
 import { createLogger } from "../../utils/logger/logger.js";
 import { metrics } from "../../utils/response/metrics.js";
 import { startHealthCheckServer } from "../../utils/response/health.js";
-import { waitForDb } from "../../shared/db.js";
+import { waitForDb } from "../../shared/DatabaseManager.js";
 
 /**
  * Classification request interface

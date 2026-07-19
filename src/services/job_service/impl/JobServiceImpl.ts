@@ -3,11 +3,11 @@ import Config from "../../../config/system-config/Config.js";
 import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
 import { InstantiationError } from "../../../errors/InstantiationError.js";
 import MySqlManager from "../../../config/db/MySqlManager.js";
-import { receiveMessages, deleteMessage } from "../../../shared/queueUtils.js";
+import { receiveMessages, deleteMessage } from "../../../shared/QueueService.js";
 import { JobEvent, EventType } from "../../../shared/models/events.js";
 import { handleEvent } from "../stateMachine.js";
 import { router } from "../JobServiceRouter.js";
-import { createTables } from "../../../shared/db.js";
+import { createTables } from "../../../shared/DatabaseManager.js";
 import { JobService } from "../JobService.js";
 import { IJobService, JobRequest, JobResponse } from "../io/IJobService.js";
 

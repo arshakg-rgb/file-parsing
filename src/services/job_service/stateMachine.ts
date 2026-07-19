@@ -1,8 +1,8 @@
-import { repositories, ParseJobRow } from "../../shared/db.js";
+import { repositories, ParseJobRow } from "../../shared/DatabaseManager.js";
 import { JobStatus, JobStatus as JS, VALID_TRANSITIONS, isTerminal, JobTimings, JobCounts } from "../../shared/models/job.js";
 import { EventType, JobEvent, ParsingCompletedData, EntryDiscoveredData, StatusChangedData } from "../../shared/models/events.js";
-import { sendRaw, publishEvent } from "../../shared/queueUtils.js";
-import { settings } from "../../shared/config.js";
+import { sendRaw, publishEvent } from "../../shared/QueueService.js";
+import { settings } from "../../shared/Settings.js";
 import { randomUUID } from "crypto";
 import { SourceType } from "../../shared/models/job.js";
 import { finalizeOutput } from "./FinalizationService.js";

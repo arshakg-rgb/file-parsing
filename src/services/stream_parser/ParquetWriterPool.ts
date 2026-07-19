@@ -6,10 +6,10 @@ import { createReadStream } from "fs";
 import { pipeline } from "node:stream/promises";
 import { randomUUID, createHash } from "crypto";
 import { ParquetSchema, ParquetWriter, type SchemaDefinition, type ParquetType } from "@dsnp/parquetjs";
-import { settings } from "../../shared/config.js";
+import { settings } from "../../shared/Settings.js";
 import { OutputPart } from "../../shared/models/job.js";
-import { repositories } from "../../shared/db.js";
-import { gcsClient, putObject } from "../../shared/gcsUtils.js";
+import { repositories } from "../../shared/DatabaseManager.js";
+import { gcsClient, putObject } from "../../shared/GcsUtils.js";
 
 function estimateRowBytes(row: Record<string, unknown>): number {
   let bytes = 0;
@@ -231,7 +231,7 @@ export class DLQWriter {
   }
 
   async write(byteOffset: number, byteLength: number, lineNo: number, rawLine: string, failureClass: string, error: string): Promise<void> {
-    const { sendMessage } = await import("../../shared/queueUtils.js");
+    const { sendMessage } = await import("../../shared/QueueService.js");
     const { FailureClass } = await import("../../shared/models/job.js");
     const dlqId = randomUUID();
     const rawBytes = Buffer.from(rawLine.replace(/\0/g, ""), "utf-8").toString("base64");

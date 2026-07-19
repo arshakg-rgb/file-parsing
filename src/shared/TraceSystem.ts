@@ -21,14 +21,14 @@ export interface TraceRecord {
   row_data?: Record<string, unknown>;
 }
 
-class TraceSystemService extends ServiceManager {
-  protected static instance: TraceSystemService;
+export class TraceSystem extends ServiceManager {
+  protected static instance: TraceSystem;
   private logger: Logger;
   private dbManager: MySqlManager;
 
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate TraceSystemService directly. Use getInstance()");
+      throw new InstantiationError("Cannot instantiate TraceSystem directly. Use getInstance()");
     }
     super(enforce);
     
@@ -36,11 +36,11 @@ class TraceSystemService extends ServiceManager {
     this.dbManager = MySqlManager.getInstance();
   }
 
-  public static getInstance(): TraceSystemService {
-    if (!TraceSystemService.instance) {
-      TraceSystemService.instance = new TraceSystemService(Enforce);
+  public static getInstance(): TraceSystem {
+    if (!TraceSystem.instance) {
+      TraceSystem.instance = new TraceSystem(Enforce);
     }
-    return TraceSystemService.instance;
+    return TraceSystem.instance;
   }
 
   public async createTrace(trace: TraceRecord): Promise<void> {
@@ -152,46 +152,4 @@ class TraceSystemService extends ServiceManager {
 }
 
 
-export default TraceSystemService;
-
-const traceSystemService = TraceSystemService.getInstance();
-
-export class TraceSystem {
-  async createTrace(trace: TraceRecord): Promise<void> {
-    return traceSystemService.createTrace(trace);
-  }
-
-  async logRubbishDrop(
-    jobId: string,
-    byteOffset: number,
-    lineNo: number,
-    rawBytes: string,
-    matchedTemplateId: string
-  ): Promise<void> {
-    return traceSystemService.logRubbishDrop(jobId, byteOffset, lineNo, rawBytes, matchedTemplateId);
-  }
-
-  async getJobTraces(jobId: string): Promise<TraceRecord[]> {
-    return traceSystemService.getJobTraces(jobId);
-  }
-
-  async getJobRubbishLog(jobId: string): Promise<unknown[]> {
-    return traceSystemService.getJobRubbishLog(jobId);
-  }
-
-  static generateChecksum(line: string): string {
-    return TraceSystemService.generateChecksum(line);
-  }
-
-  async lineExists(jobId: string, byteOffset: number): Promise<boolean> {
-    return traceSystemService.lineExists(jobId, byteOffset);
-  }
-
-  async getLineFateCounts(jobId: string): Promise<{
-    parsed: number;
-    dropped: number;
-    failed: number;
-  }> {
-    return traceSystemService.getLineFateCounts(jobId);
-  }
-}
+export default TraceSystem;

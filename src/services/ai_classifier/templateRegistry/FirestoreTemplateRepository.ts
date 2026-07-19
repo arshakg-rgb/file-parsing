@@ -1,5 +1,5 @@
 import { FirestoreClient } from "./FirestoreClient.js";
-import { settings } from "../../../shared/config.js";
+import { settings } from "../../../shared/Settings.js";
 import { Template } from "../../../shared/models/template.js";
 
 export class FirestoreTemplateRepository {

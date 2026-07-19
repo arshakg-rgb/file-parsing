@@ -1,8 +1,8 @@
 import express, { Request, Response } from "express";
 import multer from "multer";
-import { settings } from "../../shared/config.js";
-import { sendRaw } from "../../shared/queueUtils.js";
-import { putObject, parseGcsUrl } from "../../shared/gcsUtils.js";
+import { settings } from "../../shared/Settings.js";
+import { sendRaw } from "../../shared/QueueService.js";
+import { putObject, parseGcsUrl } from "../../shared/GcsUtils.js";
 import { createLogger } from "../../utils/logger/logger.js";
 
 const logger = createLogger("ingest-http");

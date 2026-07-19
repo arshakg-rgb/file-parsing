@@ -1,11 +1,11 @@
-import { settings } from "../../shared/config.js";
+import { settings } from "../../shared/Settings.js";
 import { FailureClass, ColumnMap } from "../../shared/models/job.js";
-import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/templateRegistry.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/TemplateRegistryService.js";
 import { safeRegex, safeRegexTest } from "../../utils/validator/safeRegex.js";
 import { AIVerdict, ClassifyRequest, ClassifyResponse } from "../ai_classifier/io/IAiClassifier.js";
 import { ClassifyResult, IClassifier } from "./io/IClassifier.js";
 
-export { ClassifyResult } from "./io/IClassifier.js";
+export type { ClassifyResult } from "./io/IClassifier.js";
 
 export class LineClassifier implements IClassifier {
   private jobId: string;

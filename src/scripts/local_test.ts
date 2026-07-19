@@ -823,8 +823,8 @@ check("field_spec normalization: array / JSON-array string / JSON-{fields} strin
 
 console.log("\n=== 18. Line-splitting recovery + CSV output ===");
 
-const { splitAllLines } = await import("../shared/gcsUtils.js");
-const { csvEscapeCell } = await import("../shared/csvOutputWriter.js");
+const { splitAllLines } = await import("../shared/GcsUtils.js");
+const { csvEscapeCell } = await import("../shared/CsvOutputWriter.js");
 const splitLines = (s: string) => splitAllLines(Buffer.from(s, "utf-8")).map((t) => t[0]);
 
 check("stray/unbalanced quote does NOT swallow following lines", () => {

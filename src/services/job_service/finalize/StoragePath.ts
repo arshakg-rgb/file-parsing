@@ -1,4 +1,4 @@
-import { parseGcsUrl } from "../../../shared/gcsUtils.js";
+import { parseGcsUrl } from "../../../shared/GcsUtils.js";
 
 export type GcsProtocol = "gs" | "s3";
 

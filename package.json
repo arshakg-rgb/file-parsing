@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "Node.js/TypeScript port of the file parsing pipeline S3 utilities",
   "type": "module",
-  "main": "dist/shared/s3Utils.js",
-  "types": "dist/shared/s3Utils.d.ts",
+  "main": "dist/shared/S3Utils.js",
+  "types": "dist/shared/S3Utils.d.ts",
   "scripts": {
     "build": "tsc",
     "dev:job": "tsx src/services/job_service/JobServiceHandler.ts",
