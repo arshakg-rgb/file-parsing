@@ -1,4 +1,4 @@
-import { settings } from "../../shared/Settings.js";
+import { settings } from "@shared/Settings.js";
 
 export class MatchRateMonitor {
   private window: string[];

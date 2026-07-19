@@ -3,7 +3,7 @@
  * Run once per GCP project: npm run setup:gcp
  */
 import { PubSub } from "@google-cloud/pubsub";
-import { settings } from "../shared/Settings.js";
+import { settings } from "@shared/Settings.js";
 
 const TOPICS = [
   "fpp-ingest",

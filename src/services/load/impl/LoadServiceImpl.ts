@@ -1,17 +1,17 @@
-import Config from "../../../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
-import { InstantiationError } from "../../../errors/InstantiationError.js";
-import FirestoreCacheUtils from "../../../utils/cache/FirestoreCacheUtils.js";
-import MySqlManager from "../../../config/db/MySqlManager.js";
-import { EventType, JobEvent, makeJobEvent } from "../../../shared/models/events.js";
-import { JobStatus, LoadMessage } from "../../../shared/models/job.js";
-import { receiveMessages, deleteMessage, publishEvent } from "../../../shared/QueueService.js";
+import Config from "@config/system-config/Config.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
+import MySqlManager from "@config/db/MySqlManager.js";
+import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
+import { JobStatus, LoadMessage } from "@shared/models/job.js";
+import { receiveMessages, deleteMessage, publishEvent } from "@shared/QueueService.js";
 import { ParquetReader } from "@dsnp/parquetjs";
-import { createLogger, Logger } from "../../../utils/logger/logger.js";
-import { metrics } from "../../../utils/response/metrics.js";
-import { startHealthCheckServer } from "../../../utils/response/health.js";
-import { LoadService } from "../LoadService.js";
-import { ILoad, LoadRequest, LoadResponse } from "../io/ILoad.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
+import { metrics } from "@utils/response/metrics.js";
+import { startHealthCheckServer } from "@utils/response/health.js";
+import { LoadService } from "@service/load/LoadService.js";
+import { ILoad, LoadRequest, LoadResponse } from "@service/load/io/ILoad.js";
 
 class LoadServiceImpl extends ServiceManager implements LoadService {
   protected static instance: LoadServiceImpl;

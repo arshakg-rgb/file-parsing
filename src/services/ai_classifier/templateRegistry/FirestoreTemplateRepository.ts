@@ -1,6 +1,6 @@
 import { FirestoreClient } from "./FirestoreClient.js";
-import { settings } from "../../../shared/Settings.js";
-import { Template } from "../../../shared/models/template.js";
+import { settings } from "@shared/Settings.js";
+import { Template } from "@shared/models/template.js";
 
 export class FirestoreTemplateRepository {
   private readonly client: FirestoreClient;

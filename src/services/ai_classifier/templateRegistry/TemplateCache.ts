@@ -1,4 +1,4 @@
-import { Template, TemplateKind } from "../../../shared/models/template.js";
+import { Template, TemplateKind } from "@shared/models/template.js";
 
 export class TemplateCache {
   private readonly templates: Template[] = [];

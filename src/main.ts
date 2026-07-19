@@ -3,8 +3,8 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import { App } from "./app.js";
-import MySqlManager from "./config/db/MySqlManager.js";
-import FirestoreManager from "./config/firestore/FirestoreManager.js";
+import MySqlManager from "@config/db/MySqlManager.js";
+import FirestoreManager from "@config/firestore/FirestoreManager.js";
 
 /**
  * Entry point of the application.

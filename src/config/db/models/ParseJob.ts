@@ -5,7 +5,7 @@ import {
   Model,
   PrimaryKey,
 } from "sequelize-typescript";
-import type { JobCounts, JobTimings } from "../../../shared/models/job.js";
+import type { JobCounts, JobTimings } from "@shared/models/job.js";
 
 export interface IParseJob {
   job_id: string;

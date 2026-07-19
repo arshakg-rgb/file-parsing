@@ -1,21 +1,21 @@
 import crypto from "crypto";
 import jschardet from "jschardet";
-import Config from "../../../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
-import { InstantiationError } from "../../../errors/InstantiationError.js";
-import FirestoreCacheUtils from "../../../utils/cache/FirestoreCacheUtils.js";
-import { EventType, JobEvent, makeJobEvent } from "../../../shared/models/events.js";
-import { JobStatus, ClassifyMessage, ParseMessage } from "../../../shared/models/job.js";
-import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "../../../shared/QueueService.js";
-import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "../../../utils/normalizers/encoding.js";
-import { templateRegistry } from "../../../shared/TemplateRegistryService.js";
-import { createLogger, Logger } from "../../../utils/logger/logger.js";
-import { metrics } from "../../../utils/response/metrics.js";
-import { startHealthCheckServer } from "../../../utils/response/health.js";
-import { AiClassifierService } from "../../ai_classifier/AiClassifierServiceHandler.js";
-import { mockClassify } from "../../ai_classifier/mock.js";
-import { DetectBootstrapService } from "../DetectBootstrapService.js";
-import { IDetectBootstrap, ClassifyRequest, ClassifyResponse } from "../io/IDetectBootstrap.js";
+import Config from "@config/system-config/Config.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
+import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
+import { JobStatus, ClassifyMessage, ParseMessage } from "@shared/models/job.js";
+import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "@shared/QueueService.js";
+import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "@utils/normalizers/encoding.js";
+import { templateRegistry } from "@shared/TemplateRegistryService.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
+import { metrics } from "@utils/response/metrics.js";
+import { startHealthCheckServer } from "@utils/response/health.js";
+import { AiClassifierService } from "@service/ai_classifier/AiClassifierServiceHandler.js";
+import { mockClassify } from "@service/ai_classifier/mock.js";
+import { DetectBootstrapService } from "@service/detect_bootstrap/DetectBootstrapService.js";
+import { IDetectBootstrap, ClassifyRequest, ClassifyResponse } from "@service/detect_bootstrap/io/IDetectBootstrap.js";
 
 class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstrapService {
   protected static instance: DetectBootstrapServiceImpl;

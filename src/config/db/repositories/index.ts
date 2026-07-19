@@ -1,18 +1,18 @@
 import { Op, Sequelize } from "sequelize";
-import type { DatabaseModels } from "../models/index.js";
+import type { DatabaseModels } from "@config/db/models/index.js";
 import type {
   ParseJobAttributes,
   ParseJobCreationAttributes,
-} from "../models/ParseJob.js";
-import type { DeadLetterAttributes, DeadLetterCreationAttributes } from "../models/DeadLetter.js";
-import type { OutputPartAttributes, OutputPartCreationAttributes } from "../models/OutputPart.js";
-import type { PendingArchiveEntryAttributes, PendingArchiveEntryCreationAttributes } from "../models/PendingArchiveEntry.js";
-import type { ParsedRecordAttributes, ParsedRecordCreationAttributes } from "../models/ParsedRecord.js";
-import type { RubbishLogAttributes, RubbishLogCreationAttributes } from "../models/RubbishLog.js";
-import type { TemplateAttributes, TemplateCreationAttributes } from "../models/Template.js";
-import type { SchemaMigrationAttributes, SchemaMigrationCreationAttributes } from "../models/SchemaMigration.js";
-import type { JobCounts } from "../../../shared/models/job.js";
-import type { RecordTemplate, RubbishTemplate } from "../../../shared/TemplateRegistryService.js";
+} from "@config/db/models/ParseJob.js";
+import type { DeadLetterAttributes, DeadLetterCreationAttributes } from "@config/db/models/DeadLetter.js";
+import type { OutputPartAttributes, OutputPartCreationAttributes } from "@config/db/models/OutputPart.js";
+import type { PendingArchiveEntryAttributes, PendingArchiveEntryCreationAttributes } from "@config/db/models/PendingArchiveEntry.js";
+import type { ParsedRecordAttributes, ParsedRecordCreationAttributes } from "@config/db/models/ParsedRecord.js";
+import type { RubbishLogAttributes, RubbishLogCreationAttributes } from "@config/db/models/RubbishLog.js";
+import type { TemplateAttributes, TemplateCreationAttributes } from "@config/db/models/Template.js";
+import type { SchemaMigrationAttributes, SchemaMigrationCreationAttributes } from "@config/db/models/SchemaMigration.js";
+import type { JobCounts } from "@shared/models/job.js";
+import type { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 
 export class JobRepository {
   constructor(private models: DatabaseModels) {}

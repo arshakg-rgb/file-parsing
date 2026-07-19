@@ -1,7 +1,7 @@
 import { IJobService, JobEvent, JobServiceConfig } from "../io/IJobService.js";
-import { InstantiationError } from "../../../errors/InstantiationError.js";
-import { receiveMessages, deleteMessage } from "../../../shared/QueueService.js";
-import Config from "../../../config/system-config/Config.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import { receiveMessages, deleteMessage } from "@shared/QueueService.js";
+import Config from "@config/system-config/Config.js";
 
 function Enforce(): void {}
 

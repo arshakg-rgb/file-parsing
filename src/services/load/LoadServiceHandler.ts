@@ -1,6 +1,6 @@
-import { ILoad, LoadRequest, LoadResponse } from "./io/ILoad.js";
-import LoadServiceImpl from "./impl/LoadServiceImpl.js";
-import { LoadMessage } from "../../shared/models/job.js";
+import { ILoad, LoadRequest, LoadResponse } from "@service/load/io/ILoad.js";
+import LoadServiceImpl from "@service/load/impl/LoadServiceImpl.js";
+import { LoadMessage } from "@shared/models/job.js";
 
 /**
  * Legacy LoadService class - now a thin wrapper around LoadServiceImpl
@@ -27,8 +27,8 @@ export class LoadService implements ILoad {
 }
 
 // Re-export the new service for direct use
-export { default as LoadServiceImpl } from "./impl/LoadServiceImpl.js";
-export { ILoad, LoadRequest, LoadResponse } from "./io/ILoad.js";
+export { default as LoadServiceImpl } from "@service/load/impl/LoadServiceImpl.js";
+export { ILoad, LoadRequest, LoadResponse } from "@service/load/io/ILoad.js";
 
 // Backward compatibility wrappers
 const loadService = new LoadService();

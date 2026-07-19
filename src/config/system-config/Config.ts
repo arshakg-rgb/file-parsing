@@ -1,7 +1,7 @@
 import dotenv from "dotenv";
 import path from "path";
-import { IAppConfig } from "./io/IAppConfig.js";
-import { IDatabaseConfig } from "./io/IDatabaseConfig.js";
+import { IAppConfig } from "@config/system-config/io/IAppConfig.js";
+import { IDatabaseConfig } from "@config/system-config/io/IDatabaseConfig.js";
 
 // Load local .env.local first (project-specific overrides take priority)
 dotenv.config({ path: path.resolve(".env.local") });

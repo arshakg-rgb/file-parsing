@@ -1,4 +1,4 @@
-import { IRetry } from "./io/IRetry.js";
+import { IRetry } from "@service/retry/io/IRetry.js";
 
 export interface RetryService extends IRetry {
 }

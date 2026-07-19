@@ -1,9 +1,9 @@
-import { settings } from "../shared/Settings.js";
-import { getPendingEntryCount, repositories, waitForDb } from "../shared/DatabaseManager.js";
-import { publishEvent } from "../shared/QueueService.js";
-import { EventType, makeJobEvent } from "../shared/models/events.js";
-import { JobStatus } from "../shared/models/job.js";
-import { createLogger } from "../utils/logger/logger.js";
+import { settings } from "@shared/Settings.js";
+import { getPendingEntryCount, repositories, waitForDb } from "@shared/DatabaseManager.js";
+import { publishEvent } from "@shared/QueueService.js";
+import { EventType, makeJobEvent } from "@shared/models/events.js";
+import { JobStatus } from "@shared/models/job.js";
+import { createLogger } from "@utils/logger/logger.js";
 
 const logger = createLogger("reconciler");
 

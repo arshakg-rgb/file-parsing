@@ -3,8 +3,8 @@
  * Following the singleton pattern from knowledge.md
  */
 
-import { InstantiationError } from "../errors/InstantiationError.js";
-import Config from "./system-config/Config.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import Config from "@config/system-config/Config.js";
 
 class ServiceManager {
   protected static instance: ServiceManager;

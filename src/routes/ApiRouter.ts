@@ -1,5 +1,5 @@
 import { Express, Router } from "express";
-import { InstantiationError } from "../errors/InstantiationError.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
 
 class ApiRouter {
   private static instance: ApiRouter;

@@ -1,8 +1,8 @@
 import crypto from "crypto";
-import Config from "../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../config/ServiceManager.js";
-import { InstantiationError } from "../errors/InstantiationError.js";
-import MySqlManager from "../config/db/MySqlManager.js";
+import Config from "@config/system-config/Config.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import MySqlManager from "@config/db/MySqlManager.js";
 
 export interface RecordTemplate {
   template_id: string;

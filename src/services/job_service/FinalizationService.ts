@@ -1,14 +1,14 @@
 import { randomUUID } from "crypto";
-import { settings } from "../../shared/Settings.js";
-import { FinalizeRepository } from "./finalize/FinalizeRepository.js";
-import { GcsObjectStorage } from "./finalize/GcsObjectStorage.js";
-import { IObjectStorage } from "./finalize/IObjectStorage.js";
-import { LineNumberMapper } from "./finalize/LineNumberMapper.js";
-import { ParquetEngine, type ParquetRow } from "./finalize/ParquetEngine.js";
-import { StoragePath, type GcsProtocol } from "./finalize/StoragePath.js";
-import type { FinalizeResult } from "./io/IFinalizationService.js";
+import { settings } from "@shared/Settings.js";
+import { FinalizeRepository } from "@service/job_service/finalize/FinalizeRepository.js";
+import { GcsObjectStorage } from "@service/job_service/finalize/GcsObjectStorage.js";
+import { IObjectStorage } from "@service/job_service/finalize/IObjectStorage.js";
+import { LineNumberMapper } from "@service/job_service/finalize/LineNumberMapper.js";
+import { ParquetEngine, type ParquetRow } from "@service/job_service/finalize/ParquetEngine.js";
+import { StoragePath, type GcsProtocol } from "@service/job_service/finalize/StoragePath.js";
+import type { FinalizeResult } from "@service/job_service/io/IFinalizationService.js";
 
-export type { FinalizeResult } from "./io/IFinalizationService.js";
+export type { FinalizeResult } from "@service/job_service/io/IFinalizationService.js";
 
 /**
  * High-level service that orchestrates output finalization.

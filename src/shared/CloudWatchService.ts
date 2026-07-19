@@ -1,8 +1,8 @@
 import { CloudWatchLogsClient, PutLogEventsCommand, CreateLogGroupCommand, CreateLogStreamCommand, DescribeLogGroupsCommand, PutLogEventsCommandInput } from "@aws-sdk/client-cloudwatch-logs";
-import Config from "../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../config/ServiceManager.js";
-import { InstantiationError } from "../errors/InstantiationError.js";
-import { createLogger, Logger } from "../utils/logger/logger.js";
+import Config from "@config/system-config/Config.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
 
 class CloudWatchService extends ServiceManager {
   protected static instance: CloudWatchService;

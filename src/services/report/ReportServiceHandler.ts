@@ -1,6 +1,6 @@
-import { IReport, ReportRequest, ReportResponse } from "./io/IReport.js";
-import ReportServiceImpl from "./impl/ReportServiceImpl.js";
-import { ReportMessage } from "../../shared/models/job.js";
+import { IReport, ReportRequest, ReportResponse } from "@service/report/io/IReport.js";
+import ReportServiceImpl from "@service/report/impl/ReportServiceImpl.js";
+import { ReportMessage } from "@shared/models/job.js";
 
 /**
  * Legacy ReportService class - now a thin wrapper around ReportServiceImpl
@@ -27,8 +27,8 @@ export class ReportService implements IReport {
 }
 
 // Re-export the new service for direct use
-export { default as ReportServiceImpl } from "./impl/ReportServiceImpl.js";
-export { IReport, ReportRequest, ReportResponse } from "./io/IReport.js";
+export { default as ReportServiceImpl } from "@service/report/impl/ReportServiceImpl.js";
+export { IReport, ReportRequest, ReportResponse } from "@service/report/io/IReport.js";
 
 // Backward compatibility wrappers
 const reportService = new ReportService();

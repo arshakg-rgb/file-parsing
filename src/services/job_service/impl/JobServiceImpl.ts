@@ -1,15 +1,15 @@
 import express, { Request, Response, NextFunction } from "express";
-import Config from "../../../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
-import { InstantiationError } from "../../../errors/InstantiationError.js";
-import MySqlManager from "../../../config/db/MySqlManager.js";
-import { receiveMessages, deleteMessage } from "../../../shared/QueueService.js";
-import { JobEvent, EventType } from "../../../shared/models/events.js";
-import { handleEvent } from "../stateMachine.js";
-import { router } from "../JobServiceRouter.js";
-import { createTables } from "../../../shared/DatabaseManager.js";
-import { JobService } from "../JobService.js";
-import { IJobService, JobRequest, JobResponse } from "../io/IJobService.js";
+import Config from "@config/system-config/Config.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import MySqlManager from "@config/db/MySqlManager.js";
+import { receiveMessages, deleteMessage } from "@shared/QueueService.js";
+import { JobEvent, EventType } from "@shared/models/events.js";
+import { handleEvent } from "@service/job_service/stateMachine.js";
+import { router } from "@service/job_service/JobServiceRouter.js";
+import { createTables } from "@shared/DatabaseManager.js";
+import { JobService } from "@service/job_service/JobService.js";
+import { IJobService, JobRequest, JobResponse } from "@service/job_service/io/IJobService.js";
 
 class JobServiceImpl extends ServiceManager implements JobService {
   protected static instance: JobServiceImpl;

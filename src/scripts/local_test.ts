@@ -656,7 +656,7 @@ check("extractJson handles nested JSON objects", () => {
 
 console.log("\n=== 16. Encoding normalization / safe decode ===");
 
-const { decode, bufferEncodingFor, normalizeEncoding, isLikelyUtf8 } = await import("../utils/normalizers/encoding.js");
+const { decode, bufferEncodingFor, normalizeEncoding, isLikelyUtf8 } = await import("@utils/normalizers/encoding.js");
 
 check("decode never throws for labels that crashed prod (latin-1, iso-8859-1, cp1252, windows-1252, iso-8859-2, unknown)", () => {
   const raw = Buffer.from([0x48, 0x69, 0xe9, 0x0a]);
@@ -713,7 +713,7 @@ check("UTF-8 content round-trips correctly (not mojibake) once detected as utf-8
 
 console.log("\n=== 17. Ordered line classifier ===");
 
-const { LineClassifier } = await import("../services/stream_parser/LineClassifier.js");
+const { LineClassifier } = await import("@service/stream_parser/LineClassifier.js");
 const FS = ["email", "name", "phone", "address"];
 const classifyOne = (fields: string[], line: string) =>
   new LineClassifier("test", fields, [], []).classify(line, 0, line.length);
@@ -823,8 +823,8 @@ check("field_spec normalization: array / JSON-array string / JSON-{fields} strin
 
 console.log("\n=== 18. Line-splitting recovery + CSV output ===");
 
-const { splitAllLines } = await import("../shared/GcsUtils.js");
-const { csvEscapeCell } = await import("../shared/CsvOutputWriter.js");
+const { splitAllLines } = await import("@shared/GcsUtils.js");
+const { csvEscapeCell } = await import("@shared/CsvOutputWriter.js");
 const splitLines = (s: string) => splitAllLines(Buffer.from(s, "utf-8")).map((t) => t[0]);
 
 check("stray/unbalanced quote does NOT swallow following lines", () => {

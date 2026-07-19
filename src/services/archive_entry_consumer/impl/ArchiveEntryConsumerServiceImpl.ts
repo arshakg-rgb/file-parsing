@@ -4,14 +4,14 @@ import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
 import path from "path";
 import { spawn } from "child_process";
-import Config from "../../../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
-import { InstantiationError } from "../../../errors/InstantiationError.js";
-import FirestoreCacheUtils from "../../../utils/cache/FirestoreCacheUtils.js";
-import { createLogger, Logger } from "../../../utils/logger/logger.js";
-import { startHealthCheckServer } from "../../../utils/response/health.js";
-import { ArchiveEntryConsumerService } from "../ArchiveEntryConsumerService.js";
-import { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryResponse } from "../io/IArchiveEntryConsumer.js";
+import Config from "@config/system-config/Config.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
+import { startHealthCheckServer } from "@utils/response/health.js";
+import { ArchiveEntryConsumerService } from "@service/archive_entry_consumer/ArchiveEntryConsumerService.js";
+import { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryResponse } from "@service/archive_entry_consumer/io/IArchiveEntryConsumer.js";
 
 class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveEntryConsumerService {
   protected static instance: ArchiveEntryConsumerServiceImpl;

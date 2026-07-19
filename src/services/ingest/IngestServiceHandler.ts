@@ -1,14 +1,14 @@
-import { settings } from "../../shared/Settings.js";
-import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js";
-import { JobStatus, SourceType, IngestMessage } from "../../shared/models/job.js";
-import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "../../shared/QueueService.js";
-import { parseGcsUrl, objectSize, readRange, copyObject } from "../../shared/GcsUtils.js";
-import { getJob, repositories, waitForDb, createPendingArchiveEntry, getPendingEntryCount } from "../../shared/DatabaseManager.js";
+import { settings } from "@shared/Settings.js";
+import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
+import { JobStatus, SourceType, IngestMessage } from "@shared/models/job.js";
+import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "@shared/QueueService.js";
+import { parseGcsUrl, objectSize, readRange, copyObject } from "@shared/GcsUtils.js";
+import { getJob, repositories, waitForDb, createPendingArchiveEntry, getPendingEntryCount } from "@shared/DatabaseManager.js";
 import { detectArchiveType, extractArchiveToS3, fetchUrlToS3, listS3Prefix, BombError } from "./normalizer.js";
 import { SSRFError } from "./ssrf_guard.js";
-import { createLogger } from "../../utils/logger/logger.js";
-import { metrics } from "../../utils/response/metrics.js";
-import { startHealthCheckServer } from "../../utils/response/health.js";
+import { createLogger } from "@utils/logger/logger.js";
+import { metrics } from "@utils/response/metrics.js";
+import { startHealthCheckServer } from "@utils/response/health.js";
 
 /**
  * Custom error for password-related failures

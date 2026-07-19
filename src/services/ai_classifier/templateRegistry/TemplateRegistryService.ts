@@ -1,8 +1,8 @@
 import { randomUUID } from "crypto";
-import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
-import { InstantiationError } from "../../../errors/InstantiationError.js";
-import { Template, TemplateKind } from "../../../shared/models/template.js";
-import { ITemplateRegistry } from "../io/ITemplateRegistry.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import { Template, TemplateKind } from "@shared/models/template.js";
+import { ITemplateRegistry } from "@service/ai_classifier/io/ITemplateRegistry.js";
 import { TemplateCache } from "./TemplateCache.js";
 import { FirestoreTemplateRepository } from "./FirestoreTemplateRepository.js";
 

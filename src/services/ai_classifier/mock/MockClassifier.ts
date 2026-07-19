@@ -1,6 +1,6 @@
 import crypto from "crypto";
-import { RecordTemplate, RubbishTemplate } from "../../../shared/TemplateRegistryService.js";
-import type { MockClassifyRequest, MockClassifyResponse } from "../io/IMockClassifier.js";
+import { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
+import type { MockClassifyRequest, MockClassifyResponse } from "@service/ai_classifier/io/IMockClassifier.js";
 
 export class MockClassifier {
   private static instance: MockClassifier;

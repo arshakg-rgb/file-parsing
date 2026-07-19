@@ -1,10 +1,10 @@
 import crypto from "crypto";
 import { Storage } from "@google-cloud/storage";
-import Config from "../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../config/ServiceManager.js";
-import { InstantiationError } from "../errors/InstantiationError.js";
-import { createLogger, Logger } from "../utils/logger/logger.js";
-import { decode } from "../utils/normalizers/encoding.js";
+import Config from "@config/system-config/Config.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
+import { decode } from "@utils/normalizers/encoding.js";
 
 class GcsUtils extends ServiceManager {
   protected static instance: GcsUtils;

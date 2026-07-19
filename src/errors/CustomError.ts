@@ -1,4 +1,4 @@
-import { ErrorInfo } from "./io/ErrorInfo.js";
+import { ErrorInfo } from "@errors/io/ErrorInfo.js";
 
 export class CustomError extends Error {
   public readonly code: string;

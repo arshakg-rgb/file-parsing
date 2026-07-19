@@ -1,13 +1,13 @@
-import { settings } from "../../../shared/Settings.js";
-import { FailureClass } from "../../../shared/models/job.js";
-import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../../shared/TemplateRegistryService.js";
-import { safeRegex, safeRegexTest } from "../../../utils/validator/safeRegex.js";
-import ServiceManager from "../../../config/ServiceManager.js";
-import { Enforce } from "../../../config/ServiceManager.js";
-import { InstantiationError } from "../../../errors/InstantiationError.js";
-import { ClassifierService } from "../ClassifierService.js";
-import { IClassifier, ClassifyRequest, ClassifyResponse, ClassifyResult } from "../io/IClassifier.js";
-import { FIELD_ALIASES, DELIMITERS, MAX_LINE_LENGTH, BINARY_THRESHOLD, MIN_HEADER_FIELDS, HEADER_MATCH_RATIO, PHONE_MIN_DIGITS, PHONE_MAX_DIGITS, TEMPLATE_IDS } from "../io/ClassifierConstants.js";
+import { settings } from "@shared/Settings.js";
+import { FailureClass } from "@shared/models/job.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
+import { safeRegex, safeRegexTest } from "@utils/validator/safeRegex.js";
+import ServiceManager from "@config/ServiceManager.js";
+import { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import { ClassifierService } from "@service/stream_parser/ClassifierService.js";
+import { IClassifier, ClassifyRequest, ClassifyResponse, ClassifyResult } from "@service/stream_parser/io/IClassifier.js";
+import { FIELD_ALIASES, DELIMITERS, MAX_LINE_LENGTH, BINARY_THRESHOLD, MIN_HEADER_FIELDS, HEADER_MATCH_RATIO, PHONE_MIN_DIGITS, PHONE_MAX_DIGITS, TEMPLATE_IDS } from "@service/stream_parser/io/ClassifierConstants.js";
 
 enum AIVerdict {
   RECORD_TEMPLATE = "record-template",
@@ -161,7 +161,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       job_id: this.jobId,
     };
 
-    const handler = await import("../../ai_classifier/AiClassifierServiceHandler.js");
+    const handler = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
     const resp = await handler.classifyAi(req);
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };

@@ -1,5 +1,5 @@
 import { Firestore } from "@google-cloud/firestore";
-import { settings } from "../../../shared/Settings.js";
+import { settings } from "@shared/Settings.js";
 
 export class FirestoreClient {
   private static instance: FirestoreClient;

@@ -5,7 +5,7 @@ import {
   Model,
   PrimaryKey,
 } from "sequelize-typescript";
-import type { FieldLocator } from "../../../shared/models/template.js";
+import type { FieldLocator } from "@shared/models/template.js";
 
 export interface ITemplate {
   template_id: string;

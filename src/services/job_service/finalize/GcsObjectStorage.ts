@@ -1,4 +1,4 @@
-import { readFull, objectSize, putObject } from "../../../shared/GcsUtils.js";
+import { readFull, objectSize, putObject } from "@shared/GcsUtils.js";
 import { IObjectStorage } from "./IObjectStorage.js";
 import { StoragePath } from "./StoragePath.js";
 

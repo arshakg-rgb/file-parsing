@@ -1,8 +1,8 @@
 import crypto from "crypto";
 import { Storage } from "@google-cloud/storage";
-import Config from "../../config/system-config/Config.js";
-import { decode } from "../normalizers/Normalizer.js";
-import { InstantiationError } from "../../errors/InstantiationError.js";
+import Config from "@config/system-config/Config.js";
+import { decode } from "@utils/normalizers/Normalizer.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
 
 function Enforce(): void {}
 

@@ -1,5 +1,5 @@
-import MySqlManager from "../config/db/MySqlManager.js";
-import { createLogger } from "../utils/logger/logger.js";
+import MySqlManager from "@config/db/MySqlManager.js";
+import { createLogger } from "@utils/logger/logger.js";
 
 const logger = createLogger("purge-data");
 

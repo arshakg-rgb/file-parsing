@@ -1,16 +1,16 @@
 import { randomUUID } from "crypto";
-import { SourceType } from "../../enum/SourceType.js";
-import { ExecPath } from "../../enum/ExecPath.js";
-import { JobStatus } from "../../enum/JobStatus.js";
-import { FailureClass } from "../../enum/FailureClass.js";
-import { DLQStatus } from "../../enum/DLQStatus.js";
+import { SourceType } from "@enum/SourceType.js";
+import { ExecPath } from "@enum/ExecPath.js";
+import { JobStatus } from "@enum/JobStatus.js";
+import { FailureClass } from "@enum/FailureClass.js";
+import { DLQStatus } from "@enum/DLQStatus.js";
 
 // Re-export enums for backward compatibility
-export { SourceType } from "../../enum/SourceType.js";
-export { ExecPath } from "../../enum/ExecPath.js";
-export { JobStatus } from "../../enum/JobStatus.js";
-export { FailureClass } from "../../enum/FailureClass.js";
-export { DLQStatus } from "../../enum/DLQStatus.js";
+export { SourceType } from "@enum/SourceType.js";
+export { ExecPath } from "@enum/ExecPath.js";
+export { JobStatus } from "@enum/JobStatus.js";
+export { FailureClass } from "@enum/FailureClass.js";
+export { DLQStatus } from "@enum/DLQStatus.js";
 
 export const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
   [JobStatus.QUEUED]: [JobStatus.INGESTING, JobStatus.DETECTING, JobStatus.FAILED],

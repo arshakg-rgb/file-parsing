@@ -1,7 +1,7 @@
 import { readFile, readdir } from "fs/promises";
 import { join } from "path";
 import { fileURLToPath } from "url";
-import MySqlManager from "../config/db/MySqlManager.js";
+import MySqlManager from "@config/db/MySqlManager.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = join(__filename, "..");

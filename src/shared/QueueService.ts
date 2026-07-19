@@ -1,8 +1,8 @@
 import type { SQSClient, SQSClientConfig, Message, SendMessageCommandInput, ReceiveMessageCommandInput } from "@aws-sdk/client-sqs";
-import Config from "../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../config/ServiceManager.js";
-import { InstantiationError } from "../errors/InstantiationError.js";
-import { createLogger, Logger } from "../utils/logger/logger.js";
+import Config from "@config/system-config/Config.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
 
 export interface QueueMessage<T> {
   payload: T;

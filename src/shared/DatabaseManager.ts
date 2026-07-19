@@ -1,9 +1,9 @@
 // Re-export from MySqlManager for backward compatibility
-import MySqlManager from "../config/db/MySqlManager.js";
-import type { ParseJobAttributes } from "../config/db/models/ParseJob.js";
-import type { OutputPartAttributes } from "../config/db/models/OutputPart.js";
-import type { DeadLetterAttributes } from "../config/db/models/DeadLetter.js";
-import type { PendingArchiveEntryAttributes } from "../config/db/models/PendingArchiveEntry.js";
+import MySqlManager from "@config/db/MySqlManager.js";
+import type { ParseJobAttributes } from "@config/db/models/ParseJob.js";
+import type { OutputPartAttributes } from "@config/db/models/OutputPart.js";
+import type { DeadLetterAttributes } from "@config/db/models/DeadLetter.js";
+import type { PendingArchiveEntryAttributes } from "@config/db/models/PendingArchiveEntry.js";
 
 const dbManager = MySqlManager.getInstance();
 const repos = dbManager.repositories;
@@ -87,4 +87,4 @@ export async function createTables(): Promise<void> {
 }
 
 // Export the manager class for direct use
-export { default as DatabaseManager } from "../config/db/MySqlManager.js";
+export { default as DatabaseManager } from "@config/db/MySqlManager.js";

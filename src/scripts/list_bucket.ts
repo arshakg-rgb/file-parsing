@@ -1,5 +1,5 @@
 import { Storage } from "@google-cloud/storage";
-import { settings } from "../shared/Settings.js";
+import { settings } from "@shared/Settings.js";
 
 const storage = new Storage();
 const bucket = storage.bucket(settings.DATA_BUCKET);

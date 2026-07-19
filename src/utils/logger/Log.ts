@@ -1,4 +1,4 @@
-import Config from "../../config/system-config/Config.js";
+import Config from "@config/system-config/Config.js";
 
 const config = Config.getInstance();
 

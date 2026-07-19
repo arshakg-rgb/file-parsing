@@ -1,16 +1,16 @@
 import { Request, Response } from "express";
 import { Server as HttpServer } from "node:http";
 import * as http from "node:http";
-import { createLogger, Logger } from "./utils/logger/Log.js";
-import MySqlManager from "./config/db/MySqlManager.js";
+import { createLogger, Logger } from "@utils/logger/Log.js";
+import MySqlManager from "@config/db/MySqlManager.js";
 import express, { Express } from "express";
-import ServiceManager from "./config/ServiceManager.js";
-import { Constants } from "./common/io/Constants.js";
-import { error404Handler, errorPageHandler } from "./middleware/CommonMiddleware.js";
+import ServiceManager from "@config/ServiceManager.js";
+import { Constants } from "@common/io/Constants.js";
+import { error404Handler, errorPageHandler } from "@middleware/CommonMiddleware.js";
 import bodyParser from "body-parser";
-import CorsUtils from "./config/cors/CorsUtils.js";
-import ApiRouter from "./routes/ApiRouter.js";
-import { DeprecationMiddleware } from "./middleware/DeprecationMiddleware.js";
+import CorsUtils from "@config/cors/CorsUtils.js";
+import ApiRouter from "@routes/ApiRouter.js";
+import { DeprecationMiddleware } from "@middleware/DeprecationMiddleware.js";
 
 const logger: Logger = createLogger("app");
 

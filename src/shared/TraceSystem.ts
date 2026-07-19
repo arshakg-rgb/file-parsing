@@ -1,9 +1,9 @@
-import Config from "../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../config/ServiceManager.js";
-import { InstantiationError } from "../errors/InstantiationError.js";
-import MySqlManager from "../config/db/MySqlManager.js";
-import { createLogger, Logger } from "../utils/logger/logger.js";
-import type { ParsedRecordAttributes } from "../config/db/models/ParsedRecord.js";
+import Config from "@config/system-config/Config.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import MySqlManager from "@config/db/MySqlManager.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
+import type { ParsedRecordAttributes } from "@config/db/models/ParsedRecord.js";
 import crypto from "crypto";
 
 export interface TraceRecord {

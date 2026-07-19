@@ -1,12 +1,12 @@
 import "reflect-metadata";
 import pg from "pg";
 import { Sequelize } from "sequelize-typescript";
-import Config from "../system-config/Config.js";
-import ServiceManager, { Enforce } from "../ServiceManager.js";
-import { InstantiationError } from "../../errors/InstantiationError.js";
-import * as dbModels from "./models/index.js";
-import type { DatabaseModels } from "./models/index.js";
-import { Repositories } from "./repositories/index.js";
+import Config from "@config/system-config/Config.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import * as dbModels from "@config/db/models/index.js";
+import type { DatabaseModels } from "@config/db/models/index.js";
+import { Repositories } from "@config/db/repositories/index.js";
 
 const { Pool } = pg;
 

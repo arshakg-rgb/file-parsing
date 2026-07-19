@@ -1,16 +1,16 @@
 import crypto from "crypto";
 import jschardet from "jschardet";
-import { settings } from "../../shared/Settings.js";
-import { EventType, JobEvent, makeJobEvent } from "../../shared/models/events.js";
-import { JobStatus, ClassifyMessage, ParseMessage, SourceType } from "../../shared/models/job.js";
-import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "../../shared/QueueService.js";
-import { parseGcsUrl, objectSize, readRange } from "../../shared/GcsUtils.js";
-import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "../../utils/normalizers/encoding.js";
-import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/TemplateRegistryService.js";
-import { createLogger } from "../../utils/logger/logger.js";
-import { metrics } from "../../utils/response/metrics.js";
-import { startHealthCheckServer } from "../../utils/response/health.js";
-import { waitForDb } from "../../shared/DatabaseManager.js";
+import { settings } from "@shared/Settings.js";
+import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
+import { JobStatus, ClassifyMessage, ParseMessage, SourceType } from "@shared/models/job.js";
+import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "@shared/QueueService.js";
+import { parseGcsUrl, objectSize, readRange } from "@shared/GcsUtils.js";
+import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "@utils/normalizers/encoding.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
+import { createLogger } from "@utils/logger/logger.js";
+import { metrics } from "@utils/response/metrics.js";
+import { startHealthCheckServer } from "@utils/response/health.js";
+import { waitForDb } from "@shared/DatabaseManager.js";
 
 /**
  * Classification request interface
@@ -101,13 +101,13 @@ export class DetectBootstrapService {
     if (this.classify) return;
     
     if (settings.BEDROCK_MODEL_ID === "mock") {
-      const { mockClassify } = await import("../ai_classifier/mock.js");
+      const { mockClassify } = await import("@service/ai_classifier/mock.js");
       this.classify = async (req: ClassifyRequest) => {
         const resp = await mockClassify(req);
         return resp.template ? { kind: resp.kind, template: resp.template } : { kind: "uncertain" };
       };
     } else {
-      const { classifyAi } = await import("../ai_classifier/AiClassifierServiceHandler.js");
+      const { classifyAi } = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
       this.classify = async (req: ClassifyRequest) => {
         // Convert to the expected format for the AI classifier
         const aiReq = {

@@ -1,5 +1,5 @@
 import { IJobService, JobEvent, JobServiceConfig } from "./io/IJobService.js";
-import { InstantiationError } from "../../errors/InstantiationError.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
 
 function Enforce(): void {}
 

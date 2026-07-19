@@ -1,5 +1,5 @@
-import { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryResponse } from "./io/IArchiveEntryConsumer.js";
-import ArchiveEntryConsumerServiceImpl from "./impl/ArchiveEntryConsumerServiceImpl.js";
+import { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryResponse } from "@service/archive_entry_consumer/io/IArchiveEntryConsumer.js";
+import ArchiveEntryConsumerServiceImpl from "@service/archive_entry_consumer/impl/ArchiveEntryConsumerServiceImpl.js";
 
 /**
  * Legacy ArchiveEntryConsumerService class - now a thin wrapper around ArchiveEntryConsumerServiceImpl
@@ -28,8 +28,8 @@ export class ArchiveEntryConsumerService implements IArchiveEntryConsumer {
 }
 
 // Re-export the new service for direct use
-export { default as ArchiveEntryConsumerServiceImpl } from "./impl/ArchiveEntryConsumerServiceImpl.js";
-export { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryResponse } from "./io/IArchiveEntryConsumer.js";
+export { default as ArchiveEntryConsumerServiceImpl } from "@service/archive_entry_consumer/impl/ArchiveEntryConsumerServiceImpl.js";
+export { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryResponse } from "@service/archive_entry_consumer/io/IArchiveEntryConsumer.js";
 
 // Backward compatibility wrappers
 const archiveService = new ArchiveEntryConsumerService();

@@ -1,6 +1,6 @@
-import Config from "../../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../../config/ServiceManager.js";
-import { InstantiationError } from "../../errors/InstantiationError.js";
+import Config from "@config/system-config/Config.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
 
 class SafeRegexService extends ServiceManager {
   protected static instance: SafeRegexService;

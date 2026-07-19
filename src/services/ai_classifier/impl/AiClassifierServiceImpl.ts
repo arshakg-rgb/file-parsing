@@ -1,10 +1,10 @@
 import crypto from "crypto";
 import { GoogleGenAI } from "@google/genai";
-import Config from "../../../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
-import { InstantiationError } from "../../../errors/InstantiationError.js";
-import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../../shared/TemplateRegistryService.js";
-import { AiClassifierService } from "../AiClassifierService.js";
+import Config from "@config/system-config/Config.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
+import { AiClassifierService } from "@service/ai_classifier/AiClassifierService.js";
 import {
   IAiClassifier,
   ClassifyRequest,
@@ -12,7 +12,7 @@ import {
   FieldLocator,
   CSVParseResult,
   AIVerdict,
-} from "../io/IAiClassifier.js";
+} from "@service/ai_classifier/io/IAiClassifier.js";
 
 type RawClassifyResponse = Record<string, unknown>;
 

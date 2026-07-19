@@ -1,19 +1,19 @@
-import Config from "../../../config/system-config/Config.js";
-import ServiceManager, { Enforce } from "../../../config/ServiceManager.js";
-import { InstantiationError } from "../../../errors/InstantiationError.js";
-import FirestoreCacheUtils from "../../../utils/cache/FirestoreCacheUtils.js";
-import MySqlManager from "../../../config/db/MySqlManager.js";
-import { EventType, JobEvent, makeJobEvent } from "../../../shared/models/events.js";
-import { JobStatus, ReportMessage, JobCounts, JobTimings } from "../../../shared/models/job.js";
-import type { ParseJobAttributes } from "../../../config/db/models/ParseJob.js";
-import type { OutputPartAttributes } from "../../../config/db/models/OutputPart.js";
-import { receiveMessages, deleteMessage, publishEvent } from "../../../shared/QueueService.js";
-import { QualityGate } from "../../../shared/QualityGate.js";
-import { createLogger, Logger } from "../../../utils/logger/logger.js";
-import { metrics } from "../../../utils/response/metrics.js";
-import { startHealthCheckServer } from "../../../utils/response/health.js";
-import { ReportService } from "../ReportService.js";
-import { IReport, ReportRequest, ReportResponse } from "../io/IReport.js";
+import Config from "@config/system-config/Config.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
+import MySqlManager from "@config/db/MySqlManager.js";
+import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
+import { JobStatus, ReportMessage, JobCounts, JobTimings } from "@shared/models/job.js";
+import type { ParseJobAttributes } from "@config/db/models/ParseJob.js";
+import type { OutputPartAttributes } from "@config/db/models/OutputPart.js";
+import { receiveMessages, deleteMessage, publishEvent } from "@shared/QueueService.js";
+import { QualityGate } from "@shared/QualityGate.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
+import { metrics } from "@utils/response/metrics.js";
+import { startHealthCheckServer } from "@utils/response/health.js";
+import { ReportService } from "@service/report/ReportService.js";
+import { IReport, ReportRequest, ReportResponse } from "@service/report/io/IReport.js";
 
 class ReportServiceImpl extends ServiceManager implements ReportService {
   protected static instance: ReportServiceImpl;

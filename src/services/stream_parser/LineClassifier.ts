@@ -1,11 +1,11 @@
-import { settings } from "../../shared/Settings.js";
-import { FailureClass, ColumnMap } from "../../shared/models/job.js";
-import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/TemplateRegistryService.js";
-import { safeRegex, safeRegexTest } from "../../utils/validator/safeRegex.js";
-import { AIVerdict, ClassifyRequest, ClassifyResponse } from "../ai_classifier/io/IAiClassifier.js";
-import { ClassifyResult, IClassifier } from "./io/IClassifier.js";
+import { settings } from "@shared/Settings.js";
+import { FailureClass, ColumnMap } from "@shared/models/job.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
+import { safeRegex, safeRegexTest } from "@utils/validator/safeRegex.js";
+import { AIVerdict, ClassifyRequest, ClassifyResponse } from "@service/ai_classifier/io/IAiClassifier.js";
+import { ClassifyResult, IClassifier } from "@service/stream_parser/io/IClassifier.js";
 
-export type { ClassifyResult } from "./io/IClassifier.js";
+export type { ClassifyResult } from "@service/stream_parser/io/IClassifier.js";
 
 export class LineClassifier implements IClassifier {
   private jobId: string;
@@ -149,7 +149,7 @@ export class LineClassifier implements IClassifier {
       job_id: this.jobId,
     };
 
-    const { classifyAi } = await import("../ai_classifier/AiClassifierServiceHandler.js");
+    const { classifyAi } = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
     const resp = await classifyAi(req);
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };

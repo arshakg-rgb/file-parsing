@@ -1,1 +1,1 @@
-export { AiClassifierService } from "./io/IAiClassifierService.js";
+export { AiClassifierService } from "@service/ai_classifier/io/IAiClassifierService.js";

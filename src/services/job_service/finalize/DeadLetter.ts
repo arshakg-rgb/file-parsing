@@ -1,4 +1,4 @@
-import type { DeadLetterRow } from "../../../shared/DatabaseManager.js";
+import type { DeadLetterRow } from "@shared/DatabaseManager.js";
 
 export class DeadLetter {
   constructor(

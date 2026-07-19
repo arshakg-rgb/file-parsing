@@ -31,7 +31,7 @@ async function testBackfillPerformance(rows: number): Promise<void> {
   const s3Key = await uploadLargeFile(rows);
   
   // Simulate backfill by reading the file and computing line positions
-  const { gcsClient, readFull, parseGcsUrl } = await import("../shared/GcsUtils.js");
+  const { gcsClient, readFull, parseGcsUrl } = await import("@shared/GcsUtils.js");
   const [bucket, key] = parseGcsUrl(`s3://${DATA_BUCKET}/${s3Key}`);
   const source = await readFull(bucket, key);
   

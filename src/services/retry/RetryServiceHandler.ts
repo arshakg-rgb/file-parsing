@@ -1,6 +1,6 @@
-import { IRetry, RetryRequest, RetryResponse } from "./io/IRetry.js";
-import RetryServiceImpl from "./impl/RetryServiceImpl.js";
-import { DLQMessage } from "../../shared/models/job.js";
+import { IRetry, RetryRequest, RetryResponse } from "@service/retry/io/IRetry.js";
+import RetryServiceImpl from "@service/retry/impl/RetryServiceImpl.js";
+import { DLQMessage } from "@shared/models/job.js";
 
 /**
  * Legacy RetryService class - now a thin wrapper around RetryServiceImpl
@@ -27,8 +27,8 @@ export class RetryService implements IRetry {
 }
 
 // Re-export the new service for direct use
-export { default as RetryServiceImpl } from "./impl/RetryServiceImpl.js";
-export { IRetry, RetryRequest, RetryResponse } from "./io/IRetry.js";
+export { default as RetryServiceImpl } from "@service/retry/impl/RetryServiceImpl.js";
+export { IRetry, RetryRequest, RetryResponse } from "@service/retry/io/IRetry.js";
 
 // Backward compatibility wrappers
 const retryService = new RetryService();

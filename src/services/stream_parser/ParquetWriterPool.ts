@@ -1,4 +1,4 @@
-import { OutputPartCreationAttributes } from "../../config/db/models/OutputPart.js";
+import { OutputPartCreationAttributes } from "@config/db/models/OutputPart.js";
 import os from "os";
 import path from "path";
 import fs from "fs/promises";
@@ -6,10 +6,10 @@ import { createReadStream } from "fs";
 import { pipeline } from "node:stream/promises";
 import { randomUUID, createHash } from "crypto";
 import { ParquetSchema, ParquetWriter, type SchemaDefinition, type ParquetType } from "@dsnp/parquetjs";
-import { settings } from "../../shared/Settings.js";
-import { OutputPart } from "../../shared/models/job.js";
-import { repositories } from "../../shared/DatabaseManager.js";
-import { gcsClient, putObject } from "../../shared/GcsUtils.js";
+import { settings } from "@shared/Settings.js";
+import { OutputPart } from "@shared/models/job.js";
+import { repositories } from "@shared/DatabaseManager.js";
+import { gcsClient, putObject } from "@shared/GcsUtils.js";
 
 function estimateRowBytes(row: Record<string, unknown>): number {
   let bytes = 0;
@@ -231,8 +231,8 @@ export class DLQWriter {
   }
 
   async write(byteOffset: number, byteLength: number, lineNo: number, rawLine: string, failureClass: string, error: string): Promise<void> {
-    const { sendMessage } = await import("../../shared/QueueService.js");
-    const { FailureClass } = await import("../../shared/models/job.js");
+    const { sendMessage } = await import("@shared/QueueService.js");
+    const { FailureClass } = await import("@shared/models/job.js");
     const dlqId = randomUUID();
     const rawBytes = Buffer.from(rawLine.replace(/\0/g, ""), "utf-8").toString("base64");
     await repositories.deadLetters.create({

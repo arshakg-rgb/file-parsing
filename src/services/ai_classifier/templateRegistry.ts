@@ -1,5 +1,5 @@
-import { Template, TemplateKind } from "../../shared/models/template.js";
-import { TemplateRegistryService } from "./templateRegistry/TemplateRegistryService.js";
+import { Template, TemplateKind } from "@shared/models/template.js";
+import { TemplateRegistryService } from "@service/ai_classifier/templateRegistry/TemplateRegistryService.js";
 
 const registry = TemplateRegistryService.getInstance();
 

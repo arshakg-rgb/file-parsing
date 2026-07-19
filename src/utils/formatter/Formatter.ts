@@ -1,4 +1,4 @@
-import { createLogger } from "../logger/Log.js";
+import { createLogger } from "@utils/logger/Log.js";
 
 const logger = createLogger("format_detector");
 

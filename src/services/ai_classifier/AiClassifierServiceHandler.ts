@@ -1,8 +1,8 @@
 import crypto from "crypto";
 import { GoogleGenAI } from "@google/genai";
-import { settings } from "../../shared/Settings.js";
-import { templateRegistry, RecordTemplate, RubbishTemplate } from "../../shared/TemplateRegistryService.js";
-import { ClassifyRequest, ClassifyResponse, FieldLocator, CSVParseResult, AIVerdict } from "./io/IAiClassifier.js";
+import { settings } from "@shared/Settings.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
+import { ClassifyRequest, ClassifyResponse, FieldLocator, CSVParseResult, AIVerdict } from "@service/ai_classifier/io/IAiClassifier.js";
 
 /**
  * Extract JSON from a string that may be wrapped in markdown code fences
@@ -516,4 +516,4 @@ export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse
 }
 
 // Export interfaces for external use
-export type { ClassifyRequest, ClassifyResponse, FieldLocator, CSVParseResult, AIVerdict } from "./io/IAiClassifier.js";
+export type { ClassifyRequest, ClassifyResponse, FieldLocator, CSVParseResult, AIVerdict } from "@service/ai_classifier/io/IAiClassifier.js";

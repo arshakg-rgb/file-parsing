@@ -1,6 +1,6 @@
 import { Firestore } from "@google-cloud/firestore";
-import ServiceManager, { Enforce } from "../ServiceManager.js";
-import { InstantiationError } from "../../errors/InstantiationError.js";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
 
 class FirestoreManager extends ServiceManager {
   protected static instance: FirestoreManager;

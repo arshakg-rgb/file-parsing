@@ -1,5 +1,5 @@
-import { IJobService, JobRequest, JobResponse } from "./io/IJobService.js";
-import JobServiceImpl from "./impl/JobServiceImpl.js";
+import { IJobService, JobRequest, JobResponse } from "@service/job_service/io/IJobService.js";
+import JobServiceImpl from "@service/job_service/impl/JobServiceImpl.js";
 
 /**
  * Legacy JobService class - now a thin wrapper around JobServiceImpl
@@ -34,7 +34,7 @@ export class JobService implements IJobService {
 }
 
 // Re-export the new service for direct use
-export { default as JobServiceImpl } from "./impl/JobServiceImpl.js";
-export { IJobService, JobRequest, JobResponse } from "./io/IJobService.js";
+export { default as JobServiceImpl } from "@service/job_service/impl/JobServiceImpl.js";
+export { IJobService, JobRequest, JobResponse } from "@service/job_service/io/IJobService.js";
 
 export default JobService;
