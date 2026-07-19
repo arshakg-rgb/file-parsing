@@ -558,7 +558,11 @@ export class StreamParserService {
       const outputPaths = await outputManager.flushAll();
       // Write the human-readable per-job CSV mirror (best-effort; Parquet stays authoritative)
       const csvOutputPath = await csvWriter.flush();
-      if (csvOutputPath) console.log("csv_output_ready", { jobId, path: csvOutputPath, rows: counts.parsed });
+      if (csvOutputPath) {
+        console.log("csv_output_ready", { jobId, path: csvOutputPath, rows: counts.parsed });
+      } else {
+        this.logger.warn("csv_output_path_missing", { job_id: jobId, parsed: counts.parsed });
+      }
 
       // Apply quality gate
       const qualityCheck = await qualityGate.passesQualityGate(jobId);

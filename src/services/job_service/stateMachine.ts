@@ -57,6 +57,15 @@ export async function transition(
   if (error) updates.error = error;
   Object.assign(updates, extraFields);
 
+  // Merge nested timing/count objects so callers don't accidentally drop fields like
+  // _csv_output_path or previously recorded transition timestamps.
+  if (extraFields.timings && typeof extraFields.timings === "object") {
+    updates.timings = { ...timings, ...(extraFields.timings as Record<string, unknown>) };
+  }
+  if (extraFields.counts && typeof extraFields.counts === "object") {
+    updates.counts = { ...(row.counts || { parsed: 0, dropped_rubbish: 0, failed_by_class: {} }), ...(extraFields.counts as Record<string, unknown>) };
+  }
+
   await repositories.jobs.updateFields(jobId, updates);
   return (await getJob(jobId))!;
 }

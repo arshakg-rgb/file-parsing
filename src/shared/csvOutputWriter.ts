@@ -47,13 +47,17 @@ export function csvEscapeCell(v: unknown): string {
 
 export class CsvOutputWriter {
   private readonly tmpPath: string;
-  private stream: fs.WriteStream | null = null;
-  private rowCount = 0;
-  private failed = false;
   private readonly columns: string[];
   private readonly logger: Logger;
   private readonly gcsUtils: FirestoreCacheUtils;
   private readonly config: Config;
+
+  private rowCount = 0;
+  private failed = false;
+  private headerWritten = false;
+  private pending: string[] = [];
+  private pendingBytes = 0;
+  private static readonly FLUSH_THRESHOLD_BYTES = 8 * 1024 * 1024;
 
   constructor(private readonly jobId: string, fieldSpec: string[]) {
     this.columns = fieldSpec && fieldSpec.length > 0 ? fieldSpec : ["value"];
@@ -73,32 +77,42 @@ export class CsvOutputWriter {
   addRow(row: Record<string, unknown>, _lineNo?: number): void {
     if (this.failed) return;
     try {
-      if (!this.stream) {
-        this.stream = fs.createWriteStream(this.tmpPath, { encoding: "utf-8" });
-        this.stream.on("error", (err) => {
-          this.failed = true;
-          this.logger.warn("csv_output_stream_error", { job_id: this.jobId, error: String(err) });
-        });
-        this.stream.write("﻿" + this.line([...this.columns]));
+      if (!this.headerWritten) {
+        fs.appendFileSync(this.tmpPath, "\ufeff" + this.line([...this.columns]), "utf8");
+        this.headerWritten = true;
       }
-      this.stream.write(this.line([...this.columns.map((c) => row[c])]));
+      const line = this.line([...this.columns.map((c) => row[c])]);
+      this.pending.push(line);
+      this.pendingBytes += Buffer.byteLength(line, "utf8");
       this.rowCount++;
+      if (this.pendingBytes >= CsvOutputWriter.FLUSH_THRESHOLD_BYTES) {
+        this.flushPending();
+      }
     } catch (err) {
       this.failed = true;
       this.logger.warn("csv_output_add_failed", { job_id: this.jobId, error: String(err) });
     }
   }
 
+  private flushPending(): void {
+    if (!this.pending.length) return;
+    try {
+      fs.appendFileSync(this.tmpPath, this.pending.join(""), "utf8");
+      this.pending = [];
+      this.pendingBytes = 0;
+    } catch (err) {
+      this.failed = true;
+      this.logger.warn("csv_output_flush_pending_failed", { job_id: this.jobId, error: String(err) });
+    }
+  }
+
   async flush(): Promise<string | null> {
-    if (!this.stream || this.rowCount === 0 || this.failed) {
+    if (this.rowCount === 0 || this.failed) {
       await this.cleanup();
       return null;
     }
     try {
-      await new Promise<void>((resolve, reject) => {
-        this.stream!.once("error", reject);
-        this.stream!.end(() => resolve());
-      });
+      this.flushPending();
       const key = `output/${this.jobId}.csv`;
       const body = await fs.promises.readFile(this.tmpPath);
       await this.gcsUtils.putObject(this.config.settings.DATA_BUCKET, key, body, "text/csv");
@@ -114,8 +128,8 @@ export class CsvOutputWriter {
   }
 
   private async cleanup(): Promise<void> {
-    if (this.stream && !this.stream.destroyed) this.stream.destroy();
-    this.stream = null;
+    this.pending = [];
+    this.pendingBytes = 0;
     await fs.promises.unlink(this.tmpPath).catch(() => {});
   }
 }

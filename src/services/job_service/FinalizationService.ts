@@ -40,41 +40,67 @@ class FinalizationService {
     const groups = this.groupByTemplate(partPaths);
     const mergedPaths: string[] = [];
 
-    for (const [templateId, group] of groups) {
-      if (group.paths.length === 1) {
-        mergedPaths.push(group.paths[0].toString());
-        continue;
-      }
-
-      const totalSize = await this.totalPartSize(group.paths);
-      if (totalSize > settings.MAX_MERGED_PART_BYTES) {
-        mergedPaths.push(...group.paths.map((p) => p.toString()));
-        continue;
-      }
-
+    for (const group of groups.values()) {
       try {
-        const rows = await this.mergeRows(group.paths);
-        if (!rows.length) {
-          mergedPaths.push(...group.paths.map((p) => p.toString()));
-          continue;
-        }
-
-        this.normalizeLineNumbers(rows);
-
-        const mergedId = randomUUID();
-        const mergedKey = `outputs/${jobId}/merged/${templateId}/${mergedId}.parquet`;
-        const mergedPath = new StoragePath(group.protocol, bucket, mergedKey);
-
-        await this.engine.writeRows(this.storage, mergedPath, rows);
-        mergedPaths.push(mergedPath.toString());
+        const groupPaths = await this.mergeGroup(jobId, group, bucket);
+        if (groupPaths?.length) mergedPaths.push(...groupPaths);
       } catch (err) {
-        console.error("finalize_merge_failed", { jobId, templateId, error: String(err) });
+        console.error("finalize_merge_failed", { jobId, templateId: group.templateId, error: String(err) });
         return { failed: true, paths: partPaths, error: String(err) };
       }
     }
 
+    // Cross-template final merge: if the per-template outputs are small enough, collapse
+    // them into one job-level merged Parquet file so callers receive a single output_paths entry.
+    try {
+      if (mergedPaths.length > 1) {
+        const mergedStoragePaths = mergedPaths.map((p) => StoragePath.parse(p));
+        const totalMergedSize = await this.totalPartSize(mergedStoragePaths);
+        if (totalMergedSize <= settings.MAX_MERGED_PART_BYTES) {
+          const allRows = await this.mergeRows(mergedStoragePaths);
+          if (allRows.length) {
+            this.normalizeLineNumbers(allRows);
+            const finalKey = `outputs/${jobId}/merged/output.parquet`;
+            const finalPath = new StoragePath(mergedStoragePaths[0].protocol, bucket, finalKey);
+            await this.engine.writeRows(this.storage, finalPath, allRows);
+            await this.backfillLineNumbers(jobId, [finalPath]);
+            return { failed: false, paths: [finalPath.toString()] };
+          }
+        }
+      }
+    } catch (err) {
+      console.error("finalize_cross_merge_failed", { jobId, error: String(err) });
+      // Continue with the per-template merged paths rather than failing the whole job.
+    }
+
     await this.backfillLineNumbers(jobId, mergedPaths.map((p) => StoragePath.parse(p)));
     return { failed: false, paths: mergedPaths };
+  }
+
+  private async mergeGroup(
+    jobId: string,
+    group: { templateId: string; paths: StoragePath[]; protocol: GcsProtocol },
+    bucket: string
+  ): Promise<string[]> {
+    const groupSize = await this.totalPartSize(group.paths);
+    if (groupSize > settings.MAX_MERGED_PART_BYTES) {
+      // Too large to merge safely; keep the original part paths.
+      return group.paths.map((p) => p.toString());
+    }
+
+    const rows = await this.mergeRows(group.paths);
+    if (!rows.length) {
+      return group.paths.map((p) => p.toString());
+    }
+
+    this.normalizeLineNumbers(rows);
+
+    const mergedId = randomUUID();
+    const mergedKey = `outputs/${jobId}/merged/${group.templateId}/${mergedId}.parquet`;
+    const mergedPath = new StoragePath(group.protocol, bucket, mergedKey);
+
+    await this.engine.writeRows(this.storage, mergedPath, rows);
+    return [mergedPath.toString()];
   }
 
   private groupByTemplate(
