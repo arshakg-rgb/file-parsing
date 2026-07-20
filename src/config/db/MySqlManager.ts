@@ -1,70 +1,82 @@
 import "reflect-metadata";
 import pg from "pg";
 import { Sequelize } from "sequelize-typescript";
-import Config from "@config/system-config/Config.js";
-import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import Config from "../system-config/Config.js";
+import { ServiceManager, Enforce } from "../ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
+import { ServerError } from "@errors/ServerError.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
-import * as dbModels from "@config/db/models/index.js";
-import type { DatabaseModels } from "@config/db/models/index.js";
-import { Repositories } from "@config/db/repositories/index.js";
 
-/**
- * The {  pool }
- */
+import ParseJob from "./models/ParseJob.js";
+import DeadLetter from "./models/DeadLetter.js";
+import OutputPart from "./models/OutputPart.js";
+import PendingArchiveEntry from "./models/PendingArchiveEntry.js";
+import ParsedRecord from "./models/ParsedRecord.js";
+import RubbishLog from "./models/RubbishLog.js";
+import Template from "./models/Template.js";
+import SchemaMigration from "./models/SchemaMigration.js";
+
+import type { DatabaseModels } from "./models/index.js";
+import { Repositories } from "./repositories/index.js";
+
 const { Pool } = pg;
 
 /**
- * MySqlManager is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ * MySqlManager is a singleton class responsible for managing the MySQL/PostgreSQL connection.
+ * It provides methods to connect to and gracefully stop the database.
  */
-class MySqlManager extends ServiceManager {
-    /**
-   * Singleton instance
-   * @private
+export class MySqlManager extends ServiceManager {
+  /**
+   * Singleton instance of the MySqlManager class.
+   * @protected
    */
   protected static instance: MySqlManager;
-    /**
-   * _pool
-   * @private
-   */
-  private _pool: pg.Pool | null = null;
-    /**
-   * _sequelize
+
+  /**
+   * The Sequelize instance.
    * @private
    */
   private _sequelize?: Sequelize;
-    /**
-   * _models
+
+  /**
+   * The pg connection pool.
+   * @private
+   */
+  private _pool?: pg.Pool;
+
+  /**
+   * The database models wrapper.
    * @private
    */
   private _models?: DatabaseModels;
-    /**
-   * _repositories
+
+  /**
+   * The repository wrapper.
    * @private
    */
   private _repositories?: Repositories;
-    /**
-   * Logger
+
+  /**
+   * Logger instance.
    * @private
    */
   private logger: Logger;
 
-    /**
+  /**
    * Constructs a new MySqlManager instance.
-   * @param enforce - A function to enforce the Singleton pattern
-   * @throws Error if instantiated directly
+   * @param enforce - A function to enforce the Singleton pattern.
    */
   protected constructor(enforce: () => void) {
+    super(enforce);
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate MySqlManager directly. Use getInstance()");
     }
-    super(enforce);
     this.logger = createLogger("MySqlManager");
   }
 
-    /**
+  /**
    * Gets the single instance of the MySqlManager class.
-   * @returns The single instance of the class
+   * @returns The single instance of the class.
    */
   public static getInstance(): MySqlManager {
     if (!MySqlManager.instance) {
@@ -73,16 +85,107 @@ class MySqlManager extends ServiceManager {
     return MySqlManager.instance;
   }
 
-    /**
-   * Gets pool
-   * @returns The pg. pool result
+  /**
+   * Builds the Sequelize instance from configuration.
+   * @returns The configured Sequelize instance.
    */
-  private getPool(): pg.Pool {
+  private buildSequelize(): Sequelize {
+    const config = Config.getInstance().databaseConfig;
+
+    return new Sequelize({
+      database: config.database,
+      username: config.username,
+      password: config.password,
+      host: config.host,
+      port: config.port,
+      dialect: "postgres",
+      logging: false,
+      timezone: "+02:00",
+      pool: { max: config.poolSize, min: 0, acquire: 30000, idle: 1200000 },
+      dialectOptions: config.ssl
+        ? { ssl: { require: true, rejectUnauthorized: false } }
+        : {},
+    });
+  }
+
+  /**
+   * Connects to the database, loads models, and verifies the connection.
+   */
+  public async connect(): Promise<void> {
+    this.logger.info("Connecting MySqlManager...");
+
+    this._sequelize ??= this.buildSequelize();
+    await this.waitForDb();
+    this.models;
+    await this.sequelize.authenticate();
+
+    this.logger.info("MySqlManager connected");
+  }
+
+  /**
+   * Gracefully stops the database connection and connection pool.
+   */
+  public async gracefulStop(): Promise<void> {
+    this.logger.info("Stopping MySqlManager...");
+
+    if (this._pool) {
+      await this._pool.end();
+    }
+    if (this._sequelize) {
+      await this._sequelize.close();
+    }
+  }
+
+  /**
+   * Waits for the database to become ready (Cloud SQL proxy race condition guard).
+   * Retries with exponential backoff up to 300 seconds (5 minutes).
+   */
+  private async waitForDb(): Promise<void> {
+    const maxAttempts = 60;
+    let attempt = 0;
+
+    while (attempt < maxAttempts) {
+      try {
+        await this.sequelize.authenticate();
+        return;
+      } catch (err) {
+        attempt++;
+        const delay = Math.min(5000 * attempt, 10000);
+        if (attempt < maxAttempts) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw new ServerError(
+      `Database connection failed after ${maxAttempts} attempts`,
+      ServerError.INTERNAL,
+      500
+    );
+  }
+
+  /**
+   * Gets the Sequelize instance.
+   * @returns The Sequelize instance.
+   * @throws Will throw an error if the Sequelize instance is not initialized.
+   */
+  public get sequelize(): Sequelize {
+    if (!this._sequelize) {
+      this._sequelize = this.buildSequelize();
+    }
+    return this._sequelize;
+  }
+
+  /**
+   * Gets the pg connection pool.
+   * @returns The pg.Pool instance.
+   */
+  public get pool(): pg.Pool {
     if (!this._pool) {
-      const config = Config.getInstance();
+      const config = Config.getInstance().databaseConfig;
       this._pool = new Pool({
-        connectionString: config.settings.DATABASE_URL,
-        max: 50,
+        connectionString: Config.getInstance().settings.DATABASE_URL,
+        max: config.poolSize,
         idleTimeoutMillis: 1200000,
         connectionTimeoutMillis: 30000,
       });
@@ -90,77 +193,30 @@ class MySqlManager extends ServiceManager {
     return this._pool;
   }
 
-    /**
-   * Gets the pool.
-   * @returns The pg. pool result
-   */
-  public get pool(): pg.Pool {
-    return this.getPool();
-  }
-
   /**
-   * Connects to the database, waits for it to be ready, and loads models.
-   */
-  public async connect(): Promise<void> {
-    this.logger.info("Connecting MySqlManager...");
-    await this.waitForDb();
-    // Prime Sequelize models and test the connection
-    this.models;
-    await this.sequelize.authenticate();
-    this.logger.info("MySqlManager connected");
-  }
-
-  /**
-   * Stops the database connections gracefully.
-   */
-  public async gracefulStop(): Promise<void> {
-    this.logger.info("Stopping MySqlManager...");
-    await this.pool.end();
-    if (this._sequelize) {
-      await this._sequelize.close();
-    }
-  }
-
-    /**
-   * Gets the sequelize.
-   * @returns The sequelize result
-   */
-  public get sequelize(): Sequelize {
-    if (!this._sequelize) {
-      const config = Config.getInstance();
-      this._sequelize = new Sequelize(config.settings.DATABASE_URL, {
-        dialect: "postgres",
-        logging: false,
-        pool: { max: 50, idle: 1200000, acquire: 30000 },
-      });
-    }
-    return this._sequelize;
-  }
-
-    /**
-   * Gets the models.
-   * @returns The database models result
+   * Gets the database models, registering them with Sequelize on first access.
+   * @returns The database models result.
    */
   public get models(): DatabaseModels {
     if (!this._models) {
       this._models = {
-        ParseJob: dbModels.ParseJob,
-        DeadLetter: dbModels.DeadLetter,
-        OutputPart: dbModels.OutputPart,
-        PendingArchiveEntry: dbModels.PendingArchiveEntry,
-        ParsedRecord: dbModels.ParsedRecord,
-        RubbishLog: dbModels.RubbishLog,
-        Template: dbModels.Template,
-        SchemaMigration: dbModels.SchemaMigration,
+        ParseJob,
+        DeadLetter,
+        OutputPart,
+        PendingArchiveEntry,
+        ParsedRecord,
+        RubbishLog,
+        Template,
+        SchemaMigration,
       };
       this.sequelize.addModels(Object.values(this._models));
     }
     return this._models;
   }
 
-    /**
-   * Gets the repositories.
-   * @returns The repositories result
+  /**
+   * Gets the repositories, initializing them on first access.
+   * @returns The repositories result.
    */
   public get repositories(): Repositories {
     if (!this._repositories) {
@@ -168,31 +224,7 @@ class MySqlManager extends ServiceManager {
     }
     return this._repositories;
   }
-
-  /**
-   * Wait for database connection to succeed (Cloud SQL proxy race condition guard).
-   * Retries with exponential backoff up to 300 seconds (5 minutes).
-   */
-  private async waitForDb(): Promise<void> {
-    const maxAttempts = 60; // 60 * 5s = 300s max for cold starts and connection recovery
-    let attempt = 0;
-    while (attempt < maxAttempts) {
-      try {
-        await this.sequelize.authenticate();
-        return;
-      } catch (err) {
-        attempt++;
-        const delay = Math.min(5000 * attempt, 10000); // 5s, 10s, 10s, ...
-        if (attempt < maxAttempts) {
-          await new Promise(r => setTimeout(r, delay));
-        }
-      }
-    }
-    throw new Error(`Database connection failed after ${maxAttempts} attempts`);
-  }
-
 }
-
 
 export interface ParseJobRow {
   job_id: string;
@@ -202,10 +234,10 @@ export interface ParseJobRow {
   source_ref: string;
   s3_url?: string;
   size?: number;
-  field_spec: unknown; // PostgreSQL JSONB is parsed automatically by pg
+  field_spec: unknown;
   exec_path: string;
   status: string;
-  output_paths: unknown; // PostgreSQL JSONB is parsed automatically by pg
+  output_paths: unknown;
   counts: Record<string, unknown>;
   timings: Record<string, unknown>;
   error?: string;
@@ -234,17 +266,6 @@ export interface DeadLetterRow {
   error: string;
   attempts: number;
   status: string;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface PendingArchiveEntryRow {
-  id: string;
-  job_id: string;
-  entry_name: string;
-  entry_size: number;
-  status: string;
-  error?: string;
   created_at: Date;
   updated_at: Date;
 }

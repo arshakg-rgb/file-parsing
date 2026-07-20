@@ -1,5 +1,5 @@
 import { Op, Sequelize } from "sequelize";
-import type { DatabaseModels } from "@config/db/models/index.js";
+import type {DatabaseModels, IParseJob} from "@config/db/models/index.js";
 import type {
   ParseJobAttributes,
   ParseJobCreationAttributes,
@@ -37,11 +37,14 @@ export class JobRepository {
    * @param options - The options object
    * @returns A promise that resolves to the result
    */
-  async findById(jobId: string, options?: { attributes?: (keyof ParseJobAttributes)[] }): Promise<ParseJobAttributes | null> {
-    const row = await this.ParseJob.findByPk(jobId, {
+  async findById(jobId: string, options?: { attributes?: (keyof ParseJobAttributes)[] }): Promise<ParseJobAttributes | null>
+    {
+
+    const row: IParseJob | null = await this.ParseJob.findByPk(jobId, {
       raw: true,
       attributes: options?.attributes as string[],
     });
+
     return (row as ParseJobAttributes) || null;
   }
 
@@ -50,11 +53,10 @@ export class JobRepository {
    * @param batchId - The batch identifier
    * @returns A promise that resolves to the list
    */
-  async findByBatchId(batchId: string): Promise<ParseJobAttributes[]> {
-    return (await this.ParseJob.findAll({
-      where: { batch_id: batchId },
-      raw: true,
-    })) as ParseJobAttributes[];
+
+  async findByBatchId(batchId: string): Promise<ParseJobAttributes[]>
+  {
+    return (await this.ParseJob.findAll({where: { batch_id: batchId }, raw: true})) as ParseJobAttributes[];
   }
 
     /**
@@ -62,9 +64,11 @@ export class JobRepository {
    * @param data - The data to process
    * @returns A promise that resolves to the result
    */
-  async create(data: ParseJobCreationAttributes): Promise<ParseJobAttributes> {
-    const row = await this.ParseJob.create(data, { raw: true });
-    return row.get({ plain: true }) as ParseJobAttributes;
+
+  async create(data: ParseJobCreationAttributes): Promise<ParseJobAttributes>
+  {
+     const row = await this.ParseJob.create(data, { raw: true });
+     return row.get({ plain: true }) as ParseJobAttributes;
   }
 
     /**
@@ -72,7 +76,8 @@ export class JobRepository {
    * @param jobId - The job identifier
    * @param fields - The fields
    */
-  async updateFields(jobId: string, fields: Partial<ParseJobAttributes>): Promise<void> {
+  async updateFields(jobId: string, fields: Partial<ParseJobAttributes>): Promise<void>
+  {
     const payload = { ...fields, updated_at: new Date() };
     await this.ParseJob.update(payload, { where: { job_id: jobId } });
   }
@@ -82,9 +87,10 @@ export class JobRepository {
    * @param jobId - The job identifier
    * @returns A promise that resolves to the result
    */
-  async getStatus(jobId: string): Promise<string | undefined> {
-    const row = await this.findById(jobId, { attributes: ["status"] });
-    return row?.status;
+  async getStatus(jobId: string): Promise<string | undefined>
+  {
+     const row = await this.findById(jobId, { attributes: ["status"] });
+     return row?.status;
   }
 
     /**
@@ -92,9 +98,10 @@ export class JobRepository {
    * @param jobId - The job identifier
    * @returns A promise that resolves to the list
    */
-  async getFieldSpec(jobId: string): Promise<string[]> {
-    const row = await this.findById(jobId, { attributes: ["field_spec"] });
-    return (row?.field_spec as string[]) || [];
+  async getFieldSpec(jobId: string): Promise<string[]>
+  {
+     const row = await this.findById(jobId, { attributes: ["field_spec"] });
+     return (row?.field_spec as string[]) || [];
   }
 
     /**
@@ -103,8 +110,10 @@ export class JobRepository {
    * @param s3Url - The s3 url
    * @param size - The size value
    */
-  async updateS3Url(jobId: string, s3Url: string, size: number): Promise<void> {
-    await this.updateFields(jobId, { s3_url: s3Url, size });
+
+  async updateS3Url(jobId: string, s3Url: string, size: number): Promise<void>
+  {
+     await this.updateFields(jobId, { s3_url: s3Url, size });
   }
 
     /**
@@ -112,15 +121,23 @@ export class JobRepository {
    * @param jobId - The job identifier
    * @param reason - The reason
    */
-  async markFailed(jobId: string, reason: string): Promise<void> {
+
+  async markFailed(jobId: string, reason: string): Promise<void>
+  {
     const job = await this.ParseJob.findByPk(jobId);
-    if (!job) return;
-    const timings = { ...(job.timings || {}), failed_at: new Date().toISOString() };
-    job.status = "failed";
-    job.error = reason;
-    job.timings = timings;
-    job.updated_at = new Date();
-    await job.save();
+
+     if (!job)
+     {
+       return;
+     }
+
+     const timings = { ...(job.timings || {}), failed_at: new Date().toISOString() };
+     job.status = "failed";
+     job.error = reason;
+     job.timings = timings;
+     job.updated_at = new Date();
+
+     await job.save();
   }
 
     /**
@@ -128,7 +145,9 @@ export class JobRepository {
    * @param jobId - The job identifier
    * @param reason - The reason
    */
-  async hold(jobId: string, reason?: string): Promise<void> {
+
+  async hold(jobId: string, reason?: string): Promise<void>
+  {
     const existing = await this.findById(jobId, { attributes: ["error"] });
     await this.updateFields(jobId, { status: "held", error: reason || existing?.error });
   }
@@ -138,8 +157,11 @@ export class JobRepository {
    * @param thresholdMinutes - The threshold minutes
    * @returns A promise that resolves to the list
    */
-  async findStuckJobs(thresholdMinutes: number): Promise<ParseJobAttributes[]> {
-    const terminalStatuses = ["done", "failed", "partial", "held"];
+
+  async findStuckJobs(thresholdMinutes: number): Promise<ParseJobAttributes[]>
+    {
+    const terminalStatuses: string[] = ["done", "failed", "partial", "held"];
+
     return (await this.ParseJob.findAll({
       where: {
         status: { [Op.notIn]: terminalStatuses },
@@ -155,7 +177,8 @@ export class JobRepository {
    * @param hours - The hours
    * @returns A promise that resolves to the list
    */
-  async findStuckIngesting(hours = 2): Promise<ParseJobAttributes[]> {
+  async findStuckIngesting(hours = 2): Promise<ParseJobAttributes[]>
+    {
     return (await this.ParseJob.findAll({
       where: {
         status: "ingesting",
