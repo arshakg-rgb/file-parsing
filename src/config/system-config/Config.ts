@@ -3,9 +3,7 @@ import path from "path";
 import { IAppConfig } from "@config/system-config/io/IAppConfig.js";
 import { IDatabaseConfig } from "@config/system-config/io/IDatabaseConfig.js";
 
-// Load local .env.local first (project-specific overrides take priority)
 dotenv.config({ path: path.resolve(".env.local") });
-// Fall back to sibling Python project's env for shared infra settings
 dotenv.config({ path: path.resolve("../file-parsing-pipeline/.env.local") });
 
 /**
@@ -14,7 +12,8 @@ dotenv.config({ path: path.resolve("../file-parsing-pipeline/.env.local") });
  * @param fallback - The fallback
  * @returns The numeric result
  */
-function getNumber(name: string, fallback: number): number {
+function getNumber(name: string, fallback: number): number
+{
   const v = process.env[name];
   return v !== undefined ? Number(v) : fallback;
 }
@@ -141,7 +140,6 @@ class Config {
     return this._databaseConfig;
   }
 
-  // Legacy settings support
   public get settings() {
     return {
       GCP_PROJECT_ID: getString("GCP_PROJECT_ID", "data-etl-499916"),
@@ -158,7 +156,7 @@ class Config {
       REPORT_QUEUE_URL: getString("REPORT_QUEUE_URL", "fpp-report"),
       JOB_EVENTS_QUEUE_URL: getString("JOB_EVENTS_QUEUE_URL", "fpp-job-events"),
       ARCHIVE_ENTRY_QUEUE_URL: getString("ARCHIVE_ENTRY_QUEUE_URL", "fpp-archive-entry"),
-      FIRESTORE_DATABASE_ID: getString("FIRESTORE_DATABASE_ID", "osint-fdb"),
+      FIRESTORE_DATABASE_ID: getString("FIRESTORE_DATABASE_ID", "file-parsing-db"),
       TEMPLATE_COLLECTION: getString("TEMPLATE_COLLECTION", "file-parsing-templates"),
       ANTHROPIC_API_KEY: getString("ANTHROPIC_API_KEY", ""),
       ANTHROPIC_MODEL: getString("ANTHROPIC_MODEL", "claude-3-sonnet-20240229"),

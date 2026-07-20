@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from "express";
 import { settings } from "@shared/Settings.js";
+import FirestoreManager from "@config/firestore/FirestoreManager.js";
 import { ClassifyRequest, TemplateKind } from "@shared/models/template.js";
 import { classifyAi } from "./AiClassifierServiceHandler.js";
 import { mockClassify } from "./mock.js";
@@ -10,8 +11,6 @@ import { ensureTableExists, listAll, warmCache } from "./templateRegistry.js";
  */
 const app = express();
 app.use(express.json());
-
-ensureTableExists();
 
 app.get("/health", (_req: Request, res: Response) => {
   res.json({ status: "healthy", timestamp: new Date().toISOString() });
@@ -49,8 +48,17 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
  * The p o r t
  */
 const PORT = process.env.PORT || 8001;
-warmCache().then(() => {
+
+async function bootstrap(): Promise<void> {
+  await FirestoreManager.getInstance().connect();
+  ensureTableExists();
+  await warmCache();
   app.listen(PORT, () => {
     console.log(`AI Classifier listening on port ${PORT}`);
   });
+}
+
+bootstrap().catch((err: unknown) => {
+  console.error("Failed to start AI classifier", err);
+  process.exit(1);
 });

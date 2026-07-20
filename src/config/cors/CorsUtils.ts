@@ -19,6 +19,7 @@ export class CorsUtils
      *
      * @returns The CORS middleware.
      */
+
     public static setupCors(): (req: CorsRequest, res: { statusCode?: number | undefined; setHeader(key: string, value: string): unknown; end(): unknown; }, next: (err?: unknown) => void) => void
     {
         try

@@ -467,6 +467,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
    * @param tmpl - The tmpl
    * @returns True if the operation succeeds, false otherwise
    */
+  
   public async validateTemplate(req: ClassifyRequest, tmpl: RecordTemplate): Promise<boolean> {
     try {
       // Basic validation: ensure template can extract fields from the line

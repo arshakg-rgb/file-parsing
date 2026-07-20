@@ -69,7 +69,7 @@ export const settings = {
   ),
 
   // ---- Firestore (Template Registry) ----
-  FIRESTORE_DATABASE_ID: getString("FIRESTORE_DATABASE_ID", "osint-fdb"),
+  FIRESTORE_DATABASE_ID: getString("FIRESTORE_DATABASE_ID", "file-parsing-db"),
   TEMPLATE_COLLECTION: getString("TEMPLATE_COLLECTION", "file-parsing-templates"),
 
   // ---- AI Classifier ----
