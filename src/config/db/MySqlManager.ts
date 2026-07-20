@@ -4,6 +4,7 @@ import { Sequelize } from "sequelize-typescript";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
 import * as dbModels from "@config/db/models/index.js";
 import type { DatabaseModels } from "@config/db/models/index.js";
 import { Repositories } from "@config/db/repositories/index.js";
@@ -42,6 +43,11 @@ class MySqlManager extends ServiceManager {
    * @private
    */
   private _repositories?: Repositories;
+    /**
+   * Logger
+   * @private
+   */
+  private logger: Logger;
 
     /**
    * Constructs a new MySqlManager instance.
@@ -53,6 +59,7 @@ class MySqlManager extends ServiceManager {
       throw new InstantiationError("Cannot instantiate MySqlManager directly. Use getInstance()");
     }
     super(enforce);
+    this.logger = createLogger("MySqlManager");
   }
 
     /**
@@ -91,24 +98,27 @@ class MySqlManager extends ServiceManager {
     return this.getPool();
   }
 
-    /**
-   * Initializes the service
+  /**
+   * Connects to the database, waits for it to be ready, and loads models.
    */
-  public async initialize(): Promise<void> {
-    console.log("Initializing MySqlManager...");
+  public async connect(): Promise<void> {
+    this.logger.info("Connecting MySqlManager...");
     await this.waitForDb();
     // Prime Sequelize models and test the connection
     this.models;
     await this.sequelize.authenticate();
-    console.log("MySqlManager initialized");
+    this.logger.info("MySqlManager connected");
   }
 
-    /**
-   * Stops the service gracefully
+  /**
+   * Stops the database connections gracefully.
    */
-  public async shutdown(): Promise<void> {
-    console.log("Shutting down MySqlManager...");
+  public async gracefulStop(): Promise<void> {
+    this.logger.info("Stopping MySqlManager...");
     await this.pool.end();
+    if (this._sequelize) {
+      await this._sequelize.close();
+    }
   }
 
     /**

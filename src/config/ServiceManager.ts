@@ -1,36 +1,19 @@
-/**
- * Service Manager - Centralized service initialization and management
- * Following the singleton pattern from knowledge.md
- */
-
 import { InstantiationError } from "@errors/InstantiationError.js";
 import Config from "@config/system-config/Config.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
+
+const logger: Logger = createLogger("ServiceManager");
 
 /**
- * ServiceManager manages the resource lifecycle.
+ * ServiceManager is the base lifecycle manager for long-lived connections and services.
+ *
+ * Subclasses may override connect() and gracefulStop(). The public initialize() and
+ * shutdown() methods wrap these with logging and process-exit on fatal failures.
  */
-class ServiceManager {
-    /**
-   * Singleton instance
-   * @private
-   */
-  protected static instance: ServiceManager;
-    /**
-   * Services
-   * @private
-   */
-  private services: Map<string, ServiceManager> = new Map();
-    /**
-   * Config
-   * @private
-   */
-  protected config: Config;
+export class ServiceManager {
+  protected static instance: ServiceManager | undefined;
+  protected readonly config: Config;
 
-    /**
-   * Constructs a new ServiceManager instance.
-   * @param enforce - A function to enforce the Singleton pattern
-   * @throws Error if instantiated directly
-   */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate ServiceManager directly. Use getInstance()");
@@ -38,62 +21,57 @@ class ServiceManager {
     this.config = Config.getInstance();
   }
 
-    /**
-   * Gets the single instance of the ServiceManager class.
-   * @returns The single instance of the class
+  /**
+   * Establishes the connection / starts the service.
+   * Override in lifecycle managers.
    */
-  public static getInstance(): ServiceManager {
-    if (!ServiceManager.instance) {
-      ServiceManager.instance = new ServiceManager(Enforce);
+  public async connect(): Promise<void> {
+    // no-op by default
+  }
+
+  /**
+   * Closes the connection / stops the service gracefully.
+   * Override in lifecycle managers.
+   */
+  public async gracefulStop(): Promise<void> {
+    // no-op by default
+  }
+
+  /**
+   * Initializes the manager by connecting and logging the result.
+   * Exits the process on fatal connection failure.
+   */
+  public async initialize(): Promise<void> {
+    try {
+      await this.connect();
+      logger.info(`${this.constructor.name} connected successfully`);
+    } catch (error) {
+      logger.error(`Failed to connect to ${this.constructor.name}: ${error instanceof Error ? error.message : String(error)}`);
+      process.exit(1);
     }
-    return ServiceManager.instance;
   }
 
   /**
-   * Register a service
+   * Shuts the manager down by gracefully stopping and logging the result.
    */
-  public registerService(name: string, service: ServiceManager): void {
-    this.services.set(name, service);
+  public async shutdown(): Promise<void> {
+    try {
+      await this.gracefulStop();
+      logger.info(`${this.constructor.name} closed successfully`);
+    } catch (error) {
+      logger.error(`Failed to close ${this.constructor.name}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**
-   * Get a registered service
-   */
-  public getService<T>(name: string): T | undefined {
-    return this.services.get(name) as T | undefined;
-  }
-
-  /**
-   * Get configuration
+   * Returns the shared configuration instance.
+   * @returns The Config instance.
    */
   public getConfig(): Config {
     return this.config;
   }
-
-  /**
-   * Initialize all services
-   */
-  public async initialize(): Promise<void> {
-    // Initialize services in order
-    // This will be populated as services are created
-  }
-
-  /**
-   * Shutdown all services
-   */
-  public async shutdown(): Promise<void> {
-    // Cleanup services in reverse order
-    for (const [name, service] of this.services) {
-      if (service.shutdown && typeof service.shutdown === "function") {
-        await service.shutdown();
-      }
-    }
-  }
 }
 
-/**
- * Performs the enforce operation.
- */
 function Enforce(): void {}
 
 export { Enforce };

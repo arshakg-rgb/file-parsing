@@ -1,6 +1,7 @@
 import { Firestore } from "@google-cloud/firestore";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
 
 /**
  * FirestoreManager is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -16,6 +17,11 @@ class FirestoreManager extends ServiceManager {
    * @private
    */
   private firestore!: Firestore;
+    /**
+   * Logger
+   * @private
+   */
+  private logger: Logger;
 
     /**
    * Constructs a new FirestoreManager instance.
@@ -27,6 +33,7 @@ class FirestoreManager extends ServiceManager {
       throw new InstantiationError("Cannot instantiate FirestoreManager directly. Use getInstance()");
     }
     super(enforce);
+    this.logger = createLogger("FirestoreManager");
   }
 
     /**
@@ -40,22 +47,21 @@ class FirestoreManager extends ServiceManager {
     return FirestoreManager.instance;
   }
 
-    /**
-   * Initializes the service
+  /**
+   * Connects to Firestore.
    */
-  public async initialize(): Promise<void> {
-    console.log("Initializing FirestoreManager...");
-    // Firestore initialization will be done here
-    // const { Firestore } = await import("@google-cloud/firestore");
+  public async connect(): Promise<void> {
+    this.logger.info("Connecting FirestoreManager...");
+    // Firestore initialization will be done here when enabled
     // this.firestore = new Firestore();
-    console.log("FirestoreManager initialized");
+    this.logger.info("FirestoreManager connected");
   }
 
-    /**
-   * Stops the service gracefully
+  /**
+   * Stops Firestore gracefully.
    */
-  public async shutdown(): Promise<void> {
-    console.log("Shutting down FirestoreManager...");
+  public async gracefulStop(): Promise<void> {
+    this.logger.info("Stopping FirestoreManager...");
     if (this.firestore) {
       // await this.firestore.terminate();
     }

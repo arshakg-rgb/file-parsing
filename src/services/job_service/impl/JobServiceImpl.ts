@@ -1,8 +1,9 @@
 import express, { Request, Response, NextFunction } from "express";
-import Config from "@config/system-config/Config.js";
+import { Server as HttpServer } from "node:http";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import MySqlManager from "@config/db/MySqlManager.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
 import { receiveMessages, deleteMessage } from "@shared/QueueService.js";
 import { JobEvent, EventType } from "@shared/models/events.js";
 import { handleEvent } from "@service/job_service/stateMachine.js";
@@ -26,10 +27,20 @@ class JobServiceImpl extends ServiceManager implements JobService {
    */
   private app: express.Express;
     /**
+   * Http server
+   * @private
+   */
+  private server?: HttpServer;
+    /**
    * Db Manager
    * @private
    */
   private dbManager: MySqlManager;
+    /**
+   * Logger
+   * @private
+   */
+  private logger: Logger;
 
     /**
    * Constructs a new JobServiceImpl instance.
@@ -44,6 +55,7 @@ class JobServiceImpl extends ServiceManager implements JobService {
     
     this.app = express();
     this.dbManager = MySqlManager.getInstance();
+    this.logger = createLogger("JobServiceImpl");
     this.setupApp();
   }
 
@@ -84,7 +96,7 @@ class JobServiceImpl extends ServiceManager implements JobService {
     });
 
     this.app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-      console.error("error", err);
+      this.logger.error("express_error", { error: err.message, stack: err.stack });
       res.status(500).json({ detail: err.message });
     });
   }
@@ -148,21 +160,41 @@ class JobServiceImpl extends ServiceManager implements JobService {
     }
   }
 
+  /**
+   * Connects the service by starting the HTTP server.
+   */
+  public async connect(): Promise<void> {
+    const PORT = process.env.PORT || 8080;
+
+    return new Promise((resolve) => {
+      this.server = this.app.listen(PORT, () => {
+        this.logger.info(`Job Service listening on port ${PORT}`);
+        resolve();
+      });
+    });
+  }
+
+  /**
+   * Stops the HTTP server gracefully.
+   */
+  public async gracefulStop(): Promise<void> {
+    if (this.server) {
+      await new Promise<void>((resolve, reject) => {
+        this.server!.close((err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    }
+  }
+
     /**
    * Starts the operation
    */
   public async start(): Promise<void> {
-    const config = this.getConfig();
-    const PORT = process.env.PORT || 8080;
-    
-    // Start listening immediately for health checks
-    this.app.listen(PORT, () => {
-      console.log(`Job Service listening on port ${PORT}`);
-    });
-    
-    // Initialize database and start consumer loop in background
+    await this.initialize();
     await this.initializeDatabase();
-    console.log("Database initialized successfully");
+    this.logger.info("Database initialized successfully");
     this.eventConsumerLoop();
   }
 
@@ -170,7 +202,7 @@ class JobServiceImpl extends ServiceManager implements JobService {
    * Stops the operation
    */
   public async stop(): Promise<void> {
-    // Placeholder for cleanup
+    await this.shutdown();
   }
 }
 

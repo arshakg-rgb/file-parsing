@@ -3,11 +3,13 @@ import { InstantiationError } from "@errors/InstantiationError.js";
 import { CustomError } from "@errors/CustomError.js";
 import { ValidationError } from "@errors/ValidationError.js";
 import { settings } from "@shared/Settings.js";
-import { repositories, ParseJobRow } from "@shared/DatabaseManager.js";
+import MySqlManager from "@config/db/MySqlManager.js";
+import type { ParseJobRow } from "@shared/DatabaseManager.js";
 import { SourceType, JobStatus, JobTimings, JobCounts } from "@shared/models/job.js";
 import { sendRaw } from "@shared/QueueService.js";
 import { presignedPutUrl } from "@shared/GcsUtils.js";
 import { transition } from "@service/job_service/stateMachine.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
 import { JobServiceService } from "@service/job_service/services/JobServiceService.js";
 import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest } from "@service/job_service/io/IJob.js";
 
@@ -16,16 +18,20 @@ import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse
  */
 export class JobServiceServiceImpl implements JobServiceService {
   private static instance: JobServiceServiceImpl;
+  private readonly mySqlManager: MySqlManager;
+  private readonly logger: Logger;
 
-  private constructor(enforce: () => void) {
+  private constructor(enforce: () => void, mySqlManager: MySqlManager) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate JobServiceServiceImpl directly. Use getInstance()");
     }
+    this.mySqlManager = mySqlManager;
+    this.logger = createLogger("JobServiceServiceImpl");
   }
 
   public static getInstance(): JobServiceServiceImpl {
     if (!JobServiceServiceImpl.instance) {
-      JobServiceServiceImpl.instance = new JobServiceServiceImpl(Enforce);
+      JobServiceServiceImpl.instance = new JobServiceServiceImpl(Enforce, MySqlManager.getInstance());
     }
     return JobServiceServiceImpl.instance;
   }
@@ -101,7 +107,8 @@ export class JobServiceServiceImpl implements JobServiceService {
       updated_at: new Date(),
     };
 
-    await repositories.jobs.create(row);
+    this.logger.info("job_created", { job_id: jobId, queue_url: settings.INGEST_QUEUE_URL });
+    await this.mySqlManager.repositories.jobs.create(row);
 
     const messageId = await sendRaw(settings.INGEST_QUEUE_URL, {
       job_id: jobId,
@@ -111,17 +118,18 @@ export class JobServiceServiceImpl implements JobServiceService {
       column_map: columnMap,
       batch_id: batchId,
     });
+    this.logger.info("job_queued", { job_id: jobId, message_id: messageId });
 
     return { job_id: jobId, status: JobStatus.QUEUED, presigned_put_url: putUrl, message_id: messageId };
   }
 
   public async findStuckJobs(thresholdMinutes: number): Promise<IStuckJobsResponse> {
-    const rows = await repositories.jobs.findStuckJobs(thresholdMinutes);
+    const rows = await this.mySqlManager.repositories.jobs.findStuckJobs(thresholdMinutes);
     return { stuck_jobs: rows, count: rows.length, threshold_minutes: thresholdMinutes };
   }
 
   public async getJob(jobId: string): Promise<IJobResponse | null> {
-    const row = await repositories.jobs.findById(jobId);
+    const row = await this.mySqlManager.repositories.jobs.findById(jobId);
     if (!row) return null;
 
     return {
@@ -137,7 +145,7 @@ export class JobServiceServiceImpl implements JobServiceService {
   }
 
   public async getBatchJobs(batchId: string): Promise<IJobResponse[]> {
-    const rows = await repositories.jobs.findByBatchId(batchId);
+    const rows = await this.mySqlManager.repositories.jobs.findByBatchId(batchId);
     return rows.map((row: ParseJobRow) => ({
       job_id: row.job_id,
       batch_id: row.batch_id,
@@ -151,7 +159,7 @@ export class JobServiceServiceImpl implements JobServiceService {
   }
 
   public async providePassword(jobId: string, request: IProvidePasswordRequest): Promise<void> {
-    const row = await repositories.jobs.findById(jobId);
+    const row = await this.mySqlManager.repositories.jobs.findById(jobId);
     if (!row) {
       throw new CustomError("Job not found", "NOT_FOUND", 404);
     }
@@ -163,6 +171,7 @@ export class JobServiceServiceImpl implements JobServiceService {
       action: "provide_password",
       password: request.password,
     });
+    this.logger.info("job_password_provided", { job_id: jobId });
   }
 
   public async releaseHold(jobId: string): Promise<void> {
@@ -175,16 +184,17 @@ export class JobServiceServiceImpl implements JobServiceService {
   }
 
   public async markFailed(jobId: string, request: IMarkFailedRequest): Promise<void> {
-    const row = await repositories.jobs.findById(jobId);
+    const row = await this.mySqlManager.repositories.jobs.findById(jobId);
     if (!row) {
       throw new CustomError("Job not found", "NOT_FOUND", 404);
     }
-    await repositories.jobs.markFailed(jobId, request.reason || "manually_failed");
+    await this.mySqlManager.repositories.jobs.markFailed(jobId, request.reason || "manually_failed");
+    this.logger.info("job_marked_failed", { job_id: jobId, reason: request.reason });
   }
 
   public async retryJob(jobId: string, request: IRetryJobRequest): Promise<void> {
     const { target_status } = request;
-    const row = await repositories.jobs.findById(jobId);
+    const row = await this.mySqlManager.repositories.jobs.findById(jobId);
     if (!row) {
       throw new CustomError("Job not found", "NOT_FOUND", 404);
     }
