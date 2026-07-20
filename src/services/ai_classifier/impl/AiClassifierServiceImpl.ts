@@ -263,7 +263,8 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
           created_at: new Date(),
         };
       }
-      if (kindStr === "rubbish-signature") {
+      if (kindStr === "rubbish-signature") 
+        {
         const t = (raw.template || {}) as Record<string, unknown>;
         return {
           template_id: crypto.randomUUID(),
