@@ -3,18 +3,22 @@ import { CustomError } from "./CustomError.js";
 /**
  * Class representing a server error error.
  */
-export class ServerError extends CustomError {
+export class ServerError extends CustomError
+{
     /**
-   * The i n t e r n a l value
+   * The internal value
    */
+
   static readonly INTERNAL = "INTERNAL_ERROR";
     /**
-   * The d a t a b a s e value
+   * The database value
    */
+
   static readonly DATABASE = "DATABASE_ERROR";
     /**
-   * The s e r v i c e_ u n a v a i l a b l e value
+   * The service unavailable value
    */
+
   static readonly SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE";
 
     /**
@@ -24,7 +28,8 @@ export class ServerError extends CustomError {
    * @param statusCode - The status code
    * @param details - The details
    */
-  constructor(message: string, code: string = ServerError.INTERNAL, statusCode: number = 500, details?: unknown) {
+  constructor(message: string, code: string = ServerError.INTERNAL, statusCode: number = 500, details?: unknown)
+    {
     super(message, code, statusCode, details);
   }
 }

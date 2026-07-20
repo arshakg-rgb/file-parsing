@@ -3,18 +3,23 @@ import { ErrorInfo } from "@errors/io/ErrorInfo.js";
 /**
  * Class representing a custom error error.
  */
-export class CustomError extends Error {
+
+export class CustomError extends Error
+{
     /**
    * Code
    */
+
   public readonly code: string;
     /**
    * Status Code
    */
+
   public readonly statusCode: number;
     /**
    * Details
    */
+
   public readonly details?: unknown;
 
     /**
@@ -24,7 +29,9 @@ export class CustomError extends Error {
    * @param statusCode - The status code
    * @param details - The details
    */
-  constructor(message: string, code: string = "CUSTOM_ERROR", statusCode: number = 500, details?: unknown) {
+
+  constructor(message: string, code: string = "CUSTOM_ERROR", statusCode: number = 500, details?: unknown)
+    {
     super(message);
     this.name = this.constructor.name;
     this.code = code;
@@ -37,7 +44,9 @@ export class CustomError extends Error {
    * Performs the to j s o n operation.
    * @returns The error info result
    */
-  toJSON(): ErrorInfo {
+
+  toJSON(): ErrorInfo
+    {
     return {
       message: this.message,
       code: this.code,

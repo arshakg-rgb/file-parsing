@@ -1,13 +1,11 @@
 import crypto from "crypto";
 import { GoogleGenAI } from "@google/genai";
-import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { AiClassifierService } from "@service/ai_classifier/AiClassifierService.js";
 import {
-  IAiClassifier,
   ClassifyRequest,
   ClassifyResponse,
   FieldLocator,
@@ -16,60 +14,6 @@ import {
 } from "@service/ai_classifier/io/IAiClassifier.js";
 
 type RawClassifyResponse = Record<string, unknown>;
-
-/**
- * The s y s t e m_ p r o m p t
- */
-const SYSTEM_PROMPT = `You are a data-parsing assistant embedded in a production file-parsing pipeline.
-A streaming parser has encountered a line that matches NO known template.
-
-Your task: classify the line and generate a REUSABLE declarative template.
-
-== CRITICAL RULES ==
-1. Output is ALWAYS a JSON object — never prose, never code, never YAML.
-2. You have exactly three possible verdicts:
-   a) record-template  — the line is parseable structured data
-   b) rubbish-signature — the line is definitely junk (confidence ≥ 0.90)
-   c) uncertain          — you cannot safely decide
-3. When in doubt → uncertain. NEVER guess. A wrong drop is unrecoverable.
-4. Rubbish confidence must be ≥ 0.90. Anything lower → uncertain.
-5. Templates are declarative specs interpreted by the engine — never code.
-6. Every column name in field_map MUST come from the detected structure, not invented.
-7. Validate your template against the triggering line before responding.
-8. MUST return valid JSON format only - no YAML, no markdown code blocks.
-9. The "kind" field MUST be exactly one of: "record-template", "rubbish-signature", or "uncertain" - no other values are accepted.
-
-== OUTPUT FORMAT (JSON ONLY) ==
-
-If record-template:
-{
-  "kind": "record-template",
-  "template": {
-    "structure": "csv" | "json" | "kv" | "fixed" | "regex",
-    "delimiter": "," | ";" | "\\t" | "|" | null,
-    "quote_char": "\\"" | "'" | null,
-    "field_map": {
-      "<target_field>": {"index": 0}
-                      | {"regex": "capture-group-pattern"}
-                      | {"key": "json_key_name"}
-    },
-    "length_hint_min": <int or null>,
-    "length_hint_max": <int or null>
-  }
-}
-
-If rubbish-signature:
-{
-  "kind": "rubbish-signature",
-  "template": {
-    "signature": "<tight regex that identifies this junk class>",
-    "confidence": 0.95,
-    "description": "<brief reason this is junk>"
-  }
-}
-
-If uncertain:
-{"kind": "uncertain"}`;
 
 /**
  * AiClassifierServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -171,7 +115,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     // Try markdown code fence first (```json or ```)
     const fence = /\`\`\`(?:json)?\s*(\{[\s\S]*?\})\s*\`\`\`/.exec(text);
     if (fence) return JSON.parse(fence[1]) as RawClassifyResponse;
-    
+
     // Try bare JSON object
     const brace = /\{[\s\S]*\}/.exec(text);
     if (brace) {
@@ -179,7 +123,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
         return JSON.parse(brace[0]) as RawClassifyResponse;
       } catch {}
     }
-    
+
     // Try to find JSON by looking for first { and last }
     const firstBrace = text.indexOf("{");
     const lastBrace = text.lastIndexOf("}");
@@ -188,7 +132,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
         return JSON.parse(text.substring(firstBrace, lastBrace + 1)) as RawClassifyResponse;
       } catch {}
     }
-    
+
     throw new Error(`No JSON found in model output. Response: ${text.slice(0, 200)}...`);
   }
 
@@ -246,8 +190,8 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
         for (const [field, loc] of Object.entries((t.field_map || {}) as Record<string, FieldLocator>)) {
           const locator = loc as FieldLocator;
           fieldMap[field] = {
-            locator: locator.index !== undefined ? `index:${locator.index}` : 
-                      locator.regex ? `regex:${locator.regex}` : 
+            locator: locator.index !== undefined ? `index:${locator.index}` :
+                      locator.regex ? `regex:${locator.regex}` :
                       locator.key ? `key:${locator.key}` : "unknown",
             type: "string"
           };
@@ -263,7 +207,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
           created_at: new Date(),
         };
       }
-      if (kindStr === "rubbish-signature") 
+      if (kindStr === "rubbish-signature")
         {
         const t = (raw.template || {}) as Record<string, unknown>;
         return {
@@ -313,11 +257,11 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
    */
   public tryParseAsCSV(line: string, fieldSpec: string[]): CSVParseResult {
     const delimiters = [",", ";", "\t", "|"];
-    
+
     // Ensure fieldSpec is an array
-    const fieldSpecArray = Array.isArray(fieldSpec) ? fieldSpec : 
+    const fieldSpecArray = Array.isArray(fieldSpec) ? fieldSpec :
       (typeof fieldSpec === "string" ? JSON.parse(fieldSpec) : []);
-    
+
     this.logger.debug("csv_parser_start", { line, fieldSpec: fieldSpecArray, delimiterCount: delimiters.length });
 
     for (const delimiter of delimiters) {
@@ -348,11 +292,11 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
    */
   public createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: string): RecordTemplate {
     const fieldMap: Record<string, { locator: string; type: string }> = {};
-    
+
     fieldSpec.forEach((field, index) => {
       fieldMap[field] = { locator: `index:${index}`, type: "string" };
     });
-    
+
     const template = {
       template_id: crypto.randomBytes(16).toString("hex"),
       fingerprint: this.quickFingerprint(line),
@@ -363,7 +307,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
       source: "ai" as const,
       created_at: new Date()
     };
-    
+
     this.logger.info("csv_template_created", {
       template_id: template.template_id,
       fieldMap,
@@ -467,13 +411,13 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
    * @param tmpl - The tmpl
    * @returns True if the operation succeeds, false otherwise
    */
-  
+
   public async validateTemplate(req: ClassifyRequest, tmpl: RecordTemplate): Promise<boolean> {
     try {
       // Basic validation: ensure template can extract fields from the line
       const line = req.unknown_line;
       const fieldMap = tmpl.field_map;
-      
+
       // Simple validation: check if we can at least parse the structure
       if (tmpl.structure === "csv") {
         const parts = line.split(",");

@@ -1,206 +1,197 @@
-import dotenv from "dotenv";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import { pino } from "pino";
+import fs from "fs";
 import path from "path";
-import { IAppConfig } from "@config/system-config/io/IAppConfig.js";
-import { IDatabaseConfig } from "@config/system-config/io/IDatabaseConfig.js";
+import { ValidationResult } from "./ConfigValidator.js";
+import {
+    validateAppConfig,
+    validateMysqlConfig,
+    validateAuthConfig,
+    validateCommonConfig,
+    validateSocketConfig,
+    validateRedisConfig
+} from "./ConfigValidator.js";
+import { IMysqlConfig } from "./io/IMysqlConfig.js";
+import { IAppConfig } from "./io/IAppConfig.js";
+import { IAuthConfig } from "./io/IAuthConfig.js";
+import { ICommonConfig } from "./io/ICommonConfig.js";
+import { ISocketConfig } from "./io/ISocketConfig.js";
+import { IRedisConfig } from "./io/IRedisConfig.js";
+import { settings } from "@shared/Settings.js";
 
-dotenv.config({ path: path.resolve(".env.local") });
-dotenv.config({ path: path.resolve("../file-parsing-pipeline/.env.local") });
+const logger: pino.Logger = pino();
 
-/**
- * Gets number
- * @param name - The name value
- * @param fallback - The fallback
- * @returns The numeric result
- */
-function getNumber(name: string, fallback: number): number
+export default class Config
 {
-  const v = process.env[name];
-  return v !== undefined ? Number(v) : fallback;
-}
-
-/**
- * Gets string
- * @param name - The name value
- * @param fallback - The fallback
- * @returns The string result
- */
-function getString(name: string, fallback: string): string {
-  return process.env[name] ?? fallback;
-}
-
-/**
- * Gets optional string
- * @param name - The name value
- * @returns The string | undefined result
- */
-function getOptionalString(name: string): string | undefined {
-  const v = process.env[name];
-  return v === "" ? undefined : v;
-}
-
-/**
- * Config is responsible for config operations.
- */
-class Config {
-    /**
-   * Singleton instance
-   * @private
-   */
-  private static instance: Config;
-    /**
-   * _app Config
-   * @private
-   */
-  private _appConfig: IAppConfig;
-    /**
-   * _common Config
-   * @private
-   */
-  private _commonConfig: unknown;
-    /**
-   * _auth Config
-   * @private
-   */
-  private _authConfig: unknown;
-    /**
-   * _database Config
-   * @private
-   */
-  private _databaseConfig: IDatabaseConfig;
+    private static instance: Config;
+    private readonly _mysqlConfig: IMysqlConfig;
+    private readonly _socketConfig: ISocketConfig;
+    private readonly _appConfig: IAppConfig;
+    private readonly _redisConfig: IRedisConfig;
+    private readonly _authConfig: IAuthConfig;
+    private readonly _commonConfig: ICommonConfig;
 
     /**
-   * Constructs a new Config instance.
-   */
-  private constructor() {
-    this._appConfig = {
-      name: getString("APP_NAME", "file-parsing-pipeline"),
-      version: getString("APP_VERSION", "1.0.0"),
-      environment: (getString("NODE_ENV", "development") as "development" | "staging" | "production"),
-      port: getNumber("PORT", 3000),
-      origins: {
-        enabled: getString("CORS_ENABLED", "false") === "true",
-        domains: getString("CORS_DOMAINS", "*").split(",").map((d) => d.trim()).filter(Boolean),
-      },
-    };
+     * Constructs a new instance of the Config class.
+     * @param enforce - A function to enforce the Singleton pattern.
+     * @throws If the enforce function is not provided or configuration files cannot be read.
+     */
 
-    this._commonConfig = {
-      request_body_limit: getString("REQUEST_BODY_LIMIT", "10mb"),
-    };
+    constructor(enforce: () => void)
+    {
+        if (enforce !== Enforce)
+        {
+            throw new InstantiationError("Error: Instantiation failed: Use Config.getInstance() instead of new.");
+        }
 
-    this._authConfig = {
-      sessionSecret: getString("SESSION_SECRET", "your-secret-key"),
-    };
-
-    this._databaseConfig = {
-      url: getString("FILE_DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/parsing_pipeline"),
-      poolSize: getNumber("DB_POOL_SIZE", 10),
-    };
-  }
-
-    /**
-   * Gets the single instance of the Config class.
-   * @returns The single instance of the class
-   */
-  public static getInstance(): Config {
-    if (!Config.instance) {
-      Config.instance = new Config();
+        try
+        {
+            this._appConfig = this.readConfigFile<IAppConfig>("app.json", validateAppConfig);
+            this._mysqlConfig = this.readConfigFile<IMysqlConfig>("mysql.json", validateMysqlConfig);
+            this._socketConfig = this.readConfigFile<ISocketConfig>("socket.json", validateSocketConfig);
+            this._redisConfig = this.readConfigFile<IRedisConfig>("redis-config.json", validateRedisConfig);
+            this._authConfig = this.readConfigFile<IAuthConfig>("auth.json", validateAuthConfig);
+            this._commonConfig = this.readConfigFile<ICommonConfig>("common.json", validateCommonConfig);
+        }
+        catch (error)
+        {
+            const err: Error = error instanceof Error ? error : new Error(String(error));
+            logger.error(`Error reading config file ${err.message}`);
+            throw err;
+        }
     }
-    return Config.instance;
-  }
 
     /**
-   * Gets the app config.
-   * @returns The i app config result
-   */
-  public get appConfig(): IAppConfig {
-    return this._appConfig;
-  }
+     * Gets the single instance of the Config class.
+     * @returns The single instance of the Config class.
+     */
+
+    public static getInstance(): Config
+    {
+        if (!Config.instance)
+        {
+            Config.instance = new Config(Enforce);
+        }
+
+        return Config.instance;
+    }
 
     /**
-   * Gets the common config.
-   * @returns The unknown result
-   */
-  public get commonConfig(): unknown {
-    return this._commonConfig;
-  }
+     * Gets the common configuration.
+     * @returns The common configuration.
+     */
+
+    public get commonConfig(): ICommonConfig
+    {
+        return this._commonConfig;
+    }
 
     /**
-   * Gets the auth config.
-   * @returns The unknown result
-   */
-  public get authConfig(): unknown {
-    return this._authConfig;
-  }
+     * Gets the socket configuration.
+     * @returns The socket configuration.
+     */
+
+    public get socketConfig(): ISocketConfig
+    {
+        return this._socketConfig;
+    }
 
     /**
-   * Gets the database config.
-   * @returns The i database config result
-   */
-  public get databaseConfig(): IDatabaseConfig {
-    return this._databaseConfig;
-  }
+     * Gets the Redis configuration.
+     * @returns The Redis configuration
+     */
 
-  public get settings() {
-    return {
-      GCP_PROJECT_ID: getString("GCP_PROJECT_ID", "data-etl-499916"),
-      GOOGLE_APPLICATION_CREDENTIALS: getOptionalString("GOOGLE_APPLICATION_CREDENTIALS"),
-      DATA_BUCKET: getString("DATA_BUCKET", "datalead-osint"),
-      DEPLOYMENT_BUCKET: getString("DEPLOYMENT_BUCKET", "datalead-osint"),
-      QUEUE_BACKEND: getString("QUEUE_BACKEND", "pubsub"),
-      DATABASE_URL: getString("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/parsing_pipeline"),
-      INGEST_QUEUE_URL: getString("INGEST_QUEUE_URL", "fpp-ingest"),
-      CLASSIFY_QUEUE_URL: getString("CLASSIFY_QUEUE_URL", "fpp-classify"),
-      PARSE_QUEUE_URL: getString("PARSE_QUEUE_URL", "fpp-parse"),
-      DLQ_QUEUE_URL: getString("DLQ_QUEUE_URL", "fpp-line-dlq"),
-      LOAD_QUEUE_URL: getString("LOAD_QUEUE_URL", "fpp-load"),
-      REPORT_QUEUE_URL: getString("REPORT_QUEUE_URL", "fpp-report"),
-      JOB_EVENTS_QUEUE_URL: getString("JOB_EVENTS_QUEUE_URL", "fpp-job-events"),
-      ARCHIVE_ENTRY_QUEUE_URL: getString("ARCHIVE_ENTRY_QUEUE_URL", "fpp-archive-entry"),
-      FIRESTORE_DATABASE_ID: getString("FIRESTORE_DATABASE_ID", "file-parsing-db"),
-      TEMPLATE_COLLECTION: getString("TEMPLATE_COLLECTION", "file-parsing-templates"),
-      ANTHROPIC_API_KEY: getString("ANTHROPIC_API_KEY", ""),
-      ANTHROPIC_MODEL: getString("ANTHROPIC_MODEL", "claude-3-sonnet-20240229"),
-      BEDROCK_MODEL_ID: getString("BEDROCK_MODEL_ID", "mock"),
-      AI_CLASSIFIER_URL: getOptionalString("AI_CLASSIFIER_URL"),
-      AI_RATE_LIMIT_RPM: getNumber("AI_RATE_LIMIT_RPM", 60),
-      AI_RATE_LIMIT_BURST: getNumber("AI_RATE_LIMIT_BURST", 10),
-      AI_CLASSIFY_TIMEOUT_MS: getNumber("AI_CLASSIFY_TIMEOUT_MS", 30000),
-      VERTEX_MODEL: getString("VERTEX_MODEL", "gemini-2.5-flash"),
-      VERTEX_LOCATION: getString("VERTEX_LOCATION", "us-central1"),
-      LOKI_HOST: getOptionalString("LOKI_HOST"),
-      LOKI_USERNAME: getOptionalString("LOKI_USERNAME"),
-      LOKI_PASSWORD: getOptionalString("LOKI_PASSWORD"),
-      FETCH_CHUNK_SIZE: getNumber("FETCH_CHUNK_SIZE", 8 * 1024 * 1024),
-      MAX_QUOTED_NEWLINES: getNumber("MAX_QUOTED_NEWLINES", 0),
-      MAX_LINE_BYTES: getNumber("MAX_LINE_BYTES", 1024 * 1024),
-      SMALL_FILE_SINGLE_GET_THRESHOLD: getNumber("SMALL_FILE_SINGLE_GET_THRESHOLD", 128 * 1024 * 1024),
-      RAM_FLUSH_WATERMARK: getNumber("RAM_FLUSH_WATERMARK", 256 * 1024 * 1024),
-      MAX_MERGED_PART_BYTES: getNumber("MAX_MERGED_PART_BYTES", 64 * 1024 * 1024),
-      RUBBISH_CONFIDENCE_MIN: getNumber("RUBBISH_CONFIDENCE_MIN", 0.9),
-      MATCH_RATE_FLOOR: getNumber("MATCH_RATE_FLOOR", 0.1),
-      MATCH_RATE_WINDOW: getNumber("MATCH_RATE_WINDOW", 1000),
-      PROBE_WINDOW_MIN_BYTES: getNumber("PROBE_WINDOW_MIN_BYTES", 64 * 1024),
-      PROBE_WINDOW_MAX_BYTES: getNumber("PROBE_WINDOW_MAX_BYTES", 1 * 1024 * 1024),
-      PROBE_TARGET_LINES: getNumber("PROBE_TARGET_LINES", 150),
-      PROBE_COUNT_MIN: getNumber("PROBE_COUNT_MIN", 5),
-      PROBE_COUNT_MAX: getNumber("PROBE_COUNT_MAX", 24),
-      PROBE_SIZE_PER_COUNT: getNumber("PROBE_SIZE_PER_COUNT", 512 * 1024 * 1024),
-      FAILED_LINE_RATIO_THRESHOLD: getNumber("FAILED_LINE_RATIO_THRESHOLD", 0.05),
-      ARCHIVE_MAX_COMPRESSION_RATIO: getNumber("ARCHIVE_MAX_COMPRESSION_RATIO", 100),
-      ARCHIVE_MAX_NESTING_DEPTH: getNumber("ARCHIVE_MAX_NESTING_DEPTH", 1),
-      ARCHIVE_MAX_UNCOMPRESSED_BYTES: getNumber("ARCHIVE_MAX_UNCOMPRESSED_BYTES", 10 * 1024 * 1024 * 1024),
-      ARCHIVE_MAX_ENTRIES: getNumber("ARCHIVE_MAX_ENTRIES", 10000),
-      ARCHIVE_PASSWORD_MAX_ATTEMPTS: getNumber("ARCHIVE_PASSWORD_MAX_ATTEMPTS", 3),
-      LARGE_FILE_THRESHOLD_BYTES: getNumber("LARGE_FILE_THRESHOLD_BYTES", 500 * 1024 * 1024),
-      ALLOWED_FETCH_SIZE_BYTES: getNumber("ALLOWED_FETCH_SIZE_BYTES", 5 * 1024 * 1024 * 1024),
-      FETCH_TIMEOUT_SECONDS: getNumber("FETCH_TIMEOUT_SECONDS", 600),
-      QUEUE_TIMEOUT_SECONDS: getNumber("QUEUE_TIMEOUT_SECONDS", 60),
-      GCS_TIMEOUT_SECONDS: getNumber("GCS_TIMEOUT_SECONDS", 1200),
-      RETRY_IMMEDIATE_DELAY_SECONDS: getNumber("RETRY_IMMEDIATE_DELAY_SECONDS", 0),
-      RETRY_DELAYED_DELAY_SECONDS: getNumber("RETRY_DELAYED_DELAY_SECONDS", 300),
-      RETRY_MAX_ATTEMPTS: getNumber("RETRY_MAX_ATTEMPTS", 2),
+    public get redisConfig(): IRedisConfig
+    {
+        return this._redisConfig;
+    }
+
+    /**
+     * Gets the PostgreSQL configuration.
+     * @returns The PostgreSQL configuration.
+     */
+
+    public get postgresConfig(): IMysqlConfig
+    {
+        return this._mysqlConfig;
+    }
+
+    /**
+     * Alias for postgresConfig to maintain compatibility with MySqlManager.
+     * @returns The PostgreSQL configuration.
+     */
+
+    public get databaseConfig(): IMysqlConfig
+    {
+        return this._mysqlConfig;
+    }
+
+    /**
+     * Gets the application configuration.
+     * @returns The application configuration.
+     */
+
+    public get appConfig(): IAppConfig
+    {
+        return this._appConfig;
+    }
+
+    /**
+     * Gets the authentication configuration.
+     * @returns The authentication configuration.
+     */
+
+    public get authConfig(): IAuthConfig
+    {
+        return this._authConfig;
+    }
+
+    /**
+     * Legacy env-based settings for compatibility.
+     * @returns The settings object.
+     */
+
+    public get settings()
+    {
+        return settings;
+    }
+
+
+    /**
+     * Reads and validates a configuration image.
+     * @param fileName - The name of the configuration image.
+     * @param validate - The validation function for the configuration data.
+     * @returns The validated configuration data.
+     * @throws If the configuration image is not found or validation fails.
+     */
+
+    private readConfigFile = <T>(fileName: string, validate: (data: {}) => ValidationResult<T>): T =>
+    {
+        const fileFullName: string = path.join(__dirname, "..", "..", "..", "configs", fileName);
+
+        if (!fs.existsSync(fileFullName))
+        {
+            throw new Error(`Config file '${fileName}' not found`);
+        }
+
+        const rawData: string = fs.readFileSync(fileFullName, "utf-8");
+        const jsonData = JSON.parse(rawData);
+
+        const validationResult: ValidationResult<T> = validate(jsonData);
+
+        if (validationResult.error)
+        {
+            logger.error(`Error validating config file '${fileName}' ${validationResult.error.message}`);
+            throw validationResult.error;
+        }
+
+        return validationResult.value;
     };
-  }
 }
 
-export default Config;
+/**
+ * Function to enforce the Singleton pattern.
+ */
+function Enforce(): void
+{
+}

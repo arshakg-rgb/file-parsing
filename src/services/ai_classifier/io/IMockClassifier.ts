@@ -1,6 +1,7 @@
 import { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 
-export interface MockClassifyRequest {
+export interface MockClassifyRequest
+{
   unknown_line: string;
   field_spec: string[];
   context_lines?: string[];
@@ -9,7 +10,8 @@ export interface MockClassifyRequest {
 
 export type MockClassifyKind = "record-template" | "rubbish-signature" | "uncertain";
 
-export interface MockClassifyResponse {
+export interface MockClassifyResponse
+{
   kind: MockClassifyKind;
   template?: RecordTemplate | RubbishTemplate;
 }
