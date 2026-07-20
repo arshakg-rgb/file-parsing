@@ -497,7 +497,13 @@ If uncertain:
       this.logger.info("ai_classified", { job_id: req.job_id, verdict, template_id: tmpl.template_id, fingerprint: tmpl.fingerprint });
       return { kind: verdict, template: tmpl };
     } catch (err) {
-      this.logger.error("vertex_ai_call_failed", { job_id: req.job_id, error: String(err) });
+      const errorMessage = err instanceof Error ? err.message : (typeof err === "string" ? err : JSON.stringify(err));
+      const errorStack = err instanceof Error ? err.stack : undefined;
+      this.logger.error("vertex_ai_call_failed", {
+        job_id: req.job_id,
+        error: errorMessage,
+        ...(errorStack ? { stack: errorStack } : {}),
+      });
       return { kind: AIVerdict.UNCERTAIN };
     }
   }

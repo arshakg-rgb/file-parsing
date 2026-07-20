@@ -296,7 +296,11 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
       this.logger.info("vertex_ai_response_parsed", { parsed: JSON.stringify(parsed).slice(0, 500) });
       return parsed as RawClassifyResponse;
     } catch (error) {
-      this.logger.error("vertex_ai_request_failed", { error: String(error) });
+      const errorMessage = error instanceof Error ? error.message : (typeof error === "string" ? error : JSON.stringify(error));
+      this.logger.error("vertex_ai_request_failed", {
+        error: errorMessage,
+        ...(error instanceof Error && error.stack ? { stack: error.stack } : {}),
+      });
       throw error;
     }
   }
@@ -447,7 +451,12 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
       this.logger.info("ai_classified", { job_id: req.job_id, verdict, template_id: tmpl.template_id, fingerprint: tmpl.fingerprint });
       return { kind: verdict, template: tmpl };
     } catch (err) {
-      this.logger.error("vertex_ai_call_failed", { job_id: req.job_id, error: String(err) });
+      const errorMessage = err instanceof Error ? err.message : (typeof err === "string" ? err : JSON.stringify(err));
+      this.logger.error("vertex_ai_call_failed", {
+        job_id: req.job_id,
+        error: errorMessage,
+        ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
+      });
       return { kind: AIVerdict.UNCERTAIN };
     }
   }

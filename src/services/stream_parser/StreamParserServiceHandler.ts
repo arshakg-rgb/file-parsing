@@ -623,12 +623,14 @@ export class StreamParserService {
       }
 
       // Send to load service
+      const failedTotal = totalFailed(counts);
       await publishEvent(makeJobEvent(EventType.PARSING_COMPLETED, jobId, "stream_parser", {
         parsed: counts.parsed,
         dropped_rubbish: counts.dropped_rubbish,
-        failed: totalFailed(counts),
+        failed: failedTotal,
+        failed_by_class: counts.failed_by_class,
         part_s3_paths: outputPaths,
-        dlq_count: counts.dlq_count || 0,
+        dlq_count: failedTotal,
         rubbish_log_path: counts.rubbish_log_path,
         csv_output_path: csvOutputPath,
       }));

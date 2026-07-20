@@ -74,6 +74,7 @@ export interface ParsingCompletedData {
   parsed: number;
   dropped_rubbish: number;
   failed: number;
+  failed_by_class: Record<string, number>;
   part_s3_paths: string[];
   dlq_count: number;
   rubbish_log_path?: string;

@@ -183,6 +183,8 @@ async function onParsingCompleted(event: JobEvent): Promise<void> {
   const counts = { ...(row.counts || { parsed: 0, dropped_rubbish: 0, failed_by_class: {} }) };
   counts.parsed = data.parsed;
   counts.dropped_rubbish = data.dropped_rubbish;
+  counts.failed_by_class = data.failed_by_class || {};
+  counts.dlq_count = data.dlq_count ?? 0;
 
   // Stash rubbish_log_path, dlq_count, and csv_output_path in timings so the report step can read them later
   const timings = {
