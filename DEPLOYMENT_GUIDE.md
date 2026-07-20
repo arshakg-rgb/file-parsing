@@ -129,7 +129,7 @@ gcloud run jobs deploy reconciler \
   --timeout 1800s \
   --command="node dist/scripts/reconciler.js" \
   --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916 \
-  --update-secrets=DATABASE_URL=FILE_DATABASE_URL:latest
+  --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest
 ```
 
 Then schedule it:
