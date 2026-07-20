@@ -1,12 +1,14 @@
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
-import Config from "@config/system-config/Config.js";
-import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 
+function Enforce(): void {}
+
 /**
- * SecretsService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ * SecretsService is a singleton class responsible for fetching secrets.
+ * It is intentionally decoupled from ServiceManager/Config so it can be
+ * used to load secrets before Config is initialized.
  */
-class SecretsService extends ServiceManager {
+class SecretsService {
     /**
    * Singleton instance
    * @private
@@ -27,7 +29,6 @@ class SecretsService extends ServiceManager {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate SecretsService directly. Use getInstance()");
     }
-    super(enforce);
   }
 
     /**
@@ -113,7 +114,7 @@ class SecretsService extends ServiceManager {
    */
   public async loadAllSecrets(): Promise<void> {
     const secretMappings: Record<string, string> = {
-      FILE_DATABASE_URL: "database-url",
+      FILE_DATABASE_URL: "FILE_DATABASE_URL",
       FIRESTORE_CREDENTIALS: "firestore-credentials",
       BEDROCK_API_KEY: "bedrock-api-key",
     };
