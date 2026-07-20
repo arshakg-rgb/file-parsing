@@ -1,16 +1,16 @@
 import { randomUUID } from "crypto";
-import { SourceType } from "@enum/SourceType.js";
-import { ExecPath } from "@enum/ExecPath.js";
-import { JobStatus } from "@enum/JobStatus.js";
-import { FailureClass } from "@enum/FailureClass.js";
-import { DLQStatus } from "@enum/DLQStatus.js";
+import { SourceType } from "@common/enum/SourceType.js";
+import { ExecPath } from "@common/enum/ExecPath.js";
+import { JobStatus } from "@common/enum/JobStatus.js";
+import { FailureClass } from "@common/enum/FailureClass.js";
+import { DLQStatus } from "@common/enum/DLQStatus.js";
 
 // Re-export enums for backward compatibility
-export { SourceType } from "@enum/SourceType.js";
-export { ExecPath } from "@enum/ExecPath.js";
-export { JobStatus } from "@enum/JobStatus.js";
-export { FailureClass } from "@enum/FailureClass.js";
-export { DLQStatus } from "@enum/DLQStatus.js";
+export { SourceType } from "@common/enum/SourceType.js";
+export { ExecPath } from "@common/enum/ExecPath.js";
+export { JobStatus } from "@common/enum/JobStatus.js";
+export { FailureClass } from "@common/enum/FailureClass.js";
+export { DLQStatus } from "@common/enum/DLQStatus.js";
 
 /**
  * The v a l i d_ t r a n s i t i o n s

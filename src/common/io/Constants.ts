@@ -1,42 +1,7 @@
 /**
- * The c o m m o n_ c o n s t a n t s
- */
-export const COMMON_CONSTANTS = {
-  DEFAULT_PAGE_SIZE: 10,
-  MAX_PAGE_SIZE: 100,
-  DEFAULT_TIMEOUT: 30000,
-  CACHE_TTL: 3600,
-} as const;
-
-/**
- * The a p i_ r e s p o n s e_ c o d e s
- */
-export const API_RESPONSE_CODES = {
-  SUCCESS: 200,
-  CREATED: 201,
-  BAD_REQUEST: 400,
-  UNAUTHORIZED: 401,
-  FORBIDDEN: 403,
-  NOT_FOUND: 404,
-  INTERNAL_ERROR: 500,
-  SERVICE_UNAVAILABLE: 503,
-} as const;
-
-/**
- * The s t a t u s_ c o d e s
- */
-export const STATUS_CODES = {
-  ACTIVE: "active",
-  INACTIVE: "inactive",
-  PENDING: "pending",
-  COMPLETED: "completed",
-  FAILED: "failed",
-  CANCELLED: "cancelled",
-} as const;
-
-/**
  * The constants
  */
+
 export const Constants = {
   SIGINT: "SIGINT",
   SIGTERM: "SIGTERM",

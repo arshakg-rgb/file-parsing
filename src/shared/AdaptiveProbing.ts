@@ -58,7 +58,8 @@ export class AdaptiveProbing extends ServiceManager {
    * P R O B E_ W I N D O W_ M A X_ B Y T E S
    * @private
    */
-  private readonly PROBE_WINDOW_MAX_BYTES = 1048576; // 1MB
+  private readonly PROBE_WINDOW_MAX_BYTES = 1048576;
+
     /**
    * P R O B E_ T A R G E T_ L I N E S
    * @private

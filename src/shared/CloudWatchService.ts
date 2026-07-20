@@ -7,35 +7,46 @@ import { createLogger, Logger } from "@utils/logger/logger.js";
 /**
  * CloudWatchService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
  */
-class CloudWatchService extends ServiceManager {
-    /**
+class CloudWatchService extends ServiceManager 
+{
+  /**
    * Singleton instance
    * @private
    */
+
   protected static instance: CloudWatchService;
-    /**
+  
+  /**
    * Logs Client
    * @private
    */
+
   private logsClient: CloudWatchLogsClient | null = null;
-    /**
+
+   /**
    * Sequence Tokens
    * @private
    */
+
   private sequenceTokens: Map<string, string> = new Map();
-    /**
+
+  /**
    * Logger instance
    * @private
    */
+
   private logger: Logger;
 
-    /**
+  /**
    * Constructs a new CloudWatchService instance.
    * @param enforce - A function to enforce the Singleton pattern
    * @throws Error if instantiated directly
    */
-  private constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
+
+  private constructor(enforce: () => void)
+   {
+    if (enforce !== Enforce) 
+    {
       throw new InstantiationError("Cannot instantiate CloudWatchService directly. Use getInstance()");
     }
     super(enforce);
