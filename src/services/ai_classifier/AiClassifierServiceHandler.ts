@@ -467,8 +467,11 @@ If uncertain:
     const userPrompt = this.buildUserPrompt(req);
     try {
       this.vertexAiCalls++;
+      this.logger.info("vertex_ai_request_start", { job_id: req.job_id, fingerprint: lineFp, prompt_length: userPrompt.length, model: settings.VERTEX_MODEL || "gemini-2.5-flash" });
       const rawText = await this.askVertexAI(userPrompt);
+      this.logger.info("vertex_ai_response_raw", { job_id: req.job_id, fingerprint: lineFp, response: rawText.slice(0, 500) });
       const raw = JSON.parse(extractJsonFromMarkdown(rawText)) as Record<string, unknown>;
+      this.logger.info("vertex_ai_response_parsed", { job_id: req.job_id, fingerprint: lineFp, parsed: JSON.stringify(raw).slice(0, 500) });
       let kindStr = (raw.kind as string) || "uncertain";
       
       // Handle structure names (csv, json, etc.) as record-template
