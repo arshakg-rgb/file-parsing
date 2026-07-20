@@ -63,9 +63,9 @@ export const settings = {
   ARCHIVE_ENTRY_QUEUE_URL: getString("ARCHIVE_ENTRY_QUEUE_URL", "fpp-archive-entry"),
 
   // ---- Postgres (Jobs DB) ----
-  DATABASE_URL: getString(
-    "DATABASE_URL",
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/parsing_pipeline"
+  FILE_DATABASE_URL: getString(
+    "FILE_DATABASE_URL",
+    "postgresql://postgres:postgres@localhost:5432/parsing_pipeline"
   ),
 
   // ---- Firestore (Template Registry) ----

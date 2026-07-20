@@ -113,7 +113,7 @@ class SecretsService extends ServiceManager {
    */
   public async loadAllSecrets(): Promise<void> {
     const secretMappings: Record<string, string> = {
-      DATABASE_URL: "database-url",
+      FILE_DATABASE_URL: "database-url",
       FIRESTORE_CREDENTIALS: "firestore-credentials",
       BEDROCK_API_KEY: "bedrock-api-key",
     };

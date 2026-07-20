@@ -93,13 +93,7 @@ class Config {
     };
 
     this._databaseConfig = {
-      url: getString("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/parsing_pipeline"),
-      host: getString("DB_HOST", "localhost"),
-      port: getNumber("DB_PORT", 5432),
-      username: getString("DB_USERNAME", "postgres"),
-      password: getString("DB_PASSWORD", "postgres"),
-      database: getString("DB_NAME", "parsing_pipeline"),
-      ssl: getString("DB_SSL", "false") === "true",
+      url: getString("FILE_DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/parsing_pipeline"),
       poolSize: getNumber("DB_POOL_SIZE", 10),
     };
   }

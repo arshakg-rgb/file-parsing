@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import pg from "pg";
 import { Sequelize } from "sequelize-typescript";
+import { URL } from "url";
 import Config from "../system-config/Config.js";
 import { ServiceManager, Enforce } from "../ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
@@ -92,20 +93,32 @@ export class MySqlManager extends ServiceManager {
   private buildSequelize(): Sequelize {
     const config = Config.getInstance().databaseConfig;
 
-    return new Sequelize({
-      database: config.database,
-      username: config.username,
-      password: config.password,
-      host: config.host,
-      port: config.port,
+    return new Sequelize(config.url, {
       dialect: "postgres",
       logging: false,
       timezone: "+02:00",
       pool: { max: config.poolSize, min: 0, acquire: 30000, idle: 1200000 },
-      dialectOptions: config.ssl
-        ? { ssl: { require: true, rejectUnauthorized: false } }
-        : {},
+      dialectOptions: this.buildSslOptions(config.url),
     });
+  }
+
+  /**
+   * Derives SSL options from a Postgres connection URL.
+   * @param url - The connection URL.
+   * @returns Dialect options for SSL, or an empty object.
+   */
+  private buildSslOptions(url: string): Record<string, unknown> {
+    try {
+      const parsed = new URL(url);
+      const sslMode = parsed.searchParams.get("sslmode") || "";
+      const ssl = parsed.searchParams.get("ssl") || "";
+      if (sslMode === "require" || sslMode === "verify-ca" || sslMode === "verify-full" || ssl === "true" || ssl === "require") {
+        return { ssl: { require: true, rejectUnauthorized: false } };
+      }
+    } catch {
+      // ignore invalid URL
+    }
+    return {};
   }
 
   /**
@@ -184,7 +197,7 @@ export class MySqlManager extends ServiceManager {
     if (!this._pool) {
       const config = Config.getInstance().databaseConfig;
       this._pool = new Pool({
-        connectionString: Config.getInstance().settings.DATABASE_URL,
+        connectionString: config.url,
         max: config.poolSize,
         idleTimeoutMillis: 1200000,
         connectionTimeoutMillis: 30000,
