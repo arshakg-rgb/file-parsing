@@ -15,4 +15,5 @@ export interface JobServiceController {
   releaseHold(req: Request, res: Response, next: NextFunction): Promise<void>;
   markFailed(req: Request, res: Response, next: NextFunction): Promise<void>;
   retryJob(req: Request, res: Response, next: NextFunction): Promise<void>;
+  handleSuccessResponse(res: Response, outcome: unknown, pagination?: boolean, status?: number): void;
 }
