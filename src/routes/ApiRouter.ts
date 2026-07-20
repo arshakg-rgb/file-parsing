@@ -1,26 +1,22 @@
-import { Router, Request, Response } from "express";
+import { Request, Response } from "express";
 import { InstantiationError } from "@errors/InstantiationError.js";
+import { CustomRouter } from "@utils/router/CustomRouter.js";
 
 /**
  * ApiRouter is responsible for api router operations.
  */
-class ApiRouter {
+class ApiRouter extends CustomRouter {
     /**
    * Singleton instance
    * @private
    */
   private static instance: ApiRouter;
-    /**
-   * Router
-   * @private
-   */
-  private router: Router;
 
     /**
    * Constructs a new ApiRouter instance.
    */
   private constructor() {
-    this.router = Router();
+    super();
   }
 
     /**
@@ -34,25 +30,17 @@ class ApiRouter {
     return ApiRouter.instance;
   }
 
-    /**
-   * Gets router
-   * @returns The router result
-   */
-  public getRouter(): Router {
-    return this.router;
-  }
-
   /**
    * Initializes API routes.
    */
   public async initializeRoutes(): Promise<void> {
-    // Health check
-    this.router.get("/health", (_req: Request, res: Response) => {
-      res.json({
-        status: "healthy",
-        timestamp: new Date().toISOString(),
+    this.route("/health")
+      .get((_req: Request, res: Response) => {
+        res.json({
+          status: "healthy",
+          timestamp: new Date().toISOString(),
+        });
       });
-    });
   }
 }
 

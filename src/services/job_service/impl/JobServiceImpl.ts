@@ -6,7 +6,7 @@ import MySqlManager from "@config/db/MySqlManager.js";
 import { receiveMessages, deleteMessage } from "@shared/QueueService.js";
 import { JobEvent, EventType } from "@shared/models/events.js";
 import { handleEvent } from "@service/job_service/stateMachine.js";
-import { router } from "@service/job_service/JobServiceRouter.js";
+import { JobServiceRouter } from "@service/job_service/JobServiceRouter.js";
 import { createTables } from "@shared/DatabaseManager.js";
 import { JobService } from "@service/job_service/JobService.js";
 import { IJobService, JobRequest, JobResponse } from "@service/job_service/io/IJobService.js";
@@ -63,7 +63,7 @@ class JobServiceImpl extends ServiceManager implements JobService {
    */
   private setupApp(): void {
     this.app.use(express.json());
-    this.app.use("/v1", router);
+    this.app.use("/v1", JobServiceRouter.getInstance().getRouter());
 
     this.app.get("/health", (_req: Request, res: Response) => {
       res.json({ status: "healthy", timestamp: new Date().toISOString() });
