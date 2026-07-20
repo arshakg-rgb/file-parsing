@@ -3,4 +3,8 @@ export interface IAppConfig {
   version: string;
   environment: "development" | "staging" | "production";
   port: number;
+  origins: {
+    enabled: boolean;
+    domains: string[];
+  };
 }

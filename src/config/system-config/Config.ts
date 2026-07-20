@@ -78,6 +78,10 @@ class Config {
       version: getString("APP_VERSION", "1.0.0"),
       environment: (getString("NODE_ENV", "development") as "development" | "staging" | "production"),
       port: getNumber("PORT", 3000),
+      origins: {
+        enabled: getString("CORS_ENABLED", "false") === "true",
+        domains: getString("CORS_DOMAINS", "*").split(",").map((d) => d.trim()).filter(Boolean),
+      },
     };
 
     this._commonConfig = {
