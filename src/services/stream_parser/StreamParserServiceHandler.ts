@@ -469,25 +469,29 @@ export class StreamParserService {
         // to the AI ONCE — it returns a record template (parse it), a rubbish signature (drop it),
         // or "uncertain" (dead-letter for human review). The verdict is cached as a template so the
         // next matching line is handled locally with no further AI call. Bounded by a per-job
-        // budget; when exhausted the file is flagged and remaining unknowns dead-letter as before.
+        // budget; when exhausted the file is flagged and remaining unknowns dead-lettered as before.
         if (result.verdict === "uncertain" && aiEnabled) {
           if (aiCalls < aiBudget) {
             aiCalls++;
             this.stats.totalAiCalls++;
+            this.logger.info("ai_call_initiated", { job_id: jobId, line_no: lineNo, ai_call: aiCalls, ai_budget: aiBudget, context_lines: recentLines.slice(-3).length });
             try {
               await this.getAIRateLimiter().acquire();
               const aiResult = await classifier.classifyWithTimeout(line, recentLines.slice(-3), settings.AI_CLASSIFY_TIMEOUT_MS);
+              this.logger.info("ai_call_completed", { job_id: jobId, line_no: lineNo, ai_call: aiCalls, verdict: aiResult.verdict, template_id: aiResult.template_id });
               if (aiResult.verdict !== "uncertain") {
                 aiLocalRecoveries++;
                 this.stats.totalAiRecoveries++;
                 result = aiResult;
+              } else {
+                this.logger.info("ai_call_uncertain", { job_id: jobId, line_no: lineNo, ai_call: aiCalls });
               }
             } catch (aiErr) {
-              console.error("inline_ai_failed", { jobId, lineNo, error: aiErr instanceof Error ? aiErr.message : String(aiErr) });
+              this.logger.error("inline_ai_failed", { job_id: jobId, line_no: lineNo, ai_call: aiCalls, error: aiErr instanceof Error ? aiErr.message : String(aiErr) });
             }
           } else if (!aiBudgetFlagged) {
             aiBudgetFlagged = true;
-            console.log("ai_budget_exhausted", { jobId, lineNo, ai_calls: aiCalls, budget: aiBudget, note: "file flagged; remaining unknowns dead-lettered" });
+            this.logger.warn("ai_budget_exhausted", { job_id: jobId, line_no: lineNo, ai_calls: aiCalls, budget: aiBudget, note: "file flagged; remaining unknowns dead-lettered" });
           }
         }
 

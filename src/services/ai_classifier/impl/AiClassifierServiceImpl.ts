@@ -3,6 +3,7 @@ import { GoogleGenAI } from "@google/genai";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { AiClassifierService } from "@service/ai_classifier/AiClassifierService.js";
 import {
@@ -84,6 +85,11 @@ class AiClassifierServiceImpl extends ServiceManager implements AiClassifierServ
    * @private
    */
   private ai: GoogleGenAI;
+    /**
+   * Logger
+   * @private
+   */
+  private logger: Logger;
 
     /**
    * Constructs a new AiClassifierServiceImpl instance.
@@ -95,7 +101,7 @@ class AiClassifierServiceImpl extends ServiceManager implements AiClassifierServ
       throw new InstantiationError("Cannot instantiate AiClassifierServiceImpl directly. Use getInstance()");
     }
     super(enforce);
-    
+    this.logger = createLogger("AiClassifierServiceImpl");
     const config = this.getConfig();
     const PROJECT_ID = config.settings.GCP_PROJECT_ID || "data-etl-499916";
     const LOCATION = config.settings.VERTEX_LOCATION || "us-central1";
@@ -282,14 +288,14 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
    */
   public async callVertexAI(prompt: string): Promise<RawClassifyResponse> {
     try {
-      console.log("vertex_ai_request_start", { promptLength: prompt.length });
+      this.logger.info("vertex_ai_request_start", { promptLength: prompt.length });
       const text = await this.askVertexAI(prompt);
-      console.log("vertex_ai_response_raw", { response: text.slice(0, 500) });
+      this.logger.info("vertex_ai_response_raw", { response: text.slice(0, 500) });
       const parsed = this.extractJson(text);
-      console.log("vertex_ai_response_parsed", { parsed: JSON.stringify(parsed).slice(0, 500) });
+      this.logger.info("vertex_ai_response_parsed", { parsed: JSON.stringify(parsed).slice(0, 500) });
       return parsed as RawClassifyResponse;
     } catch (error) {
-      console.error("vertex_ai_request_failed", { error: String(error) });
+      this.logger.error("vertex_ai_request_failed", { error: String(error) });
       throw error;
     }
   }
@@ -307,25 +313,24 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     const fieldSpecArray = Array.isArray(fieldSpec) ? fieldSpec : 
       (typeof fieldSpec === "string" ? JSON.parse(fieldSpec) : []);
     
-    console.log("csv_parser_start", { line, fieldSpec: fieldSpecArray, delimiterCount: delimiters.length });
-    
+    this.logger.debug("csv_parser_start", { line, fieldSpec: fieldSpecArray, delimiterCount: delimiters.length });
+
     for (const delimiter of delimiters) {
       const parts = line.split(delimiter);
-      console.log("csv_parser_try_delimiter", { delimiter, partCount: parts.length, expectedCount: fieldSpecArray.length });
-      
+      this.logger.debug("csv_parser_try_delimiter", { delimiter, partCount: parts.length, expectedCount: fieldSpecArray.length });
+
       if (parts.length === fieldSpecArray.length) {
-        // Check if all parts are non-empty (basic validation)
         const allNonEmpty = parts.every(part => part.trim().length > 0);
-        console.log("csv_parser_validation", { delimiter, allNonEmpty, parts });
-        
+        this.logger.debug("csv_parser_validation", { delimiter, allNonEmpty, parts });
+
         if (allNonEmpty) {
-          console.log("csv_parser_success", { delimiter, fields: parts });
+          this.logger.info("csv_parser_success", { delimiter, fields: parts });
           return { success: true, delimiter, fields: parts };
         }
       }
     }
-    
-    console.log("csv_parser_failed", { reason: "no_delimiter_matched" });
+
+    this.logger.debug("csv_parser_failed", { reason: "no_delimiter_matched" });
     return { success: false, delimiter: "", fields: [] };
   }
 
@@ -354,13 +359,13 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
       created_at: new Date()
     };
     
-    console.log("csv_template_created", { 
-      template_id: template.template_id, 
-      fieldMap, 
+    this.logger.info("csv_template_created", {
+      template_id: template.template_id,
+      fieldMap,
       structure: template.structure,
-      delimiter 
+      delimiter
     });
-    
+
     return template;
   }
 
@@ -370,15 +375,16 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
    * @returns A promise that resolves to the result
    */
   public async classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> {
+    this.logger.info("classify_ai_start", { job_id: req.job_id, line_length: req.unknown_line.length, field_spec: req.field_spec });
     await templateRegistry.loadFromDatabase();
 
     // Step 1: Try CSV parsing with common delimiters before template matching
     const csvResult = this.tryParseAsCSV(req.unknown_line, req.field_spec);
     if (csvResult.success) {
-      console.log("ai_classifier_csv_parse_success", { job_id: req.job_id, delimiter: csvResult.delimiter });
-      // Create a template from the CSV parse result
+      this.logger.info("ai_classifier_csv_parse_success", { job_id: req.job_id, delimiter: csvResult.delimiter });
       const template = this.createTemplateFromCSV(req.unknown_line, req.field_spec, csvResult.delimiter);
       await templateRegistry.saveTemplate(template, "record");
+      this.logger.info("ai_template_saved", { job_id: req.job_id, template_id: template.template_id, kind: "record", source: "csv_fast_path" });
       templateRegistry.addRecordTemplate(template);
       return { kind: AIVerdict.RECORD_TEMPLATE, template };
     }
@@ -388,51 +394,59 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
     const existing = templateRegistry.getByFingerprint(lineFp);
     if (existing) {
       const kind = (existing as RecordTemplate).field_map ? AIVerdict.RECORD_TEMPLATE : AIVerdict.RUBBISH_SIGNATURE;
+      this.logger.info("ai_classifier_fingerprint_match", { job_id: req.job_id, fingerprint: lineFp, template_id: existing.template_id, kind });
       return { kind, template: existing };
     }
 
     // Step 3: Try to match against existing record templates by attempting to parse
     const recordMatch = templateRegistry.matchRecordTemplate(req.unknown_line, req.field_spec);
     if (recordMatch) {
-      console.log("ai_classifier_local_match", { job_id: req.job_id, template_id: recordMatch.template_id });
+      this.logger.info("ai_classifier_local_match", { job_id: req.job_id, template_id: recordMatch.template_id });
       return { kind: AIVerdict.RECORD_TEMPLATE, template: recordMatch };
     }
 
     // Step 4: Try to match against rubbish templates
     const rubbishMatch = templateRegistry.matchRubbishTemplate(req.unknown_line);
     if (rubbishMatch) {
-      console.log("ai_classifier_rubbish_match", { job_id: req.job_id, template_id: rubbishMatch.template_id });
+      this.logger.info("ai_classifier_rubbish_match", { job_id: req.job_id, template_id: rubbishMatch.template_id });
       return { kind: AIVerdict.RUBBISH_SIGNATURE, template: rubbishMatch };
     }
 
     // Step 5: No local match found, fall back to Vertex AI
-    console.log("ai_classifier_fallback_to_ai", { job_id: req.job_id, reason: "no_local_template_match" });
-    
+    this.logger.info("ai_classifier_fallback_to_ai", { job_id: req.job_id, fingerprint: lineFp, reason: "no_local_template_match" });
+
     const userPrompt = this.buildUserPrompt(req);
     try {
       const raw = await this.callVertexAI(userPrompt);
       let kindStr: string = (raw.kind as string) || "uncertain";
-      
+
       // Handle structure names (csv, json, etc.) as record-template
       const structureNames = ["csv", "json", "kv", "fixed", "regex"];
       if (structureNames.includes(kindStr)) {
         kindStr = "record-template";
       }
-      
-      if (kindStr === "uncertain") return { kind: AIVerdict.UNCERTAIN };
+
+      if (kindStr === "uncertain") {
+        this.logger.info("ai_classifier_uncertain", { job_id: req.job_id, fingerprint: lineFp });
+        return { kind: AIVerdict.UNCERTAIN };
+      }
       const tmpl = this.buildTemplateFromRaw(raw, kindStr, req.unknown_line);
-      if (!tmpl) return { kind: AIVerdict.UNCERTAIN };
-      
+      if (!tmpl) {
+        this.logger.warn("ai_classifier_template_build_failed", { job_id: req.job_id, raw_kind: kindStr });
+        return { kind: AIVerdict.UNCERTAIN };
+      }
+
       // Save to database and cache
       const kind = kindStr === "record-template" ? "record" : "rubbish";
       await templateRegistry.saveTemplate(tmpl, kind);
+      this.logger.info("ai_template_saved", { job_id: req.job_id, template_id: tmpl.template_id, kind, source: "ai_call", fingerprint: tmpl.fingerprint });
       templateRegistry.addRecordTemplate(tmpl as RecordTemplate);
-      
+
       const verdict = kindStr === "record-template" ? AIVerdict.RECORD_TEMPLATE : AIVerdict.RUBBISH_SIGNATURE;
-      console.log("ai_classified", { job_id: req.job_id, verdict, template_id: tmpl.template_id, fingerprint: tmpl.fingerprint });
+      this.logger.info("ai_classified", { job_id: req.job_id, verdict, template_id: tmpl.template_id, fingerprint: tmpl.fingerprint });
       return { kind: verdict, template: tmpl };
     } catch (err) {
-      console.error("vertex_ai_call_failed", { job_id: req.job_id, error: String(err) });
+      this.logger.error("vertex_ai_call_failed", { job_id: req.job_id, error: String(err) });
       return { kind: AIVerdict.UNCERTAIN };
     }
   }

@@ -1,4 +1,5 @@
 import { settings } from "@shared/Settings.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
 import { FailureClass } from "@shared/models/job.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { safeRegex, safeRegexTest } from "@utils/validator/safeRegex.js";
@@ -59,6 +60,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
    * @private
    */
   private firstLine = true;
+  private logger: Logger;
 
     /**
    * Constructs a new ClassifierServiceImpl instance.
@@ -70,7 +72,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       throw new InstantiationError("Cannot instantiate ClassifierServiceImpl directly. Use getInstance()");
     }
     super(enforce);
-    
+    this.logger = createLogger("ClassifierServiceImpl");
     this.jobId = "";
     this.fieldSpec = [];
     this.recordTemplates = [];
@@ -106,6 +108,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     this.aiCache = new Map();
     this.headerMap = null;
     this.firstLine = true;
+    this.logger = createLogger(`ClassifierServiceImpl:${jobId}`);
   }
 
     /**
@@ -220,7 +223,11 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
   async classifyWithAI(line: string, contextLines: string[]): Promise<ClassifyResult> {
     const fp = quickFingerprint(line);
     const cached = this.aiCache.get(fp);
-    if (cached) return this.toResult(line, cached);
+    if (cached) {
+      this.logger.info("ai_cache_hit", { fingerprint: fp, template_id: cached.template_id });
+      return this.toResult(line, cached);
+    }
+    this.logger.info("ai_cache_miss", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length });
 
     const req: ClassifyRequest = {
       unknown_line: line,
@@ -229,12 +236,16 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       job_id: this.jobId,
     };
 
+    this.logger.info("ai_call_initiated", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length });
     const handler = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
     const resp = await handler.classifyAi(req);
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
+      this.logger.info("ai_call_uncertain", { fingerprint: fp, kind: resp.kind });
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
     }
     this.aiCache.set(fp, resp.template);
+    this.logger.info("ai_cache_saved", { fingerprint: fp, template_id: resp.template.template_id });
+    this.logger.info("ai_call_completed", { fingerprint: fp, template_id: resp.template.template_id, verdict: "field_map" in resp.template ? "parsed" : "rubbish" });
     return this.toResult(line, resp.template);
   }
 
@@ -246,10 +257,14 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
    * @returns A promise that resolves to the result
    */
   async classifyWithTimeout(line: string, contextLines: string[], timeoutMs: number): Promise<ClassifyResult> {
+    this.logger.info("ai_call_timeout_scheduled", { line_length: line.length, timeout_ms: timeoutMs });
     return Promise.race([
       this.classifyWithAI(line, contextLines),
       new Promise<ClassifyResult>((resolve) =>
-        setTimeout(() => resolve({ verdict: "uncertain", failure_class: FailureClass.UNCERTAIN }), timeoutMs)
+        setTimeout(() => {
+          this.logger.warn("ai_call_timeout_reached", { line_length: line.length, timeout_ms: timeoutMs });
+          resolve({ verdict: "uncertain", failure_class: FailureClass.UNCERTAIN });
+        }, timeoutMs)
       ),
     ]);
   }

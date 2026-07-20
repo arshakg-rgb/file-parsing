@@ -209,8 +209,11 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     const result = classifier.classify(line, msg.byte_offset, msg.byte_length);
     if (result.verdict === "parsed") return result;
 
+    this.logger.info("ai_call_initiated", { job_id: msg.job_id, source: "retry", byte_offset: msg.byte_offset, line_length: line.length, context_lines: 0 });
     const ai = await classifier.classifyWithAI(line, []);
+    this.logger.info("ai_call_completed", { job_id: msg.job_id, source: "retry", byte_offset: msg.byte_offset, verdict: ai.verdict, template_id: ai.template_id });
     if (ai.verdict === "parsed") return ai;
+    this.logger.info("retry_ai_failed", { job_id: msg.job_id, byte_offset: msg.byte_offset, verdict: ai.verdict });
     return null;
   }
 

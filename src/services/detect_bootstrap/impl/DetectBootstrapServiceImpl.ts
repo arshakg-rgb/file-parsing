@@ -296,7 +296,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
         context_lines: dataLines.slice(1) || [],
         job_id: jobId,
       };
-      console.log("detect_classify_request", { job_id: jobId, unknown_line: dataLines[0], contextLinesCount: dataLines.slice(1).length });
+      this.logger.info("ai_call_initiated", { job_id: jobId, source: "detect_bootstrap", unknown_line_length: dataLines[0].length, context_lines: (dataLines.slice(1) || []).length, fingerprint: fp });
       let resp: ClassifyResponse;
       try {
         const config = this.getConfig();
@@ -304,16 +304,20 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
           setTimeout(() => reject(new Error("ai_classify_timeout")), config.settings.AI_CLASSIFY_TIMEOUT_MS)
         );
         resp = await Promise.race([this.classify(req), aiTimeout]);
+        this.logger.info("ai_call_completed", { job_id: jobId, source: "detect_bootstrap", verdict: resp.kind, has_template: !!resp.template, fingerprint: fp });
       } catch (aiErr) {
-        this.logger.warn("seed_classify_skipped", { job_id: jobId, fingerprint: fp, error: String(aiErr) });
+        this.logger.warn("ai_call_timeout", { job_id: jobId, source: "detect_bootstrap", fingerprint: fp, error: String(aiErr) });
         metrics.increment("detect.ai_timeout", 1);
         continue;
       }
       if (resp.template) {
         const tmpl = resp.template as { template_id: string };
         seedTemplateIds.push(tmpl.template_id);
+        this.logger.info("ai_template_saved", { job_id: jobId, source: "detect_bootstrap", kind: resp.kind, template_id: tmpl.template_id, fingerprint: fp, saved_to_registry: true });
         this.logger.info("seed_template_created", { job_id: jobId, kind: resp.kind, template_id: tmpl.template_id, fingerprint: fp });
         metrics.increment("detect.template_created", 1, { kind: resp.kind });
+      } else {
+        this.logger.info("ai_no_template_returned", { job_id: jobId, source: "detect_bootstrap", verdict: resp.kind, fingerprint: fp });
       }
     }
 

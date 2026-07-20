@@ -1,4 +1,5 @@
 import { settings } from "@shared/Settings.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
 import { FailureClass, ColumnMap } from "@shared/models/job.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { safeRegex, safeRegexTest } from "@utils/validator/safeRegex.js";
@@ -51,6 +52,7 @@ export class LineClassifier implements IClassifier {
    * @private
    */
   private firstLine = true;
+  private logger: Logger;
 
   // Common column/key synonyms so field_spec names match real-world headers and JSON keys.
   private static readonly ALIASES: Record<string, string[]> = {
@@ -81,6 +83,7 @@ export class LineClassifier implements IClassifier {
     this.rubbishTemplates = rubbishTemplates;
     this.columnMap = columnMap && Object.keys(columnMap).length > 0 ? columnMap : null;
     this.aiCache = new Map();
+    this.logger = createLogger(`LineClassifier:${this.jobId}`);
   }
 
     /**
@@ -196,7 +199,11 @@ export class LineClassifier implements IClassifier {
   async classifyWithAI(line: string, contextLines: string[]): Promise<ClassifyResult> {
     const fp = quickFingerprint(line);
     const cached = this.aiCache.get(fp);
-    if (cached) return this.toResult(line, cached);
+    if (cached) {
+      this.logger.info("ai_cache_hit", { fingerprint: fp, template_id: cached.template_id });
+      return this.toResult(line, cached);
+    }
+    this.logger.info("ai_cache_miss", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length });
 
     const req: ClassifyRequest = {
       unknown_line: line,
@@ -205,12 +212,16 @@ export class LineClassifier implements IClassifier {
       job_id: this.jobId,
     };
 
+    this.logger.info("ai_call_initiated", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length });
     const { classifyAi } = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
     const resp = await classifyAi(req);
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
+      this.logger.info("ai_call_uncertain", { fingerprint: fp, kind: resp.kind });
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
     }
+
     this.aiCache.set(fp, resp.template);
+    this.logger.info("ai_cache_saved", { fingerprint: fp, template_id: resp.template.template_id });
     // Learn the template into the local stores so the NEXT matching line is recognized with no
     // AI call (design: "cached as a template and reused" — good OR junk each cost one AI call
     // in their lifetime). aiCache handles identical lines; the template lists generalize across
@@ -218,18 +229,25 @@ export class LineClassifier implements IClassifier {
     const t: RecordTemplate | RubbishTemplate = resp.template;
     if ("field_map" in t && !this.recordTemplates.some((r) => r.template_id === t.template_id)) {
       this.recordTemplates.push(t as RecordTemplate);
+      this.logger.info("ai_template_learned", { template_id: t.template_id, kind: "record", source: "ai_call" });
     } else if ("signature" in t && !this.rubbishTemplates.some((r) => r.template_id === t.template_id)) {
       this.rubbishTemplates.push(t as RubbishTemplate);
+      this.logger.info("ai_template_learned", { template_id: t.template_id, kind: "rubbish", source: "ai_call" });
     }
+    this.logger.info("ai_call_completed", { fingerprint: fp, template_id: t.template_id, verdict: "field_map" in t ? "parsed" : "rubbish" });
     return this.toResult(line, t);
   }
 
   /** Run classifier with a safety timeout to avoid hanging on pathological lines. */
   async classifyWithTimeout(line: string, contextLines: string[], timeoutMs: number): Promise<ClassifyResult> {
+    this.logger.info("ai_call_timeout_scheduled", { line_length: line.length, timeout_ms: timeoutMs });
     return Promise.race([
       this.classifyWithAI(line, contextLines),
       new Promise<ClassifyResult>((resolve) =>
-        setTimeout(() => resolve({ verdict: "uncertain", failure_class: FailureClass.UNCERTAIN }), timeoutMs)
+        setTimeout(() => {
+          this.logger.warn("ai_call_timeout_reached", { line_length: line.length, timeout_ms: timeoutMs });
+          resolve({ verdict: "uncertain", failure_class: FailureClass.UNCERTAIN });
+        }, timeoutMs)
       ),
     ]);
   }
