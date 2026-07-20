@@ -58,7 +58,7 @@ export class App {
 
     try {
       await this.initializeManagers();
-      await ApiRouter.getInstance().initializeVersionedRoutes();
+      await ApiRouter.getInstance().initializeRoutes();
 
       this.server.listen(port, "0.0.0.0", async (): Promise<void> => {
         await MySqlManager.getInstance().sequelize
