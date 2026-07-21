@@ -21,6 +21,38 @@ import { settings } from "@shared/Settings.js";
 
 const logger: pino.Logger = pino();
 
+function getEnvAppConfig(): IAppConfig
+{
+    return {
+        name: process.env.APP_NAME || "file-parsing-pipeline",
+        version: process.env.APP_VERSION || "1.0.0",
+        environment: (process.env.NODE_ENV || "production") as IAppConfig["environment"],
+        port: process.env.PORT ? Number(process.env.PORT) : 8080,
+        origins: {
+            enabled: process.env.CORS_ENABLED !== "false",
+            domains: process.env.CORS_DOMAINS ? process.env.CORS_DOMAINS.split(",") : ["*"]
+        }
+    };
+}
+
+function getEnvMysqlConfig(): IMysqlConfig
+{
+    return {
+        url: process.env.FILE_DATABASE_URL || process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/parsing_pipeline",
+        poolSize: process.env.DATABASE_POOL_SIZE ? Number(process.env.DATABASE_POOL_SIZE) : 10
+    };
+}
+
+function getEnvAuthConfig(): IAuthConfig
+{
+    return { sessionSecret: process.env.SESSION_SECRET || "insecure-placeholder" };
+}
+
+function getEnvCommonConfig(): ICommonConfig
+{
+    return { request_body_limit: process.env.REQUEST_BODY_LIMIT || "10mb" };
+}
+
 export default class Config
 {
     private static instance: Config;
@@ -46,12 +78,12 @@ export default class Config
 
         try
         {
-            this._appConfig = this.readConfigFile<IAppConfig>("app.json", validateAppConfig);
-            this._mysqlConfig = this.readConfigFile<IMysqlConfig>("mysql.json", validateMysqlConfig);
-            this._socketConfig = this.readConfigFile<ISocketConfig>("socket.json", validateSocketConfig);
-            this._redisConfig = this.readConfigFile<IRedisConfig>("redis-config.json", validateRedisConfig);
-            this._authConfig = this.readConfigFile<IAuthConfig>("auth.json", validateAuthConfig);
-            this._commonConfig = this.readConfigFile<ICommonConfig>("common.json", validateCommonConfig);
+            this._appConfig = this.readConfigFile<IAppConfig>("app.json", validateAppConfig, getEnvAppConfig());
+            this._mysqlConfig = this.readConfigFile<IMysqlConfig>("mysql.json", validateMysqlConfig, getEnvMysqlConfig());
+            this._socketConfig = this.readConfigFile<ISocketConfig>("socket.json", validateSocketConfig, {});
+            this._redisConfig = this.readConfigFile<IRedisConfig>("redis-config.json", validateRedisConfig, {});
+            this._authConfig = this.readConfigFile<IAuthConfig>("auth.json", validateAuthConfig, getEnvAuthConfig());
+            this._commonConfig = this.readConfigFile<ICommonConfig>("common.json", validateCommonConfig, getEnvCommonConfig());
         }
         catch (error)
         {
@@ -161,17 +193,19 @@ export default class Config
      * Reads and validates a configuration image.
      * @param fileName - The name of the configuration image.
      * @param validate - The validation function for the configuration data.
+     * @param fallback - The fallback value to use if the configuration file is not found.
      * @returns The validated configuration data.
-     * @throws If the configuration image is not found or validation fails.
+     * @throws If the configuration image cannot be parsed or validation fails.
      */
 
-    private readConfigFile = <T>(fileName: string, validate: (data: {}) => ValidationResult<T>): T =>
+    private readConfigFile = <T>(fileName: string, validate: (data: {}) => ValidationResult<T>, fallback: T): T =>
     {
         const fileFullName: string = path.join(__dirname, "..", "..", "..", "configs", fileName);
 
         if (!fs.existsSync(fileFullName))
         {
-            throw new Error(`Config file '${fileName}' not found`);
+            logger.warn(`Config file '${fileName}' not found; using environment fallback`);
+            return fallback;
         }
 
         const rawData: string = fs.readFileSync(fileFullName, "utf-8");
