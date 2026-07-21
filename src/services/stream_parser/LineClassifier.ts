@@ -102,7 +102,9 @@ export class LineClassifier implements IClassifier {
     if (line.length > 64 * 1024) {
       return { verdict: "uncertain", failure_class: FailureClass.TRANSFORM_ERROR };
     }
-    const nonPrintable = (trimmed.match(/[^\x09\x0A\x0D\x20-\x7E]/g) || []).length;
+    // Count only true control/ non-printable characters (C0 + C1 blocks). Cyrillic and other
+    // Unicode letters/digits/punctuation are printable text, not binary.
+    const nonPrintable = (trimmed.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g) || []).length;
     if (nonPrintable / trimmed.length > 0.3) {
       return { verdict: "rubbish", template_id: "binary-gate" };
     }
