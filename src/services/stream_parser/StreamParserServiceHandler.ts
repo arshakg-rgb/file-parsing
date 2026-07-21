@@ -448,14 +448,18 @@ export class StreamParserService {
 
     // Batched DB writes: fire-and-forget so the parse loop never waits for DB.
     // All three tables flush in parallel. Background errors are logged but never crash the job.
-    const BATCH_SIZE = 5000;
+    const BATCH_SIZE = 500;
     let parsedBatch: Record<string, unknown>[] = [];
     let rubbishBatch: Record<string, unknown>[] = [];
     let dlqBatch: Record<string, unknown>[] = [];
     const repositories = MySqlManager.getInstance().repositories;
     const bgFlushes: Promise<void>[] = [];
 
-    const drainIfReady = (): void => {
+    const drainIfReady = async (): Promise<void> => {
+      // Backpressure: if too many DB flushes are in-flight, drain the oldest before continuing
+      if (bgFlushes.length >= 4) {
+        await bgFlushes.shift();
+      }
       const flushTasks: Promise<void>[] = [];
       if (parsedBatch.length >= BATCH_SIZE) {
         const batch = parsedBatch; parsedBatch = [];
@@ -515,7 +519,7 @@ export class StreamParserService {
         if (lineNo % 10000 === 0) {
           console.log("parse_progress", { jobId, lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
         }
-        drainIfReady();
+        await drainIfReady();
 
         // Designed ordered classifier for EVERY line: length/binary gate -> learned record
         // templates -> structural recognizers (JSON / key-value, field_spec-only) -> rubbish
