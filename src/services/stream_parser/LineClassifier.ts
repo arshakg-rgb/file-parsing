@@ -309,7 +309,22 @@ export class LineClassifier implements IClassifier {
         row[field] = undefined;
         continue;
       }
-      const value = this.applyLocator(line, parsed, loc.locator);
+      // Defensive: accept current { locator: string } shape, legacy raw locator string,
+      // or older { index | key | regex } objects that may still exist in cache/DB.
+      let locator: string | undefined;
+      const rawLoc = loc as unknown as Record<string, unknown>;
+      if (typeof rawLoc === "string") {
+        locator = rawLoc;
+      } else if (typeof rawLoc.locator === "string") {
+        locator = rawLoc.locator;
+      } else if (typeof rawLoc.index === "number") {
+        locator = `index:${rawLoc.index}`;
+      } else if (typeof rawLoc.key === "string") {
+        locator = `key:${rawLoc.key}`;
+      } else if (typeof rawLoc.regex === "string") {
+        locator = `regex:${rawLoc.regex}`;
+      }
+      const value = locator ? this.applyLocator(line, parsed, locator) : undefined;
       if (value !== undefined) presentCount++;
       const nf = this.normalizeKey(field);
       if ((nf === "email" || nf === "phone") && value !== undefined && value !== null && String(value).trim() !== "") {
@@ -605,6 +620,7 @@ export class LineClassifier implements IClassifier {
    * @returns The unknown result
    */
   private applyLocator(line: string, parsed: string | unknown[] | Record<string, unknown>, loc: string): unknown {
+    if (typeof loc !== "string" || !loc) return undefined;
     if (loc.startsWith("index:")) {
       const index = parseInt(loc.replace("index:", ""));
       if (Array.isArray(parsed) && index < parsed.length) return parsed[index];
