@@ -98,7 +98,7 @@ export const settings = {
   LOKI_PASSWORD: getOptionalString("LOKI_PASSWORD"),
 
   // ---- Stream Parser tuning ----
-  FETCH_CHUNK_SIZE: getNumber("FETCH_CHUNK_SIZE", 8 * 1024 * 1024),
+  FETCH_CHUNK_SIZE: getNumber("FETCH_CHUNK_SIZE", 32 * 1024 * 1024),
   // Line-reader safety valves for messy data. A quoted field may contain at most this many
   // embedded newlines before an unbalanced/stray quote is treated as spurious and the line
   // is broken (0 = a newline always ends a line; quotes still protect embedded delimiters

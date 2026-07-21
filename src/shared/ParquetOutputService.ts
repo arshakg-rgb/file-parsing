@@ -42,7 +42,7 @@ class ParquetOutputService extends ServiceManager {
 
     this.logger = createLogger("parquet-writer");
     this.gcsUtils = FirestoreCacheUtils.getInstance();
-    this.FLUSH_LINE_THRESHOLD = 1000;
+    this.FLUSH_LINE_THRESHOLD = 10000;
   }
 
     /**

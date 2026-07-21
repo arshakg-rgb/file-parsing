@@ -446,25 +446,64 @@ export class StreamParserService {
     let aiBudgetFlagged = false;
     const recentLines: string[] = []; // small context window for the model
 
-    // Batched DB writes: per-line awaits are the main throughput bottleneck for large files.
-    const BATCH_SIZE = 1000;
-    const parsedBatch: Record<string, unknown>[] = [];
-    const rubbishBatch: Record<string, unknown>[] = [];
-    const dlqBatch: Record<string, unknown>[] = [];
+    // Batched DB writes: fire-and-forget so the parse loop never waits for DB.
+    // All three tables flush in parallel. Background errors are logged but never crash the job.
+    const BATCH_SIZE = 5000;
+    let parsedBatch: Record<string, unknown>[] = [];
+    let rubbishBatch: Record<string, unknown>[] = [];
+    let dlqBatch: Record<string, unknown>[] = [];
     const repositories = MySqlManager.getInstance().repositories;
+    const bgFlushes: Promise<void>[] = [];
+
+    const drainIfReady = (): void => {
+      const flushTasks: Promise<void>[] = [];
+      if (parsedBatch.length >= BATCH_SIZE) {
+        const batch = parsedBatch; parsedBatch = [];
+        flushTasks.push(repositories.parsedRecords.bulkCreate(batch as any).catch(e => {
+          this.logger.warn("parsed_batch_flush_error", { error: String(e) });
+        }));
+      }
+      if (rubbishBatch.length >= BATCH_SIZE) {
+        const batch = rubbishBatch; rubbishBatch = [];
+        flushTasks.push(repositories.rubbishLogs.bulkCreate(batch as any).catch(e => {
+          this.logger.warn("rubbish_batch_flush_error", { error: String(e) });
+        }));
+      }
+      if (dlqBatch.length >= BATCH_SIZE) {
+        const batch = dlqBatch; dlqBatch = [];
+        flushTasks.push(repositories.deadLetters.bulkCreate(batch as any).catch(e => {
+          this.logger.warn("dlq_batch_flush_error", { error: String(e) });
+        }));
+      }
+      if (flushTasks.length > 0) {
+        bgFlushes.push(Promise.all(flushTasks).then(() => {}));
+      }
+    };
 
     const flushBatches = async (force = false): Promise<void> => {
-      if (parsedBatch.length >= BATCH_SIZE || (force && parsedBatch.length > 0)) {
-        await repositories.parsedRecords.bulkCreate(parsedBatch as any);
-        parsedBatch.length = 0;
+      const flushTasks: Promise<void>[] = [];
+      if (force && parsedBatch.length > 0) {
+        const batch = parsedBatch; parsedBatch = [];
+        flushTasks.push(repositories.parsedRecords.bulkCreate(batch as any).catch(e => {
+          this.logger.warn("parsed_batch_flush_error", { error: String(e) });
+        }));
       }
-      if (rubbishBatch.length >= BATCH_SIZE || (force && rubbishBatch.length > 0)) {
-        await repositories.rubbishLogs.bulkCreate(rubbishBatch as any);
-        rubbishBatch.length = 0;
+      if (force && rubbishBatch.length > 0) {
+        const batch = rubbishBatch; rubbishBatch = [];
+        flushTasks.push(repositories.rubbishLogs.bulkCreate(batch as any).catch(e => {
+          this.logger.warn("rubbish_batch_flush_error", { error: String(e) });
+        }));
       }
-      if (dlqBatch.length >= BATCH_SIZE || (force && dlqBatch.length > 0)) {
-        await repositories.deadLetters.bulkCreate(dlqBatch as any);
-        dlqBatch.length = 0;
+      if (force && dlqBatch.length > 0) {
+        const batch = dlqBatch; dlqBatch = [];
+        flushTasks.push(repositories.deadLetters.bulkCreate(batch as any).catch(e => {
+          this.logger.warn("dlq_batch_flush_error", { error: String(e) });
+        }));
+      }
+      if (flushTasks.length > 0) await Promise.all(flushTasks);
+      // Drain all background flushes too
+      if (bgFlushes.length > 0) {
+        await Promise.all(bgFlushes.splice(0));
       }
     };
 
@@ -476,9 +515,7 @@ export class StreamParserService {
         if (lineNo % 10000 === 0) {
           console.log("parse_progress", { jobId, lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
         }
-        if (lineNo % 1000 === 0) {
-          await flushBatches();
-        }
+        drainIfReady();
 
         // Designed ordered classifier for EVERY line: length/binary gate -> learned record
         // templates -> structural recognizers (JSON / key-value, field_spec-only) -> rubbish
