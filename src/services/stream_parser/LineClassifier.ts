@@ -151,9 +151,11 @@ export class LineClassifier implements IClassifier {
 
     // 2. Known learned record templates (records have priority over rubbish).
     // AI cache is only consumed in steps 3 and 6, so compute the fingerprint lazily.
+    let computedCache = false;
     let cached: RecordTemplate | RubbishTemplate | undefined;
     const getCached = () => {
-      if (cached === undefined) {
+      if (!computedCache) {
+        computedCache = true;
         const fp = quickFingerprint(line);
         cached = this.aiCache.get(fp);
       }
@@ -472,7 +474,8 @@ export class LineClassifier implements IClassifier {
     let strong = 0;
     const normalizedObjKeys = new Map<string, unknown>();
     for (const [k, val] of Object.entries(obj)) {
-      normalizedObjKeys.set(this.normalizeKey(k), val);
+      const nk = this.normalizeKey(k);
+      if (!normalizedObjKeys.has(nk)) normalizedObjKeys.set(nk, val); // first wins
     }
     for (let i = 0; i < this.fieldSpec.length; i++) {
       const field = this.fieldSpec[i];
