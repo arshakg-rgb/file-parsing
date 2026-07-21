@@ -5,6 +5,7 @@ import { Template, TemplateKind } from "@shared/models/template.js";
 import { ITemplateRegistry } from "@service/ai_classifier/io/ITemplateRegistry.js";
 import { TemplateCache } from "./TemplateCache.js";
 import { FirestoreTemplateRepository } from "./FirestoreTemplateRepository.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
 
 /**
  * TemplateRegistryService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -30,6 +31,7 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
    * @private
    */
   private warming: Promise<void> | null = null;
+  private logger: Logger;
 
     /**
    * Constructs a new TemplateRegistryService instance.
@@ -47,6 +49,7 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
       throw new InstantiationError("Cannot instantiate TemplateRegistryService directly. Use getInstance()");
     }
     super(enforce);
+    this.logger = createLogger("TemplateRegistryService");
     this.cache = cache ?? new TemplateCache();
     this.repository = repository ?? new FirestoreTemplateRepository();
   }
@@ -108,7 +111,7 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
     try {
       await this.repository.save(tmpl);
     } catch (e) {
-      console.error("firestore_save_error", { template_id: tmpl.template_id, error: String(e) });
+      this.logger.error("firestore_save_error", { template_id: tmpl.template_id, error: String(e) });
     }
     return tmpl;
   }
@@ -123,7 +126,8 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
     if (t) {
       t.match_count += 1;
       t.updated_at = new Date().toISOString();
-      this.repository.updateMatchCount(templateId, t.match_count, t.updated_at).catch(() => {});
+      this.repository.updateMatchCount(templateId, t.match_count, t.updated_at)
+        .catch((e) => this.logger.warn("match_count_update_failed", { template_id: templateId, error: String(e) }));
     }
   }
 
@@ -159,9 +163,9 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
     try {
       const templates = await this.repository.findAll();
       this.cache.reset(templates);
-      console.log("template_cache_warmed", { count: this.cache.listAll().length });
+      this.logger.info("template_cache_warmed", { count: this.cache.listAll().length });
     } catch (e) {
-      console.warn("template_cache_warm_failed", { error: String(e) });
+      this.logger.warn("template_cache_warm_failed", { error: String(e) });
     }
   }
 
