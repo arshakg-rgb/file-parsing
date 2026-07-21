@@ -18,10 +18,12 @@ import { gcsClient, putObject } from "@shared/GcsUtils.js";
  */
 function estimateRowBytes(row: Record<string, unknown>): number {
   let bytes = 0;
+  let count = 0;
   for (const v of Object.values(row)) {
     bytes += (v === null ? 4 : String(v).length);
+    count++;
   }
-  return bytes + Object.keys(row).length * 16;
+  return bytes + count * 16;
 }
 
 /**
@@ -73,6 +75,7 @@ export class ParquetWriterPool {
    * @private
    */
   private flushPromise: Promise<OutputPart[]> | null;
+  private rowByteCache: WeakMap<Record<string, unknown>, number>;
 
     /**
    * Constructs a new ParquetWriterPool instance.
@@ -91,6 +94,7 @@ export class ParquetWriterPool {
     this.parts = [];
     this.totalRows = 0;
     this.flushPromise = null;
+    this.rowByteCache = new WeakMap<Record<string, unknown>, number>();
   }
 
     /**
@@ -133,7 +137,9 @@ export class ParquetWriterPool {
 
     if (!this.buffers[templateId]) this.buffers[templateId] = [];
     this.buffers[templateId].push(fullRow);
-    this.bufferBytes += estimateRowBytes(fullRow);
+    const cost = estimateRowBytes(fullRow);
+    this.rowByteCache.set(fullRow, cost);
+    this.bufferBytes += cost;
     this.totalRows += 1;
   }
 
@@ -180,7 +186,7 @@ export class ParquetWriterPool {
     for (const [templateId, rows] of Object.entries(failed)) {
       const existing = this.buffers[templateId] || [];
       this.buffers[templateId] = [...rows, ...existing];
-      for (const r of rows) this.bufferBytes += estimateRowBytes(r);
+      for (const r of rows) this.bufferBytes += this.rowByteCache.get(r) ?? estimateRowBytes(r);
     }
 
     if (Object.keys(failed).length > 0) {
@@ -197,7 +203,10 @@ export class ParquetWriterPool {
    */
   private async writePart(templateId: string, rows: Record<string, unknown>[]): Promise<OutputPart> {
     const partId = randomUUID();
-    for (const r of rows) r._part_id = partId;
+    for (const r of rows) {
+      r._part_id = partId;
+      this.rowByteCache.set(r, estimateRowBytes(r));
+    }
 
     const schema = buildSchema(rows);
     const tempFile = path.join(os.tmpdir(), `${partId}.parquet`);
@@ -215,10 +224,13 @@ export class ParquetWriterPool {
     const s3Key = `${this.outputPrefix}/parts/${templateId}/${partId}.parquet`;
     const uploadStream = gcsClient().bucket(this.bucket).file(s3Key).createWriteStream({ contentType: "application/octet-stream" });
     const readStream = createReadStream(tempFile);
-    const fileStat = await fs.stat(tempFile);
 
+    let fileStat: Awaited<ReturnType<typeof fs.stat>>;
     try {
-      await pipeline(readStream, uploadStream);
+      [fileStat] = await Promise.all([
+        fs.stat(tempFile),
+        pipeline(readStream, uploadStream),
+      ]);
     } finally {
       await fs.unlink(tempFile).catch(() => {});
     }
