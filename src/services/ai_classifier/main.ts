@@ -5,6 +5,9 @@ import { ClassifyRequest, TemplateKind } from "@shared/models/template.js";
 import { classifyAi } from "./AiClassifierServiceHandler.js";
 import { mockClassify } from "./mock.js";
 import { ensureTableExists, listAll, warmCache } from "./templateRegistry.js";
+import { createLogger } from "@utils/logger/logger.js";
+
+const logger = createLogger("AiClassifierServer");
 
 /**
  * The app
@@ -40,25 +43,25 @@ app.get("/templates", async (req: Request, res: Response, next: NextFunction) =>
 });
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error("error", err);
+  logger.error("unhandled_request_error", { error: err.message, stack: err.stack });
   res.status(500).json({ detail: err.message });
 });
 
 /**
  * The p o r t
  */
-const PORT = process.env.PORT || 8001;
+const PORT = Number(process.env.PORT) || 8001;
 
 async function bootstrap(): Promise<void> {
   await FirestoreManager.getInstance().connect();
   ensureTableExists();
   await warmCache();
   app.listen(PORT, () => {
-    console.log(`AI Classifier listening on port ${PORT}`);
+    logger.info("ai_classifier_listening", { port: PORT });
   });
 }
 
 bootstrap().catch((err: unknown) => {
-  console.error("Failed to start AI classifier", err);
+  logger.error("ai_classifier_bootstrap_failed", { error: err instanceof Error ? err.message : String(err) });
   process.exit(1);
 });
