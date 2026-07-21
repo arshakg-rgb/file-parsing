@@ -53,6 +53,8 @@ export class LineClassifier implements IClassifier {
    */
   private firstLine = true;
   private logger: Logger;
+  private normalizedFieldSpec: string[];
+  private aliasMap: Map<string, Set<string>>;
 
   // Common column/key synonyms so field_spec names match real-world headers and JSON keys.
   private static readonly ALIASES: Record<string, string[]> = {
@@ -61,6 +63,11 @@ export class LineClassifier implements IClassifier {
     phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn"],
     address: ["address", "addr", "streetaddress"],
   };
+
+  // Static reusable regexes (compiled once).
+  private static readonly EMAIL_RE = /^[A-Za-z0-9._%+=\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
+  private static readonly HEADER_LABEL_RE = /^[A-Za-z][A-Za-z0-9 _.\-]*$/;
+  private static readonly KV_SEG_RE = /^\s*([A-Za-z][A-Za-z0-9 _]*?)\s*:\s*(.*)$/;
 
     /**
    * Constructs a new LineClassifier instance.
@@ -84,6 +91,13 @@ export class LineClassifier implements IClassifier {
     this.columnMap = columnMap && Object.keys(columnMap).length > 0 ? columnMap : null;
     this.aiCache = new Map();
     this.logger = createLogger(`LineClassifier:${this.jobId}`);
+    this.normalizedFieldSpec = fieldSpec.map((f) => this.normalizeKey(f));
+    this.aliasMap = new Map<string, Set<string>>();
+    for (const [base, aliases] of Object.entries(LineClassifier.ALIASES)) {
+      const set = new Set<string>();
+      for (const a of aliases) set.add(this.normalizeKey(a));
+      this.aliasMap.set(this.normalizeKey(base), set);
+    }
   }
 
     /**
@@ -104,7 +118,13 @@ export class LineClassifier implements IClassifier {
     }
     // Count only true control/ non-printable characters (C0 + C1 blocks). Cyrillic and other
     // Unicode letters/digits/punctuation are printable text, not binary.
-    const nonPrintable = (trimmed.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g) || []).length;
+    let nonPrintable = 0;
+    for (let i = 0; i < trimmed.length; i++) {
+      const c = trimmed.charCodeAt(i);
+      if ((c <= 0x08) || (c >= 0x0B && c <= 0x0C) || (c >= 0x0E && c <= 0x1F) || (c >= 0x7F && c <= 0x9F)) {
+        nonPrintable++;
+      }
+    }
     if (nonPrintable / trimmed.length > 0.3) {
       return { verdict: "rubbish", template_id: "binary-gate" };
     }
@@ -129,18 +149,31 @@ export class LineClassifier implements IClassifier {
       if (mapped) return { verdict: "parsed", row: this.coerce(mapped), template_id: "csv-column-map" };
     }
 
-    const fp = quickFingerprint(line);
-    const cached = this.aiCache.get(fp);
-
     // 2. Known learned record templates (records have priority over rubbish).
+    // AI cache is only consumed in steps 3 and 6, so compute the fingerprint lazily.
+    let cached: RecordTemplate | RubbishTemplate | undefined;
+    const getCached = () => {
+      if (cached === undefined) {
+        const fp = quickFingerprint(line);
+        cached = this.aiCache.get(fp);
+      }
+      return cached;
+    };
+
     let bestRecord: { row: Record<string, unknown>; template: RecordTemplate; score: number } | null = null;
     for (const t of this.recordTemplates) {
       if (t.length_hint !== undefined && line.length < t.length_hint) continue;
       try {
         const row = this.extractLine(line, t);
         if (row) {
-          const meaningful = Object.values(row).filter((v) => v !== undefined && v !== null && v !== "").length;
-          const present = Object.values(row).filter((v) => v !== undefined).length;
+          let meaningful = 0;
+          let present = 0;
+          for (const v of Object.values(row)) {
+            if (v !== undefined) {
+              present++;
+              if (v !== null && v !== "") meaningful++;
+            }
+          }
           const score = meaningful + present * 0.1;
           if (bestRecord === null || score > bestRecord.score) {
             bestRecord = { row, template: t, score };
@@ -155,9 +188,10 @@ export class LineClassifier implements IClassifier {
     }
 
     // 3. AI-cached record (learned earlier in this job).
-    if (cached && "field_map" in cached) {
-      const row = this.extractLine(line, cached);
-      if (row) return { verdict: "parsed", row: this.coerce(row), template_id: cached.template_id, template_version: cached.version };
+    const c3 = getCached();
+    if (c3 && "field_map" in c3) {
+      const row = this.extractLine(line, c3);
+      if (row) return { verdict: "parsed", row: this.coerce(row), template_id: c3.template_id, template_version: c3.version };
     }
 
     // 4. Deterministic structural record recognizers (JSON object, or "Label: value"/
@@ -176,8 +210,9 @@ export class LineClassifier implements IClassifier {
     }
 
     // 6. AI-cached rubbish (learned earlier in this job).
-    if (cached && "signature" in cached && (cached.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(cached.signature, line)) {
-      return { verdict: "rubbish", template_id: cached.template_id };
+    const c6 = getCached();
+    if (c6 && "signature" in c6 && (c6.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(c6.signature, line)) {
+      return { verdict: "rubbish", template_id: c6.template_id };
     }
 
     // 7. Validated delimited/CSV extraction: header-mapped when a header was seen, else
@@ -260,8 +295,9 @@ export class LineClassifier implements IClassifier {
    * at the emit point so no path (local template, AI, column map) can leak junk into email/phone.
    */
   rowStrongFieldsOk(row: Record<string, unknown>): boolean {
-    for (const field of this.fieldSpec) {
-      const nf = this.normalizeKey(field);
+    for (let i = 0; i < this.fieldSpec.length; i++) {
+      const field = this.fieldSpec[i];
+      const nf = this.normalizedFieldSpec[i];
       if (nf !== "email" && nf !== "phone") continue;
       const v = row[field];
       if (v !== undefined && v !== null && String(v).trim() !== "" && !this.validateField(field, v)) return false;
@@ -303,7 +339,8 @@ export class LineClassifier implements IClassifier {
     let presentCount = 0;
     let strongPresent = 0; // strongly-typed fields (email/phone) that got a value
     let strongValid = 0;   // ...of those, how many actually validate
-    for (const field of this.fieldSpec) {
+    for (let i = 0; i < this.fieldSpec.length; i++) {
+      const field = this.fieldSpec[i];
       const loc = rec.field_map[field];
       if (!loc) {
         row[field] = undefined;
@@ -326,7 +363,7 @@ export class LineClassifier implements IClassifier {
       }
       const value = locator ? this.applyLocator(line, parsed, locator) : undefined;
       if (value !== undefined) presentCount++;
-      const nf = this.normalizeKey(field);
+      const nf = this.normalizedFieldSpec[i];
       if ((nf === "email" || nf === "phone") && value !== undefined && value !== null && String(value).trim() !== "") {
         strongPresent++;
         if (this.validateField(field, value)) strongValid++;
@@ -405,7 +442,7 @@ export class LineClassifier implements IClassifier {
     // Sane email chars only. The old `[^@\s]+@[^@\s]+\.[^@\s]+` accepted control/binary bytes,
     // so a garbage line containing an '@' and a '.' validated as an email. The local part allows
     // the common RFC punctuation (incl. '=', e.g. nabilah==6172@…) but no control/space/high bytes.
-    if (nf === "email") return /^[A-Za-z0-9._%+=\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/.test(v);
+    if (nf === "email") return LineClassifier.EMAIL_RE.test(v);
     if (nf === "phone") {
       if (v.includes("@")) return false;
       const digits = v.replace(/\D/g, "");
@@ -433,15 +470,26 @@ export class LineClassifier implements IClassifier {
     const row: Record<string, unknown> = {};
     let matched = 0;
     let strong = 0;
-    for (const field of this.fieldSpec) {
-      let value: unknown = undefined;
-      for (const [k, val] of Object.entries(obj)) {
-        if (this.keyMatchesField(k, field)) { value = val; break; }
+    const normalizedObjKeys = new Map<string, unknown>();
+    for (const [k, val] of Object.entries(obj)) {
+      normalizedObjKeys.set(this.normalizeKey(k), val);
+    }
+    for (let i = 0; i < this.fieldSpec.length; i++) {
+      const field = this.fieldSpec[i];
+      const nf = this.normalizedFieldSpec[i];
+      let value = normalizedObjKeys.get(nf);
+      if (value === undefined) {
+        const aliases = this.aliasMap.get(nf);
+        if (aliases) {
+          for (const a of aliases) {
+            value = normalizedObjKeys.get(a);
+            if (value !== undefined) break;
+          }
+        }
       }
       if (value !== undefined && value !== null && String(value).trim() !== "") {
         row[field] = value;
         matched++;
-        const nf = this.normalizeKey(field);
         if ((nf === "email" || nf === "phone") && this.validateField(field, value)) strong++;
       } else {
         row[field] = null;
@@ -478,7 +526,7 @@ export class LineClassifier implements IClassifier {
     if (!line.includes(":")) return null;
     const obj: Record<string, string> = {};
     for (const seg of line.split(/\s+-\s+/)) {
-      const m = seg.match(/^\s*([A-Za-z][A-Za-z0-9 _]*?)\s*:\s*(.*)$/);
+      const m = LineClassifier.KV_SEG_RE.exec(seg);
       if (m) obj[m[1].trim()] = m[2].trim();
     }
     if (Object.keys(obj).length === 0) return null;
@@ -513,7 +561,7 @@ export class LineClassifier implements IClassifier {
     for (const c of parts) {
       const v = c.trim();
       if (v === "" || v.includes("@") || v.replace(/\D/g, "").length >= 7) return null; // data content, not a header
-      if (!/^[A-Za-z][A-Za-z0-9 _.\-]*$/.test(v)) return null;
+      if (!LineClassifier.HEADER_LABEL_RE.test(v)) return null;
     }
     const map: Record<string, number> = {};
     let matched = 0;
@@ -542,7 +590,9 @@ export class LineClassifier implements IClassifier {
     let present = 0;
     let strongPresent = 0;
     let strongValid = 0;
-    for (const field of this.fieldSpec) {
+    for (let i = 0; i < this.fieldSpec.length; i++) {
+      const field = this.fieldSpec[i];
+      const nf = this.normalizedFieldSpec[i];
       const spec = map[field];
       let value: unknown = null;
       if (typeof spec === "number") {
@@ -554,7 +604,6 @@ export class LineClassifier implements IClassifier {
       if (value !== null && String(value).trim() !== "") {
         row[field] = value;
         present++;
-        const nf = this.normalizeKey(field);
         if (nf === "email" || nf === "phone") {
           strongPresent++;
           if (this.validateField(field, value)) strongValid++;
@@ -584,7 +633,8 @@ export class LineClassifier implements IClassifier {
 
     if (this.headerMap) {
       // Trust the header's column assignment.
-      for (const field of this.fieldSpec) {
+      for (let i = 0; i < this.fieldSpec.length; i++) {
+        const field = this.fieldSpec[i];
         const idx = this.headerMap[field];
         const value = idx !== undefined && idx < parts.length ? parts[idx] : "";
         row[field] = value === "" || value === undefined ? null : value;
@@ -596,13 +646,14 @@ export class LineClassifier implements IClassifier {
     // No header: identify columns by CONTENT for strongly-validatable fields (email/phone).
     // Weak fields (name/address) can't be reliably located without a header, so leave null.
     const claimed = new Set<number>();
-    for (const field of this.fieldSpec) {
-      const nf = this.normalizeKey(field);
+    for (let i = 0; i < this.fieldSpec.length; i++) {
+      const field = this.fieldSpec[i];
+      const nf = this.normalizedFieldSpec[i];
       let value: unknown = null;
       if (nf === "email" || nf === "phone") {
-        for (let i = 0; i < parts.length; i++) {
-          if (claimed.has(i)) continue;
-          if (this.validateField(field, parts[i])) { value = parts[i]; claimed.add(i); break; }
+        for (let j = 0; j < parts.length; j++) {
+          if (claimed.has(j)) continue;
+          if (this.validateField(field, parts[j])) { value = parts[j]; claimed.add(j); break; }
         }
       }
       row[field] = value;
