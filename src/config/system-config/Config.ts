@@ -2,6 +2,7 @@ import { InstantiationError } from "@errors/InstantiationError.js";
 import { pino } from "pino";
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import { ValidationResult } from "./ConfigValidator.js";
 import {
     validateAppConfig,
@@ -18,6 +19,9 @@ import { ICommonConfig } from "./io/ICommonConfig.js";
 import { ISocketConfig } from "./io/ISocketConfig.js";
 import { IRedisConfig } from "./io/IRedisConfig.js";
 import { settings } from "@shared/Settings.js";
+
+const __filename: string = fileURLToPath(import.meta.url);
+const __dirname: string = path.dirname(__filename);
 
 const logger: pino.Logger = pino();
 
