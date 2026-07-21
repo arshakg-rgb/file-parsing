@@ -15,6 +15,11 @@ import {
 
 type RawClassifyResponse = Record<string, unknown>;
 
+const CSV_DELIMITERS = [",", ";", "\t", "|"] as const;
+const FENCE_RE = /\`\`\`(?:json)?\s*(\{[\s\S]*?\})\s*\`\`\`/;
+const JSON_BRACE_RE = /\{[\s\S]*\}/;
+const STRUCTURE_NAMES = new Set(["csv", "json", "kv", "fixed", "regex"]);
+
 /**
  * AiClassifierServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
  */
@@ -113,11 +118,11 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
    */
   public extractJson(text: string): RawClassifyResponse {
     // Try markdown code fence first (```json or ```)
-    const fence = /\`\`\`(?:json)?\s*(\{[\s\S]*?\})\s*\`\`\`/.exec(text);
+    const fence = FENCE_RE.exec(text);
     if (fence) return JSON.parse(fence[1]) as RawClassifyResponse;
 
     // Try bare JSON object
-    const brace = /\{[\s\S]*\}/.exec(text);
+    const brace = JSON_BRACE_RE.exec(text);
     if (brace) {
       try {
         return JSON.parse(brace[0]) as RawClassifyResponse;
@@ -162,7 +167,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
         return crypto.createHash("sha256").update(`json|${Object.keys(parsed).sort().join(",")}`).digest("hex").slice(0, 24);
       }
     } catch {}
-    for (const delim of [",", ";", "\t", "|"]) {
+    for (const delim of CSV_DELIMITERS) {
       const parts = line.split(delim);
       if (parts.length >= 3) {
         return crypto.createHash("sha256").update(`csv|${delim}|${parts.length}`).digest("hex").slice(0, 24);
@@ -221,7 +226,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
         };
       }
     } catch (err) {
-      console.warn("template_build_error", { error: String(err), raw: JSON.stringify(raw).slice(0, 200) });
+      this.logger.warn("template_build_error", { error: String(err), raw: JSON.stringify(raw).slice(0, 200) });
     }
     return null;
   }
@@ -237,7 +242,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
       const text = await this.askVertexAI(prompt);
       this.logger.info("vertex_ai_response_raw", { response: text.slice(0, 500) });
       const parsed = this.extractJson(text);
-      this.logger.info("vertex_ai_response_parsed", { parsed: JSON.stringify(parsed).slice(0, 500) });
+      this.logger.info("vertex_ai_response_parsed", { parsedKeys: Object.keys(parsed).length });
       return parsed as RawClassifyResponse;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : (typeof error === "string" ? error : JSON.stringify(error));
@@ -256,30 +261,20 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
    * @returns The c s v parse result result
    */
   public tryParseAsCSV(line: string, fieldSpec: string[]): CSVParseResult {
-    const delimiters = [",", ";", "\t", "|"];
-
     // Ensure fieldSpec is an array
     const fieldSpecArray = Array.isArray(fieldSpec) ? fieldSpec :
       (typeof fieldSpec === "string" ? JSON.parse(fieldSpec) : []);
 
-    this.logger.debug("csv_parser_start", { line, fieldSpec: fieldSpecArray, delimiterCount: delimiters.length });
-
-    for (const delimiter of delimiters) {
+    for (const delimiter of CSV_DELIMITERS) {
       const parts = line.split(delimiter);
-      this.logger.debug("csv_parser_try_delimiter", { delimiter, partCount: parts.length, expectedCount: fieldSpecArray.length });
 
-      if (parts.length === fieldSpecArray.length) {
-        const allNonEmpty = parts.every(part => part.trim().length > 0);
-        this.logger.debug("csv_parser_validation", { delimiter, allNonEmpty, parts });
-
-        if (allNonEmpty) {
-          this.logger.info("csv_parser_success", { delimiter, fields: parts });
-          return { success: true, delimiter, fields: parts };
-        }
+      if (parts.length === fieldSpecArray.length && parts.every(part => part.trim().length > 0)) {
+        this.logger.info("csv_parser_success", { delimiter, fields: parts });
+        return { success: true, delimiter, fields: parts };
       }
     }
 
-    this.logger.debug("csv_parser_failed", { reason: "no_delimiter_matched" });
+    this.logger.debug("csv_parser_failed", { line, fieldSpec: fieldSpecArray });
     return { success: false, delimiter: "", fields: [] };
   }
 
@@ -370,8 +365,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
       let kindStr: string = (raw.kind as string) || "uncertain";
 
       // Handle structure names (csv, json, etc.) as record-template
-      const structureNames = ["csv", "json", "kv", "fixed", "regex"];
-      if (structureNames.includes(kindStr)) {
+      if (STRUCTURE_NAMES.has(kindStr)) {
         kindStr = "record-template";
       }
 
@@ -433,7 +427,7 @@ IMPORTANT: You must respond with a template definition (kind, template.field_map
       }
       return true;
     } catch (err) {
-      console.warn("template_validation_error", { job_id: req.job_id, error: String(err) });
+      this.logger.warn("template_validation_error", { job_id: req.job_id, error: String(err) });
       return false;
     }
   }
