@@ -35,6 +35,9 @@ function extractJsonFromMarkdown(raw: string): string {
   return trimmed;
 }
 
+const CSV_DELIMITERS = [",", ";", "\t", "|"] as const;
+const STRUCTURE_NAMES = new Set(["csv", "json", "kv", "fixed", "regex"]);
+
 /**
  * AI Classifier Service - Senior Level ORM-Style Implementation
  * 
@@ -130,7 +133,7 @@ export class AiClassifierService {
    */
   async start(): Promise<void> {
     if (this.running) {
-      console.warn("ai_classifier_already_running");
+      this.logger.warn("ai_classifier_already_running");
       return;
     }
     
@@ -286,31 +289,19 @@ If uncertain:
    * @returns Parse result with success status and delimiter
    */
   private tryParseAsCSV(line: string, fieldSpec: string[]): CSVParseResult {
-    const delimiters = [",", ";", "\t", "|"];
-    
-    // Ensure fieldSpec is an array
-    const fieldSpecArray = Array.isArray(fieldSpec) ? fieldSpec : 
+    const fieldSpecArray = Array.isArray(fieldSpec) ? fieldSpec :
       (typeof fieldSpec === "string" ? JSON.parse(fieldSpec) : []);
-    
-    this.logger.debug("csv_parser_start", { line, fieldSpec: fieldSpecArray, delimiterCount: delimiters.length });
 
-    for (const delimiter of delimiters) {
+    for (const delimiter of CSV_DELIMITERS) {
       const parts = line.split(delimiter);
-      this.logger.debug("csv_parser_try_delimiter", { delimiter, partCount: parts.length, expectedCount: fieldSpecArray.length });
-
-      if (parts.length === fieldSpecArray.length) {
-        const allNonEmpty = parts.every(part => part.trim().length > 0);
-        this.logger.debug("csv_parser_validation", { delimiter, allNonEmpty, parts });
-
-        if (allNonEmpty) {
-          this.logger.info("csv_parser_success", { delimiter, fields: parts });
-          this.csvParseSuccesses++;
-          return { success: true, delimiter, fields: parts };
-        }
+      if (parts.length === fieldSpecArray.length && parts.every(part => part.trim().length > 0)) {
+        this.logger.info("csv_parser_success", { delimiter, fields: parts });
+        this.csvParseSuccesses++;
+        return { success: true, delimiter, fields: parts };
       }
     }
 
-    this.logger.debug("csv_parser_failed", { reason: "no_delimiter_matched" });
+    this.logger.debug("csv_parser_failed", { line, fieldSpec: fieldSpecArray });
     this.csvParseFailures++;
     return { success: false, delimiter: "", fields: [] };
   }
@@ -471,12 +462,11 @@ If uncertain:
       const rawText = await this.askVertexAI(userPrompt);
       this.logger.info("vertex_ai_response_raw", { job_id: req.job_id, fingerprint: lineFp, response: rawText.slice(0, 500) });
       const raw = JSON.parse(extractJsonFromMarkdown(rawText)) as Record<string, unknown>;
-      this.logger.info("vertex_ai_response_parsed", { job_id: req.job_id, fingerprint: lineFp, parsed: JSON.stringify(raw).slice(0, 500) });
+      this.logger.info("vertex_ai_response_parsed", { job_id: req.job_id, fingerprint: lineFp, parsedKind: raw.kind, parsedKeys: Object.keys(raw).length });
       let kindStr = (raw.kind as string) || "uncertain";
-      
+
       // Handle structure names (csv, json, etc.) as record-template
-      const structureNames = ["csv", "json", "kv", "fixed", "regex"];
-      if (structureNames.includes(kindStr)) {
+      if (STRUCTURE_NAMES.has(kindStr)) {
         kindStr = "record-template";
       }
       
