@@ -387,21 +387,26 @@ export class DLQWriter {
    */
   async write(byteOffset: number, byteLength: number, lineNo: number, rawLine: string, failureClass: string, error: string): Promise<void> {
     const { sendMessage } = await import("@shared/QueueService.js");
-    const { FailureClass } = await import("@shared/models/job.js");
     const dlqId = randomUUID();
     const rawBytes = Buffer.from(rawLine.replace(/\0/g, ""), "utf-8").toString("base64");
-    await repositories.deadLetters.create({
-      dlq_id: dlqId,
-      job_id: this.jobId,
-      byte_offset: byteOffset,
-      byte_length: byteLength,
-      line_no: lineNo,
-      raw_bytes: rawBytes,
-      failure_class: failureClass,
-      error,
-      attempts: 0,
-      status: "pending",
-    });
+    const row = await repositories.deadLetters.create(
+      {
+        dlq_id: dlqId,
+        job_id: this.jobId,
+        byte_offset: byteOffset,
+        byte_length: byteLength,
+        line_no: lineNo,
+        raw_bytes: rawBytes,
+        failure_class: failureClass,
+        error,
+        attempts: 0,
+        status: "pending",
+      },
+      { conflictOn: "job_id_line_no" }
+    );
+
+    if (!row) return;
+
     await sendMessage(
       settings.DLQ_QUEUE_URL,
       {

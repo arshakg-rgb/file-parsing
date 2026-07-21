@@ -250,8 +250,13 @@ export class DeadLetterRepository {
       });
       if (existing) return null;
     }
-    const row = await this.DeadLetter.create(data);
-    return row.get({ plain: true }) as DeadLetterAttributes;
+    try {
+      const row = await this.DeadLetter.create(data);
+      return row.get({ plain: true }) as DeadLetterAttributes;
+    } catch (err: unknown) {
+      if ((err as { name?: string }).name === "SequelizeUniqueConstraintError") return null;
+      throw err;
+    }
   }
 
     /**
@@ -408,9 +413,14 @@ export class PendingArchiveEntryRepository {
    * @param data - The data to process
    * @returns A promise that resolves to the result
    */
-  async create(data: PendingArchiveEntryCreationAttributes): Promise<PendingArchiveEntryAttributes> {
-    const row = await this.Entry.create(data);
-    return row.get({ plain: true }) as PendingArchiveEntryAttributes;
+  async create(data: PendingArchiveEntryCreationAttributes): Promise<PendingArchiveEntryAttributes | null> {
+    try {
+      const row = await this.Entry.create(data);
+      return row.get({ plain: true }) as PendingArchiveEntryAttributes;
+    } catch (err: unknown) {
+      if ((err as { name?: string }).name === "SequelizeUniqueConstraintError") return null;
+      throw err;
+    }
   }
 
     /**

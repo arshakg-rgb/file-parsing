@@ -283,19 +283,23 @@ export async function extractArchiveToS3(
           try {
             // Insert pending entry synchronously BEFORE sendRaw to provide idempotency
             // This prevents duplicate queue messages when jobs are retried due to Cloud Rollout SIGTERM
-            await createPendingArchiveEntry(jobId, file.name, file.size);
-            
-            await sendRaw(settings.ARCHIVE_ENTRY_QUEUE_URL, {
-              job_id: jobId,
-              batchId: batchId,
-              archive_s3_url: s3Url,
-              entry_name: file.name,
-              entry_size: file.size,
-              field_spec: fieldSpec,
-              password: password || undefined,
-              archive_type: "rar",
-              nesting_depth: _depth,
-            });
+            const created = await createPendingArchiveEntry(jobId, file.name, file.size);
+
+            if (created) {
+              await sendRaw(settings.ARCHIVE_ENTRY_QUEUE_URL, {
+                job_id: jobId,
+                batchId: batchId,
+                archive_s3_url: s3Url,
+                entry_name: file.name,
+                entry_size: file.size,
+                field_spec: fieldSpec,
+                password: password || undefined,
+                archive_type: "rar",
+                nesting_depth: _depth,
+              });
+            } else {
+              console.log("rar_pending_entry_exists", { jobId, name: file.name });
+            }
           } catch (exc) {
             console.error("rar_route_to_async_failed", { jobId, name: file.name, error: exc instanceof Error ? exc.message : String(exc) });
             // Continue processing remaining files instead of aborting the entire batch

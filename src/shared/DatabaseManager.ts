@@ -74,8 +74,9 @@ export async function createPendingArchiveEntry(
   jobId: string,
   entryName: string,
   entrySize: number
-): Promise<void> {
-  await repos.pendingArchiveEntries.create({ id: crypto.randomUUID(), job_id: jobId, entry_name: entryName, entry_size: entrySize, status: "pending" });
+): Promise<boolean> {
+  const row = await repos.pendingArchiveEntries.create({ id: crypto.randomUUID(), job_id: jobId, entry_name: entryName, entry_size: entrySize, status: "pending" });
+  return row !== null;
 }
 
 /**
