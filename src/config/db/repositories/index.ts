@@ -260,6 +260,14 @@ export class DeadLetterRepository {
   }
 
     /**
+   * Performs the bulk create operation.
+   * @param rows - The rows
+   */
+  async bulkCreate(rows: DeadLetterCreationAttributes[]): Promise<void> {
+    await this.DeadLetter.bulkCreate(rows, { ignoreDuplicates: true });
+  }
+
+    /**
    * Finds by id
    * @param dlqId - The dlq id
    * @returns A promise that resolves to the result
@@ -609,6 +617,14 @@ export class RubbishLogRepository {
   async create(data: RubbishLogCreationAttributes): Promise<RubbishLogAttributes> {
     const row = await this.RubbishLog.create(data);
     return row.get({ plain: true }) as RubbishLogAttributes;
+  }
+
+    /**
+   * Performs the bulk create operation.
+   * @param rows - The rows
+   */
+  async bulkCreate(rows: RubbishLogCreationAttributes[]): Promise<void> {
+    await this.RubbishLog.bulkCreate(rows, { ignoreDuplicates: true });
   }
 
     /**

@@ -16,7 +16,9 @@ import { createLogger, Logger } from "@utils/logger/logger.js";
 import { metrics } from "@utils/response/metrics.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import { waitForDb } from "@shared/DatabaseManager.js";
+import MySqlManager from "@config/db/MySqlManager.js";
 import jschardet from "jschardet";
+import crypto from "crypto";
 import { normalizeEncoding, isLikelyUtf8 } from "@utils/normalizers/encoding.js";
 
 /**
@@ -444,6 +446,28 @@ export class StreamParserService {
     let aiBudgetFlagged = false;
     const recentLines: string[] = []; // small context window for the model
 
+    // Batched DB writes: per-line awaits are the main throughput bottleneck for large files.
+    const BATCH_SIZE = 1000;
+    const parsedBatch: Record<string, unknown>[] = [];
+    const rubbishBatch: Record<string, unknown>[] = [];
+    const dlqBatch: Record<string, unknown>[] = [];
+    const repositories = MySqlManager.getInstance().repositories;
+
+    const flushBatches = async (force = false): Promise<void> => {
+      if (parsedBatch.length >= BATCH_SIZE || (force && parsedBatch.length > 0)) {
+        await repositories.parsedRecords.bulkCreate(parsedBatch as any);
+        parsedBatch.length = 0;
+      }
+      if (rubbishBatch.length >= BATCH_SIZE || (force && rubbishBatch.length > 0)) {
+        await repositories.rubbishLogs.bulkCreate(rubbishBatch as any);
+        rubbishBatch.length = 0;
+      }
+      if (dlqBatch.length >= BATCH_SIZE || (force && dlqBatch.length > 0)) {
+        await repositories.deadLetters.bulkCreate(dlqBatch as any);
+        dlqBatch.length = 0;
+      }
+    };
+
     try {
       for await (const [line, byteOffset, byteLength] of streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding)) {
         lineNo += 1;
@@ -451,6 +475,9 @@ export class StreamParserService {
         
         if (lineNo % 10000 === 0) {
           console.log("parse_progress", { jobId, lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
+        }
+        if (lineNo % 1000 === 0) {
+          await flushBatches();
         }
 
         // Designed ordered classifier for EVERY line: length/binary gate -> learned record
@@ -504,7 +531,7 @@ export class StreamParserService {
         }
 
         switch (result.verdict) {
-          case "parsed":
+          case "parsed": {
             // Sanitize row data before storage
             const sanitizedRow = this.sanitizeRecord(result.row || {});
 
@@ -533,76 +560,63 @@ export class StreamParserService {
               _part_id: "auto",
             });
 
-            // Create trace record - wrap in try/catch
-            try {
-              await traceSystem.createTrace({
-                s3_url: msg.s3_url,
-                byte_offset: byteOffset,
-                byte_length: byteLength,
-                record_index: idx,
-                line_no: lineNo,
-                job_id: jobId,
-                template_id: result.template_id || "default",
-                template_version: result.template_version || 1,
-                checksum: "",
-                parsed_at: new Date(),
-                part_id: "auto",
-                row_data: sanitizedRow // Store sanitized row data
-              });
-              counts.parsed++;
-              csvWriter.addRow(sanitizedRow, lineNo); // human-readable CSV mirror (best-effort)
-            } catch (traceErr) {
-              console.error("trace_write_failed", { jobId, lineNo, error: traceErr instanceof Error ? traceErr.message : String(traceErr) });
-              counts.dropped_rubbish++;
-            }
-            break;
+            parsedBatch.push({
+              _job_id: jobId,
+              _byte_offset: byteOffset,
+              _byte_length: byteLength,
+              _record_index: idx,
+              _line_no: lineNo,
+              _template_id: result.template_id || "default",
+              _template_version: result.template_version || 1,
+              _checksum: "",
+              _parsed_at: new Date(),
+              _part_id: "auto",
+              fields: { s3_url: msg.s3_url, ...sanitizedRow }
+            });
 
-          case "rubbish":
+            counts.parsed++;
+            csvWriter.addRow(sanitizedRow, lineNo); // human-readable CSV mirror (best-effort)
+            break;
+          }
+
+          case "rubbish": {
             // Sanitize line before storage
             const sanitizedLine = this.sanitizeForPg(line);
-            
-            try {
-              await traceSystem.logRubbishDrop(
-                jobId,
-                byteOffset,
-                lineNo,
-                sanitizedLine,
-                result.template_id || "unknown"
-              );
-              counts.dropped_rubbish++;
-            } catch (rubbishErr) {
-              console.error("rubbish_log_failed", { jobId, lineNo, error: rubbishErr instanceof Error ? rubbishErr.message : String(rubbishErr) });
-              counts.dropped_rubbish++;
-            }
+            rubbishBatch.push({
+              job_id: jobId,
+              byte_offset: byteOffset,
+              line_no: lineNo,
+              raw_bytes: sanitizedLine,
+              matched_template_id: result.template_id || "unknown",
+            });
+            counts.dropped_rubbish++;
             break;
+          }
 
-          case "uncertain":
+          case "uncertain": {
             // Sanitize line before storage
             const sanitizedUncertainLine = this.sanitizeForPg(line);
-            
-            // Add to DLQ for retry - wrap in try/catch
             const failureClass = result.failure_class || FailureClass.UNCERTAIN;
-            try {
-              const dlqId = await dlqManager.addEntry(
-                jobId,
-                byteOffset,
-                byteLength,
-                lineNo,
-                sanitizedUncertainLine,
-                failureClass,
-                result.failure_class || "Uncertain classification"
-              );
-              if (dlqId) {
-                if (!counts.failed_by_class[failureClass]) counts.failed_by_class[failureClass] = 0;
-                counts.failed_by_class[failureClass]++;
-              }
-            } catch (dlqErr) {
-              console.error("dlq_add_failed", { jobId, lineNo, error: dlqErr instanceof Error ? dlqErr.message : String(dlqErr) });
-              counts.dropped_rubbish++;
-            }
+            dlqBatch.push({
+              dlq_id: crypto.randomUUID(),
+              job_id: jobId,
+              byte_offset: byteOffset,
+              byte_length: byteLength,
+              line_no: lineNo,
+              raw_bytes: sanitizedUncertainLine,
+              failure_class: failureClass,
+              error: result.failure_class || "Uncertain classification",
+              attempts: 0,
+              status: "pending",
+            });
+            if (!counts.failed_by_class[failureClass]) counts.failed_by_class[failureClass] = 0;
+            counts.failed_by_class[failureClass]++;
             break;
+          }
         }
       }
+
+      await flushBatches(true);
 
       // Flush remaining output
       const outputPaths = await outputManager.flushAll();
