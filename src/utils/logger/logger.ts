@@ -17,6 +17,8 @@ const LOKI_FLUSH_INTERVAL_MS = 500;
 const LOKI_SEND_TIMEOUT_MS = 3_000;
 const LOKI_MAX_BATCH_SIZE = 200;
 const LOKI_MAX_BUFFER_SIZE = 5_000;
+const LOKI_CIRCUIT_BREAK_THRESHOLD = 5;
+const LOKI_CIRCUIT_COOLDOWN_MS = 30_000;
 
 interface LokiValue {
   stream: Record<string, string>;
@@ -27,6 +29,8 @@ interface LokiValue {
 const lokiBuffer: LokiValue[] = [];
 let lokiFlushTimer: ReturnType<typeof setTimeout> | undefined;
 let lokiEnabled = false;
+let lokiConsecutiveFailures = 0;
+let lokiCircuitOpenUntil = 0;
 
 function scheduleLokiFlush(): void {
   if (lokiFlushTimer !== undefined) return;
@@ -41,6 +45,13 @@ function scheduleLokiFlush(): void {
 
 async function flushLoki(): Promise<void> {
   if (!lokiEnabled || lokiBuffer.length === 0) return;
+
+  const now = Date.now();
+  if (now < lokiCircuitOpenUntil) {
+    // Circuit open: Loki is down. Drop this batch and keep console logging.
+    lokiBuffer.splice(0, LOKI_MAX_BATCH_SIZE);
+    return;
+  }
 
   const batch = lokiBuffer.splice(0, LOKI_MAX_BATCH_SIZE);
 
@@ -68,10 +79,16 @@ async function flushLoki(): Promise<void> {
       signal: AbortSignal.timeout(LOKI_SEND_TIMEOUT_MS),
     });
     if (!resp.ok) {
-      console.error("loki_send_failed", { status: resp.status });
+      throw new Error(`HTTP ${resp.status}`);
     }
+    lokiConsecutiveFailures = 0;
   } catch (err) {
+    lokiConsecutiveFailures++;
     console.error("loki_send_error", { error: String(err) });
+    if (lokiConsecutiveFailures >= LOKI_CIRCUIT_BREAK_THRESHOLD) {
+      lokiCircuitOpenUntil = now + LOKI_CIRCUIT_COOLDOWN_MS;
+      console.warn("loki_circuit_open", { cooldown_ms: LOKI_CIRCUIT_COOLDOWN_MS, until: new Date(lokiCircuitOpenUntil).toISOString() });
+    }
     // Drop the batch rather than re-queuing — retries cause unbounded buffer growth
   }
 

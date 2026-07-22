@@ -35,20 +35,24 @@ export class MockClassifier {
    */
   classify(req: MockClassifyRequest): MockClassifyResponse {
     const line = req.unknown_line;
+    const fieldSpec = req.field_spec || [];
+    const minParts = Math.max(2, fieldSpec.length);
 
     for (const delim of [",", ";", "\t", "|"]) {
       const parts = line.split(delim);
-      if (parts.length >= 3) {
+      if (parts.length >= minParts) {
         const fieldMap: Record<string, { locator: string; type: string }> = {};
-        for (let i = 0; i < req.field_spec.length; i++) {
-          fieldMap[req.field_spec[i]] = {
+        for (let i = 0; i < fieldSpec.length; i++) {
+          const f = fieldSpec[i];
+          if (f === "meta") continue;
+          fieldMap[f] = {
             locator: `index:${Math.min(i, parts.length - 1)}`,
             type: "string",
           };
         }
         const tmpl: RecordTemplate = {
           template_id: crypto.randomUUID(),
-          fingerprint: MockClassifier.fingerprint(line),
+          fingerprint: MockClassifier.fingerprint(`${delim}:${parts.length}`),
           version: 1,
           field_map: fieldMap,
           structure: "csv",
@@ -64,7 +68,7 @@ export class MockClassifier {
     if (/^(ERROR|WARNING|DEBUG|INFO|TRACE)/.test(line)) {
       const tmpl: RubbishTemplate = {
         template_id: crypto.randomUUID(),
-        fingerprint: MockClassifier.fingerprint(line),
+        fingerprint: MockClassifier.fingerprint("^(ERROR|WARNING|DEBUG|INFO|TRACE).*"),
         version: 1,
         signature: "^(ERROR|WARNING|DEBUG|INFO|TRACE).*",
         confidence: 0.95,

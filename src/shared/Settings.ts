@@ -86,7 +86,7 @@ export const settings = {
   //   "live" — call the real model.
   AI_INLINE_MODE: getString("AI_INLINE_MODE", "off"),
   // Hard cap on AI calls per job so a pathological file can't run up unbounded cost/latency.
-  MAX_AI_CALLS_PER_JOB: getNumber("MAX_AI_CALLS_PER_JOB", 10),
+  MAX_AI_CALLS_PER_JOB: getNumber("MAX_AI_CALLS_PER_JOB", 100),
 
   // ---- Vertex AI ----
   VERTEX_MODEL: getString("VERTEX_MODEL", "gemini-2.5-flash"),
