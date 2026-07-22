@@ -16,6 +16,7 @@ export interface LogContext {
 const LOKI_FLUSH_INTERVAL_MS = 500;
 const LOKI_SEND_TIMEOUT_MS = 3_000;
 const LOKI_MAX_BATCH_SIZE = 200;
+const LOKI_MAX_BUFFER_SIZE = 5_000;
 
 interface LokiValue {
   stream: Record<string, string>;
@@ -122,6 +123,11 @@ export class Logger {
 
   private enqueueToLoki(level: string, message: string, context: LogContext = {}): void {
     if (!lokiEnabled) return;
+    if (lokiBuffer.length >= LOKI_MAX_BUFFER_SIZE) {
+      // Backpressure: Loki is down/slow and the backlog would OOM the container.
+      // Keep console logging; just drop this entry rather than crashing.
+      return;
+    }
     lokiBuffer.push({
       stream: {
         service: this.service,

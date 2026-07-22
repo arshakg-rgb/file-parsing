@@ -109,6 +109,11 @@ export class OutputBuffer {
    * @private
    */
   private flushCounter = 0;
+  /**
+   * Estimated byte size of rows currently buffered
+   * @private
+   */
+  private rowBytes = 0;
 
     /**
    * Constructs a new OutputBuffer instance.
@@ -121,14 +126,35 @@ export class OutputBuffer {
     this.partId = `${jobId}-${templateId}-${Date.now()}`;
   }
 
+  private estimateRowBytes(row: OutputRow): number {
+    let size = 0;
+    for (const v of Object.values(row)) {
+      if (v === null || v === undefined) {
+        size += 4;
+      } else if (typeof v === "number") {
+        size += 8;
+      } else if (v instanceof Date) {
+        size += 24;
+      } else if (typeof v === "boolean") {
+        size += 4;
+      } else {
+        size += Buffer.byteLength(String(v), "utf8") + 16;
+      }
+    }
+    return size;
+  }
+
     /**
    * Adds row
    * @param row - The row
    */
   addRow(row: OutputRow): void {
     this.rows.push(row);
+    this.rowBytes += this.estimateRowBytes(row);
 
-    if (this.rows.length >= parquetOutputService.getFlushLineThreshold() && !this.flushPromise) {
+    const overLine = this.rows.length >= parquetOutputService.getFlushLineThreshold();
+    const overBytes = this.rowBytes >= parquetOutputService.getFlushByteThreshold();
+    if ((overLine || overBytes) && !this.flushPromise) {
       this.flushPromise = this.flush().finally(() => {
         this.flushPromise = null;
       });
@@ -146,6 +172,7 @@ export class OutputBuffer {
 
     const rowsToFlush = this.rows;
     this.rows = [];
+    this.rowBytes = 0;
 
     const flushPartId = `${this.partId}-${this.flushCounter++}`;
 

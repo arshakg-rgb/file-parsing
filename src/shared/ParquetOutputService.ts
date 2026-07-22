@@ -28,6 +28,11 @@ class ParquetOutputService extends ServiceManager {
    * @private
    */
   private FLUSH_LINE_THRESHOLD: number;
+  /**
+   * F L U S H_ B Y T E_ T H R E S H O L D
+   * @private
+   */
+  private FLUSH_BYTE_THRESHOLD: number;
 
     /**
    * Constructs a new ParquetOutputService instance.
@@ -43,6 +48,8 @@ class ParquetOutputService extends ServiceManager {
     this.logger = createLogger("parquet-writer");
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.FLUSH_LINE_THRESHOLD = 2000;
+    // Flush parquet buffer every 32 MB to keep Cloud Run 1 GiB memory safe.
+    this.FLUSH_BYTE_THRESHOLD = 32 * 1024 * 1024;
   }
 
     /**
@@ -78,6 +85,14 @@ class ParquetOutputService extends ServiceManager {
    */
   public getFlushLineThreshold(): number {
     return this.FLUSH_LINE_THRESHOLD;
+  }
+
+  /**
+   * Gets flush byte threshold
+   * @returns The numeric result
+   */
+  public getFlushByteThreshold(): number {
+    return this.FLUSH_BYTE_THRESHOLD;
   }
 }
 
