@@ -562,7 +562,7 @@ export class StreamParserService {
     };
 
     try {
-      const quotedNewlineLimit = settings.CSV_MAX_QUOTED_NEWLINES;
+      const quotedNewlineLimit = fieldSpec.length > 0 ? settings.CSV_MAX_QUOTED_NEWLINES : undefined;
       for await (const [line, byteOffset, byteLength] of streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding, quotedNewlineLimit)) {
         lineNo += 1;
         this.stats.totalLinesProcessed++;
