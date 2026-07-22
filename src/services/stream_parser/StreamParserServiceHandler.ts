@@ -567,7 +567,8 @@ export class StreamParserService {
     };
 
     try {
-      const looksTabular = fieldSpec.length > 0 || (columnMap && Object.keys(columnMap).length > 0) || probeLooksTabular;
+      const hasColumnMap = !!columnMap && Object.keys(columnMap).length > 0;
+      const looksTabular = fieldSpec.length > 0 || hasColumnMap || probeLooksTabular;
       const quotedNewlineLimit = looksTabular ? settings.CSV_MAX_QUOTED_NEWLINES : undefined;
       for await (const [line, byteOffset, byteLength] of streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding, quotedNewlineLimit)) {
         lineNo += 1;
