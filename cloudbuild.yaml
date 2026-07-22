@@ -18,7 +18,7 @@ substitutions:
   # AI classification mode for the streaming parser: off | mock | live.
   _AI_INLINE_MODE: mock
   # Hard cap on inline AI calls per job. Mock is free, but a low cap still aborts early.
-  _MAX_AI_CALLS_PER_JOB: 100
+  _MAX_AI_CALLS_PER_JOB: '100'
 
 steps:
   # Step 1: Load secrets into environment file
