@@ -583,7 +583,12 @@ export class LineClassifier implements IClassifier {
       }
     }
     const nonMetaFields = this.fieldSpec.filter((f) => f !== "meta");
-    const need = Math.max(2, Math.ceil(nonMetaFields.length / 2));
+    // When the source header has MORE columns than fieldSpec (extra columns go to meta),
+    // require only 1 match — the label-only check is already strict enough to avoid false positives.
+    // When fieldSpec is the same size as (or larger than) the source, keep the stricter majority rule.
+    const need = parts.length > nonMetaFields.length
+      ? Math.max(1, Math.ceil(nonMetaFields.length / 4))
+      : Math.max(2, Math.ceil(nonMetaFields.length / 2));
     if (matched < need) return null;
     this.headerParts = parts.map((p) => p.trim());
     return map;
@@ -651,27 +656,26 @@ export class LineClassifier implements IClassifier {
       const mappedIndices = new Set<number>(Object.values(this.headerMap));
       for (let i = 0; i < this.fieldSpec.length; i++) {
         const field = this.fieldSpec[i];
-        if (field === "meta") {
-          // Aggregate all unmapped source columns into a JSON object.
-          if (this.headerParts) {
-            const metaObj: Record<string, string> = {};
-            for (let j = 0; j < this.headerParts.length; j++) {
-              if (!mappedIndices.has(j)) {
-                const v = j < parts.length ? String(parts[j] ?? "").trim() : "";
-                if (v !== "") metaObj[this.headerParts[j]] = v;
-              }
-            }
-            row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
-          } else {
-            row["meta"] = null;
-          }
-          if (row["meta"] !== null) matched++;
-          continue;
-        }
+        if (field === "meta") continue; // handled unconditionally below
         const idx = this.headerMap[field];
         const value = idx !== undefined && idx < parts.length ? parts[idx] : "";
         row[field] = value === "" || value === undefined ? null : value;
         if (row[field] !== null) matched++;
+      }
+      // Always collect ALL unmapped source columns into meta when the header is known,
+      // regardless of whether "meta" is present in fieldSpec. This surfaces extra
+      // columns (birthday, snils, passport_numbers, etc.) without requiring the caller
+      // to enumerate every source column in field_spec.
+      if (this.headerParts) {
+        const metaObj: Record<string, string> = {};
+        for (let j = 0; j < this.headerParts.length; j++) {
+          if (!mappedIndices.has(j)) {
+            const v = j < parts.length ? String(parts[j] ?? "").trim() : "";
+            if (v !== "") metaObj[this.headerParts[j]] = v;
+          }
+        }
+        row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
+        if (row["meta"] !== null) matched++;
       }
       return matched > 0 ? row : null;
     }

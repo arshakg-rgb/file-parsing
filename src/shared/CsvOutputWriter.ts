@@ -89,7 +89,9 @@ export class CsvOutputWriter {
    * @param fieldSpec - The field spec
    */
   constructor(private readonly jobId: string, fieldSpec: string[]) {
-    this.columns = fieldSpec && fieldSpec.length > 0 ? fieldSpec : ["value"];
+    // fieldSpec columns first (deduplicated, "meta" removed if present), then "meta" always last.
+    const base = (fieldSpec && fieldSpec.length > 0 ? fieldSpec : ["value"]).filter((c) => c !== "meta");
+    this.columns = [...base, "meta"];
     this.tmpPath = path.join(os.tmpdir(), `${jobId}-output.csv`);
     this.logger = createLogger("csv-output");
     this.gcsUtils = FirestoreCacheUtils.getInstance();
