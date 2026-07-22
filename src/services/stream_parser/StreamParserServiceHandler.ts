@@ -400,6 +400,9 @@ export class StreamParserService {
       fieldSpec = msg.field_spec;
     }
 
+    const columnMap = (msg as unknown as Record<string, unknown>).column_map as ColumnMap | undefined;
+    let probeLooksTabular = false;
+
     const fileSize = msg.size || (await objectSize(bucket, key));
 
     // If no field_spec was supplied, try to infer it from a delimited header in the first line.
@@ -408,6 +411,9 @@ export class StreamParserService {
       try {
         const firstEnd = Math.min(settings.PROBE_WINDOW_MIN_BYTES - 1, fileSize - 1);
         const firstBuffer = await readRange(bucket, key, 0, firstEnd);
+        const hasQuote = firstBuffer.includes(0x22);
+        const hasDelimiter = [0x2c, 0x09, 0x3b, 0x7c].some((d) => firstBuffer.includes(d));
+        probeLooksTabular = hasQuote && hasDelimiter;
         const firstChunk = firstBuffer.toString("utf-8").replace(/\0/g, "");
         const firstLine = firstChunk.split(/\r?\n/).find((l) => l.trim()) || "";
         const inferred = StreamParserService.inferFieldSpecFromHeader(firstLine);
@@ -471,7 +477,6 @@ export class StreamParserService {
 
     const recordTemplates = templateRegistry.getAllRecordTemplates();
     const rubbishTemplates = templateRegistry.getAllRubbishTemplates();
-    const columnMap = (msg as unknown as Record<string, unknown>).column_map as ColumnMap | undefined;
     const classifier = new LineClassifier(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap);
     const outputManager = new OutputManager();
     const csvWriter = new CsvOutputWriter(jobId, fieldSpec);
@@ -562,7 +567,8 @@ export class StreamParserService {
     };
 
     try {
-      const quotedNewlineLimit = fieldSpec.length > 0 ? settings.CSV_MAX_QUOTED_NEWLINES : undefined;
+      const looksTabular = fieldSpec.length > 0 || (columnMap && Object.keys(columnMap).length > 0) || probeLooksTabular;
+      const quotedNewlineLimit = looksTabular ? settings.CSV_MAX_QUOTED_NEWLINES : undefined;
       for await (const [line, byteOffset, byteLength] of streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding, quotedNewlineLimit)) {
         lineNo += 1;
         this.stats.totalLinesProcessed++;
