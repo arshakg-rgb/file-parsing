@@ -194,11 +194,10 @@ export class StreamParserService {
     const first = lines[0];
     const second = lines[1];
 
-    const strict = (parts: string[]): boolean =>
-      !parts.some((p) => {
-        const v = p.trim();
-        return v === "" || v.includes("@") || v.replace(/\D/g, "").length >= 7 || !StreamParserService.HEADER_LABEL_RE.test(v);
-      });
+    const isLabelLike = (v: string): boolean =>
+      v !== "" && !v.includes("@") && v.replace(/\D/g, "").length < 7 && StreamParserService.HEADER_LABEL_RE.test(v);
+
+    const strict = (parts: string[]): boolean => parts.every((p) => isLabelLike(p.trim()));
 
     let best: string[] | null = null;
 
@@ -223,7 +222,11 @@ export class StreamParserService {
         const secondParts = parseCsvLine(second, delim, "\"");
         if (secondParts.length !== parts.length) continue;
       }
-      if (!best || parts.length > best.length) best = parts.map((_, i) => `col_${i}`);
+      const sanitized = parts.map((p, i) => {
+        const v = p.trim();
+        return isLabelLike(v) ? v : `col_${i}`;
+      });
+      if (!best || sanitized.length > best.length) best = sanitized;
     }
     return best;
   }
@@ -637,7 +640,7 @@ export class StreamParserService {
         // or "uncertain" (dead-letter for human review). The verdict is cached as a template so the
         // next matching line is handled locally with no further AI call. Bounded by a per-job
         // budget; when exhausted the file is flagged and remaining unknowns dead-lettered as before.
-        if (result.verdict === "uncertain" && aiEnabled) {
+        if (result.verdict === "uncertain" && aiEnabled && !circuitBreakerTripped) {
           if (aiCalls < aiBudget) {
             aiCalls++;
             this.stats.totalAiCalls++;
