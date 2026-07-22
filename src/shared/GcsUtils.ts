@@ -534,11 +534,10 @@ class GcsUtils extends ServiceManager {
           yield makeLine(pos + 1);
         } else {
           quotedNewlines++;
-          state.quotedNewlines = quotedNewlines;
-          const newlineLimit = maxQuotedNewlines ?? config.settings.MAX_QUOTED_NEWLINES;
-          if (quotedNewlines > newlineLimit || pos + 1 - lineStart >= config.settings.MAX_LINE_BYTES) {
+          state.quotedNewlines = quotedNewlines; // kept for observability only — no longer a trigger
+          if (pos + 1 - lineStart >= config.settings.MAX_LINE_BYTES) {
             state.inQuote = false;
-            this.logger.warn("quoted_newline_safety_forced_break", { newline_limit: newlineLimit, line_bytes: pos + 1 - lineStart });
+            this.logger.warn("quoted_field_safety_forced_break", { quoted_newlines: quotedNewlines, line_bytes: pos + 1 - lineStart });
             yield makeLine(pos + 1);
           }
         }
