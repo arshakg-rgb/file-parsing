@@ -229,7 +229,15 @@ export class StreamParserService {
   async initialize(): Promise<void> {
     await waitForDb();
     await templateRegistry.loadFromDatabase();
-    this.logger.info("stream_parser_initialized");
+    this.logger.info("stream_parser_initialized", {
+      ai_inline_mode: settings.AI_INLINE_MODE,
+      ai_max_calls_per_job: settings.MAX_AI_CALLS_PER_JOB,
+      ai_rate_limit_rpm: settings.AI_RATE_LIMIT_RPM,
+      vertex_model: settings.VERTEX_MODEL,
+      vertex_location: settings.VERTEX_LOCATION,
+      bedrock_model_id: settings.BEDROCK_MODEL_ID ? (settings.BEDROCK_MODEL_ID === "mock" ? "mock" : "set") : "unset",
+      mock_mode_forced_by: settings.AI_INLINE_MODE === "mock" ? "AI_INLINE_MODE" : (settings.BEDROCK_MODEL_ID === "mock" ? "BEDROCK_MODEL_ID" : "none"),
+    });
   }
   
   /**
