@@ -131,15 +131,15 @@ class JobServiceImpl extends ServiceManager implements JobService {
           } catch (exc) {
             const errorStr = String(exc);
             if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition"))) {
-              console.error("event_processing_error_ack", { error: errorStr, body: payload, action: "ack_to_prevent_retry" });
+              this.logger.error("event_processing_error_ack", { error: errorStr, body: payload, action: "ack_to_prevent_retry" });
               await deleteMessage(config.settings.JOB_EVENTS_QUEUE_URL, receiptHandle);
             } else {
-              console.error("event_processing_error", { error: errorStr, body: payload });
+              this.logger.error("event_processing_error", { error: errorStr, body: payload });
             }
           }
         }
       } catch (exc) {
-        console.error("event_consumer_loop_error", { error: String(exc) });
+        this.logger.error("event_consumer_loop_error", { error: String(exc) });
         await new Promise((r) => setTimeout(r, 5000));
       }
     }
@@ -150,12 +150,12 @@ class JobServiceImpl extends ServiceManager implements JobService {
    */
   public async initializeDatabase(): Promise<void> {
     try {
-      console.log("Running database migration...");
+      this.logger.info("db_migration_starting");
       await this.dbManager.initialize();
       await createTables();
-      console.log("Database migration completed successfully");
+      this.logger.info("db_migration_complete");
     } catch (err) {
-      console.error("Database migration failed:", err);
+      this.logger.error("db_migration_failed", { error: String(err) });
       throw err;
     }
   }

@@ -15,6 +15,9 @@ import { parseGcsUrl as parseS3Url, objectSize, readFull, readRange, putObject, 
 import { pool, createPendingArchiveEntry } from "@shared/DatabaseManager.js";
 import { fetchUrlStream } from "./ssrf_guard.js";
 import { sendRaw } from "@shared/QueueService.js";
+import { createLogger } from "@utils/logger/logger.js";
+
+const logger = createLogger("normalizer");
 
 /**
  * The gunzip
@@ -50,7 +53,7 @@ export async function fetchUrlToS3(jobId: string, url: string): Promise<[string,
     
     // Use streaming for large files to avoid OOM
     if (size > settings.SMALL_FILE_SINGLE_GET_THRESHOLD) {
-      console.log("gcs_streaming_copy", { jobId, size, threshold: settings.SMALL_FILE_SINGLE_GET_THRESHOLD });
+      logger.info("gcs_streaming_copy", { jobId, size, threshold: settings.SMALL_FILE_SINGLE_GET_THRESHOLD });
       await streamGcsToGcs(bucket, key, settings.DATA_BUCKET, s3Key);
     } else {
       // Small files: use readFull for efficiency
@@ -59,7 +62,7 @@ export async function fetchUrlToS3(jobId: string, url: string): Promise<[string,
     }
     
     const s3Url = `gs://${settings.DATA_BUCKET}/${s3Key}`;
-    console.log("gcs_copied_to_gcs", { jobId, s3Url, bytes: size });
+    logger.info("gcs_copied_to_gcs", { jobId, s3Url, bytes: size });
     return [s3Url, size];
   }
   
@@ -74,14 +77,14 @@ export async function fetchUrlToS3(jobId: string, url: string): Promise<[string,
   const body = Buffer.concat(chunks);
   await putObject(settings.DATA_BUCKET, s3Key, body);
   const s3Url = `gs://${settings.DATA_BUCKET}/${s3Key}`;
-  console.log("url_fetched_to_gcs", { jobId, s3Url, bytes: total });
+  logger.info("url_fetched_to_gcs", { jobId, s3Url, bytes: total });
   return [s3Url, total];
 }
 
 // Stream GCS object to another GCS location using GCS copy (server-side, no memory)
 async function streamGcsToGcs(srcBucket: string, srcKey: string, dstBucket: string, dstKey: string): Promise<void> {
   await copyObject(srcBucket, srcKey, dstBucket, dstKey);
-  console.log("gcs_copy_complete", { srcBucket, srcKey, dstBucket, dstKey });
+  logger.info("gcs_copy_complete", { srcBucket, srcKey, dstBucket, dstKey });
 }
 
 /**
@@ -155,7 +158,7 @@ export async function extractArchiveToS3(
   // CLI approach provides real OS-level backpressure and avoids library internal buffering
   if (archiveType === "rar") {
     const size = await objectSize(bucket, key);
-    console.log("rar_streaming_extract", { jobId, bucket, key, size });
+    logger.info("rar_streaming_extract", { jobId, bucket, key, size });
     
     // Enforce size limit to maintain constant memory principle per architecture
     // 4Gi memory + GCS FUSE overhead + CLI process overhead = ~2.5GB practical limit
@@ -167,20 +170,20 @@ export async function extractArchiveToS3(
     // Use GCS FUSE mount path instead of RAM-backed /tmp
     const mountPath = process.env.RAR_TEMP_MOUNT || "/mnt/scratch";
     const tmpPath = path.join(mountPath, `${randomUUID()}.rar`);
-    console.log("rar_download_starting", { jobId, tmpPath, mountPath });
+    logger.info("rar_download_starting", { jobId, tmpPath, mountPath });
     const fileStream = gcsClient().bucket(bucket).file(key).createReadStream();
     const writeStream = createWriteStream(tmpPath);
     
     fileStream.on("error", (err) => {
-      console.error("rar_download_stream_error", { jobId, error: err.message });
+      logger.error("rar_download_stream_error", { jobId, error: err.message });
     });
     
     writeStream.on("error", (err) => {
-      console.error("rar_download_write_error", { jobId, error: err.message });
+      logger.error("rar_download_write_error", { jobId, error: err.message });
     });
     
     await pipeline(fileStream, writeStream);
-    console.log("rar_download_complete", { jobId, tmpPath, size });
+    logger.info("rar_download_complete", { jobId, tmpPath, size });
     
     // Use CLI-based extraction for memory efficiency
     const { spawn } = await import("child_process");
@@ -197,7 +200,7 @@ export async function extractArchiveToS3(
         listArgs.push("-p" + password);
       }
       
-      console.log("rar_list_starting", { jobId, args: listArgs });
+      logger.info("rar_list_starting", { jobId, args: listArgs });
       const listProcess = spawn("unrar", listArgs);
       let listOutput = "";
       let listError = "";
@@ -208,12 +211,12 @@ export async function extractArchiveToS3(
       
       listProcess.stderr.on("data", (data) => {
         listError += data.toString();
-        console.error("rar_list_stderr", { jobId, data: data.toString() });
+        logger.error("rar_list_stderr", { jobId, data: data.toString() });
       });
       
       await new Promise<void>((resolve, reject) => {
         listProcess.on("close", (code) => {
-          console.log("rar_list_complete", { jobId, code, outputLength: listOutput.length, errorLength: listError.length });
+          logger.info("rar_list_complete", { jobId, code, outputLength: listOutput.length, errorLength: listError.length });
           if (code === 0) {
             resolve();
           } else {
@@ -221,7 +224,7 @@ export async function extractArchiveToS3(
           }
         });
         listProcess.on("error", (err) => {
-          console.error("rar_list_spawn_error", { jobId, error: err.message });
+          logger.error("rar_list_spawn_error", { jobId, error: err.message });
           reject(err);
         });
       });
@@ -263,12 +266,12 @@ export async function extractArchiveToS3(
       
       const files = parseUnrarListing(listOutput);
       
-      console.log("rar_list_parsed", { jobId, fileCount: files.length, files: files.map(f => ({ name: f.name, size: f.size })) });
+      logger.info("rar_list_parsed", { jobId, fileCount: files.length, files: files.map(f => ({ name: f.name, size: f.size })) });
       
       // Sanity check: distinguish empty archive from parser failure
       if (files.length === 0) {
         if (!/no files to extract|0 files? found/i.test(listOutput) && listOutput.trim().length > 200) {
-          console.error("rar_parse_suspicious_empty", { jobId, outputLength: listOutput.length, sampleOutput: listOutput.substring(0, 500) });
+          logger.error("rar_parse_suspicious_empty", { jobId, outputLength: listOutput.length, sampleOutput: listOutput.substring(0, 500) });
           throw new Error(`RAR listing parse produced 0 files but unrar output was non-trivial (${listOutput.length} chars) — parser likely broken, not an empty archive`);
         }
       }
@@ -278,7 +281,7 @@ export async function extractArchiveToS3(
         // Route large files to async extraction BEFORE the hard-cap check
         // This allows files > 2GB to be processed asynchronously instead of being skipped
         if (file.size > settings.LARGE_FILE_THRESHOLD_BYTES) {
-          console.log("rar_route_to_async", { jobId, name: file.name, size: file.size, threshold: settings.LARGE_FILE_THRESHOLD_BYTES });
+          logger.info("rar_route_to_async", { jobId, name: file.name, size: file.size, threshold: settings.LARGE_FILE_THRESHOLD_BYTES });
           
           try {
             // Insert pending entry synchronously BEFORE sendRaw to provide idempotency
@@ -298,10 +301,10 @@ export async function extractArchiveToS3(
                 nesting_depth: _depth,
               });
             } else {
-              console.log("rar_pending_entry_exists", { jobId, name: file.name });
+              logger.info("rar_pending_entry_exists", { jobId, name: file.name });
             }
           } catch (exc) {
-            console.error("rar_route_to_async_failed", { jobId, name: file.name, error: exc instanceof Error ? exc.message : String(exc) });
+            logger.error("rar_route_to_async_failed", { jobId, name: file.name, error: exc instanceof Error ? exc.message : String(exc) });
             // Continue processing remaining files instead of aborting the entire batch
           }
           
@@ -312,16 +315,16 @@ export async function extractArchiveToS3(
         
         // Hard cap now only applies to files staying on the inline/synchronous path
         if (file.size > MAX_FILE_SIZE) {
-          console.log("rar_skip_large_file", { jobId, name: file.name, size: file.size });
+          logger.info("rar_skip_large_file", { jobId, name: file.name, size: file.size });
           continue;
         }
         
         if (totalUncompressed + file.size > MAX_TOTAL_UNCOMPRESSED) {
-          console.log("rar_skip_total_limit", { jobId, name: file.name });
+          logger.info("rar_skip_total_limit", { jobId, name: file.name });
           continue;
         }
         
-        console.log("rar_extracting_file", { jobId, name: file.name, size: file.size });
+        logger.info("rar_extracting_file", { jobId, name: file.name, size: file.size });
         
         try {
           const entryKey = `archive/${jobId}/${file.name}`;
@@ -360,11 +363,11 @@ export async function extractArchiveToS3(
             const header = await readRange(bucket, entryKey, 0, 511);
             detectedArchiveType = detectArchiveType(header);
           } catch (err) {
-            console.error("nested_detection_failed", { jobId, name: file.name, error: err instanceof Error ? err.message : String(err) });
+            logger.error("nested_detection_failed", { jobId, name: file.name, error: err instanceof Error ? err.message : String(err) });
           }
           
           if (detectedArchiveType && _depth < settings.ARCHIVE_MAX_NESTING_DEPTH) {
-            console.log("rar_nested_archive_detected_sync", { jobId, name: file.name, detected_type: detectedArchiveType, depth: _depth });
+            logger.info("rar_nested_archive_detected_sync", { jobId, name: file.name, detected_type: detectedArchiveType, depth: _depth });
             try {
               // Extract nested archive recursively
               const nestedEntries = await extractArchiveToS3(
@@ -381,7 +384,7 @@ export async function extractArchiveToS3(
               // Add nested entries to output
               out.push(...nestedEntries);
             } catch (err) {
-              console.error("nested_extraction_failed", { jobId, name: file.name, error: err instanceof Error ? err.message : String(err) });
+              logger.error("nested_extraction_failed", { jobId, name: file.name, error: err instanceof Error ? err.message : String(err) });
               // Fall back to treating the file as a normal non-nested entry
               out.push(makeEntryEvent(jobId, batchId, entryUrl, file.name, file.size, fieldSpec));
             }
@@ -389,14 +392,14 @@ export async function extractArchiveToS3(
             out.push(makeEntryEvent(jobId, batchId, entryUrl, file.name, file.size, fieldSpec));
           }
           
-          console.log("rar_extracted_file", { jobId, name: file.name, size: file.size });
+          logger.info("rar_extracted_file", { jobId, name: file.name, size: file.size });
         } catch (exc) {
-          console.error("rar_extract_file_failed", { jobId, name: file.name, error: exc instanceof Error ? exc.message : String(exc) });
+          logger.error("rar_extract_file_failed", { jobId, name: file.name, error: exc instanceof Error ? exc.message : String(exc) });
           // Continue processing remaining files instead of aborting the entire batch
         }
       }
       
-      console.log("rar_extraction_complete", { jobId, totalFiles: files.length, totalUncompressed });
+      logger.info("rar_extraction_complete", { jobId, totalFiles: files.length, totalUncompressed });
       
     } finally {
       // Cleanup temp file
@@ -667,12 +670,12 @@ if (false) async function extractRar(
     // Extract each file using CLI
     for (const file of files) {
       if (file.size > MAX_FILE_SIZE) {
-        console.log("rar_skip_large_file", { jobId, name: file.name, size: file.size, maxSize: MAX_FILE_SIZE });
+        logger.info("rar_skip_large_file", { jobId, name: file.name, size: file.size, maxSize: MAX_FILE_SIZE });
         continue;
       }
       
       if (totalUncompressed + file.size > MAX_TOTAL_UNCOMPRESSED) {
-        console.log("rar_skip_total_limit", { jobId, name: file.name, size: file.size, currentTotal: totalUncompressed, maxTotal: MAX_TOTAL_UNCOMPRESSED });
+        logger.info("rar_skip_total_limit", { jobId, name: file.name, size: file.size, currentTotal: totalUncompressed, maxTotal: MAX_TOTAL_UNCOMPRESSED });
         continue;
       }
       

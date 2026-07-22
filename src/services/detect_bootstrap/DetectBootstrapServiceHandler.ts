@@ -12,6 +12,8 @@ import { metrics } from "@utils/response/metrics.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import { waitForDb } from "@shared/DatabaseManager.js";
 
+const _moduleLogger = createLogger("detect-bootstrap");
+
 /**
  * Classification request interface
  */
@@ -330,7 +332,7 @@ export class DetectBootstrapService {
 
     const jobId = msg.job_id;
     this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.DETECTING });
-    console.log("detect_start", { jobId, s3_url: msg.s3_url, size: msg.size });
+    this.logger.info("detect_start", { jobId, s3_url: msg.s3_url, size: msg.size });
 
     const [bucket, key] = parseGcsUrl(msg.s3_url);
     const fileSize = msg.size || (await objectSize(bucket, key));
@@ -376,12 +378,12 @@ export class DetectBootstrapService {
                        /^[a-zA-Z_][a-zA-Z0-9_]*(;[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine) ||
                        /^[a-zA-Z_][a-zA-Z_0-9_]*(\t[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine);
       
-      console.log("detect_header_check", { job_id: jobId, firstLine, hasHeader, sampleLinesCount: sampleLines.length });
+      this.logger.info("detect_header_check", { job_id: jobId, firstLine, hasHeader, sampleLinesCount: sampleLines.length });
       
       if (hasHeader && sampleLines.length > 1) {
         this.stats.headerSkips++;
         dataLines = sampleLines.slice(1);
-        console.log("detect_header_skipped", { job_id: jobId, dataLinesCount: dataLines.length });
+        this.logger.info("detect_header_skipped", { job_id: jobId, dataLinesCount: dataLines.length });
       }
 
       if (!dataLines.length) continue;
@@ -447,10 +449,10 @@ export class DetectBootstrapService {
       column_map: msg.column_map,
       seed_template_ids: seedTemplateIds,
     };
-    console.log("detect_sending_to_parse", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL });
+    this.logger.info("detect_sending_to_parse", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL });
     try {
       await sendRaw(settings.PARSE_QUEUE_URL, parseMsg as unknown as Record<string, unknown>);
-      console.log("detect_parse_message_sent", { job_id: jobId });
+      this.logger.info("detect_parse_message_sent", { job_id: jobId });
     } catch (sendErr) {
       this.logger.error("detect_send_to_parse_failed", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL }, sendErr instanceof Error ? sendErr : new Error(String(sendErr)));
       throw sendErr;
@@ -505,6 +507,6 @@ export async function bootstrapJob(msg: ClassifyMessage): Promise<void> {
 
 // Auto-start the service when module is loaded
 detectBootstrapService.start().catch(err => {
-  console.error("detect_bootstrap_start_failed", { error: String(err) });
+  _moduleLogger.error("detect_bootstrap_start_failed", { error: String(err) });
   process.exit(1);
 });

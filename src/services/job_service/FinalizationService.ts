@@ -7,6 +7,7 @@ import { LineNumberMapper } from "@service/job_service/finalize/LineNumberMapper
 import { ParquetEngine, type ParquetRow } from "@service/job_service/finalize/ParquetEngine.js";
 import { StoragePath, type GcsProtocol } from "@service/job_service/finalize/StoragePath.js";
 import type { FinalizeResult } from "@service/job_service/io/IFinalizationService.js";
+import { createLogger } from "@utils/logger/logger.js";
 
 export type { FinalizeResult } from "@service/job_service/io/IFinalizationService.js";
 
@@ -20,6 +21,7 @@ class FinalizationService {
    * @private
    */
   private readonly repository: FinalizeRepository;
+  private readonly logger = createLogger("finalization");
     /**
    * Storage
    * @private
@@ -75,7 +77,7 @@ class FinalizationService {
         const groupPaths = await this.mergeGroup(jobId, group, bucket);
         if (groupPaths?.length) mergedPaths.push(...groupPaths);
       } catch (err) {
-        console.error("finalize_merge_failed", { jobId, templateId: group.templateId, error: String(err) });
+        this.logger.error("finalize_merge_failed", { jobId, templateId: group.templateId, error: String(err) });
         return { failed: true, paths: partPaths, error: String(err) };
       }
     }
@@ -99,7 +101,7 @@ class FinalizationService {
         }
       }
     } catch (err) {
-      console.error("finalize_cross_merge_failed", { jobId, error: String(err) });
+      this.logger.error("finalize_cross_merge_failed", { jobId, error: String(err) });
       // Continue with the per-template merged paths rather than failing the whole job.
     }
 
@@ -227,7 +229,7 @@ class FinalizationService {
   private async backfillLineNumbers(jobId: string, mergedPaths: StoragePath[]): Promise<void> {
     const job = await this.repository.getJob(jobId);
     if (!job?.s3_url) {
-      console.log("backfill_skip_no_source", { jobId });
+      this.logger.info("backfill_skip_no_source", { jobId });
       return;
     }
 
@@ -238,7 +240,7 @@ class FinalizationService {
     try {
       source = await this.storage.read(StoragePath.parse(job.s3_url));
     } catch (e) {
-      console.warn("backfill_source_read_failed", { jobId, error: String(e) });
+      this.logger.warn("backfill_source_read_failed", { jobId, error: String(e) });
       return;
     }
 
@@ -252,7 +254,7 @@ class FinalizationService {
           }
         }
       } catch (e) {
-        console.warn("backfill_parsed_read_failed", { jobId, path: p.toString(), error: String(e) });
+        this.logger.warn("backfill_parsed_read_failed", { jobId, path: p.toString(), error: String(e) });
       }
     }
 
@@ -276,7 +278,7 @@ class FinalizationService {
           }
         }
       } catch (e) {
-        console.warn("backfill_rubbish_read_failed", { jobId, error: String(e) });
+        this.logger.warn("backfill_rubbish_read_failed", { jobId, error: String(e) });
       }
     }
 
@@ -330,9 +332,9 @@ class FinalizationService {
     const body = Buffer.from(updated.map((e) => JSON.stringify(e)).join("\n"));
     try {
       await this.storage.write(logPath, body, "application/x-ndjson");
-      console.log("rubbish_log_backfilled", { jobId, entries: updated.length });
+      this.logger.info("rubbish_log_backfilled", { jobId, entries: updated.length });
     } catch (e) {
-      console.warn("backfill_rubbish_write_failed", { jobId, error: String(e) });
+      this.logger.warn("backfill_rubbish_write_failed", { jobId, error: String(e) });
     }
   }
 
@@ -357,7 +359,7 @@ class FinalizationService {
         await this.engine.writeRows(this.storage, storagePath, rows);
       }
     } catch (e) {
-      console.warn("backfill_output_failed", { path: storagePath.toString(), error: String(e) });
+      this.logger.warn("backfill_output_failed", { path: storagePath.toString(), error: String(e) });
     }
   }
 }

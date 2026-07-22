@@ -24,6 +24,8 @@
     "test:integration": "tsx src/scripts/integration_test.ts",
     "test:perf": "tsx src/scripts/perf_test_backfill.ts",
     "lint": "eslint 'src/**/*.ts'",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint:fix": "eslint 'src/**/*.ts' --fix"
   },
   "keywords": [],
@@ -72,6 +74,7 @@
     "eslint": "^10.7.0",
     "tsc-alias": "^1.9.1",
     "tsx": "^4.15.0",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^4.1.10"
   }
 }

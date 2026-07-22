@@ -1,6 +1,9 @@
 import { ILoad, LoadRequest, LoadResponse } from "@service/load/io/ILoad.js";
 import LoadServiceImpl from "@service/load/impl/LoadServiceImpl.js";
 import { LoadMessage } from "@shared/models/job.js";
+import { createLogger } from "@utils/logger/logger.js";
+
+const _moduleLogger = createLogger("load");
 
 /**
  * Legacy LoadService class - now a thin wrapper around LoadServiceImpl
@@ -69,7 +72,7 @@ export async function consumerLoop(): Promise<void> {
 
 // Auto-start the service when module is loaded
 loadService.consumerLoop().catch(err => {
-  console.error("load_consumer_failed", { error: String(err) });
+  _moduleLogger.error("load_consumer_failed", { error: String(err) });
   process.exit(1);
 });
 

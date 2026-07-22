@@ -21,6 +21,8 @@ import jschardet from "jschardet";
 import crypto from "crypto";
 import { normalizeEncoding, isLikelyUtf8 } from "@utils/normalizers/encoding.js";
 
+const _moduleLogger = createLogger("stream-parser");
+
 /**
  * AI Rate Limiter - Token bucket implementation
  * Enforces both RPM (requests per minute) and burst limits
@@ -517,7 +519,7 @@ export class StreamParserService {
         this.stats.totalLinesProcessed++;
         
         if (lineNo % 10000 === 0) {
-          console.log("parse_progress", { jobId, lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
+          this.logger.info("parse_progress", { jobId, lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
         }
         await drainIfReady();
 
@@ -528,7 +530,7 @@ export class StreamParserService {
         try {
           result = classifier.classify(line, byteOffset, byteLength);
         } catch (lineError) {
-          console.error("line_classification_failed", { jobId, lineNo, error: lineError instanceof Error ? lineError.message : String(lineError) });
+          this.logger.error("line_classification_failed", { jobId, lineNo, error: lineError instanceof Error ? lineError.message : String(lineError) });
           counts.dropped_rubbish++;
           continue; // Skip this line and continue with next
         }
@@ -568,7 +570,7 @@ export class StreamParserService {
         if (recentLines.length > 5) recentLines.shift();
 
         if (lineNo <= 5) {
-          console.log("classification_debug", { jobId, lineNo, verdict: result.verdict, template_id: result.template_id, line_length: line.length });
+          this.logger.debug("classification_debug", { jobId, lineNo, verdict: result.verdict, template_id: result.template_id, line_length: line.length });
         }
 
         switch (result.verdict) {
@@ -664,7 +666,7 @@ export class StreamParserService {
       // Write the human-readable per-job CSV mirror (best-effort; Parquet stays authoritative)
       const csvOutputPath = await csvWriter.flush();
       if (csvOutputPath) {
-        console.log("csv_output_ready", { jobId, path: csvOutputPath, rows: counts.parsed });
+        this.logger.info("csv_output_ready", { jobId, path: csvOutputPath, rows: counts.parsed });
       } else {
         this.logger.warn("csv_output_path_missing", { job_id: jobId, parsed: counts.parsed });
       }
@@ -788,6 +790,6 @@ export async function parseJob(msg: ParseMessage): Promise<void> {
 
 // Auto-start the service when module is loaded
 streamParserService.start().catch(err => {
-  console.error("stream_parser_start_failed", { error: String(err) });
+  _moduleLogger.error("stream_parser_start_failed", { error: String(err) });
   process.exit(1);
 });

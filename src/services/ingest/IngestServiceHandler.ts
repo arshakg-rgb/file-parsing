@@ -10,6 +10,8 @@ import { createLogger } from "@utils/logger/logger.js";
 import { metrics } from "@utils/response/metrics.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 
+const _moduleLogger = createLogger("ingest");
+
 /**
  * Custom error for password-related failures
  */
@@ -107,7 +109,7 @@ export class IngestService {
       try {
         startHealthCheckServer(port);
       } catch (err) {
-        console.error("health_server_start_failed", { port, error: err instanceof Error ? err.message : String(err) });
+        this.logger.error("health_server_start_failed", { port, error: err instanceof Error ? err.message : String(err) });
       }
     }
   }
@@ -579,6 +581,6 @@ export async function handlePassword(jobId: string, password: string): Promise<v
 
 // Auto-start the service when module is loaded
 ingestService.start().catch(err => {
-  console.error("ingest_start_failed", { error: String(err) });
+  _moduleLogger.error("ingest_start_failed", { error: String(err) });
   process.exit(1);
 });

@@ -10,6 +10,7 @@ import { settings } from "@shared/Settings.js";
 import { OutputPart } from "@shared/models/job.js";
 import { repositories } from "@shared/DatabaseManager.js";
 import { gcsClient, putObject } from "@shared/GcsUtils.js";
+import { createLogger, Logger } from "@utils/logger/logger.js";
 
 /**
  * Estimates row bytes
@@ -76,6 +77,7 @@ export class ParquetWriterPool {
    */
   private flushPromise: Promise<OutputPart[]> | null;
   private rowByteCache: WeakMap<Record<string, unknown>, number>;
+  private readonly logger = createLogger("parquet-writer-pool");
 
     /**
    * Constructs a new ParquetWriterPool instance.
@@ -117,7 +119,7 @@ export class ParquetWriterPool {
     rawLine: string
   ): void {
     if (typeof rawLine !== "string") {
-      console.error("parquet_write_invalid_rawline", { jobId: this.jobId, rawLineType: typeof rawLine, byteOffset, lineNo });
+      this.logger.error("parquet_write_invalid_rawline", { jobId: this.jobId, rawLineType: typeof rawLine, byteOffset, lineNo });
       return;
     }
     const checksum = createHash("sha256").update(rawLine).digest("hex");
@@ -177,7 +179,7 @@ export class ParquetWriterPool {
         this.parts.push(part);
         flushed.push(part);
       } catch (err) {
-        console.error("parquet_writePart_failed", { jobId: this.jobId, templateId, error: String(err) });
+        this.logger.error("parquet_writePart_failed", { jobId: this.jobId, templateId, error: String(err) });
         failed[templateId] = rows;
       }
     }
@@ -248,7 +250,7 @@ export class ParquetWriterPool {
     try {
       await repositories.outputParts.create(part as OutputPartCreationAttributes);
     } catch (e) {
-      console.error("output_parts_insert_failed", { jobId: this.jobId, partId, error: String(e) });
+      this.logger.error("output_parts_insert_failed", { jobId: this.jobId, partId, error: String(e) });
     }
 
     return part;

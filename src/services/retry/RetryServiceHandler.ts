@@ -1,6 +1,9 @@
 import { IRetry, RetryRequest, RetryResponse } from "@service/retry/io/IRetry.js";
 import RetryServiceImpl from "@service/retry/impl/RetryServiceImpl.js";
 import { DLQMessage } from "@shared/models/job.js";
+import { createLogger } from "@utils/logger/logger.js";
+
+const _moduleLogger = createLogger("retry");
 
 /**
  * Legacy RetryService class - now a thin wrapper around RetryServiceImpl
@@ -69,7 +72,7 @@ export async function consumerLoop(): Promise<void> {
 
 // Auto-start the service when module is loaded
 retryService.consumerLoop().catch(err => {
-  console.error("retry_consumer_failed", { error: String(err) });
+  _moduleLogger.error("retry_consumer_failed", { error: String(err) });
   process.exit(1);
 });
 

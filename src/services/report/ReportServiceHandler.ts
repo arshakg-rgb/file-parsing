@@ -1,6 +1,9 @@
 import { IReport, ReportRequest, ReportResponse } from "@service/report/io/IReport.js";
 import ReportServiceImpl from "@service/report/impl/ReportServiceImpl.js";
 import { ReportMessage } from "@shared/models/job.js";
+import { createLogger } from "@utils/logger/logger.js";
+
+const _moduleLogger = createLogger("report");
 
 /**
  * Legacy ReportService class - now a thin wrapper around ReportServiceImpl
@@ -69,7 +72,7 @@ export async function consumerLoop(): Promise<void> {
 
 // Auto-start the service when module is loaded
 reportService.consumerLoop().catch(err => {
-  console.error("report_consumer_failed", { error: String(err) });
+  _moduleLogger.error("report_consumer_failed", { error: String(err) });
   process.exit(1);
 });
 
