@@ -759,7 +759,7 @@ export class LineClassifier implements IClassifier {
  * @param quoteChar - The quote char
  * @returns The list of results
  */
-function parseCsvLine(line: string, delim: string, quoteChar: string = "\""): string[] {
+export function parseCsvLine(line: string, delim: string, quoteChar: string = "\""): string[] {
   const quote = quoteChar || null;
   const parts: string[] = [];
   let current = "";

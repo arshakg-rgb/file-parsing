@@ -4,7 +4,7 @@ import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ParseMessage, FailureClass, JobCounts, totalFailed, ColumnMap } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, publishEvent } from "@shared/QueueService.js";
 import { parseGcsUrl, streamLines, objectSize, readRange } from "@shared/GcsUtils.js";
-import { LineClassifier } from "./LineClassifier.js";
+import { LineClassifier, parseCsvLine } from "./LineClassifier.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { OutputManager } from "@shared/OutputManager.js";
 import { CsvOutputWriter } from "@shared/CsvOutputWriter.js";
@@ -179,6 +179,25 @@ export class StreamParserService {
   // Dependencies (injected)
   private logger = createLogger("stream_parser");
   
+  private static readonly HEADER_LABEL_RE = /^[A-Za-z][A-Za-z0-9 _.\-]*$/;
+
+  /**
+   * Infer field_spec from a delimited header row when no field_spec was supplied.
+   */
+  private static inferFieldSpecFromHeader(line: string): string[] | null {
+    let best: string[] | null = null;
+    for (const delim of [",", ";", "\t", "|"]) {
+      const parts = parseCsvLine(line, delim, "\"");
+      if (parts.length < 2) continue;
+      if (parts.some((p) => {
+        const v = p.trim();
+        return v === "" || v.includes("@") || v.replace(/\D/g, "").length >= 7 || !StreamParserService.HEADER_LABEL_RE.test(v);
+      })) continue;
+      if (!best || parts.length > best.length) best = parts;
+    }
+    return best;
+  }
+
   /**
    * Private constructor for singleton pattern
    */
@@ -381,8 +400,27 @@ export class StreamParserService {
       fieldSpec = msg.field_spec;
     }
 
-    // Adaptive probing to detect file structure
     const fileSize = msg.size || (await objectSize(bucket, key));
+
+    // If no field_spec was supplied, try to infer it from a delimited header in the first line.
+    // This lets headered CSV/TSV files parse even when the detect/AI step is unavailable.
+    if (!fieldSpec || fieldSpec.length === 0) {
+      try {
+        const firstEnd = Math.min(settings.PROBE_WINDOW_MIN_BYTES - 1, fileSize - 1);
+        const firstBuffer = await readRange(bucket, key, 0, firstEnd);
+        const firstChunk = firstBuffer.toString("utf-8").replace(/\0/g, "");
+        const firstLine = firstChunk.split(/\r?\n/).find((l) => l.trim()) || "";
+        const inferred = StreamParserService.inferFieldSpecFromHeader(firstLine);
+        if (inferred && inferred.length > 0) {
+          fieldSpec = inferred;
+          this.logger.info("field_spec_inferred_from_header", { job_id: jobId, field_spec: fieldSpec });
+        }
+      } catch (err) {
+        this.logger.warn("field_spec_inference_failed", { job_id: jobId, error: String(err) });
+      }
+    }
+
+    // Adaptive probing to detect file structure
     const probing = AdaptiveProbing.getInstance();
     const probeCount = probing.calculateProbeCount(fileSize);
     const probeOffsets = probing.generateProbeOffsets(fileSize, probeCount);
