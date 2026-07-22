@@ -411,7 +411,7 @@ class GcsUtils extends ServiceManager {
     const total = await this.objectSize(bucket, key);
     this.logger.debug("streamLines_start", { bucket, key, total, threshold: config.settings.SMALL_FILE_SINGLE_GET_THRESHOLD });
 
-    const state: { inQuote: boolean } = { inQuote: false };
+    const state: { inQuote: boolean; quotedNewlines: number } = { inQuote: false, quotedNewlines: 0 };
 
     if (total <= config.settings.SMALL_FILE_SINGLE_GET_THRESHOLD) {
       this.logger.debug("streamLines_using_single_get", { total });
@@ -451,7 +451,7 @@ class GcsUtils extends ServiceManager {
    * @returns The list of results
    */
   public splitAllLines(data: Buffer, encoding = "utf-8", maxQuotedNewlines?: number): [string, number, number][] {
-    return [...this.splitBytesToLines(data, 0, encoding, { inQuote: false }, maxQuotedNewlines)];
+    return [...this.splitBytesToLines(data, 0, encoding, { inQuote: false, quotedNewlines: 0 }, maxQuotedNewlines)];
   }
 
     /**
@@ -466,7 +466,7 @@ class GcsUtils extends ServiceManager {
     data: Buffer,
     baseOffset: number,
     encoding: string,
-    state: { inQuote: boolean },
+    state: { inQuote: boolean; quotedNewlines?: number },
     maxQuotedNewlines?: number
   ): Generator<[string, number, number]> {
     const result = yield* this.scanLines(data, baseOffset, encoding, state, maxQuotedNewlines);
@@ -490,7 +490,7 @@ class GcsUtils extends ServiceManager {
     data: Buffer,
     dataBase: number,
     encoding: string,
-    state: { inQuote: boolean },
+    state: { inQuote: boolean; quotedNewlines?: number },
     maxQuotedNewlines?: number
   ): Generator<[string, number, number], { lineStart: number; endedAtBoundary: boolean }, void> {
     const config = this.getConfig();
@@ -500,13 +500,14 @@ class GcsUtils extends ServiceManager {
     let pos = 0;
     let lineStart = 0;
     let endedAtBoundary = false;
-    let quotedNewlines = 0;
+    let quotedNewlines = state.quotedNewlines || 0;
 
     const makeLine = (endExclusive: number): [string, number, number] => {
       const raw = data.slice(lineStart, endExclusive);
       const tuple: [string, number, number] = [decode(raw, encoding).replace(/\r\n$|\n$/, ""), dataBase + lineStart, raw.length];
       lineStart = endExclusive;
       quotedNewlines = 0;
+      state.quotedNewlines = 0;
       return tuple;
     };
 
@@ -533,9 +534,11 @@ class GcsUtils extends ServiceManager {
           yield makeLine(pos + 1);
         } else {
           quotedNewlines++;
+          state.quotedNewlines = quotedNewlines;
           const newlineLimit = maxQuotedNewlines ?? config.settings.MAX_QUOTED_NEWLINES;
           if (quotedNewlines > newlineLimit || pos + 1 - lineStart >= config.settings.MAX_LINE_BYTES) {
             state.inQuote = false;
+            this.logger.warn("quoted_newline_safety_forced_break", { newline_limit: newlineLimit, line_bytes: pos + 1 - lineStart });
             yield makeLine(pos + 1);
           }
         }

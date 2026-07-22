@@ -118,6 +118,10 @@ export const settings = {
   RUBBISH_CONFIDENCE_MIN: getNumber("RUBBISH_CONFIDENCE_MIN", 0.9),
   MATCH_RATE_FLOOR: getNumber("MATCH_RATE_FLOOR", 0.1),
   MATCH_RATE_WINDOW: getNumber("MATCH_RATE_WINDOW", 1000),
+  // Circuit breaker: after this many lines, if the uncertain rate exceeds the threshold,
+  // stop calling AI and dead-letter the rest of the file to cap cost/latency.
+  UNCERTAIN_CIRCUIT_BREAKER_WINDOW: getNumber("UNCERTAIN_CIRCUIT_BREAKER_WINDOW", 200),
+  UNCERTAIN_CIRCUIT_BREAKER_THRESHOLD: getNumber("UNCERTAIN_CIRCUIT_BREAKER_THRESHOLD", 0.8),
 
   // ---- Detect / Bootstrap ----
   PROBE_WINDOW_MIN_BYTES: getNumber("PROBE_WINDOW_MIN_BYTES", 64 * 1024),

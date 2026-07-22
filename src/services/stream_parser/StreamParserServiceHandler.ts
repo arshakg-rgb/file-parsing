@@ -492,6 +492,8 @@ export class StreamParserService {
     let aiCalls = 0;
     let aiLocalRecoveries = 0; // unknowns the AI resolved (record or rubbish)
     let aiBudgetFlagged = false;
+    let uncertainCount = 0; // cumulative uncertain lines before the circuit breaker trips
+    let circuitBreakerTripped = false;
     const recentLines: string[] = []; // small context window for the model
 
     // Batched DB writes: fire-and-forget so the parse loop never waits for DB.
@@ -560,7 +562,7 @@ export class StreamParserService {
     };
 
     try {
-      const quotedNewlineLimit = fieldSpec.length > 0 ? settings.CSV_MAX_QUOTED_NEWLINES : undefined;
+      const quotedNewlineLimit = settings.CSV_MAX_QUOTED_NEWLINES;
       for await (const [line, byteOffset, byteLength] of streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding, quotedNewlineLimit)) {
         lineNo += 1;
         this.stats.totalLinesProcessed++;
@@ -574,12 +576,24 @@ export class StreamParserService {
         // templates -> structural recognizers (JSON / key-value, field_spec-only) -> rubbish
         // templates -> validated CSV. Junk is declined, not force-parsed.
         let result;
-        try {
-          result = classifier.classify(line, byteOffset, byteLength);
-        } catch (lineError) {
-          this.logger.error("line_classification_failed", { jobId, lineNo, error: lineError instanceof Error ? lineError.message : String(lineError) });
-          counts.dropped_rubbish++;
-          continue; // Skip this line and continue with next
+        if (circuitBreakerTripped) {
+          result = { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
+        } else {
+          try {
+            result = classifier.classify(line, byteOffset, byteLength);
+          } catch (lineError) {
+            this.logger.error("line_classification_failed", { jobId, lineNo, error: lineError instanceof Error ? lineError.message : String(lineError) });
+            counts.dropped_rubbish++;
+            continue; // Skip this line and continue with next
+          }
+        }
+
+        if (!circuitBreakerTripped && result.verdict === "uncertain") {
+          uncertainCount++;
+        }
+        if (!circuitBreakerTripped && lineNo >= settings.UNCERTAIN_CIRCUIT_BREAKER_WINDOW && (uncertainCount / lineNo) > settings.UNCERTAIN_CIRCUIT_BREAKER_THRESHOLD) {
+          circuitBreakerTripped = true;
+          this.logger.warn("uncertain_rate_circuit_breaker_tripped", { job_id: jobId, line_no: lineNo, uncertain: uncertainCount, rate: uncertainCount / lineNo });
         }
 
         // Design step 4: a line the local classifier can't place (verdict "uncertain") is sent
