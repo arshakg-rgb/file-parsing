@@ -75,8 +75,21 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.dbManager = MySqlManager.getInstance();
     
+    // Cloud Run injects PORT; always listen on it (or 8080) so startup succeeds.
+    // Also honor HEALTH_CHECK_PORT if set and different.
+    const ports = new Set<number>();
+    const cloudRunPort = process.env.PORT ? parseInt(process.env.PORT, 10) : 8080;
+    ports.add(cloudRunPort);
     if (process.env.HEALTH_CHECK_PORT) {
-      startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
+      const p = parseInt(process.env.HEALTH_CHECK_PORT, 10);
+      if (!isNaN(p) && p !== cloudRunPort) ports.add(p);
+    }
+    for (const port of ports) {
+      try {
+        startHealthCheckServer(port);
+      } catch (err) {
+        this.logger.error("health_server_start_failed", { port, error: err instanceof Error ? err.message : String(err) });
+      }
     }
   }
 
