@@ -427,7 +427,6 @@ export class StreamParserService {
 
     const jobId = msg.job_id;
     this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.PARSING });
-    this.logger.info("parse_start", { job_id: jobId, s3_url: msg.s3_url, size: msg.size, field_spec: fieldSpec });
     metrics.increment("parse.start", 1);
 
     const [bucket, key] = parseGcsUrl(msg.s3_url);
@@ -450,25 +449,29 @@ export class StreamParserService {
 
     const fileSize = msg.size || (await objectSize(bucket, key));
 
-    // If no field_spec was supplied, try to infer it from a delimited header in the first line.
-    // This lets headered CSV/TSV files parse even when the detect/AI step is unavailable.
-    if (!fieldSpec || fieldSpec.length === 0) {
-      try {
-        const firstEnd = Math.min(settings.PROBE_WINDOW_MIN_BYTES - 1, fileSize - 1);
-        const firstBuffer = await readRange(bucket, key, 0, firstEnd);
-        const hasQuote = firstBuffer.includes(0x22);
-        const hasDelimiter = [0x2c, 0x09, 0x3b, 0x7c].some((d) => firstBuffer.includes(d));
-        probeLooksTabular = hasQuote && hasDelimiter;
-        const firstChunk = firstBuffer.toString("utf-8").replace(/\0/g, "");
-        const inferred = StreamParserService.inferFieldSpecFromHeader(firstChunk, probeLooksTabular);
-        if (inferred && inferred.length > 0) {
+    // Always try to infer field_spec from the header for CSV-looking files, even if detect supplied one.
+    // This prevents bad detect results (from vertex_ai_call_failed) from breaking CSV parsing.
+    // We trust the actual file header over detect's AI inference.
+    try {
+      const firstEnd = Math.min(settings.PROBE_WINDOW_MIN_BYTES - 1, fileSize - 1);
+      const firstBuffer = await readRange(bucket, key, 0, firstEnd);
+      const hasQuote = firstBuffer.includes(0x22);
+      const hasDelimiter = [0x2c, 0x09, 0x3b, 0x7c].some((d) => firstBuffer.includes(d));
+      probeLooksTabular = hasQuote && hasDelimiter;
+      const firstChunk = firstBuffer.toString("utf-8").replace(/\0/g, "");
+      const inferred = StreamParserService.inferFieldSpecFromHeader(firstChunk, probeLooksTabular);
+      if (inferred && inferred.length > 0) {
+        // Only override if the file looks tabular and we got a valid inference
+        if (probeLooksTabular) {
           fieldSpec = inferred;
-          this.logger.info("field_spec_inferred_from_header", { job_id: jobId, field_spec: fieldSpec, source: probeLooksTabular ? "probe" : "strict" });
+          this.logger.info("field_spec_inferred_from_header", { job_id: jobId, field_spec: fieldSpec, source: "probe", override: true });
         }
-      } catch (err) {
-        this.logger.warn("field_spec_inference_failed", { job_id: jobId, error: String(err) });
       }
+    } catch (err) {
+      this.logger.warn("field_spec_inference_failed", { job_id: jobId, error: String(err) });
     }
+
+    this.logger.info("parse_start", { job_id: jobId, s3_url: msg.s3_url, size: msg.size, field_spec: fieldSpec });
 
     // Adaptive probing to detect file structure
     const probing = AdaptiveProbing.getInstance();
