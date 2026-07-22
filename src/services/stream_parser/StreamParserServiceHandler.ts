@@ -448,7 +448,7 @@ export class StreamParserService {
 
     // Batched DB writes: fire-and-forget so the parse loop never waits for DB.
     // All three tables flush in parallel. Background errors are logged but never crash the job.
-    const BATCH_SIZE = 500;
+    const BATCH_SIZE = 2000;
     let parsedBatch: Record<string, unknown>[] = [];
     let rubbishBatch: Record<string, unknown>[] = [];
     let dlqBatch: Record<string, unknown>[] = [];

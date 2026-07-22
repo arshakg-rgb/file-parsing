@@ -150,6 +150,13 @@ export class LineClassifier implements IClassifier {
       if (mapped) return { verdict: "parsed", row: this.coerce(mapped), template_id: "csv-column-map" };
     }
 
+    // 1d. Header-detected fast path: if a header row was seen, we already know the column
+    // layout — skip template/AI matching entirely and go straight to delimited extraction.
+    if (this.headerMap) {
+      const delimited = this.parseDelimitedRecord(line);
+      if (delimited) return { verdict: "parsed", row: this.coerce(delimited), template_id: "csv-mapped" };
+    }
+
     // 2. Known learned record templates (records have priority over rubbish).
     // AI cache is only consumed in steps 3 and 6, so compute the fingerprint lazily.
     let computedCache = false;
