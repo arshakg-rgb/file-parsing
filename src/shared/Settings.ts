@@ -104,6 +104,10 @@ export const settings = {
   // is broken (0 = a newline always ends a line; quotes still protect embedded delimiters
   // within a physical line). MAX_LINE_BYTES hard-caps every single line to bound memory.
   MAX_QUOTED_NEWLINES: getNumber("MAX_QUOTED_NEWLINES", 0),
+  // When the parser identifies a tabular file (CSV/TSV header present), it allows this many
+  // embedded newlines inside a quoted field before forcing a break. Separate from MAX_QUOTED_NEWLINES
+  // so log files stay conservative while CSV files tolerate RFC 4180 multi-line fields.
+  CSV_MAX_QUOTED_NEWLINES: getNumber("CSV_MAX_QUOTED_NEWLINES", 100),
   MAX_LINE_BYTES: getNumber("MAX_LINE_BYTES", 1024 * 1024),
   SMALL_FILE_SINGLE_GET_THRESHOLD: getNumber(
     "SMALL_FILE_SINGLE_GET_THRESHOLD",

@@ -404,7 +404,8 @@ class GcsUtils extends ServiceManager {
     bucket: string,
     key: string,
     chunkSize = this.FETCH_CHUNK_SIZE,
-    encoding = "utf-8"
+    encoding = "utf-8",
+    maxQuotedNewlines?: number
   ): AsyncGenerator<[string, number, number]> {
     const config = this.getConfig();
     const total = await this.objectSize(bucket, key);
@@ -416,7 +417,7 @@ class GcsUtils extends ServiceManager {
       this.logger.debug("streamLines_using_single_get", { total });
       const data = await this.readFull(bucket, key);
       this.logger.debug("streamLines_download_complete", { size: data.length });
-      yield* this.splitBytesToLines(data, 0, encoding, state);
+      yield* this.splitBytesToLines(data, 0, encoding, state, maxQuotedNewlines);
       return;
     }
 
@@ -430,7 +431,7 @@ class GcsUtils extends ServiceManager {
       const data = Buffer.concat([remainder, chunk]);
       const dataBase = remainderStart;
 
-      const result = yield* this.scanLines(data, dataBase, encoding, state);
+      const result = yield* this.scanLines(data, dataBase, encoding, state, maxQuotedNewlines);
       remainder = data.slice(result.lineStart);
       remainderStart = dataBase + result.lineStart;
       fetchOffset += chunk.length;
@@ -449,8 +450,8 @@ class GcsUtils extends ServiceManager {
    * @param encoding - The encoding
    * @returns The list of results
    */
-  public splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] {
-    return [...this.splitBytesToLines(data, 0, encoding, { inQuote: false })];
+  public splitAllLines(data: Buffer, encoding = "utf-8", maxQuotedNewlines?: number): [string, number, number][] {
+    return [...this.splitBytesToLines(data, 0, encoding, { inQuote: false }, maxQuotedNewlines)];
   }
 
     /**
@@ -465,9 +466,10 @@ class GcsUtils extends ServiceManager {
     data: Buffer,
     baseOffset: number,
     encoding: string,
-    state: { inQuote: boolean }
+    state: { inQuote: boolean },
+    maxQuotedNewlines?: number
   ): Generator<[string, number, number]> {
-    const result = yield* this.scanLines(data, baseOffset, encoding, state);
+    const result = yield* this.scanLines(data, baseOffset, encoding, state, maxQuotedNewlines);
 
     if (result.lineStart < data.length) {
       const raw = data.slice(result.lineStart);
@@ -488,7 +490,8 @@ class GcsUtils extends ServiceManager {
     data: Buffer,
     dataBase: number,
     encoding: string,
-    state: { inQuote: boolean }
+    state: { inQuote: boolean },
+    maxQuotedNewlines?: number
   ): Generator<[string, number, number], { lineStart: number; endedAtBoundary: boolean }, void> {
     const config = this.getConfig();
     const NL = 0x0a;
@@ -530,7 +533,8 @@ class GcsUtils extends ServiceManager {
           yield makeLine(pos + 1);
         } else {
           quotedNewlines++;
-          if (quotedNewlines > config.settings.MAX_QUOTED_NEWLINES || pos + 1 - lineStart >= config.settings.MAX_LINE_BYTES) {
+          const newlineLimit = maxQuotedNewlines ?? config.settings.MAX_QUOTED_NEWLINES;
+          if (quotedNewlines > newlineLimit || pos + 1 - lineStart >= config.settings.MAX_LINE_BYTES) {
             state.inQuote = false;
             yield makeLine(pos + 1);
           }
@@ -701,9 +705,10 @@ export async function* streamLines(
   bucket: string,
   key: string,
   chunkSize = 1048576,
-  encoding = "utf-8"
+  encoding = "utf-8",
+  maxQuotedNewlines?: number
 ): AsyncGenerator<[string, number, number]> {
-  yield* gcsUtils.streamLines(bucket, key, chunkSize, encoding);
+  yield* gcsUtils.streamLines(bucket, key, chunkSize, encoding, maxQuotedNewlines);
 }
 
 /**
@@ -712,8 +717,8 @@ export async function* streamLines(
  * @param encoding - The encoding
  * @returns The list of results
  */
-export function splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] {
-  return gcsUtils.splitAllLines(data, encoding);
+export function splitAllLines(data: Buffer, encoding = "utf-8", maxQuotedNewlines?: number): [string, number, number][] {
+  return gcsUtils.splitAllLines(data, encoding, maxQuotedNewlines);
 }
 
 /**
