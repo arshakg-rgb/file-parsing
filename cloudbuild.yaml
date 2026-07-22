@@ -6,15 +6,15 @@ options:
   substitution_option: 'ALLOW_LOOSE'
 substitutions:
   _REGION: us-central1
-  _JOB_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/job-service:$SHORT_SHA
-  _INGEST_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ingest:$SHORT_SHA
-  _DETECT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/detect-bootstrap:$SHORT_SHA
-  _STREAM_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/stream-parser:$SHORT_SHA
-  _AI_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ai-classifier:$SHORT_SHA
-  _LOAD_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/load:$SHORT_SHA
-  _REPORT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/report:$SHORT_SHA
-  _RETRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/retry:$SHORT_SHA
-  _ARCHIVE_ENTRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/archive-entry-consumer:$SHORT_SHA
+  _JOB_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/job-service:$COMMIT_SHA
+  _INGEST_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ingest:$COMMIT_SHA
+  _DETECT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/detect-bootstrap:$COMMIT_SHA
+  _STREAM_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/stream-parser:$COMMIT_SHA
+  _AI_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ai-classifier:$COMMIT_SHA
+  _LOAD_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/load:$COMMIT_SHA
+  _REPORT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/report:$COMMIT_SHA
+  _RETRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/retry:$COMMIT_SHA
+  _ARCHIVE_ENTRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/archive-entry-consumer:$COMMIT_SHA
   # AI classification mode for the streaming parser: off | mock | live.
   _AI_INLINE_MODE: mock
   # Hard cap on inline AI calls per job. Mock is free, but a low cap still aborts early.
