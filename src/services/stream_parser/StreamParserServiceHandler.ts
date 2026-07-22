@@ -427,7 +427,7 @@ export class StreamParserService {
 
     const jobId = msg.job_id;
     this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.PARSING });
-    this.logger.info("parse_start", { job_id: jobId, s3_url: msg.s3_url, size: msg.size });
+    this.logger.info("parse_start", { job_id: jobId, s3_url: msg.s3_url, size: msg.size, field_spec: fieldSpec });
     metrics.increment("parse.start", 1);
 
     const [bucket, key] = parseGcsUrl(msg.s3_url);
