@@ -37,11 +37,11 @@ steps:
       - -c
       - |
         TAG=$(git rev-parse --short HEAD 2>/dev/null || true)
-        if [ -z "$TAG" ]; then
+        if [ -z "$$TAG" ]; then
           TAG="manual-$(date +%Y%m%d%H%M%S)"
         fi
-        echo "$TAG" > /workspace/tag.txt
-        echo "Using image tag: $TAG"
+        echo "$$TAG" > /workspace/tag.txt
+        echo "Using image tag: $$TAG"
 
   # Step 1: Load secrets into environment file
   - name: 'gcr.io/cloud-builders/gcloud'
@@ -81,8 +81,8 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        docker build -f Dockerfile.job -t "${_JOB_IMAGE_BASE}:$TAG" .
-        docker push "${_JOB_IMAGE_BASE}:$TAG"
+        docker build -f Dockerfile.job -t "${_JOB_IMAGE_BASE}:$$TAG" .
+        docker push "${_JOB_IMAGE_BASE}:$$TAG"
 
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: bash
@@ -90,8 +90,8 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        docker build -f Dockerfile.ingest -t "${_INGEST_IMAGE_BASE}:$TAG" .
-        docker push "${_INGEST_IMAGE_BASE}:$TAG"
+        docker build -f Dockerfile.ingest -t "${_INGEST_IMAGE_BASE}:$$TAG" .
+        docker push "${_INGEST_IMAGE_BASE}:$$TAG"
 
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: bash
@@ -99,8 +99,8 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        docker build -f Dockerfile.detect -t "${_DETECT_IMAGE_BASE}:$TAG" .
-        docker push "${_DETECT_IMAGE_BASE}:$TAG"
+        docker build -f Dockerfile.detect -t "${_DETECT_IMAGE_BASE}:$$TAG" .
+        docker push "${_DETECT_IMAGE_BASE}:$$TAG"
 
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: bash
@@ -108,8 +108,8 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        docker build -f Dockerfile.stream -t "${_STREAM_IMAGE_BASE}:$TAG" .
-        docker push "${_STREAM_IMAGE_BASE}:$TAG"
+        docker build -f Dockerfile.stream -t "${_STREAM_IMAGE_BASE}:$$TAG" .
+        docker push "${_STREAM_IMAGE_BASE}:$$TAG"
 
   # >>> DISABLED FOR FAST TEST BUILDS: ai-classifier (AI runs in-process in detect/stream;
   #     the standalone /classify HTTP service has no callers). Uncomment to restore. <<<
@@ -119,8 +119,8 @@ steps:
   #     - -c
   #     - |
   #       TAG=$(cat /workspace/tag.txt)
-  #       docker build -f Dockerfile.ai -t "${_AI_IMAGE_BASE}:$TAG" .
-  #       docker push "${_AI_IMAGE_BASE}:$TAG"
+  #       docker build -f Dockerfile.ai -t "${_AI_IMAGE_BASE}:$$TAG" .
+  #       docker push "${_AI_IMAGE_BASE}:$$TAG"
 
   # load + report: required for jobs to progress past "loading"/"reporting" to "done".
   - name: 'gcr.io/cloud-builders/docker'
@@ -129,8 +129,8 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        docker build -f Dockerfile.load -t "${_LOAD_IMAGE_BASE}:$TAG" .
-        docker push "${_LOAD_IMAGE_BASE}:$TAG"
+        docker build -f Dockerfile.load -t "${_LOAD_IMAGE_BASE}:$$TAG" .
+        docker push "${_LOAD_IMAGE_BASE}:$$TAG"
 
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: bash
@@ -138,8 +138,8 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        docker build -f Dockerfile.report -t "${_REPORT_IMAGE_BASE}:$TAG" .
-        docker push "${_REPORT_IMAGE_BASE}:$TAG"
+        docker build -f Dockerfile.report -t "${_REPORT_IMAGE_BASE}:$$TAG" .
+        docker push "${_REPORT_IMAGE_BASE}:$$TAG"
 
   # >>> DISABLED FOR FAST TEST BUILDS: retry. Uncomment to restore. <<<
   # - name: 'gcr.io/cloud-builders/docker'
@@ -148,8 +148,8 @@ steps:
   #     - -c
   #     - |
   #       TAG=$(cat /workspace/tag.txt)
-  #       docker build -f Dockerfile.retry -t "${_RETRY_IMAGE_BASE}:$TAG" .
-  #       docker push "${_RETRY_IMAGE_BASE}:$TAG"
+  #       docker build -f Dockerfile.retry -t "${_RETRY_IMAGE_BASE}:$$TAG" .
+  #       docker push "${_RETRY_IMAGE_BASE}:$$TAG"
 
   - name: 'gcr.io/cloud-builders/docker'
     entrypoint: bash
@@ -157,8 +157,8 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        docker build -f Dockerfile.archive-entry -t "${_ARCHIVE_ENTRY_IMAGE_BASE}:$TAG" .
-        docker push "${_ARCHIVE_ENTRY_IMAGE_BASE}:$TAG"
+        docker build -f Dockerfile.archive-entry -t "${_ARCHIVE_ENTRY_IMAGE_BASE}:$$TAG" .
+        docker push "${_ARCHIVE_ENTRY_IMAGE_BASE}:$$TAG"
 
   # Step 4: Deploy to Cloud Run
   # Each service: (1) strip any conflicting plain env vars, (2) strip any conflicting
@@ -185,24 +185,24 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        IMAGE="${_JOB_IMAGE_BASE}:$TAG"
+        IMAGE="${_JOB_IMAGE_BASE}:$$TAG"
 
         gcloud run deploy job-service \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy job-service \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy job-service \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
@@ -224,24 +224,24 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        IMAGE="${_INGEST_IMAGE_BASE}:$TAG"
+        IMAGE="${_INGEST_IMAGE_BASE}:$$TAG"
 
         gcloud run deploy ingest \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy ingest \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy ingest \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
@@ -267,24 +267,24 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        IMAGE="${_DETECT_IMAGE_BASE}:$TAG"
+        IMAGE="${_DETECT_IMAGE_BASE}:$$TAG"
 
         gcloud run deploy detect-bootstrap \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy detect-bootstrap \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy detect-bootstrap \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
@@ -306,24 +306,24 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        IMAGE="${_STREAM_IMAGE_BASE}:$TAG"
+        IMAGE="${_STREAM_IMAGE_BASE}:$$TAG"
 
         gcloud run deploy stream-parser \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy stream-parser \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy stream-parser \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
@@ -346,24 +346,24 @@ steps:
   #     - -c
   #     - |
   #       TAG=$(cat /workspace/tag.txt)
-  #       IMAGE="${_AI_IMAGE_BASE}:$TAG"
+  #       IMAGE="${_AI_IMAGE_BASE}:$$TAG"
   #
   #       gcloud run deploy ai-classifier \
-  #         --image "$IMAGE" \
+  #         --image "$$IMAGE" \
   #         --region $_REGION \
   #         --platform managed \
   #         --no-traffic \
   #         --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
   #
   #       gcloud run deploy ai-classifier \
-  #         --image "$IMAGE" \
+  #         --image "$$IMAGE" \
   #         --region $_REGION \
   #         --platform managed \
   #         --no-traffic \
   #         --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
   #
   #       gcloud run deploy ai-classifier \
-  #         --image "$IMAGE" \
+  #         --image "$$IMAGE" \
   #         --region $_REGION \
   #         --platform managed \
   #         --no-traffic \
@@ -387,24 +387,24 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        IMAGE="${_LOAD_IMAGE_BASE}:$TAG"
+        IMAGE="${_LOAD_IMAGE_BASE}:$$TAG"
 
         gcloud run deploy load \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy load \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy load \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
@@ -426,24 +426,24 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        IMAGE="${_REPORT_IMAGE_BASE}:$TAG"
+        IMAGE="${_REPORT_IMAGE_BASE}:$$TAG"
 
         gcloud run deploy report \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy report \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy report \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
@@ -466,24 +466,24 @@ steps:
   #     - -c
   #     - |
   #       TAG=$(cat /workspace/tag.txt)
-  #       IMAGE="${_RETRY_IMAGE_BASE}:$TAG"
+  #       IMAGE="${_RETRY_IMAGE_BASE}:$$TAG"
   #
   #       gcloud run deploy retry \
-  #         --image "$IMAGE" \
+  #         --image "$$IMAGE" \
   #         --region $_REGION \
   #         --platform managed \
   #         --no-traffic \
   #         --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
   #
   #       gcloud run deploy retry \
-  #         --image "$IMAGE" \
+  #         --image "$$IMAGE" \
   #         --region $_REGION \
   #         --platform managed \
   #         --no-traffic \
   #         --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
   #
   #       gcloud run deploy retry \
-  #         --image "$IMAGE" \
+  #         --image "$$IMAGE" \
   #         --region $_REGION \
   #         --platform managed \
   #         --no-traffic \
@@ -505,24 +505,24 @@ steps:
       - -c
       - |
         TAG=$(cat /workspace/tag.txt)
-        IMAGE="${_ARCHIVE_ENTRY_IMAGE_BASE}:$TAG"
+        IMAGE="${_ARCHIVE_ENTRY_IMAGE_BASE}:$$TAG"
 
         gcloud run deploy archive-entry-consumer \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy archive-entry-consumer \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy archive-entry-consumer \
-          --image "$IMAGE" \
+          --image "$$IMAGE" \
           --region $_REGION \
           --platform managed \
           --no-traffic \
@@ -557,5 +557,5 @@ steps:
 
 # NOTE: the top-level `images:` field is intentionally omitted. It only supports
 # Cloud Build substitutions resolved before the build starts, not the runtime-
-# computed $TAG used above — and since every image is already explicitly built
+# computed $$TAG used above — and since every image is already explicitly built
 # and pushed in Step 3, Cloud Build doesn't need to push them again here.
