@@ -42,6 +42,7 @@ export class LineClassifier implements IClassifier {
    * @private
    */
   private headerMap: Record<string, number> | null = null;
+  private headerParts: string[] | null = null;
     /**
    * Column Map
    * @private
@@ -58,10 +59,10 @@ export class LineClassifier implements IClassifier {
 
   // Common column/key synonyms so field_spec names match real-world headers and JSON keys.
   private static readonly ALIASES: Record<string, string[]> = {
-    email: ["email", "mail", "emailaddress", "e_mail"],
+    email: ["email", "mail", "emailaddress", "e_mail", "emails"],
     name: ["name", "fullname", "full_name"],
-    phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn"],
-    address: ["address", "addr", "streetaddress"],
+    phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones"],
+    address: ["address", "addr", "streetaddress", "addresses"],
   };
 
   // Static reusable regexes (compiled once).
@@ -569,12 +570,16 @@ export class LineClassifier implements IClassifier {
     const map: Record<string, number> = {};
     let matched = 0;
     for (const field of this.fieldSpec) {
+      if (field === "meta") continue;
       for (let i = 0; i < parts.length; i++) {
         if (this.keyMatchesField(parts[i].trim(), field)) { map[field] = i; matched++; break; }
       }
     }
-    const need = Math.max(2, Math.ceil(this.fieldSpec.length / 2));
-    return matched >= need ? map : null;
+    const nonMetaFields = this.fieldSpec.filter((f) => f !== "meta");
+    const need = Math.max(2, Math.ceil(nonMetaFields.length / 2));
+    if (matched < need) return null;
+    this.headerParts = parts.map((p) => p.trim());
+    return map;
   }
 
   /**
@@ -636,8 +641,26 @@ export class LineClassifier implements IClassifier {
 
     if (this.headerMap) {
       // Trust the header's column assignment.
+      const mappedIndices = new Set<number>(Object.values(this.headerMap));
       for (let i = 0; i < this.fieldSpec.length; i++) {
         const field = this.fieldSpec[i];
+        if (field === "meta") {
+          // Aggregate all unmapped source columns into a JSON object.
+          if (this.headerParts) {
+            const metaObj: Record<string, string> = {};
+            for (let j = 0; j < this.headerParts.length; j++) {
+              if (!mappedIndices.has(j)) {
+                const v = j < parts.length ? String(parts[j] ?? "").trim() : "";
+                if (v !== "") metaObj[this.headerParts[j]] = v;
+              }
+            }
+            row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
+          } else {
+            row["meta"] = null;
+          }
+          if (row["meta"] !== null) matched++;
+          continue;
+        }
         const idx = this.headerMap[field];
         const value = idx !== undefined && idx < parts.length ? parts[idx] : "";
         row[field] = value === "" || value === undefined ? null : value;
