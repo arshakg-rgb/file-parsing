@@ -129,12 +129,14 @@ steps:
           --image $_JOB_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy job-service \
           --image $_JOB_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy job-service \
@@ -162,12 +164,14 @@ steps:
           --image $_INGEST_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy ingest \
           --image $_INGEST_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy ingest \
@@ -199,12 +203,14 @@ steps:
           --image $_DETECT_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy detect-bootstrap \
           --image $_DETECT_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy detect-bootstrap \
@@ -232,12 +238,14 @@ steps:
           --image $_STREAM_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy stream-parser \
           --image $_STREAM_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy stream-parser \
@@ -301,12 +309,14 @@ steps:
           --image $_LOAD_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy load \
           --image $_LOAD_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy load \
@@ -334,12 +344,14 @@ steps:
           --image $_REPORT_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy report \
           --image $_REPORT_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy report \
@@ -401,12 +413,14 @@ steps:
           --image $_ARCHIVE_ENTRY_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy archive-entry-consumer \
           --image $_ARCHIVE_ENTRY_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
         gcloud run deploy archive-entry-consumer \
