@@ -1,5 +1,7 @@
 import crypto from "crypto";
 import { Storage } from "@google-cloud/storage";
+import { createReadStream } from "fs";
+import { pipeline } from "node:stream/promises";
 import Config from "@config/system-config/Config.js";
 import { decode } from "@utils/normalizers/Normalizer.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
@@ -217,6 +219,29 @@ class FirestoreCacheUtils {
           .bucket(bucket)
           .file(key)
           .save(body, { contentType, resumable: body.length > 5 * 1024 * 1024 });
+      }, GCS_TIMEOUT_MS),
+      GCS_RETRIES
+    );
+  }
+
+    /**
+   * Streams a file from disk to GCS without loading the whole file into memory.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param filePath - Path to the local file
+   * @param contentType - The content type
+   */
+  public async putObjectFromFile(
+    bucket: string,
+    key: string,
+    filePath: string,
+    contentType = "application/octet-stream"
+  ): Promise<void> {
+    await this.withRetry(
+      () => this.withTimeout(async () => {
+        const readStream = createReadStream(filePath);
+        const writeStream = this.storage.bucket(bucket).file(key).createWriteStream({ resumable: false, contentType });
+        await pipeline(readStream, writeStream);
       }, GCS_TIMEOUT_MS),
       GCS_RETRIES
     );

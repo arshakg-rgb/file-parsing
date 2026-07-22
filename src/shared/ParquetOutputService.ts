@@ -48,8 +48,8 @@ class ParquetOutputService extends ServiceManager {
     this.logger = createLogger("parquet-writer");
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.FLUSH_LINE_THRESHOLD = 2000;
-    // Flush parquet buffer every 32 MB to keep Cloud Run 1 GiB memory safe.
-    this.FLUSH_BYTE_THRESHOLD = 32 * 1024 * 1024;
+    // Flush parquet buffer every 16 MB to keep Cloud Run 1 GiB memory safe.
+    this.FLUSH_BYTE_THRESHOLD = 16 * 1024 * 1024;
   }
 
     /**

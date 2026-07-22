@@ -157,8 +157,7 @@ export class CsvOutputWriter {
     try {
       this.flushPending();
       const key = `output/${this.jobId}.csv`;
-      const body = await fs.promises.readFile(this.tmpPath);
-      await this.gcsUtils.putObject(this.config.settings.DATA_BUCKET, key, body, "text/csv");
+      await this.gcsUtils.putObjectFromFile(this.config.settings.DATA_BUCKET, key, this.tmpPath, "text/csv");
       const gsPath = `gs://${this.config.settings.DATA_BUCKET}/${key}`;
       this.logger.info("csv_output_written", { job_id: this.jobId, rows: this.rowCount, path: gsPath });
       return gsPath;

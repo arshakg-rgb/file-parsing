@@ -155,9 +155,12 @@ let capturedBody: Buffer | null = null;
 const mockPutObject = vi.fn(async (_bucket: string, _key: string, body: Buffer) => {
   capturedBody = body;
 });
+const mockPutObjectFromFile = vi.fn(async (_bucket: string, _key: string, filePath: string) => {
+  capturedBody = await fs.promises.readFile(filePath);
+});
 
 vi.mock("@utils/cache/FirestoreCacheUtils.js", () => ({
-  default: { getInstance: () => ({ putObject: mockPutObject }) },
+  default: { getInstance: () => ({ putObject: mockPutObject, putObjectFromFile: mockPutObjectFromFile }) },
 }));
 vi.mock("@config/system-config/Config.js", () => ({
   default: { getInstance: () => ({ settings: { DATA_BUCKET: "test-bucket" } }) },

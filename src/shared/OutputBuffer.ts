@@ -182,10 +182,10 @@ export class OutputBuffer {
       template_id: this.templateId,
     });
 
+    const tempFile = path.join(os.tmpdir(), `${flushPartId}.parquet`);
     try {
       const sanitizedRows = rowsToFlush.map((row) => sanitizeParquetValue(row, true) as Record<string, unknown>);
       const schema = buildSchema(sanitizedRows);
-      const tempFile = path.join(os.tmpdir(), `${flushPartId}.parquet`);
       const writer = await ParquetWriter.openFile(schema, tempFile);
 
       for (const row of sanitizedRows) {
@@ -194,17 +194,21 @@ export class OutputBuffer {
 
       await writer.close();
 
-      const buffer = await fs.readFile(tempFile);
       const config = parquetOutputService.getGcsUtils().getConfig();
       const gcsPath = `gs://${config.settings.DATA_BUCKET}/output/${flushPartId}.parquet`;
-      await parquetOutputService.getGcsUtils().putObject(config.settings.DATA_BUCKET, `output/${flushPartId}.parquet`, buffer);
-
-      await fs.unlink(tempFile).catch(() => {});
+      await parquetOutputService.getGcsUtils().putObjectFromFile(
+        config.settings.DATA_BUCKET,
+        `output/${flushPartId}.parquet`,
+        tempFile,
+        "application/octet-stream"
+      );
 
       return gcsPath;
     } catch (error) {
       parquetOutputService.getLogger().error("parquet_flush_error", { part_id: flushPartId, error: String(error) });
       throw error;
+    } finally {
+      await fs.unlink(tempFile).catch(() => {});
     }
   }
 
