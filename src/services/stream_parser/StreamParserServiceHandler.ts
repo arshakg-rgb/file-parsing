@@ -423,8 +423,6 @@ export class StreamParserService {
     const parseStartTime = Date.now();
     this.parseCount++;
     
-    await templateRegistry.loadFromDatabase();
-
     const jobId = msg.job_id;
     this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.PARSING });
     metrics.increment("parse.start", 1);
@@ -522,8 +520,10 @@ export class StreamParserService {
       max_row_width: maxRowWidth 
     });
 
-    const recordTemplates = templateRegistry.getAllRecordTemplates();
-    const rubbishTemplates = templateRegistry.getAllRubbishTemplates();
+    // Skip template loading for CSV files to match local test behavior
+    // CSV files rely on field_spec matching, not template matching
+    const recordTemplates = probeLooksTabular ? [] : templateRegistry.getAllRecordTemplates();
+    const rubbishTemplates = probeLooksTabular ? [] : templateRegistry.getAllRubbishTemplates();
     const classifier = new LineClassifier(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap);
     const outputManager = new OutputManager();
     const csvWriter = new CsvOutputWriter(jobId, fieldSpec);
