@@ -183,17 +183,47 @@ export class StreamParserService {
 
   /**
    * Infer field_spec from a delimited header row when no field_spec was supplied.
+   * If allowFallback is true and the first row doesn't have clean header labels,
+   * it still returns positional col_N names when the first two non-empty rows share
+   * a consistent column count for a delimiter — enough to parse the file without AI.
    */
-  private static inferFieldSpecFromHeader(line: string): string[] | null {
-    let best: string[] | null = null;
-    for (const delim of [",", ";", "\t", "|"]) {
-      const parts = parseCsvLine(line, delim, "\"");
-      if (parts.length < 2) continue;
-      if (parts.some((p) => {
+  private static inferFieldSpecFromHeader(chunk: string, allowFallback = false): string[] | null {
+    const lines = chunk.split(/\r?\n/).map((l) => l.replace(/\0/g, "").trim()).filter((l) => l);
+    if (lines.length === 0) return null;
+
+    const first = lines[0];
+    const second = lines[1];
+
+    const strict = (parts: string[]): boolean =>
+      !parts.some((p) => {
         const v = p.trim();
         return v === "" || v.includes("@") || v.replace(/\D/g, "").length >= 7 || !StreamParserService.HEADER_LABEL_RE.test(v);
-      })) continue;
+      });
+
+    let best: string[] | null = null;
+
+    for (const delim of [",", ";", "\t", "|"]) {
+      const parts = parseCsvLine(first, delim, "\"");
+      if (parts.length < 2) continue;
+      if (second) {
+        const secondParts = parseCsvLine(second, delim, "\"");
+        if (secondParts.length !== parts.length) continue;
+      }
+      if (!strict(parts)) continue;
       if (!best || parts.length > best.length) best = parts;
+    }
+    if (best) return best;
+
+    if (!allowFallback) return null;
+
+    for (const delim of [",", ";", "\t", "|"]) {
+      const parts = parseCsvLine(first, delim, "\"");
+      if (parts.length < 2) continue;
+      if (second) {
+        const secondParts = parseCsvLine(second, delim, "\"");
+        if (secondParts.length !== parts.length) continue;
+      }
+      if (!best || parts.length > best.length) best = parts.map((_, i) => `col_${i}`);
     }
     return best;
   }
@@ -415,11 +445,10 @@ export class StreamParserService {
         const hasDelimiter = [0x2c, 0x09, 0x3b, 0x7c].some((d) => firstBuffer.includes(d));
         probeLooksTabular = hasQuote && hasDelimiter;
         const firstChunk = firstBuffer.toString("utf-8").replace(/\0/g, "");
-        const firstLine = firstChunk.split(/\r?\n/).find((l) => l.trim()) || "";
-        const inferred = StreamParserService.inferFieldSpecFromHeader(firstLine);
+        const inferred = StreamParserService.inferFieldSpecFromHeader(firstChunk, probeLooksTabular);
         if (inferred && inferred.length > 0) {
           fieldSpec = inferred;
-          this.logger.info("field_spec_inferred_from_header", { job_id: jobId, field_spec: fieldSpec });
+          this.logger.info("field_spec_inferred_from_header", { job_id: jobId, field_spec: fieldSpec, source: probeLooksTabular ? "probe" : "strict" });
         }
       } catch (err) {
         this.logger.warn("field_spec_inference_failed", { job_id: jobId, error: String(err) });
