@@ -6,15 +6,15 @@ options:
   substitution_option: 'ALLOW_LOOSE'
 substitutions:
   _REGION: us-central1
-  _JOB_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/job-service:latest
-  _INGEST_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ingest:latest
-  _DETECT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/detect-bootstrap:latest
-  _STREAM_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/stream-parser:latest
-  _AI_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ai-classifier:latest
-  _LOAD_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/load:latest
-  _REPORT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/report:latest
-  _RETRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/retry:latest
-  _ARCHIVE_ENTRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/archive-entry-consumer:latest
+  _JOB_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/job-service:$SHORT_SHA
+  _INGEST_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ingest:$SHORT_SHA
+  _DETECT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/detect-bootstrap:$SHORT_SHA
+  _STREAM_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/stream-parser:$SHORT_SHA
+  _AI_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ai-classifier:$SHORT_SHA
+  _LOAD_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/load:$SHORT_SHA
+  _REPORT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/report:$SHORT_SHA
+  _RETRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/retry:$SHORT_SHA
+  _ARCHIVE_ENTRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/archive-entry-consumer:$SHORT_SHA
   # AI classification mode for the streaming parser: off | mock | live.
   _AI_INLINE_MODE: mock
   # Hard cap on inline AI calls per job. Mock is free, but a low cap still aborts early.
@@ -147,6 +147,7 @@ steps:
           --image $_JOB_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
@@ -182,6 +183,7 @@ steps:
           --image $_INGEST_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
@@ -221,6 +223,7 @@ steps:
           --image $_DETECT_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
@@ -256,6 +259,7 @@ steps:
           --image $_STREAM_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
@@ -327,6 +331,7 @@ steps:
           --image $_LOAD_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
@@ -362,6 +367,7 @@ steps:
           --image $_REPORT_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
@@ -431,6 +437,7 @@ steps:
           --image $_ARCHIVE_ENTRY_IMAGE \
           --region $_REGION \
           --platform managed \
+          --no-traffic \
           --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
