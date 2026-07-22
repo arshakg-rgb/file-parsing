@@ -55,6 +55,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
    * @private
    */
   private headerMap: Record<string, number> | null = null;
+  private headerParts: string[] | null = null;
     /**
    * First Line
    * @private
@@ -107,6 +108,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     this.rubbishTemplates = rubbishTemplates;
     this.aiCache = new Map();
     this.headerMap = null;
+    this.headerParts = null;
     this.firstLine = true;
     this.logger = createLogger(`ClassifierServiceImpl:${jobId}`);
   }
@@ -566,8 +568,14 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
         if (this.keyMatchesField(parts[i].trim(), field)) { map[field] = i; matched++; break; }
       }
     }
-    const need = Math.max(MIN_HEADER_FIELDS, Math.ceil(this.fieldSpec.length * HEADER_MATCH_RATIO));
-    return matched >= need ? map : null;
+    // When source has MORE columns than fieldSpec (extra go to meta), require only 1 match.
+    const nonMetaFields = this.fieldSpec.filter((f) => f !== "meta");
+    const need = parts.length > nonMetaFields.length
+      ? Math.max(1, Math.ceil(nonMetaFields.length / 4))
+      : Math.max(MIN_HEADER_FIELDS, Math.ceil(nonMetaFields.length * HEADER_MATCH_RATIO));
+    if (matched < need) return null;
+    this.headerParts = parts.map((p) => p.trim());
+    return map;
   }
 
     /**
@@ -585,11 +593,25 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
 
     if (this.headerMap) {
       // Trust the header's column assignment.
+      const mappedIndices = new Set<number>(Object.values(this.headerMap));
       for (const field of this.fieldSpec) {
+        if (field === "meta") continue; // handled unconditionally below
         const idx = this.headerMap[field];
         const value = idx !== undefined && idx < parts.length ? parts[idx] : "";
         row[field] = value === "" || value === undefined ? null : value;
         if (row[field] !== null) matched++;
+      }
+      // Always collect ALL unmapped source columns into meta when the header is known.
+      if (this.headerParts) {
+        const metaObj: Record<string, string> = {};
+        for (let j = 0; j < this.headerParts.length; j++) {
+          if (!mappedIndices.has(j)) {
+            const v = j < parts.length ? String(parts[j] ?? "").trim() : "";
+            if (v !== "") metaObj[this.headerParts[j]] = v;
+          }
+        }
+        row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
+        if (row["meta"] !== null) matched++;
       }
       return matched > 0 ? row : null;
     }
