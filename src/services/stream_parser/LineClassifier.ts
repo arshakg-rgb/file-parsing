@@ -259,11 +259,9 @@ export class LineClassifier implements IClassifier {
       job_id: this.jobId,
     };
 
-    this.logger.info("ai_call_initiated", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length });
     const { classifyAi } = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
     const resp = await classifyAi(req);
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
-      this.logger.info("ai_call_uncertain", { fingerprint: fp, kind: resp.kind });
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
     }
 
@@ -281,22 +279,24 @@ export class LineClassifier implements IClassifier {
       this.rubbishTemplates.push(t as RubbishTemplate);
       this.logger.info("ai_template_learned", { template_id: t.template_id, kind: "rubbish", source: "ai_call" });
     }
-    this.logger.info("ai_call_completed", { fingerprint: fp, template_id: t.template_id, verdict: "field_map" in t ? "parsed" : "rubbish" });
     return this.toResult(line, t);
   }
 
   /** Run classifier with a safety timeout to avoid hanging on pathological lines. */
   async classifyWithTimeout(line: string, contextLines: string[], timeoutMs: number): Promise<ClassifyResult> {
     this.logger.info("ai_call_timeout_scheduled", { line_length: line.length, timeout_ms: timeoutMs });
-    return Promise.race([
-      this.classifyWithAI(line, contextLines),
-      new Promise<ClassifyResult>((resolve) =>
-        setTimeout(() => {
-          this.logger.warn("ai_call_timeout_reached", { line_length: line.length, timeout_ms: timeoutMs });
-          resolve({ verdict: "uncertain", failure_class: FailureClass.UNCERTAIN });
-        }, timeoutMs)
-      ),
-    ]);
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<ClassifyResult>((resolve) => {
+      timeoutHandle = setTimeout(() => {
+        this.logger.warn("ai_call_timeout_reached", { line_length: line.length, timeout_ms: timeoutMs });
+        resolve({ verdict: "uncertain", failure_class: FailureClass.UNCERTAIN });
+      }, timeoutMs);
+    });
+    try {
+      return await Promise.race([this.classifyWithAI(line, contextLines), timeoutPromise]);
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
   }
 
   /**

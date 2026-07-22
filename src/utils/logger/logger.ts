@@ -5,6 +5,81 @@ export interface LogContext {
   [key: string]: unknown;
 }
 
+// ---------------------------------------------------------------------------
+// Loki micro-batching transport
+// Accumulates log values across all Logger instances and flushes them in a
+// single HTTP request every LOKI_FLUSH_INTERVAL_MS (or when the buffer
+// reaches LOKI_MAX_BATCH_SIZE entries). This replaces the previous pattern
+// of one HTTP fetch per log entry, which caused connection exhaustion and
+// 10-second timeout errors under moderate log volume.
+// ---------------------------------------------------------------------------
+const LOKI_FLUSH_INTERVAL_MS = 500;
+const LOKI_SEND_TIMEOUT_MS = 3_000;
+const LOKI_MAX_BATCH_SIZE = 200;
+
+interface LokiValue {
+  stream: Record<string, string>;
+  ts: string;          // nanosecond timestamp string
+  line: string;        // serialized log entry
+}
+
+const lokiBuffer: LokiValue[] = [];
+let lokiFlushTimer: ReturnType<typeof setTimeout> | undefined;
+let lokiEnabled = false;
+
+function scheduleLokiFlush(): void {
+  if (lokiFlushTimer !== undefined) return;
+  lokiFlushTimer = setTimeout(() => {
+    lokiFlushTimer = undefined;
+    flushLoki().catch(() => {});
+  }, LOKI_FLUSH_INTERVAL_MS);
+  if (typeof lokiFlushTimer === "object" && (lokiFlushTimer as unknown as { unref?: () => void }).unref) {
+    (lokiFlushTimer as unknown as { unref: () => void }).unref(); // don't keep process alive
+  }
+}
+
+async function flushLoki(): Promise<void> {
+  if (!lokiEnabled || lokiBuffer.length === 0) return;
+
+  const batch = lokiBuffer.splice(0, LOKI_MAX_BATCH_SIZE);
+
+  // Group by (service, level, job_id) to minimize stream cardinality
+  const streamMap = new Map<string, { stream: Record<string, string>; values: [string, string][] }>();
+  for (const entry of batch) {
+    const key = JSON.stringify(entry.stream);
+    let s = streamMap.get(key);
+    if (!s) {
+      s = { stream: entry.stream, values: [] };
+      streamMap.set(key, s);
+    }
+    s.values.push([entry.ts, entry.line]);
+  }
+
+  const body = JSON.stringify({ streams: Array.from(streamMap.values()) });
+  try {
+    const resp = await fetch(`${settings.LOKI_HOST}/loki/api/v1/push`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Basic ${btoa(`${settings.LOKI_USERNAME}:${settings.LOKI_PASSWORD}`)}`,
+      },
+      body,
+      signal: AbortSignal.timeout(LOKI_SEND_TIMEOUT_MS),
+    });
+    if (!resp.ok) {
+      console.error("loki_send_failed", { status: resp.status });
+    }
+  } catch (err) {
+    console.error("loki_send_error", { error: String(err) });
+    // Drop the batch rather than re-queuing — retries cause unbounded buffer growth
+  }
+
+  // If the buffer still has entries (was > LOKI_MAX_BATCH_SIZE), schedule another flush
+  if (lokiBuffer.length > 0) {
+    scheduleLokiFlush();
+  }
+}
+
 /**
  * Logger is responsible for logger operations.
  */
@@ -14,11 +89,6 @@ export class Logger {
    * @private
    */
   private service: string;
-    /**
-   * Loki Enabled
-   * @private
-   */
-  private lokiEnabled: boolean;
 
     /**
    * Constructs a new Logger instance.
@@ -26,7 +96,10 @@ export class Logger {
    */
   constructor(service: string) {
     this.service = service;
-    this.lokiEnabled = !!(settings.LOKI_HOST && settings.LOKI_USERNAME && settings.LOKI_PASSWORD);
+    // Lazily enable Loki on first Logger construction once settings are loaded
+    if (!lokiEnabled && settings.LOKI_HOST && settings.LOKI_USERNAME && settings.LOKI_PASSWORD) {
+      lokiEnabled = true;
+    }
   }
 
     /**
@@ -47,55 +120,23 @@ export class Logger {
     return JSON.stringify(logEntry);
   }
 
-    /**
-   * Sends to loki
-   * @param level - The level
-   * @param message - The message
-   * @param context - The context object
-   */
-  private async sendToLoki(level: string, message: string, context: LogContext = {}): Promise<void> {
-    if (!this.lokiEnabled) {
-      return;
-    }
-
-    try {
-      // Loki expects nanosecond timestamps
-      const timestamp = Date.now() * 1000000; // Convert to nanoseconds
-      
-      const logEntry = {
-        streams: [
-          {
-            stream: {
-              service: this.service,
-              level,
-              ...(context.job_id ? { job_id: context.job_id } : {}),
-            },
-            values: [
-              [
-                String(timestamp),
-                this.format(level, message, context),
-              ],
-            ],
-          },
-        ],
-      };
-
-      const response = await fetch(`${settings.LOKI_HOST}/loki/api/v1/push`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Basic ${btoa(`${settings.LOKI_USERNAME}:${settings.LOKI_PASSWORD}`)}`,
-        },
-        body: JSON.stringify(logEntry),
-        signal: AbortSignal.timeout(10000), // 10 second timeout
-      });
-
-      if (!response.ok) {
-        console.error("loki_send_failed", { status: response.status, statusText: response.statusText });
-      }
-    } catch (error) {
-      // Silently fail Loki errors to avoid disrupting application
-      console.error("loki_send_error", { error: String(error) });
+  private enqueueToLoki(level: string, message: string, context: LogContext = {}): void {
+    if (!lokiEnabled) return;
+    lokiBuffer.push({
+      stream: {
+        service: this.service,
+        level,
+        ...(context.job_id ? { job_id: String(context.job_id) } : {}),
+      },
+      ts: String(Date.now() * 1_000_000), // nanoseconds
+      line: this.format(level, message, context),
+    });
+    if (lokiBuffer.length >= LOKI_MAX_BATCH_SIZE) {
+      clearTimeout(lokiFlushTimer);
+      lokiFlushTimer = undefined;
+      flushLoki().catch(() => {});
+    } else {
+      scheduleLokiFlush();
     }
   }
 
@@ -105,9 +146,8 @@ export class Logger {
    * @param context - The context object
    */
   info(message: string, context: LogContext = {}): void {
-    const formatted = this.format("info", message, context);
-    console.log(formatted);
-    this.sendToLoki("info", message, context).catch(() => {});
+    console.log(this.format("info", message, context));
+    this.enqueueToLoki("info", message, context);
   }
 
     /**
@@ -116,9 +156,8 @@ export class Logger {
    * @param context - The context object
    */
   warn(message: string, context: LogContext = {}): void {
-    const formatted = this.format("warn", message, context);
-    console.warn(formatted);
-    this.sendToLoki("warn", message, context).catch(() => {});
+    console.warn(this.format("warn", message, context));
+    this.enqueueToLoki("warn", message, context);
   }
 
     /**
@@ -128,15 +167,9 @@ export class Logger {
    * @param error - The error that occurred
    */
   error(message: string, context: LogContext = {}, error?: Error): void {
-    const entry = this.format("error", message, {
-      ...context,
-      ...(error ? { error: error.message, stack: error.stack } : {}),
-    });
-    console.error(entry);
-    this.sendToLoki("error", message, {
-      ...context,
-      ...(error ? { error: error.message, stack: error.stack } : {}),
-    }).catch(() => {});
+    const merged = { ...context, ...(error ? { error: error.message, stack: error.stack } : {}) };
+    console.error(this.format("error", message, merged));
+    this.enqueueToLoki("error", message, merged);
   }
 
     /**
@@ -146,9 +179,8 @@ export class Logger {
    */
   debug(message: string, context: LogContext = {}): void {
     if (process.env.LOG_LEVEL === "debug") {
-      const formatted = this.format("debug", message, context);
-      console.log(formatted);
-      this.sendToLoki("debug", message, context).catch(() => {});
+      console.log(this.format("debug", message, context));
+      this.enqueueToLoki("debug", message, context);
     }
   }
 }
