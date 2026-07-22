@@ -94,18 +94,18 @@ steps:
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', '$_REPORT_IMAGE']
 
-  # >>> DISABLED FOR FAST TEST BUILDS: retry + archive-entry-consumer. Uncomment to restore. <<<
+  # >>> DISABLED FOR FAST TEST BUILDS: retry. Uncomment to restore. <<<
   # - name: 'gcr.io/cloud-builders/docker'
   #   args: ['build', '-f', 'Dockerfile.retry', '-t', '$_RETRY_IMAGE', '.']
   #
   # - name: 'gcr.io/cloud-builders/docker'
   #   args: ['push', '$_RETRY_IMAGE']
-  #
-  # - name: 'gcr.io/cloud-builders/docker'
-  #   args: ['build', '-f', 'Dockerfile.archive-entry', '-t', '$_ARCHIVE_ENTRY_IMAGE', '.']
-  #
-  # - name: 'gcr.io/cloud-builders/docker'
-  #   args: ['push', '$_ARCHIVE_ENTRY_IMAGE']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', 'Dockerfile.archive-entry', '-t', '$_ARCHIVE_ENTRY_IMAGE', '.']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '$_ARCHIVE_ENTRY_IMAGE']
 
   # Step 4: Deploy to Cloud Run
   # Each service: (1) strip any conflicting plain env vars, (2) strip any conflicting
@@ -358,8 +358,7 @@ steps:
           --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
           --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
 
-  # >>> DISABLED FOR FAST TEST BUILDS: retry + archive-entry-consumer deploys.
-  #     Uncomment both steps below to restore. <<<
+  # >>> DISABLED FOR FAST TEST BUILDS: retry deploy. Uncomment to restore. <<<
   # - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   #   entrypoint: bash
   #   args:
@@ -393,42 +392,42 @@ steps:
   #         --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
   #         --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
   #
-  # - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  #   entrypoint: bash
-  #   args:
-  #     - -c
-  #     - |
-  #       gcloud run deploy archive-entry-consumer \
-  #         --image $_ARCHIVE_ENTRY_IMAGE \
-  #         --region $_REGION \
-  #         --platform managed \
-  #         --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
-  #
-  #       gcloud run deploy archive-entry-consumer \
-  #         --image $_ARCHIVE_ENTRY_IMAGE \
-  #         --region $_REGION \
-  #         --platform managed \
-  #         --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
-  #
-  #       gcloud run deploy archive-entry-consumer \
-  #         --image $_ARCHIVE_ENTRY_IMAGE \
-  #         --region $_REGION \
-  #         --platform managed \
-  #         --allow-unauthenticated \
-  #         --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-  #         --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-  #         --memory 2Gi \
-  #         --cpu 1 \
-  #         --timeout 3600s \
-  #         --max-instances 5 \
-  #         --min-instances 1 \
-  #         --no-cpu-throttling \
-  #         --execution-environment gen2 \
-  #         --session-affinity \
-  #         --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,RAR_TEMP_MOUNT=/mnt/scratch,ARCHIVE_ENTRY_QUEUE_URL=pubsub://projects/data-etl-499916/topics/fpp-archive-entry,LARGE_FILE_THRESHOLD_BYTES=524288000 \
-  #         --add-volume name=rar-temp,type=cloud-storage,bucket=datalead-osint \
-  #         --add-volume-mount volume=rar-temp,mount-path=/mnt/scratch \
-  #         --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        gcloud run deploy archive-entry-consumer \
+          --image $_ARCHIVE_ENTRY_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+
+        gcloud run deploy archive-entry-consumer \
+          --image $_ARCHIVE_ENTRY_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+
+        gcloud run deploy archive-entry-consumer \
+          --image $_ARCHIVE_ENTRY_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --allow-unauthenticated \
+          --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
+          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
+          --memory 2Gi \
+          --cpu 1 \
+          --timeout 3600s \
+          --max-instances 5 \
+          --min-instances 1 \
+          --no-cpu-throttling \
+          --execution-environment gen2 \
+          --session-affinity \
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,RAR_TEMP_MOUNT=/mnt/scratch,ARCHIVE_ENTRY_QUEUE_URL=pubsub://projects/data-etl-499916/topics/fpp-archive-entry,LARGE_FILE_THRESHOLD_BYTES=524288000 \
+          --add-volume name=rar-temp,type=cloud-storage,bucket=datalead-osint \
+          --add-volume-mount volume=rar-temp,mount-path=/mnt/scratch \
+          --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
 
 images:
   - $_JOB_IMAGE
@@ -439,4 +438,4 @@ images:
   - $_LOAD_IMAGE
   - $_REPORT_IMAGE
   # - $_RETRY_IMAGE          # DISABLED FOR FAST TEST BUILDS
-  # - $_ARCHIVE_ENTRY_IMAGE  # DISABLED FOR FAST TEST BUILDS
+  - $_ARCHIVE_ENTRY_IMAGE

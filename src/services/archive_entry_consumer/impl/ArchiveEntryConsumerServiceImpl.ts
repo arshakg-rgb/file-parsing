@@ -12,6 +12,12 @@ import { createLogger, Logger } from "@utils/logger/logger.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import { ArchiveEntryConsumerService } from "@service/archive_entry_consumer/ArchiveEntryConsumerService.js";
 import { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryResponse } from "@service/archive_entry_consumer/io/IArchiveEntryConsumer.js";
+import { settings } from "@shared/Settings.js";
+import { EventType, makeJobEvent } from "@shared/models/events.js";
+import { publishEvent } from "@shared/QueueService.js";
+import { readRange, gcsClient } from "@shared/GcsUtils.js";
+import { markPendingEntryProcessing, markPendingEntryCompleted, markPendingEntryFailed, createPendingArchiveEntry } from "@shared/DatabaseManager.js";
+import { extractArchiveToS3, detectArchiveType } from "@service/ingest/normalizer.js";
 
 /**
  * ArchiveEntryConsumerServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -117,16 +123,64 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
    * @returns A promise that resolves to the result
    */
   public async processEntry(req: ArchiveEntryRequest): Promise<ArchiveEntryResponse> {
-    // This is a placeholder - the actual implementation would be more complex
-    // For now, we'll just delegate to the existing extractSingleRarEntry method
-    const result = await this.extractSingleRarEntry(
-      req.job_id,
-      req.s3_url,
-      req.entry_path,
-      req.password ? req.password.toString() : undefined,
-      []
-    );
-    return { success: true };
+    const { job_id: jobId, batchId, archive_s3_url: archiveS3Url, entry_name: entryName,
+      entry_size: entrySize, field_spec: fieldSpec, password, archive_type: archiveType, nesting_depth: nestingDepth } = req;
+
+    this.logger.info("archive_entry_processing", { job_id: jobId, entry_name: entryName, nesting_depth: nestingDepth, archive_type: archiveType });
+
+    await markPendingEntryProcessing(jobId, entryName);
+
+    try {
+      const { s3Url, size } = await this.extractSingleRarEntry(jobId, archiveS3Url, entryName, password, fieldSpec);
+
+      const [bucket, key] = this.gcsUtils.parseGcsUrl(s3Url);
+
+      // Detect if the extracted entry is itself an archive.
+      let detectedType: string | null = null;
+      if (nestingDepth < settings.ARCHIVE_MAX_NESTING_DEPTH) {
+        try {
+          const header = await readRange(bucket, key, 0, 511);
+          detectedType = detectArchiveType(header);
+        } catch (e) {
+          this.logger.warn("archive_entry_nested_detection_failed", { job_id: jobId, entry_name: entryName, error: String(e) });
+        }
+      }
+
+      if (detectedType) {
+        this.logger.info("archive_entry_nested_detected", { job_id: jobId, entry_name: entryName, detected_type: detectedType, depth: nestingDepth });
+        try {
+          const nestedEntries = await extractArchiveToS3(jobId, s3Url, detectedType, fieldSpec, batchId, password, nestingDepth + 1);
+          // Remove the intermediate nested archive file from GCS.
+          await gcsClient().bucket(bucket).file(key).delete().catch(() => {});
+          for (const entry of nestedEntries) {
+            if (entry.pending) {
+              await createPendingArchiveEntry(jobId, entry.entry_name as string, entry.entry_size as number);
+            } else {
+              await publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "archive-entry-consumer", entry as Record<string, unknown>));
+            }
+          }
+        } catch (err) {
+          this.logger.error("archive_entry_nested_failed", { job_id: jobId, entry_name: entryName, error: String(err) });
+          // Fall back: treat the extracted file as a regular parseable entry.
+          await publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "archive-entry-consumer", {
+            parent_job_id: jobId, batch_id: batchId, entry_s3_url: s3Url, entry_name: entryName, entry_size: size, field_spec: fieldSpec,
+          }));
+        }
+      } else {
+        await publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "archive-entry-consumer", {
+          parent_job_id: jobId, batch_id: batchId, entry_s3_url: s3Url, entry_name: entryName, entry_size: size, field_spec: fieldSpec,
+        }));
+      }
+
+      await markPendingEntryCompleted(jobId, entryName);
+      this.logger.info("archive_entry_completed", { job_id: jobId, entry_name: entryName });
+      return { success: true };
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      this.logger.error("archive_entry_failed", { job_id: jobId, entry_name: entryName, error: errMsg });
+      await markPendingEntryFailed(jobId, entryName, errMsg);
+      return { success: false, error: errMsg };
+    }
   }
 
   /**

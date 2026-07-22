@@ -614,17 +614,9 @@ async function extract7z(
   return out;
 }
 
-/**
- * Extracts rar
- * @param jobId - The job identifier
- * @param raw - The raw
- * @param compressedSize - The compressed size
- * @param fieldSpec - The field spec
- * @param batchId - The batch identifier
- * @param password - The password
- * @returns A promise that resolves to the list
- */
-async function extractRar(
+// extractRar removed — dead code. RAR extraction is handled inline in extractArchiveToS3.
+// The old function loaded the entire archive into a Buffer (OOM risk) and had no nested-archive detection.
+if (false) async function extractRar(
   jobId: string,
   raw: Buffer,
   compressedSize: number,

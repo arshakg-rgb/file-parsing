@@ -1,8 +1,13 @@
 export interface ArchiveEntryRequest {
   job_id: string;
-  entry_path: string;
-  s3_url: string;
-  password?: Buffer;
+  batchId: string;
+  archive_s3_url: string;
+  entry_name: string;
+  entry_size: number;
+  field_spec: string[];
+  password?: string;
+  archive_type: string;
+  nesting_depth: number;
 }
 
 export interface ArchiveEntryResponse {
