@@ -130,13 +130,12 @@ export class LineClassifier implements IClassifier {
       return { verdict: "rubbish", template_id: "binary-gate" };
     }
 
-    // Second pass: catch mojibake (wrong-encoding garbage) which consists of Unicode
-    // symbol/math/private-use/modifier characters that normal text rarely contains in high concentration
-    const weirdRe = /[\p{Cc}\p{Co}\p{Cn}\p{Cs}\p{So}\p{Sm}\p{Sk}]/gu;
-    const typographicGarbage = /[“”‘’‹›‡†•ﬁﬂ]/g; // curly quotes, ligatures, etc. — never legit in this data
-    const weirdCount = (trimmed.match(weirdRe) || []).length + (trimmed.match(typographicGarbage) || []).length;
-    const weirdRatio = weirdCount / trimmed.length;
-    if (weirdRatio > 0.08) {
+    // Second pass: catch true binary/encoding corruption (control/private-use/unassigned/surrogate)
+    // These are actual mojibake markers. Emoji/symbols (So/Sm/Sk) are NOT included here since
+    // they're normal in real names/usernames and shouldn't reject the entire line.
+    const binaryRe = /[\p{Cc}\p{Co}\p{Cn}\p{Cs}]/gu;
+    const binaryCount = (trimmed.match(binaryRe) || []).length;
+    if (binaryCount / trimmed.length > 0.08) {
       return { verdict: "rubbish", template_id: "binary-gate" };
     }
 
@@ -517,31 +516,48 @@ export class LineClassifier implements IClassifier {
     let matched = 0;
     let strong = 0;
     const normalizedObjKeys = new Map<string, unknown>();
+    const consumedKeys = new Set<string>(); // Track which raw keys got mapped
     for (const [k, val] of Object.entries(obj)) {
       const nk = this.normalizeKey(k);
       if (!normalizedObjKeys.has(nk)) normalizedObjKeys.set(nk, val); // first wins
     }
     for (let i = 0; i < this.fieldSpec.length; i++) {
       const field = this.fieldSpec[i];
+      if (field === "meta") continue; // handled below
       const nf = this.normalizedFieldSpec[i];
       let value = normalizedObjKeys.get(nf);
+      let matchedKey: string | undefined = nf;
       if (value === undefined) {
         const aliases = this.aliasMap.get(nf);
         if (aliases) {
           for (const a of aliases) {
             value = normalizedObjKeys.get(a);
-            if (value !== undefined) break;
+            if (value !== undefined) { matchedKey = a; break; }
           }
         }
       }
       if (value !== undefined && value !== null && String(value).trim() !== "") {
         row[field] = value;
         matched++;
+        consumedKeys.add(matchedKey!);
         if ((nf === "email" || nf === "phone") && this.validateField(field, value)) strong++;
       } else {
         row[field] = null;
       }
     }
+
+    // Fold every unmapped source key into meta
+    if (this.fieldSpec.includes("meta")) {
+      const metaObj: Record<string, string> = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (!consumedKeys.has(this.normalizeKey(k)) && v !== undefined && v !== null && String(v).trim() !== "") {
+          metaObj[k] = String(v).trim();
+        }
+      }
+      row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
+      if (row["meta"] !== null) matched++;
+    }
+
     const accept = requireStrong
       ? strong >= 1 || matched >= Math.min(2, this.fieldSpec.length)
       : matched >= 1;
