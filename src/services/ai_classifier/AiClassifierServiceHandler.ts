@@ -32,9 +32,8 @@ function extractJsonFromMarkdown(raw: string): string {
   }
 
   // Fix invalid JSON escape sequences: a backslash followed by anything that isn't a
-  // valid JSON escape char (", \, /, b, f, n, r, t, u) must itself be escaped.
-  // This repairs regex patterns like "\d+", "\s+", "\w+" that the model often emits.
-  trimmed = trimmed.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
+  // valid JSON escape character (", \, /, b, f, n, r, t, uXXXX) should be escaped as \\
+  trimmed = trimmed.replace(/\\([^"\\\/bfnrtu])/g, '\\\\$1');
 
   return trimmed;
 }
