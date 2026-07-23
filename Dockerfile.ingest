@@ -1,3 +1,12 @@
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+COPY package*.json tsconfig.json ./
+RUN npm install
+COPY src/ ./src/
+RUN npm run build
+
 FROM node:20-alpine
 
 WORKDIR /app
@@ -13,10 +22,10 @@ RUN apk add --no-cache wget gcompat libc6-compat && \
 
 # Install dependencies
 COPY package*.json ./
-RUN npm ci --production
+RUN npm install --omit=dev
 
 # Copy built files
-COPY dist/ ./dist/
+COPY --from=build /app/dist/ ./dist/
 
 # Copy package.json for runtime
 COPY package.json ./
