@@ -7,7 +7,7 @@ import MySqlManager from "@config/db/MySqlManager.js";
 import type { ParseJobRow } from "@shared/DatabaseManager.js";
 import { SourceType, JobStatus, JobTimings, JobCounts } from "@shared/models/job.js";
 import { sendRaw } from "@shared/QueueService.js";
-import { presignedPutUrl, parseGcsUrl, objectExists } from "@shared/GcsUtils.js";
+import { presignedPutUrl, parseGcsUrl, objectSize } from "@shared/GcsUtils.js";
 import { transition } from "@service/job_service/stateMachine.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 import { JobServiceService } from "@service/job_service/services/JobServiceService.js";
@@ -55,15 +55,35 @@ export class JobServiceServiceImpl implements JobServiceService {
       }
     }
 
-    if ([SourceType.S3, SourceType.URL].includes(source_type) && !source_ref) {
-      throw new ValidationError("source_ref is required for s3 and url sources");
+    if (!source_type || !Object.values(SourceType).includes(source_type as SourceType)) {
+      throw new ValidationError(`Invalid source_type: ${source_type}`);
     }
 
-    if (source_type === SourceType.S3 && source_ref) {
-      const [bucket, key] = parseGcsUrl(source_ref);
-      if (!(await objectExists(bucket, key))) {
-        throw new ValidationError(`source_ref file not found: ${source_ref}`);
+    if ([SourceType.S3, SourceType.URL, SourceType.ARCHIVE_ENTRY].includes(source_type) && !source_ref) {
+      throw new ValidationError("source_ref is required for s3, url and archive_entry sources");
+    }
+
+    if ((source_type === SourceType.S3 || source_type === SourceType.ARCHIVE_ENTRY) && source_ref) {
+      let bucket: string;
+      let key: string;
+      try {
+        [bucket, key] = parseGcsUrl(source_ref);
+      } catch {
+        throw new ValidationError(`source_ref must be a gs:// or s3:// URL: ${source_ref}`);
       }
+      try {
+        const size = await objectSize(bucket, key);
+        if (size === 0) {
+          throw new ValidationError(`source_ref file is empty: ${source_ref}`);
+        }
+      } catch (err) {
+        if (err instanceof ValidationError) throw err;
+        throw new ValidationError(`source_ref file not found or unreadable: ${source_ref}`);
+      }
+    }
+
+    if (source_type === SourceType.URL && source_ref && !/^https?:\/\//i.test(source_ref)) {
+      throw new ValidationError(`source_ref must be an http(s) URL for url sources: ${source_ref}`);
     }
 
     const namesFromArray = (arr: unknown[]): string[] =>
@@ -83,6 +103,10 @@ export class JobServiceServiceImpl implements JobServiceService {
       } else if ((field_spec as Record<string, unknown>).fields && Array.isArray((field_spec as Record<string, unknown>).fields)) {
         fieldNames = namesFromArray((field_spec as Record<string, unknown>).fields as unknown[]);
       }
+    }
+
+    if (!fieldNames.length) {
+      throw new ValidationError("field_spec must contain at least one valid field name");
     }
 
     const jobId = randomUUID();
