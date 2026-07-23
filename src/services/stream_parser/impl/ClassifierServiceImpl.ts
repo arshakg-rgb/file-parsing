@@ -222,7 +222,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     // they fall through to AI/human review instead of being force-parsed into garbage.
     const delimited = this.parseDelimitedRecord(line);
     if (delimited) {
-      return { verdict: "parsed", row: this.coerce(delimited), template_id: this.headerMap ? TEMPLATE_IDS.CSV_MAPPED : TEMPLATE_IDS.CSV_AUTO };
+      return { verdict: "parsed", row: this.coerce(delimited.row), template_id: delimited.usedHeader ? TEMPLATE_IDS.CSV_MAPPED : TEMPLATE_IDS.CSV_AUTO };
     }
 
     // 8. Nothing matched — keep-and-check. Caller escalates to AI, then human review.
@@ -638,13 +638,14 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
    * @param line - The line to process
    * @returns The record<string, unknown> | null result
    */
-  private parseDelimitedRecord(line: string): Record<string, unknown> | null {
+  private parseDelimitedRecord(line: string): { row: Record<string, unknown>; usedHeader: boolean } | null {
     if (this.fieldSpec.length === 0) return null;
     const parts = this.splitBestDelimited(line);
     if (!parts) return null;
 
     const row: Record<string, unknown> = {};
     let matched = 0;
+    let usedHeader = false;
 
     if (this.headerMap) {
       // Only trust the header if the line shape matches (column count close enough)
@@ -654,26 +655,34 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       const lineColCount = parts.length;
       const columnCountDiff = Math.abs(headerColCount - lineColCount);
       
-      // Accept header mapping if column counts match closely (within 2) OR
-      // if strong fields (email/phone) from header mapping actually validate
+      // Accept header mapping if column counts match closely (within 2 columns).
+      // Threshold of 2 allows for minor variations like trailing commas or empty trailing columns
+      // while still catching major shape mismatches (e.g., 5-column header vs 30-column data row).
+      // if strong fields (email/phone/zip/date/url) from header mapping actually validate
       let useHeaderMap = columnCountDiff <= 2;
       
       if (!useHeaderMap) {
-        // Check if header-mapped email/phone validate
-        const emailIdx = this.headerMap["email"];
-        const phoneIdx = this.headerMap["phone"];
-        const emailValue = emailIdx !== undefined && emailIdx < parts.length ? parts[emailIdx] : "";
-        const phoneValue = phoneIdx !== undefined && phoneIdx < parts.length ? parts[phoneIdx] : "";
+        // Check if header-mapped strong fields validate (generalized to all validatable fields)
+        const strongFields = ["email", "phone", "zip", "date", "url"];
+        let anyValid = false;
+        for (const field of strongFields) {
+          const idx = this.headerMap[field];
+          if (idx !== undefined && idx < parts.length) {
+            const value = parts[idx];
+            if (value && this.validateField(field, value)) {
+              anyValid = true;
+              break;
+            }
+          }
+        }
         
-        const emailValid = emailValue && this.validateField("email", emailValue);
-        const phoneValid = phoneValue && this.validateField("phone", phoneValue);
-        
-        if (emailValid || phoneValid) {
+        if (anyValid) {
           useHeaderMap = true;
         }
       }
       
       if (useHeaderMap) {
+        usedHeader = true;
         const mappedIndices = new Set<number>(Object.values(this.headerMap));
         for (const field of this.fieldSpec) {
           if (field === "meta") continue; // handled unconditionally below
@@ -694,7 +703,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
           row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
           if (row["meta"] !== null) matched++;
         }
-        return matched > 0 ? row : null;
+        return matched > 0 ? { row, usedHeader } : null;
       }
       // Header shape mismatch and strong fields don't validate - fall through to content-based
     }
@@ -715,7 +724,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       if (value !== null) matched++;
     }
     // Decline junk / headerless-unidentifiable rows: require at least one confident field.
-    return matched > 0 ? row : null;
+    return matched > 0 ? { row, usedHeader: false } : null;
   }
 
     /**
