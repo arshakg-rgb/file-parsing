@@ -21,7 +21,7 @@ substitutions:
   _RETRY_IMAGE_BASE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/retry
   _ARCHIVE_ENTRY_IMAGE_BASE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/archive-entry-consumer
   # AI classification mode for the streaming parser: off | mock | live.
-  _AI_INLINE_MODE: mock
+  _AI_INLINE_MODE: live
   # Hard cap on inline AI calls per job. Mock is free, but a low cap still aborts early.
   _MAX_AI_CALLS_PER_JOB: '100'
 

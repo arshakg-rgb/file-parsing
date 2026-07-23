@@ -64,7 +64,7 @@ SUP foiler, Wing Foiler, Kite Foiler.",0,1\n`;
     expect(texts[3]).toBe("999,footer");
   });
 
-  it("splits on the embedded newline when no quoted-newline limit is provided", () => {
+  it("preserves embedded newlines inside a quoted field when no quoted-newline limit is provided", () => {
     const input = `header,row
 34,"A","B","first
 second",0\n`;
@@ -72,9 +72,26 @@ second",0\n`;
     const lines = splitAllLines(Buffer.from(input, "utf-8"), "utf-8");
     const texts = lines.map((t) => t[0]);
 
-    expect(texts).toHaveLength(3);
+    expect(texts).toHaveLength(2);
     expect(texts[1]).toContain("34");
     expect(texts[1]).toContain("first");
-    expect(texts[2]).toContain("second");
+    expect(texts[1]).toContain("second");
+  });
+
+  it("preserves a quoted field with 100+ embedded newlines as a single row", () => {
+    const bio = Array.from({ length: 150 }, (_, i) => `line ${i}`).join("\n");
+    const header = "ID,name,description,verified\n";
+    const row = `12,jack,"${bio}",0\n`;
+    const footer = "999,footer,desc,1\n";
+    const input = header + row + footer;
+
+    const lines = splitAllLines(Buffer.from(input, "utf-8"), "utf-8", 100);
+    const texts = lines.map((t) => t[0]);
+
+    expect(texts).toHaveLength(3);
+    expect(texts[1]).toContain("12,jack,");
+    expect(texts[1]).toContain("line 0");
+    expect(texts[1]).toContain("line 149");
+    expect(texts[2]).toBe("999,footer,desc,1");
   });
 });
