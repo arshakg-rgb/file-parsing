@@ -543,6 +543,7 @@ export class StreamParserService {
           this.logger.warn("parsed_batch_flush_error", { error: String(e) });
         }));
       }
+      
       if (force && rubbishBatch.length > 0) {
         const batch = rubbishBatch; rubbishBatch = [];
         flushTasks.push(repositories.rubbishLogs.bulkCreate(batch as any).catch(e => {
