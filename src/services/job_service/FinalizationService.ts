@@ -83,19 +83,27 @@ class FinalizationService {
     // Cross-template final merge: if the per-template outputs are small enough, collapse
     // them into one job-level merged Parquet file so callers receive a single output_paths entry.
     try {
+      console.log("finalize_cross_merge_check", { jobId, mergedPaths_count: mergedPaths.length });
       if (mergedPaths.length > 1) {
         const mergedStoragePaths = mergedPaths.map((p) => StoragePath.parse(p));
         const totalMergedSize = await this.totalPartSize(mergedStoragePaths);
+        console.log("finalize_cross_merge_size_check", { jobId, totalMergedSize, max_size: settings.MAX_MERGED_PART_BYTES });
         if (totalMergedSize <= settings.MAX_MERGED_PART_BYTES) {
           const allRows = await this.mergeRows(mergedStoragePaths);
+          console.log("finalize_cross_merge_rows", { jobId, rows_count: allRows.length });
           if (allRows.length) {
             this.normalizeLineNumbers(allRows);
             const finalKey = `outputs/${jobId}/merged/output.parquet`;
             const finalPath = new StoragePath(mergedStoragePaths[0].protocol, bucket, finalKey);
             await this.engine.writeRows(this.storage, finalPath, allRows);
             await this.backfillLineNumbers(jobId, [finalPath]);
+            console.log("finalize_cross_merge_success", { jobId, final_path: finalPath.toString() });
             return { failed: false, paths: [finalPath.toString()] };
+          } else {
+            console.log("finalize_cross_merge_skip_empty", { jobId });
           }
+        } else {
+          console.log("finalize_cross_merge_skip_too_large", { jobId, totalMergedSize });
         }
       }
     } catch (err) {
