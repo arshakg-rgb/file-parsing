@@ -162,6 +162,10 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       }
     }
 
+    // 1c. Header-detected CSV: try CSV parsing if a header was seen, but don't skip
+    // structural recognizers - they handle mixed-format files (KV/JSON) better.
+    // Moved CSV parsing to end after structural recognizers to allow KV/JSON to match first.
+
     const fp = quickFingerprint(line);
     const cached = this.aiCache.get(fp);
 

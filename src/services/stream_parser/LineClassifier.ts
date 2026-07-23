@@ -153,18 +153,15 @@ export class LineClassifier implements IClassifier {
     // 1c. Client-supplied explicit column map (headerless fixed-column files). Authoritative
     // for delimited rows: it wins over learned templates. It only accepts a line whose mapped
     // email/phone column actually validates, so kv/JSON/binary lines decline here and fall
-    // through to the structural/content recognizers below.
+    // through to the structural recognizers below.
     if (this.columnMap) {
       const mapped = this.applyColumnMap(line);
       if (mapped) return { verdict: "parsed", row: this.coerce(mapped), template_id: "csv-column-map" };
     }
 
-    // 1d. Header-detected fast path: if a header row was seen, we already know the column
-    // layout — skip template/AI matching entirely and go straight to delimited extraction.
-    if (this.headerMap) {
-      const delimited = this.parseDelimitedRecord(line);
-      if (delimited) return { verdict: "parsed", row: this.coerce(delimited), template_id: "csv-mapped" };
-    }
+    // 1d. Header-detected CSV: try CSV parsing if a header was seen, but don't skip
+    // structural recognizers - they handle mixed-format files (KV/JSON) better.
+    // Moved CSV parsing to end after structural recognizers to allow KV/JSON to match first.
 
     // 2. Known learned record templates (records have priority over rubbish).
     // AI cache is only consumed in steps 3 and 6, so compute the fingerprint lazily.
