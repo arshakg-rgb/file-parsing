@@ -443,6 +443,19 @@ steps:
           --add-volume-mount volume=rar-temp,mount-path=/mnt/scratch \
           --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
 
+  # Ensure all deployed services route 100% of traffic to the newly built revisions.
+  # This guards against builds that deploy revisions but leave traffic on an older one.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'migrate-cloud-run-traffic'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        for svc in job-service ingest detect-bootstrap stream-parser load report archive-entry-consumer; do
+          echo "Routing traffic to latest for $svc"
+          gcloud run services update-traffic $svc --to-latest --region $_REGION --platform managed --quiet || echo "Traffic migration skipped for $svc"
+        done
+
 images:
   - $_JOB_IMAGE
   - $_INGEST_IMAGE

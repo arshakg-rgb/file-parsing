@@ -391,6 +391,7 @@ If uncertain:
    * @returns Classification response with template if successful
    */
   async classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> {
+    this.logger.info("ai_classifier_build_marker", { marker: "v2-json-mode" });
     this.totalClassifications++;
     this.logger.info("classify_ai_start", { job_id: req.job_id, line_length: req.unknown_line.length, field_spec: req.field_spec });
 
