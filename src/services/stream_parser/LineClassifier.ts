@@ -763,12 +763,24 @@ export class LineClassifier implements IClassifier {
         }
         return matched > 0 ? { row, usedHeader } : null;
       }
-      // Header shape mismatch and strong fields don't validate - fall through to content-based
+
+      // Header shape mismatch and strong fields don't validate.
+      // The current line may itself be a header for a later CSV section (mixed-format files
+      // often contain multiple delimited sections). Try to detect a new header; if it works,
+      // install it and drop the line as a header row. The following rows will use the new map.
+      const newHeader = this.detectHeader(line);
+      if (newHeader) {
+        this.headerMap = newHeader;
+        this.headerParts = parts.map((p) => p.trim());
+        return null;
+      }
+      // fall through to content-based
     }
 
     // No header: identify columns by CONTENT for strongly-validatable fields (email/phone).
     // Weak fields (name/address) can't be reliably located without a header, so leave null.
     const claimed = new Set<number>();
+    let strongMatched = 0;
     for (let i = 0; i < this.fieldSpec.length; i++) {
       const field = this.fieldSpec[i];
       const nf = this.normalizedFieldSpec[i];
@@ -780,10 +792,47 @@ export class LineClassifier implements IClassifier {
         }
       }
       row[field] = value;
-      if (value !== null) matched++;
+      if (value !== null) { matched++; strongMatched++; }
     }
-    // Decline junk / headerless-unidentifiable rows: require at least one confident field.
-    return matched > 0 ? { row, usedHeader: false } : null;
+
+    // Best-effort: assign non-ID-like unclaimed text columns to weak fields (address/location/name).
+    // This helps with fixed-format headerless CSVs like the OD order exports where the structure is
+    // consistent. Remaining unclaimed columns are still folded into meta below.
+    const idLikeRe = /^\d+$|^OD\d+$/i;
+    const salutationRe = /^(Mr|Mrs|Ms|Master|Miss)\.?$/i;
+    const delimiterOnlyRe = /^[,;]+$/;
+    const weakCandidates: number[] = [];
+    for (let j = 0; j < parts.length; j++) {
+      if (claimed.has(j)) continue;
+      const v = String(parts[j] ?? "").trim();
+      if (!v || delimiterOnlyRe.test(v) || idLikeRe.test(v) || salutationRe.test(v)) continue;
+      weakCandidates.push(j);
+    }
+    for (let i = 0; i < this.fieldSpec.length && weakCandidates.length > 0; i++) {
+      const field = this.fieldSpec[i];
+      const nf = this.normalizedFieldSpec[i];
+      if (nf === "email" || nf === "phone" || nf === "zip" || nf === "date" || nf === "url" || nf === "meta") continue;
+      if (row[field] !== null) continue;
+      const idx = weakCandidates.shift()!;
+      row[field] = parts[idx];
+      claimed.add(idx);
+      matched++;
+    }
+
+    // Preserve all remaining unclaimed source columns in meta so address/location/name
+    // data is not lost for headerless multi-column CSV (e.g. the OD order exports).
+    if (this.fieldSpec.includes("meta")) {
+      const metaObj: Record<string, string> = {};
+      for (let j = 0; j < parts.length; j++) {
+        if (claimed.has(j)) continue;
+        const v = String(parts[j] ?? "").trim();
+        if (v !== "") metaObj[`col_${j}`] = v;
+      }
+      row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
+      if (row["meta"] !== null) matched++;
+    }
+    // Decline junk / headerless-unidentifiable rows: require at least one strong (validatable) field.
+    return strongMatched > 0 ? { row, usedHeader: false } : null;
   }
 
     /**
