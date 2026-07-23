@@ -716,16 +716,21 @@ export class LineClassifier implements IClassifier {
       let useHeaderMap = columnCountDiff <= 2;
       
       if (!useHeaderMap) {
-        // Check if header-mapped email/phone validate
-        const emailIdx = this.headerMap["email"];
-        const phoneIdx = this.headerMap["phone"];
-        const emailValue = emailIdx !== undefined && emailIdx < parts.length ? parts[emailIdx] : "";
-        const phoneValue = phoneIdx !== undefined && phoneIdx < parts.length ? parts[phoneIdx] : "";
+        // Check if header-mapped strong fields validate (generalized to all validatable fields)
+        const strongFields = ["email", "phone", "zip", "date", "url"];
+        let anyValid = false;
+        for (const field of strongFields) {
+          const idx = this.headerMap[field];
+          if (idx !== undefined && idx < parts.length) {
+            const value = parts[idx];
+            if (value && this.validateField(field, value)) {
+              anyValid = true;
+              break;
+            }
+          }
+        }
         
-        const emailValid = emailValue && this.validateField("email", emailValue);
-        const phoneValid = phoneValue && this.validateField("phone", phoneValue);
-        
-        if (emailValid || phoneValid) {
+        if (anyValid) {
           useHeaderMap = true;
         }
       }
