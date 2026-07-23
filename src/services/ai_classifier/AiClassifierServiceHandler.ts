@@ -204,7 +204,6 @@ export class AiClassifierService {
     const MODEL = settings.VERTEX_MODEL || "gemini-2.5-flash";
     const ai = this.getGenAIClient();
 
-
     const generatePromise = ai.models.generateContent({
       model: MODEL,
       contents: [
