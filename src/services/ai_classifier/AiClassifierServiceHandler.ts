@@ -31,9 +31,13 @@ function extractJsonFromMarkdown(raw: string): string {
     }
   }
 
-  // Fix invalid JSON escape sequences: a backslash followed by anything that isn't a
-  // valid JSON escape character (", \, /, b, f, n, r, t, uXXXX) should be escaped as \\
-  trimmed = trimmed.replace(/\\([^"\\\/bfnrtu])/g, '\\\\$1');
+  // Fix invalid JSON escape sequences: match valid escape sequences as atomic units first
+  // (so a \\ pair or \uXXXX gets consumed together and left alone), and only escape
+  // backslashes that aren't part of a valid sequence
+  trimmed = trimmed.replace(
+    /\\(u[0-9a-fA-F]{4}|["\\\/bfnrt])|\\/g,
+    (match) => (match.length > 1 ? match : "\\\\")
+  );
 
   return trimmed;
 }
