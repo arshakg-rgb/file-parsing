@@ -738,7 +738,9 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
 
     // Best-effort: assign non-ID-like unclaimed text columns to weak fields (address/location/name).
     // This helps with fixed-format headerless CSVs like the OD order exports where the structure is
-    // consistent. Remaining unclaimed columns are still folded into meta below.
+    // consistent. Instead of mapping a single column per weak field, we split the whole list of
+    // weak candidates evenly across the requested weak fields so multi-part street/city/zip/country
+    // rows populate address and location with full context rather than dumping most of it into meta.
     const idLikeRe = /^\d+$|^OD\d+$/i;
     const salutationRe = /^(Mr|Mrs|Ms|Master|Miss)\.?$/i;
     const delimiterOnlyRe = /^[,;]+$/;
@@ -749,15 +751,31 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       if (!v || delimiterOnlyRe.test(v) || idLikeRe.test(v) || salutationRe.test(v)) continue;
       weakCandidates.push(i);
     }
+    const weakFields: string[] = [];
     for (const field of this.fieldSpec) {
-      if (weakCandidates.length === 0) break;
       const nf = this.normalizeKey(field);
       if (nf === "email" || nf === "phone" || nf === "zip" || nf === "date" || nf === "url" || nf === "meta") continue;
       if (row[field] !== null) continue;
-      const idx = weakCandidates.shift()!;
-      row[field] = parts[idx];
-      claimed.add(idx);
-      matched++;
+      weakFields.push(field);
+    }
+    if (weakFields.length > 0 && weakCandidates.length > 0) {
+      let cursor = 0;
+      for (let wi = 0; wi < weakFields.length; wi++) {
+        const field = weakFields[wi];
+        const remaining = weakCandidates.length - cursor;
+        const remainingFields = weakFields.length - wi;
+        const chunkSize = Math.max(1, Math.ceil(remaining / remainingFields));
+        const chunk = weakCandidates.slice(cursor, cursor + chunkSize);
+        cursor += chunkSize;
+        if (chunk.length === 0) continue;
+        const values = chunk
+          .map((idx) => String(parts[idx] ?? "").trim())
+          .filter((v) => v !== "");
+        if (values.length === 0) continue;
+        for (const idx of chunk) claimed.add(idx);
+        row[field] = values.join(", ");
+        matched++;
+      }
     }
 
     // Preserve all remaining unclaimed source columns in meta so address/location/name
