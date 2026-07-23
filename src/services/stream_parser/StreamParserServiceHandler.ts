@@ -455,6 +455,12 @@ export class StreamParserService {
     const repositories = MySqlManager.getInstance().repositories;
     const bgFlushes: Promise<void>[] = [];
 
+    // RAM watermark hysteresis: high threshold triggers flush, low threshold resets.
+    // Prevents flush thrashing when RSS doesn't drop immediately after flushing.
+    const RAM_WATERMARK_HIGH = settings.RAM_FLUSH_WATERMARK;
+    const RAM_WATERMARK_LOW = settings.RAM_FLUSH_WATERMARK * 0.7;
+    let overWatermark = false;
+
     const drainIfReady = async (): Promise<void> => {
       // Backpressure: if too many DB flushes are in-flight, drain the oldest before continuing
       if (bgFlushes.length >= 4) {
@@ -487,11 +493,14 @@ export class StreamParserService {
       // Use rss (resident set size) because Cloud Run's OOM killer enforces total container memory,
       // not just V8 heap.
       const mem = process.memoryUsage();
-      if (mem.rss >= settings.RAM_FLUSH_WATERMARK) {
-        this.logger.warn("ram_watermark_reached", { rss: mem.rss, heap_used: mem.heapUsed, watermark: settings.RAM_FLUSH_WATERMARK });
+      if (!overWatermark && mem.rss >= RAM_WATERMARK_HIGH) {
+        overWatermark = true;
+        this.logger.warn("ram_watermark_reached", { rss: mem.rss, heap_used: mem.heapUsed, watermark: RAM_WATERMARK_HIGH });
         await flushBatches(true);
         await outputManager.flushAll();
         csvWriter.flushPending();
+      } else if (overWatermark && mem.rss < RAM_WATERMARK_LOW) {
+        overWatermark = false;
       }
     };
 
