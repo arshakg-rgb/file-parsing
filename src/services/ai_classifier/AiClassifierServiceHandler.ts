@@ -207,7 +207,8 @@ export class AiClassifierService {
       config: {
         responseModalities: ["TEXT"],
         temperature: 0.2,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 2048,
+        responseMimeType: "application/json",
       },
     });
 
@@ -459,7 +460,7 @@ If uncertain:
       this.vertexAiCalls++;
       this.logger.info("vertex_ai_request_start", { job_id: req.job_id, fingerprint: lineFp, prompt_length: userPrompt.length, model: settings.VERTEX_MODEL || "gemini-2.5-flash" });
       const rawText = await this.askVertexAI(userPrompt);
-      this.logger.info("vertex_ai_response_raw", { job_id: req.job_id, fingerprint: lineFp, response: rawText.slice(0, 500) });
+      this.logger.info("vertex_ai_response_raw", { job_id: req.job_id, fingerprint: lineFp, response_length: rawText.length, response: rawText.slice(0, 2000) });
       const raw = JSON.parse(extractJsonFromMarkdown(rawText)) as Record<string, unknown>;
       this.logger.info("vertex_ai_response_parsed", { job_id: req.job_id, fingerprint: lineFp, parsedKind: raw.kind, parsedKeys: Object.keys(raw).length });
       let kindStr = (raw.kind as string) || "uncertain";
