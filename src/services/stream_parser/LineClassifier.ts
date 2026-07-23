@@ -173,7 +173,16 @@ export class LineClassifier implements IClassifier {
       return { verdict: "parsed", row: this.coerce(structural.row), template_id: structural.template_id };
     }
 
-    // 3. Known learned record templates (records have priority over rubbish).
+    // 3. Validated delimited/CSV extraction: header-mapped when a header was seen, else
+    // identify columns by CONTENT (email/phone). Run before learned templates so stale
+    // learned/AI cached regex templates cannot intercept well-formed CSV rows and force
+    // only one weak field, dropping email/phone/location in the process.
+    const delimited = this.parseDelimitedRecord(line);
+    if (delimited) {
+      return { verdict: "parsed", row: this.coerce(delimited.row), template_id: delimited.usedHeader ? "csv-mapped" : "csv-auto" };
+    }
+
+    // 4. Known learned record templates (records have priority over rubbish).
     // AI cache is only consumed in steps 4 and 6, so compute the fingerprint lazily.
     let computedCache = false;
     let cached: RecordTemplate | RubbishTemplate | undefined;
@@ -233,15 +242,9 @@ export class LineClassifier implements IClassifier {
       return { verdict: "rubbish", template_id: c6.template_id };
     }
 
-    // 7. Validated delimited/CSV extraction: header-mapped when a header was seen, else
-    // identify columns by CONTENT (email/phone). Returns null for junk/unmappable rows so
-    // they fall through to AI/human review instead of being force-parsed into garbage.
-    const delimited = this.parseDelimitedRecord(line);
-    if (delimited) {
-      return { verdict: "parsed", row: this.coerce(delimited.row), template_id: delimited.usedHeader ? "csv-mapped" : "csv-auto" };
-    }
+    // CSV extraction moved before learned templates above.
 
-    // 8. Nothing matched — keep-and-check. Caller escalates to AI, then human review.
+    // 7. Nothing matched — keep-and-check. Caller escalates to AI, then human review.
     return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
   }
 
@@ -799,10 +802,12 @@ export class LineClassifier implements IClassifier {
 
     // Best-effort: assign non-ID-like unclaimed text columns to weak fields (address/location/name).
     // This helps with fixed-format headerless CSVs like the OD order exports where the structure is
-    // consistent. Instead of mapping a single column per weak field, we split the whole list of
-    // weak candidates evenly across the requested weak fields so multi-part street/city/zip/country
-    // rows populate address and location with full context rather than dumping most of it into meta.
-    const idLikeRe = /^\d+$|^OD\d+$/i;
+    // consistent. Street/city/zip/country appear as separate columns; group each contiguous run of
+    // text columns into one weak field so address gets the street block and location gets the
+    // city/state/zip/country block, instead of interleaving columns across fields.
+    // Reject only obvious numeric IDs (7+ digits) and OD codes. Short numeric strings
+    // (4-6 digits) are typically ZIP/postal codes and belong in the location grouping.
+    const idLikeRe = /^\d{7,}$|^OD\d+$/i;
     const salutationRe = /^(Mr|Mrs|Ms|Master|Miss)\.?$/i;
     const delimiterOnlyRe = /^[,;]+$/;
     const weakCandidates: number[] = [];
@@ -812,6 +817,13 @@ export class LineClassifier implements IClassifier {
       if (!v || delimiterOnlyRe.test(v) || idLikeRe.test(v) || salutationRe.test(v)) continue;
       weakCandidates.push(j);
     }
+
+    // Split candidates into contiguous runs (empty columns break a run). For OD-style rows
+    // the street block is the first run; city/state/zip/country may be one or more later runs.
+    // If there are more runs than weak fields, merge the trailing runs into the last weak
+    // field so city/state/zip/country stay in location. If everything is one big run, try
+    // to split it at the first 4-6 digit postal/ZIP code so address keeps the street/city
+    // block and location keeps the postal/country block.
     const weakFieldIndices: number[] = [];
     for (let i = 0; i < this.fieldSpec.length; i++) {
       const nf = this.normalizedFieldSpec[i];
@@ -819,21 +831,48 @@ export class LineClassifier implements IClassifier {
       if (row[this.fieldSpec[i]] !== null) continue;
       weakFieldIndices.push(i);
     }
+    const zipRe = /^\d{4,6}$/;
     if (weakFieldIndices.length > 0 && weakCandidates.length > 0) {
-      let cursor = 0;
+      const runs: number[][] = [];
+      let current: number[] = [];
+      for (let k = 0; k < weakCandidates.length; k++) {
+        const idx = weakCandidates[k];
+        if (current.length === 0 || idx === weakCandidates[k - 1] + 1) {
+          current.push(idx);
+        } else {
+          runs.push(current);
+          current = [idx];
+        }
+      }
+      if (current.length) runs.push(current);
+
+      // Pre-split a single long run at the first postal code to separate address/location.
+      if (runs.length === 1 && weakFieldIndices.length > 1) {
+        const run = runs[0];
+        const zipPos = run.findIndex((idx) => zipRe.test(String(parts[idx] ?? "").trim()));
+        if (zipPos > 0) {
+          runs.splice(0, 1, run.slice(0, zipPos), run.slice(zipPos));
+        }
+      }
+
       for (let wi = 0; wi < weakFieldIndices.length; wi++) {
         const field = this.fieldSpec[weakFieldIndices[wi]];
-        const remaining = weakCandidates.length - cursor;
-        const remainingFields = weakFieldIndices.length - wi;
-        const chunkSize = Math.max(1, Math.ceil(remaining / remainingFields));
-        const chunk = weakCandidates.slice(cursor, cursor + chunkSize);
-        cursor += chunkSize;
-        if (chunk.length === 0) continue;
-        const values = chunk
+        const isLast = wi === weakFieldIndices.length - 1;
+        const chunks: number[][] = [];
+        if (wi < runs.length) {
+          chunks.push(runs[wi]);
+        }
+        // Merge all remaining runs into the last weak field.
+        if (isLast) {
+          for (let r = wi + 1; r < runs.length; r++) chunks.push(runs[r]);
+        }
+        if (chunks.length === 0) continue;
+        const values = chunks
+          .flat()
           .map((idx) => String(parts[idx] ?? "").trim())
           .filter((v) => v !== "");
         if (values.length === 0) continue;
-        for (const idx of chunk) claimed.add(idx);
+        for (const chunk of chunks) for (const idx of chunk) claimed.add(idx);
         row[field] = values.join(", ");
         matched++;
       }
@@ -843,16 +882,20 @@ export class LineClassifier implements IClassifier {
     // data is not lost for headerless multi-column CSV (e.g. the OD order exports). This
     // runs unconditionally, even when the caller's field_spec omits "meta", because
     // CsvOutputWriter always appends a meta column to the output CSV.
+    // Drop obvious IDs and salutations from meta to keep it clean.
     const metaObj: Record<string, string> = {};
     for (let j = 0; j < parts.length; j++) {
       if (claimed.has(j)) continue;
       const v = String(parts[j] ?? "").trim();
-      if (v !== "") metaObj[`col_${j}`] = v;
+      if (!v || idLikeRe.test(v) || salutationRe.test(v) || delimiterOnlyRe.test(v)) continue;
+      metaObj[`col_${j}`] = v;
     }
     row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
     if (row["meta"] !== null) matched++;
-    // Decline junk / headerless-unidentifiable rows: require at least one strong (validatable) field.
-    return strongMatched > 0 ? { row, usedHeader: false } : null;
+    // Accept rows with at least one strong (validatable) field, OR multi-column rows that
+    // contain usable text we could map to a weak field. This prevents throwing away
+    // address-only CSV lines that have no email/phone but are still structured data.
+    return strongMatched > 0 || (parts.length > 4 && matched > 0) ? { row, usedHeader: false } : null;
   }
 
     /**
