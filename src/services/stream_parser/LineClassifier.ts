@@ -408,9 +408,35 @@ export class LineClassifier implements IClassifier {
     }
     if (rec.structure === "kv") {
       const obj: Record<string, string> = {};
-      for (const part of line.split(/[;\s]/)) {
-        const [k, v] = part.split("=", 2);
-        if (k && v !== undefined) obj[k.trim()] = v.trim();
+      // Try different key-value separators: =, :, or -
+      // Try different pair separators: ;, or " - "
+      let parts: string[] = [];
+      
+      // First try " - " as pair separator (common in key-value logs)
+      if (line.includes(" - ")) {
+        parts = line.split(" - ");
+      } else if (line.includes(";")) {
+        parts = line.split(";");
+      } else {
+        // Fallback to whitespace
+        parts = line.split(/\s+/);
+      }
+      
+      for (const part of parts) {
+        // Try different key-value separators
+        let k: string | undefined, v: string | undefined;
+        
+        if (part.includes("=")) {
+          [k, v] = part.split("=", 2);
+        } else if (part.includes(":")) {
+          [k, v] = part.split(":", 2);
+        } else if (part.includes("-")) {
+          [k, v] = part.split("-", 2);
+        }
+        
+        if (k && v !== undefined) {
+          obj[k.trim()] = v.trim();
+        }
       }
       return Object.keys(obj).length > 0 ? obj : null;
     }
