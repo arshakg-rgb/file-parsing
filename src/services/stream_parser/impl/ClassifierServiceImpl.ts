@@ -138,7 +138,11 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       return { verdict: "uncertain", failure_class: FailureClass.TRANSFORM_ERROR };
     }
     const nonPrintable = (trimmed.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g) || []).length;
-    if (nonPrintable / trimmed.length > BINARY_THRESHOLD) {
+    // Lower threshold for CSV-like lines (lines with delimiters) to catch binary data
+    // that happens to have commas/quotes making it look like CSV
+    const hasDelimiters = /[,\t;|]/.test(trimmed);
+    const threshold = hasDelimiters ? 0.15 : BINARY_THRESHOLD;
+    if (nonPrintable / trimmed.length > threshold) {
       return { verdict: "rubbish", template_id: TEMPLATE_IDS.BINARY_GATE };
     }
 
