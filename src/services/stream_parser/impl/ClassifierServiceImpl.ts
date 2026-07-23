@@ -538,17 +538,17 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       }
     }
 
-    // Fold every unmapped source key into meta
-    if (this.fieldSpec.includes("meta")) {
-      const metaObj: Record<string, string> = {};
-      for (const [k, v] of Object.entries(obj)) {
-        if (!consumedKeys.has(this.normalizeKey(k)) && v !== undefined && v !== null && String(v).trim() !== "") {
-          metaObj[k] = String(v).trim();
-        }
+    // Fold every unmapped source key into meta. This runs unconditionally — even when the
+    // caller's field_spec omits "meta" — because CsvOutputWriter always appends a meta
+    // column to the output CSV, so any extra source fields must land there or be lost.
+    const metaObj: Record<string, string> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (!consumedKeys.has(this.normalizeKey(k)) && v !== undefined && v !== null && String(v).trim() !== "") {
+        metaObj[k] = String(v).trim();
       }
-      row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
-      if (row["meta"] !== null) matched++;
     }
+    row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
+    if (row["meta"] !== null) matched++;
 
     const accept = requireStrong
       ? strong >= 1 || matched >= Math.min(2, this.fieldSpec.length)
@@ -761,17 +761,17 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     }
 
     // Preserve all remaining unclaimed source columns in meta so address/location/name
-    // data is not lost for headerless multi-column CSV (e.g. the OD order exports).
-    if (this.fieldSpec.includes("meta")) {
-      const metaObj: Record<string, string> = {};
-      for (let i = 0; i < parts.length; i++) {
-        if (claimed.has(i)) continue;
-        const v = String(parts[i] ?? "").trim();
-        if (v !== "") metaObj[`col_${i}`] = v;
-      }
-      row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
-      if (row["meta"] !== null) matched++;
+    // data is not lost for headerless multi-column CSV (e.g. the OD order exports). This
+    // runs unconditionally, even when the caller's field_spec omits "meta", because
+    // CsvOutputWriter always appends a meta column to the output CSV.
+    const metaObj: Record<string, string> = {};
+    for (let i = 0; i < parts.length; i++) {
+      if (claimed.has(i)) continue;
+      const v = String(parts[i] ?? "").trim();
+      if (v !== "") metaObj[`col_${i}`] = v;
     }
+    row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
+    if (row["meta"] !== null) matched++;
     // Decline junk / headerless-unidentifiable rows: require at least one strong (validatable) field.
     return strongMatched > 0 ? { row, usedHeader: false } : null;
   }
