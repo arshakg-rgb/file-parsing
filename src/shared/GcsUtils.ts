@@ -472,7 +472,22 @@ class GcsUtils extends ServiceManager {
     if (result.lineStart < data.length) {
       const raw = data.slice(result.lineStart);
       const text = decode(raw, encoding).replace(/\r\n$|\n$/, "");
-      if (text) yield [text, baseOffset + result.lineStart, raw.length];
+      
+      // Detect and split run-on KV records (multiple records joined by space instead of newline)
+      // Pattern: Email: X - Name: Y - Followers: N - Created At: ... Email: A - Name: B...
+      if (text.includes("Email:") && (text.match(/Email:/g) || []).length > 1) {
+        const chunks = text.split(/\s+(?=Email:\s)/);
+        let currentOffset = baseOffset + result.lineStart;
+        for (const chunk of chunks) {
+          if (chunk.trim()) {
+            const chunkBytes = Buffer.byteLength(chunk, encoding as BufferEncoding);
+            yield [chunk.trim(), currentOffset, chunkBytes];
+            currentOffset += chunkBytes + 1; // +1 for the space separator
+          }
+        }
+      } else if (text) {
+        yield [text, baseOffset + result.lineStart, raw.length];
+      }
     }
   }
 
