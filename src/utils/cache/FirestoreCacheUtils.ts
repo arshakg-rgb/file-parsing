@@ -535,7 +535,7 @@ class FirestoreCacheUtils {
           yield makeLine(pos + 1);
         } else {
           quotedNewlines++;
-          if (quotedNewlines > this.config.settings.MAX_QUOTED_NEWLINES || pos + 1 - lineStart >= this.config.settings.MAX_LINE_BYTES) {
+          if (pos + 1 - lineStart >= this.config.settings.MAX_LINE_BYTES) {
             state.inQuote = false;
             yield makeLine(pos + 1);
           }
