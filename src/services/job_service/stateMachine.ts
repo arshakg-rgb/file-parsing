@@ -135,9 +135,21 @@ async function createChildJob(event: JobEvent): Promise<void> {
   const now = new Date().toISOString();
   const childId = randomUUID();
 
-  // Ensure field_spec is never null - fallback to empty array
-  const rawFieldSpec = data.field_spec || [];
-  const fieldSpec = Array.isArray(rawFieldSpec) ? rawFieldSpec : (typeof rawFieldSpec === "string" ? JSON.parse(rawFieldSpec) : []);
+  // Validate source_ref URL scheme
+  if (data.entry_name && !/^gs:\/\/|^s3:\/\//i.test(data.entry_name)) {
+    throw new Error(`source_ref must be a gs:// or s3:// URL: ${data.entry_name}`);
+  }
+
+  // Validate field_spec is an array
+  if (!Array.isArray(data.field_spec)) {
+    throw new Error("field_spec must be an array of field names");
+  }
+
+  if (!data.field_spec.length) {
+    throw new Error("field_spec must contain at least one field name");
+  }
+
+  const fieldSpec = data.field_spec;
 
   await repositories.jobs.create({
     job_id: childId,

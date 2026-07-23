@@ -35,6 +35,14 @@ app.post("/upload", upload.single("file"), async (req: Request, res: Response) =
       return res.status(400).json({ error: "field_spec is required" });
     }
 
+    if (!Array.isArray(field_spec)) {
+      return res.status(400).json({ error: "field_spec must be an array of field names" });
+    }
+
+    if (!field_spec.length) {
+      return res.status(400).json({ error: "field_spec must contain at least one field name" });
+    }
+
     // Generate unique filename
     const filename = `${Date.now()}-${req.file.originalname}`;
     const [bucket, key] = parseGcsUrl(`gs://${settings.DATA_BUCKET}`);

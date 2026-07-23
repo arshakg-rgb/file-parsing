@@ -320,6 +320,9 @@ export class IngestService {
   private async resolveSource(msg: IngestMessage): Promise<{ s3Url: string; size: number } | null> {
     if (msg.source_type === SourceType.S3) {
       const url = msg.source_ref;
+      if (!/^gs:\/\/|^s3:\/\//i.test(url)) {
+        throw new Error(`source_ref must be a gs:// or s3:// URL: ${url}`);
+      }
       if (url.endsWith("/")) {
         this.stats.s3PrefixFanouts++;
         const objects = await listS3Prefix(url);
@@ -343,9 +346,15 @@ export class IngestService {
       return { s3Url: url, size };
     } else if (msg.source_type === SourceType.URL) {
       this.stats.urlFetches++;
+      if (!/^https?:\/\//i.test(msg.source_ref)) {
+        throw new Error(`source_ref must be an http(s) URL for url sources: ${msg.source_ref}`);
+      }
       const [s3Url, size] = await fetchUrlToS3(msg.job_id, msg.source_ref);
       return { s3Url, size };
     } else if ([SourceType.UPLOAD, SourceType.ARCHIVE_ENTRY].includes(msg.source_type)) {
+      if (!/^gs:\/\/|^s3:\/\//i.test(msg.source_ref)) {
+        throw new Error(`source_ref must be a gs:// or s3:// URL: ${msg.source_ref}`);
+      }
       const [bucket, key] = parseGcsUrl(msg.source_ref);
       this.logger.debug("upload_source_debug", { job_id: msg.job_id, bucket, key, source_ref: msg.source_ref });
       
