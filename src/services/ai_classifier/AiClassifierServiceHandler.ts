@@ -21,15 +21,20 @@ function extractJsonFromMarkdown(raw: string): string {
   const firstBrace = trimmed.indexOf("{");
   const lastBrace = trimmed.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    return trimmed.slice(firstBrace, lastBrace + 1);
+    trimmed = trimmed.slice(firstBrace, lastBrace + 1);
+  } else {
+    // Find the first [ and last ]
+    const firstBracket = trimmed.indexOf("[");
+    const lastBracket = trimmed.lastIndexOf("]");
+    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+      trimmed = trimmed.slice(firstBracket, lastBracket + 1);
+    }
   }
 
-  // Find the first [ and last ]
-  const firstBracket = trimmed.indexOf("[");
-  const lastBracket = trimmed.lastIndexOf("]");
-  if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
-    return trimmed.slice(firstBracket, lastBracket + 1);
-  }
+  // Fix invalid JSON escape sequences: a backslash followed by anything that isn't a
+  // valid JSON escape char (", \, /, b, f, n, r, t, u) must itself be escaped.
+  // This repairs regex patterns like "\d+", "\s+", "\w+" that the model often emits.
+  trimmed = trimmed.replace(/\\(?!["\\/bfnrtu])/g, "\\\\");
 
   return trimmed;
 }
@@ -247,6 +252,7 @@ Your task: classify the line and generate a REUSABLE declarative template.
 7. Validate your template against the triggering line before responding.
 8. MUST return valid JSON format only - no YAML, no markdown code blocks.
 9. The "kind" field MUST be exactly one of: "record-template", "rubbish-signature", or "uncertain" - no other values are accepted.
+10. Regex patterns inside "regex" fields MUST use double backslashes for JSON validity (e.g. write "\\d+" or "\\s+", not "\d+" or "\s+"), since this is a JSON string, not a raw regex literal.
 
 == OUTPUT FORMAT (JSON ONLY) ==
 

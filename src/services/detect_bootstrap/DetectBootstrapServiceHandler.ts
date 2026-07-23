@@ -152,6 +152,7 @@ export class DetectBootstrapService {
    * Start the consumer loop
    */
   async start(): Promise<void> {
+    this.logger.info("detect_bootstrap_build_marker", { marker: "v2-json-mode" });
     if (this.running) {
       this.logger.warn("detect_bootstrap_already_running");
       return;
