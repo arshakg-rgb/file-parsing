@@ -47,7 +47,7 @@ const STRUCTURE_NAMES = new Set(["csv", "json", "kv", "fixed", "regex"]);
 
 /**
  * AI Classifier Service - Senior Level ORM-Style Implementation
- * 
+ *
  * This service provides AI-powered classification for unknown lines in the parsing pipeline.
  * It integrates with Vertex AI for template generation and includes local caching
  * to minimize API calls. Follows ORM-style patterns with:
@@ -56,7 +56,7 @@ const STRUCTURE_NAMES = new Set(["csv", "json", "kv", "fixed", "regex"]);
  * - Lifecycle management (initialize, start, stop)
  * - Repository-style methods for data operations
  * - Clean separation of concerns
- * 
+ *
  * @class AiClassifierService
  */
 export class AiClassifierService {
@@ -65,7 +65,7 @@ export class AiClassifierService {
    * @private
    */
   private static instance: AiClassifierService;
-  
+
   // Instance state
   private running: boolean = false;
     /**
@@ -116,7 +116,7 @@ export class AiClassifierService {
   private constructor() {
     this.logger = createLogger("AiClassifierServiceHandler");
   }
-  
+
   /**
    * Get singleton instance
    */
@@ -126,7 +126,7 @@ export class AiClassifierService {
     }
     return AiClassifierService.instance;
   }
-  
+
   /**
    * Initialize the service
    */
@@ -134,7 +134,7 @@ export class AiClassifierService {
     await templateRegistry.loadFromDatabase();
     this.logger.info("ai_classifier_initialized");
   }
-  
+
   /**
    * Start the service
    */
@@ -143,12 +143,12 @@ export class AiClassifierService {
       this.logger.warn("ai_classifier_already_running");
       return;
     }
-    
+
     this.running = true;
     await this.initialize();
     this.logger.info("ai_classifier_started");
   }
-  
+
   /**
    * Stop the service gracefully
    */
@@ -156,7 +156,7 @@ export class AiClassifierService {
     this.running = false;
     this.logger.info("ai_classifier_stopped");
   }
-  
+
   /**
    * Get service statistics
    */
@@ -178,7 +178,7 @@ export class AiClassifierService {
 
   /**
    * Call Vertex AI with a prompt and return the response text
-   * 
+   *
    * @param prompt - The prompt to send to Vertex AI
    * @returns The response text from the model
    * @throws Error if the API call fails
@@ -203,6 +203,7 @@ export class AiClassifierService {
   private async askVertexAI(prompt: string, timeoutMs: number = 30000): Promise<string> {
     const MODEL = settings.VERTEX_MODEL || "gemini-2.5-flash";
     const ai = this.getGenAIClient();
+
 
     const generatePromise = ai.models.generateContent({
       model: MODEL,
@@ -292,7 +293,7 @@ If uncertain:
   /**
    * Try to parse a line as CSV with common delimiters
    * This is a fast path to avoid AI calls for simple CSV data
-   * 
+   *
    * @param line - The line to parse
    * @param fieldSpec - Expected field specification
    * @returns Parse result with success status and delimiter
@@ -317,7 +318,7 @@ If uncertain:
 
   /**
    * Create a template from a successful CSV parse
-   * 
+   *
    * @param line - The line that was parsed
    * @param fieldSpec - Field specification
    * @param delimiter - The delimiter that matched
@@ -325,11 +326,11 @@ If uncertain:
    */
   private createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: string): RecordTemplate {
     const fieldMap: Record<string, { locator: string; type: string }> = {};
-    
+
     fieldSpec.forEach((field, index) => {
       fieldMap[field] = { locator: `index:${index}`, type: "string" };
     });
-    
+
     const template = {
       template_id: crypto.randomBytes(16).toString("hex"),
       fingerprint: this.quickFingerprint(line),
@@ -341,20 +342,20 @@ If uncertain:
       source: "ai" as const,
       created_at: new Date()
     };
-    
+
     this.logger.info("csv_template_created", {
       template_id: template.template_id,
       fieldMap,
       structure: template.structure,
       delimiter
     });
-    
+
     return template;
   }
 
   /**
    * Validate that a template can successfully parse the given line
-   * 
+   *
    * @param req - Classification request containing the line
    * @param tmpl - Template to validate
    * @returns True if template can parse the line, false otherwise
@@ -364,7 +365,7 @@ If uncertain:
       // Basic validation: ensure template can extract fields from the line
       const line = req.unknown_line;
       const fieldMap = tmpl.field_map;
-      
+
       // Simple validation: check if we can at least parse the structure
       if (tmpl.structure === "csv") {
         const parts = line.split(",");
@@ -387,7 +388,7 @@ If uncertain:
 
   /**
    * Main AI classification function
-   * 
+   *
    * This function implements a multi-step classification strategy:
    * 1. Try CSV parsing with common delimiters (fast path)
    * 2. Check fingerprint cache for existing templates
@@ -395,7 +396,7 @@ If uncertain:
    * 4. Try to match against rubbish templates
    * 5. Use mock mode if enabled (for testing)
    * 6. Fall back to Vertex AI for new patterns
-   * 
+   *
    * @param req - Classification request
    * @returns Classification response with template if successful
    */
@@ -471,7 +472,7 @@ If uncertain:
       this.logger.info("vertex_ai_request_start", { job_id: req.job_id, fingerprint: lineFp, prompt_length: userPrompt.length, model: settings.VERTEX_MODEL || "gemini-2.5-flash" });
       const rawText = await this.askVertexAI(userPrompt);
       this.logger.info("vertex_ai_response_raw", { job_id: req.job_id, fingerprint: lineFp, response_length: rawText.length, response: rawText.slice(0, 2000) });
-      
+
       let raw: Record<string, unknown>;
       try {
         const extractedJson = extractJsonFromMarkdown(rawText);
@@ -483,14 +484,14 @@ If uncertain:
         this.logger.info("ai_classifier_uncertain", { job_id: req.job_id, fingerprint: lineFp, reason: "malformed_json" });
         return { kind: AIVerdict.UNCERTAIN };
       }
-      
+
       let kindStr = (raw.kind as string) || "uncertain";
 
       // Handle structure names (csv, json, etc.) as record-template
       if (STRUCTURE_NAMES.has(kindStr)) {
         kindStr = "record-template";
       }
-      
+
       if (kindStr === "uncertain") {
         this.logger.info("ai_classifier_uncertain", { job_id: req.job_id, fingerprint: lineFp });
         return { kind: AIVerdict.UNCERTAIN };
