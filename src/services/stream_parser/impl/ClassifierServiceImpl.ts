@@ -647,28 +647,56 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     let matched = 0;
 
     if (this.headerMap) {
-      // Trust the header's column assignment.
-      const mappedIndices = new Set<number>(Object.values(this.headerMap));
-      for (const field of this.fieldSpec) {
-        if (field === "meta") continue; // handled unconditionally below
-        const idx = this.headerMap[field];
-        const value = idx !== undefined && idx < parts.length ? parts[idx] : "";
-        row[field] = value === "" || value === undefined ? null : value;
-        if (row[field] !== null) matched++;
-      }
-      // Always collect ALL unmapped source columns into meta when the header is known.
-      if (this.headerParts) {
-        const metaObj: Record<string, string> = {};
-        for (let j = 0; j < this.headerParts.length; j++) {
-          if (!mappedIndices.has(j)) {
-            const v = j < parts.length ? String(parts[j] ?? "").trim() : "";
-            if (v !== "") metaObj[this.headerParts[j]] = v;
-          }
+      // Only trust the header if the line shape matches (column count close enough)
+      // or if header-mapped strong fields validate. This prevents data corruption
+      // when complex CSV rows with many columns hit a simple header's offsets.
+      const headerColCount = this.headerParts?.length ?? 0;
+      const lineColCount = parts.length;
+      const columnCountDiff = Math.abs(headerColCount - lineColCount);
+      
+      // Accept header mapping if column counts match closely (within 2) OR
+      // if strong fields (email/phone) from header mapping actually validate
+      let useHeaderMap = columnCountDiff <= 2;
+      
+      if (!useHeaderMap) {
+        // Check if header-mapped email/phone validate
+        const emailIdx = this.headerMap["email"];
+        const phoneIdx = this.headerMap["phone"];
+        const emailValue = emailIdx !== undefined && emailIdx < parts.length ? parts[emailIdx] : "";
+        const phoneValue = phoneIdx !== undefined && phoneIdx < parts.length ? parts[phoneIdx] : "";
+        
+        const emailValid = emailValue && this.validateField("email", emailValue);
+        const phoneValid = phoneValue && this.validateField("phone", phoneValue);
+        
+        if (emailValid || phoneValid) {
+          useHeaderMap = true;
         }
-        row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
-        if (row["meta"] !== null) matched++;
       }
-      return matched > 0 ? row : null;
+      
+      if (useHeaderMap) {
+        const mappedIndices = new Set<number>(Object.values(this.headerMap));
+        for (const field of this.fieldSpec) {
+          if (field === "meta") continue; // handled unconditionally below
+          const idx = this.headerMap[field];
+          const value = idx !== undefined && idx < parts.length ? parts[idx] : "";
+          row[field] = value === "" || value === undefined ? null : value;
+          if (row[field] !== null) matched++;
+        }
+        // Always collect ALL unmapped source columns into meta when the header is known.
+        if (this.headerParts) {
+          const metaObj: Record<string, string> = {};
+          for (let j = 0; j < this.headerParts.length; j++) {
+            if (!mappedIndices.has(j)) {
+              const v = j < parts.length ? String(parts[j] ?? "").trim() : "";
+              if (v !== "") metaObj[this.headerParts[j]] = v;
+            }
+          }
+          row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
+          if (row["meta"] !== null) matched++;
+        }
+        return matched > 0 ? row : null;
+      }
+      // Header shape mismatch and strong fields don't validate - fall through to content-based
     }
 
     // No header: identify columns by CONTENT for strongly-validatable fields (email/phone/date/zip/url).
