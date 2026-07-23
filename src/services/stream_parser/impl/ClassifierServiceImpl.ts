@@ -141,7 +141,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     // Lower threshold for CSV-like lines (lines with delimiters) to catch binary data
     // that happens to have commas/quotes making it look like CSV
     const hasDelimiters = /[,\t;|]/.test(trimmed);
-    const threshold = hasDelimiters ? 0.15 : BINARY_THRESHOLD;
+    const threshold = hasDelimiters ? 0.05 : BINARY_THRESHOLD;
     if (nonPrintable / trimmed.length > threshold) {
       return { verdict: "rubbish", template_id: TEMPLATE_IDS.BINARY_GATE };
     }
