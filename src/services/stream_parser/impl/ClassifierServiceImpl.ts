@@ -138,11 +138,17 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       return { verdict: "uncertain", failure_class: FailureClass.TRANSFORM_ERROR };
     }
     const nonPrintable = (trimmed.match(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g) || []).length;
-    // Lower threshold for CSV-like lines (lines with delimiters) to catch binary data
-    // that happens to have commas/quotes making it look like CSV
-    const hasDelimiters = /[,\t;|]/.test(trimmed);
-    const threshold = hasDelimiters ? 0.05 : BINARY_THRESHOLD;
-    if (nonPrintable / trimmed.length > threshold) {
+    if (nonPrintable / trimmed.length > BINARY_THRESHOLD) {
+      return { verdict: "rubbish", template_id: TEMPLATE_IDS.BINARY_GATE };
+    }
+
+    // Second pass: catch mojibake (wrong-encoding garbage) which consists of Unicode
+    // symbol/math/private-use/modifier characters that normal text rarely contains in high concentration
+    const weirdRe = /[\p{Cc}\p{Co}\p{Cn}\p{Cs}\p{So}\p{Sm}\p{Sk}]/gu;
+    const typographicGarbage = /[“”‘’‹›‡†•ﬁﬂ]/g; // curly quotes, ligatures, etc. — never legit in this data
+    const weirdCount = (trimmed.match(weirdRe) || []).length + (trimmed.match(typographicGarbage) || []).length;
+    const weirdRatio = weirdCount / trimmed.length;
+    if (weirdRatio > 0.08) {
       return { verdict: "rubbish", template_id: TEMPLATE_IDS.BINARY_GATE };
     }
 

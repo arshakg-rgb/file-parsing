@@ -126,11 +126,17 @@ export class LineClassifier implements IClassifier {
         nonPrintable++;
       }
     }
-    // Lower threshold for CSV-like lines (lines with delimiters) to catch binary data
-    // that happens to have commas/quotes making it look like CSV
-    const hasDelimiters = /[,\t;|]/.test(trimmed);
-    const threshold = hasDelimiters ? 0.05 : 0.3;
-    if (nonPrintable / trimmed.length > threshold) {
+    if (nonPrintable / trimmed.length > 0.3) {
+      return { verdict: "rubbish", template_id: "binary-gate" };
+    }
+
+    // Second pass: catch mojibake (wrong-encoding garbage) which consists of Unicode
+    // symbol/math/private-use/modifier characters that normal text rarely contains in high concentration
+    const weirdRe = /[\p{Cc}\p{Co}\p{Cn}\p{Cs}\p{So}\p{Sm}\p{Sk}]/gu;
+    const typographicGarbage = /[“”‘’‹›‡†•ﬁﬂ]/g; // curly quotes, ligatures, etc. — never legit in this data
+    const weirdCount = (trimmed.match(weirdRe) || []).length + (trimmed.match(typographicGarbage) || []).length;
+    const weirdRatio = weirdCount / trimmed.length;
+    if (weirdRatio > 0.08) {
       return { verdict: "rubbish", template_id: "binary-gate" };
     }
 
