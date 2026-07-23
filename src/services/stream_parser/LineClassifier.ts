@@ -163,8 +163,18 @@ export class LineClassifier implements IClassifier {
     // structural recognizers - they handle mixed-format files (KV/JSON) better.
     // Moved CSV parsing to end after structural recognizers to allow KV/JSON to match first.
 
-    // 2. Known learned record templates (records have priority over rubbish).
-    // AI cache is only consumed in steps 3 and 6, so compute the fingerprint lazily.
+    // 2. Deterministic structural record recognizers (JSON object, or "Label: value"/
+    // "k=v" key-value) run BEFORE learned/AI templates. In mixed-format production files
+    // stale learned templates (regex or cached) can match JSON/KV lines and force junk
+    // values (e.g. "location: the void") or drop unmapped keys. Structural parsing is
+    // exact, so it wins for any line that is valid JSON or KV.
+    const structural = this.parseJsonRecord(line) || this.parseKvRecord(line);
+    if (structural) {
+      return { verdict: "parsed", row: this.coerce(structural.row), template_id: structural.template_id };
+    }
+
+    // 3. Known learned record templates (records have priority over rubbish).
+    // AI cache is only consumed in steps 4 and 6, so compute the fingerprint lazily.
     let computedCache = false;
     let cached: RecordTemplate | RubbishTemplate | undefined;
     const getCached = () => {
@@ -203,19 +213,11 @@ export class LineClassifier implements IClassifier {
       return { verdict: "parsed", row: this.coerce(bestRecord.row), template_id: bestRecord.template.template_id, template_version: bestRecord.template.version };
     }
 
-    // 3. AI-cached record (learned earlier in this job).
+    // 4. AI-cached record (learned earlier in this job).
     const c3 = getCached();
     if (c3 && "field_map" in c3) {
       const row = this.extractLine(line, c3);
       if (row) return { verdict: "parsed", row: this.coerce(row), template_id: c3.template_id, template_version: c3.version };
-    }
-
-    // 4. Deterministic structural record recognizers (JSON object, or "Label: value"/
-    // "k=v" key-value). These extract ONLY the client's field_spec fields, mapping by
-    // key name — the design's "extract only what the client wants".
-    const structural = this.parseJsonRecord(line) || this.parseKvRecord(line);
-    if (structural) {
-      return { verdict: "parsed", row: this.coerce(structural.row), template_id: structural.template_id };
     }
 
     // 5. Known high-confidence rubbish templates.
