@@ -10,13 +10,12 @@ import { ClassifyRequest, ClassifyResponse, FieldLocator, CSVParseResult, AIVerd
  * or contain explanatory text around the JSON object.
  */
 function extractJsonFromMarkdown(raw: string): string {
-  const trimmed = raw.trim();
+  let trimmed = raw.trim();
 
-  // Match fenced code blocks marked as json
-  const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
-  if (fenceMatch) {
-    return fenceMatch[1].trim();
-  }
+  // Strip leading triple-backtick fence (with optional json label) and optional trailing fence.
+  // This handles both closed code blocks and truncated responses that only have an opening fence.
+  trimmed = trimmed.replace(/^```(?:json)?\s*\n?/, "").trim();
+  trimmed = trimmed.replace(/\n?```\s*$/, "").trim();
 
   // Find the first { and last } to extract a JSON object
   const firstBrace = trimmed.indexOf("{");
