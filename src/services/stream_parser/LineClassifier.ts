@@ -878,17 +878,14 @@ export class LineClassifier implements IClassifier {
       }
     }
 
-    // Preserve all remaining unclaimed source columns in meta so address/location/name
-    // data is not lost for headerless multi-column CSV (e.g. the OD order exports). This
-    // runs unconditionally, even when the caller's field_spec omits "meta", because
-    // CsvOutputWriter always appends a meta column to the output CSV.
-    // Drop obvious IDs and salutations from meta to keep it clean.
+    // Preserve all remaining unclaimed source columns in meta so no data is lost,
+    // including numeric IDs, OD codes, and salutations. The caller controls which
+    // columns are lifted into named fields via field_spec; everything else lives in meta.
     const metaObj: Record<string, string> = {};
     for (let j = 0; j < parts.length; j++) {
       if (claimed.has(j)) continue;
       const v = String(parts[j] ?? "").trim();
-      if (!v || idLikeRe.test(v) || salutationRe.test(v) || delimiterOnlyRe.test(v)) continue;
-      metaObj[`col_${j}`] = v;
+      if (v !== "") metaObj[`col_${j}`] = v;
     }
     row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
     if (row["meta"] !== null) matched++;
