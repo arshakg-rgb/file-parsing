@@ -526,11 +526,12 @@ export class StreamParserService {
       // This is critical for long-running parse jobs that exceed the default 60s deadline
       if (this.currentReceiptHandle && Date.now() - this.lastDeadlineExtension > this.DEADLINE_EXTEND_INTERVAL_MS) {
         try {
+          this.logger.info("ack_deadline_extending", { job_id: jobId, receiptHandle: this.currentReceiptHandle.substring(0, 20) + "..." });
           await modifyAckDeadline(settings.PARSE_QUEUE_URL, this.currentReceiptHandle, 60);
           this.lastDeadlineExtension = Date.now();
-          this.logger.debug("ack_deadline_extended", { job_id: jobId });
+          this.logger.info("ack_deadline_extended", { job_id: jobId });
         } catch (err) {
-          this.logger.warn("ack_deadline_extension_failed", { job_id: jobId, error: String(err) });
+          this.logger.error("ack_deadline_extension_failed", { job_id: jobId, error: String(err) });
         }
       }
     };
