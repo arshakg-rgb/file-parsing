@@ -98,13 +98,17 @@ class FinalizationService {
             await this.engine.writeRows(this.storage, finalPath, allRows);
             await this.backfillLineNumbers(jobId, [finalPath]);
             // Delete raw parts after successful merge
+            console.log("finalize_delete_parts_start", { jobId, parts_count: mergedStoragePaths.length });
             for (const p of mergedStoragePaths) {
               try {
+                console.log("finalize_delete_part", { jobId, path: p.toString() });
                 await this.storage.delete(p);
+                console.log("finalize_delete_part_success", { jobId, path: p.toString() });
               } catch (err) {
                 console.error("finalize_delete_part_failed", { path: p.toString(), error: String(err) });
               }
             }
+            console.log("finalize_delete_parts_complete", { jobId });
             console.log("finalize_cross_merge_success", { jobId, final_path: finalPath.toString() });
             return { failed: false, paths: [finalPath.toString()] };
           } else {
