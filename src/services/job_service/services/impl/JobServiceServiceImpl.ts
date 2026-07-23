@@ -64,6 +64,9 @@ export class JobServiceServiceImpl implements JobServiceService {
     }
 
     if ((source_type === SourceType.S3 || source_type === SourceType.ARCHIVE_ENTRY) && source_ref) {
+      if (!/^gs:\/\/|^s3:\/\//i.test(source_ref)) {
+        throw new ValidationError(`source_ref must be a gs:// or s3:// URL: ${source_ref}`);
+      }
       let bucket: string;
       let key: string;
       try {
@@ -93,15 +96,8 @@ export class JobServiceServiceImpl implements JobServiceService {
     if (field_spec) {
       if (Array.isArray(field_spec)) {
         fieldNames = namesFromArray(field_spec);
-      } else if (typeof field_spec === "string") {
-        const s = field_spec.trim();
-        let parsed: unknown;
-        try { parsed = JSON.parse(s); } catch { parsed = undefined; }
-        if (Array.isArray(parsed)) fieldNames = namesFromArray(parsed);
-        else if (parsed && Array.isArray((parsed as Record<string, unknown>).fields)) fieldNames = namesFromArray((parsed as Record<string, unknown>).fields as unknown[]);
-        else if (s) fieldNames = s.split(",").map((x) => x.trim()).filter(Boolean);
-      } else if ((field_spec as Record<string, unknown>).fields && Array.isArray((field_spec as Record<string, unknown>).fields)) {
-        fieldNames = namesFromArray((field_spec as Record<string, unknown>).fields as unknown[]);
+      } else {
+        throw new ValidationError("field_spec must be an array of field names, not a string");
       }
     }
 
