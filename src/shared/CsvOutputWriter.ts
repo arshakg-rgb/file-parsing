@@ -133,7 +133,7 @@ export class CsvOutputWriter {
     /**
    * Flushes pending
    */
-  private flushPending(): void {
+  public flushPending(): void {
     if (!this.pending.length) return;
     try {
       fs.appendFileSync(this.tmpPath, this.pending.join(""), "utf8");

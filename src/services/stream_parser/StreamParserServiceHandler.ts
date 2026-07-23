@@ -482,6 +482,17 @@ export class StreamParserService {
       if (flushTasks.length > 0) {
         bgFlushes.push(Promise.all(flushTasks).then(() => {}));
       }
+
+      // RAM watermark: flush all buffered data before we exceed the configured budget.
+      // Use rss (resident set size) because Cloud Run's OOM killer enforces total container memory,
+      // not just V8 heap.
+      const mem = process.memoryUsage();
+      if (mem.rss >= settings.RAM_FLUSH_WATERMARK) {
+        this.logger.warn("ram_watermark_reached", { rss: mem.rss, heap_used: mem.heapUsed, watermark: settings.RAM_FLUSH_WATERMARK });
+        await flushBatches(true);
+        await outputManager.flushAll();
+        csvWriter.flushPending();
+      }
     };
 
     const flushBatches = async (force = false): Promise<void> => {
