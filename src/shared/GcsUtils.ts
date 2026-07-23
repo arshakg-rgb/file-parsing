@@ -180,6 +180,22 @@ class GcsUtils extends ServiceManager {
   }
 
     /**
+   * Performs the object exists operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @returns A promise that resolves to true if the object exists
+   */
+  public async objectExists(bucket: string, key: string): Promise<boolean> {
+    return this.withRetry(
+      () => this.withTimeout(async () => {
+        const [exists] = await this.getStorage().bucket(bucket).file(key).exists();
+        return exists;
+      }, this.GCS_TIMEOUT_MS),
+      this.GCS_RETRIES
+    );
+  }
+
+    /**
    * Reads range
    * @param bucket - The bucket
    * @param key - The key
@@ -606,6 +622,16 @@ export function parseGcsUrl(url: string): [string, string] {
  */
 export function objectSize(bucket: string, key: string): Promise<number> {
   return gcsUtils.objectSize(bucket, key);
+}
+
+/**
+ * Performs the object exists operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @returns A promise that resolves to true if the object exists
+ */
+export function objectExists(bucket: string, key: string): Promise<boolean> {
+  return gcsUtils.objectExists(bucket, key);
 }
 
 /**

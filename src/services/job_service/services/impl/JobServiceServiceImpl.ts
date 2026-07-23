@@ -7,7 +7,7 @@ import MySqlManager from "@config/db/MySqlManager.js";
 import type { ParseJobRow } from "@shared/DatabaseManager.js";
 import { SourceType, JobStatus, JobTimings, JobCounts } from "@shared/models/job.js";
 import { sendRaw } from "@shared/QueueService.js";
-import { presignedPutUrl } from "@shared/GcsUtils.js";
+import { presignedPutUrl, parseGcsUrl, objectExists } from "@shared/GcsUtils.js";
 import { transition } from "@service/job_service/stateMachine.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 import { JobServiceService } from "@service/job_service/services/JobServiceService.js";
@@ -57,6 +57,13 @@ export class JobServiceServiceImpl implements JobServiceService {
 
     if ([SourceType.S3, SourceType.URL].includes(source_type) && !source_ref) {
       throw new ValidationError("source_ref is required for s3 and url sources");
+    }
+
+    if (source_type === SourceType.S3 && source_ref) {
+      const [bucket, key] = parseGcsUrl(source_ref);
+      if (!(await objectExists(bucket, key))) {
+        throw new ValidationError(`source_ref file not found: ${source_ref}`);
+      }
     }
 
     const namesFromArray = (arr: unknown[]): string[] =>
