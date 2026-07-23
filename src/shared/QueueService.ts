@@ -301,6 +301,23 @@ class QueueService extends ServiceManager {
   }
 
     /**
+   * Performs the pub modify ack deadline operation.
+   * @param queueUrl - The queue url
+   * @param ackId - The ack id
+   * @param deadlineSeconds - The deadline seconds
+   */
+  private async pubModifyAckDeadline(queueUrl: string, ackId: string, deadlineSeconds: number): Promise<void> {
+    if (!ackId) return;
+    await this.withRetry(async () => {
+      const sub = (await this.getPubSubscriber()) as unknown as { modifyAckDeadline: (opts: { subscription: string; ackIds: string[]; ackDeadlineSeconds: number }) => Promise<unknown> };
+      await this.withTimeout<unknown>(
+        () => sub.modifyAckDeadline({ subscription: this.subscriptionPath(queueUrl), ackIds: [ackId], ackDeadlineSeconds: deadlineSeconds }),
+        this.QUEUE_TIMEOUT_SEND
+      );
+    });
+  }
+
+    /**
    * Performs the sqs send operation.
    * @param queueUrl - The queue url
    * @param payload - The payload
@@ -440,6 +457,20 @@ class QueueService extends ServiceManager {
   }
 
     /**
+   * Modifies ack deadline
+   * @param queueUrl - The queue url
+   * @param receiptHandle - The receipt handle
+   * @param deadlineSeconds - The deadline seconds
+   */
+  public async modifyAckDeadline(queueUrl: string, receiptHandle: string, deadlineSeconds: number): Promise<void> {
+    if (this.isPubSub()) {
+      return this.pubModifyAckDeadline(queueUrl, receiptHandle, deadlineSeconds);
+    }
+    // SQS doesn't need explicit deadline extension - it uses visibility timeout
+    // For SQS, we would use ChangeMessageVisibility, but not needed for current use case
+  }
+
+    /**
    * Publishes event
    * @param event - The event
    * @returns A promise that resolves to the result
@@ -512,6 +543,16 @@ export async function receiveMessages<T extends object>(
  */
 export async function deleteMessage(queueUrl: string, receiptHandle: string): Promise<void> {
   return queueService.deleteMessage(queueUrl, receiptHandle);
+}
+
+/**
+ * Modifies ack deadline
+ * @param queueUrl - The queue url
+ * @param receiptHandle - The receipt handle
+ * @param deadlineSeconds - The deadline seconds
+ */
+export async function modifyAckDeadline(queueUrl: string, receiptHandle: string, deadlineSeconds: number): Promise<void> {
+  return queueService.modifyAckDeadline(queueUrl, receiptHandle, deadlineSeconds);
 }
 
 /**

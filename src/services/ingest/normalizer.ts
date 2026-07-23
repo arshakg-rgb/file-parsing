@@ -397,12 +397,12 @@ export async function extractArchiveToS3(
       }
       
       console.log("rar_extraction_complete", { jobId, totalFiles: files.length, totalUncompressed });
-      
+
     } finally {
       // Cleanup temp file
       await fs.unlink(tmpPath).catch(() => {});
     }
-    
+
     return out;
   }
 
@@ -611,103 +611,5 @@ async function extract7z(
   }
   await fs.rm(extractDir, { recursive: true, force: true });
   await fs.unlink(tmp).catch(() => {});
-  return out;
-}
-
-// extractRar removed — dead code. RAR extraction is handled inline in extractArchiveToS3.
-// The old function loaded the entire archive into a Buffer (OOM risk) and had no nested-archive detection.
-if (false) async function extractRar(
-  jobId: string,
-  raw: Buffer,
-  compressedSize: number,
-  fieldSpec: string[],
-  batchId: string,
-  password?: string
-): Promise<Record<string, unknown>[]> {
-  // Use CLI-based extraction for memory efficiency (same approach as extractArchiveToS3)
-  const tmp = await withTempFile(raw, ".rar");
-  const { spawn } = await import("child_process");
-  const out: Record<string, unknown>[] = [];
-  let totalUncompressed = 0;
-  const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024;
-  const MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024;
-  
-  try {
-    // List archive contents to get file info
-    const listArgs = ["l", "-v", tmp];
-    if (password) {
-      listArgs.push("-p" + password);
-    }
-    
-    const listProcess = spawn("unrar", listArgs);
-    let listOutput = "";
-    
-    listProcess.stdout.on("data", (data) => {
-      listOutput += data.toString();
-    });
-    
-    await new Promise<void>((resolve, reject) => {
-      listProcess.on("close", (code) => code === 0 ? resolve() : reject(new Error(`unrar list failed with code ${code}`)));
-      listProcess.on("error", reject);
-    });
-    
-    // Parse list output to get file information
-    const lines = listOutput.split("\n");
-    const files: Array<{ name: string; size: number }> = [];
-    
-    for (const line of lines) {
-      const match = line.match(/^\s*(\d+)\s+\d+\s+\d+%\s+(.+)$/);
-      if (match) {
-        const size = parseInt(match[1], 10);
-        const name = match[2].trim();
-        files.push({ name, size });
-      }
-    }
-    
-    // Extract each file using CLI
-    for (const file of files) {
-      if (file.size > MAX_FILE_SIZE) {
-        console.log("rar_skip_large_file", { jobId, name: file.name, size: file.size, maxSize: MAX_FILE_SIZE });
-        continue;
-      }
-      
-      if (totalUncompressed + file.size > MAX_TOTAL_UNCOMPRESSED) {
-        console.log("rar_skip_total_limit", { jobId, name: file.name, size: file.size, currentTotal: totalUncompressed, maxTotal: MAX_TOTAL_UNCOMPRESSED });
-        continue;
-      }
-      
-      const extractArgs = ["p", "-inul", tmp, file.name];
-      if (password) {
-        extractArgs.push("-p" + password);
-      }
-      
-      const extractProcess = spawn("unrar", extractArgs);
-      const chunks: Buffer[] = [];
-      
-      extractProcess.stdout.on("data", (chunk) => {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      });
-      
-      await new Promise<void>((resolve, reject) => {
-        extractProcess.on("close", (code) => {
-          if (code !== 0) {
-            reject(new Error(`unrar extraction failed with code ${code}`));
-          } else {
-            resolve();
-          }
-        });
-        extractProcess.on("error", reject);
-      });
-      
-      const data = Buffer.concat(chunks);
-      totalUncompressed += data.length;
-      checkRatio(compressedSize, totalUncompressed);
-      const [url, size] = await storeEntry(jobId, file.name, data);
-      out.push(makeEntryEvent(jobId, batchId, url, file.name, size, fieldSpec));
-    }
-  } finally {
-    await fs.unlink(tmp).catch(() => {});
-  }
-  
   return out;
 }

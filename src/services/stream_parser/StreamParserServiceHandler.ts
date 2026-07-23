@@ -2,7 +2,7 @@ import { Template } from "@shared/models/template.js";
 import { settings } from "@shared/Settings.js";
 import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ParseMessage, FailureClass, JobCounts, totalFailed, ColumnMap } from "@shared/models/job.js";
-import { receiveMessages, deleteMessage, publishEvent } from "@shared/QueueService.js";
+import { receiveMessages, deleteMessage, publishEvent, modifyAckDeadline } from "@shared/QueueService.js";
 import { parseGcsUrl, streamLines, objectSize, readRange } from "@shared/GcsUtils.js";
 import { LineClassifier } from "./LineClassifier.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
@@ -144,6 +144,21 @@ export class StreamParserService {
    * @private
    */
   private currentJob: Promise<void> | null = null;
+  /**
+   * Current message receipt handle for deadline extension
+   * @private
+   */
+  private currentReceiptHandle: string | null = null;
+  /**
+   * Last deadline extension timestamp
+   * @private
+   */
+  private lastDeadlineExtension: number = 0;
+  /**
+   * Deadline extension interval (30 seconds)
+   * @private
+   */
+  private readonly DEADLINE_EXTEND_INTERVAL_MS = 30000;
     /**
    * Ai Rate Limiter
    * @private
@@ -345,9 +360,13 @@ export class StreamParserService {
    * @param msg - Parse message containing job details
    * @throws Error if fatal error occurs during parsing
    */
-  async parseJob(msg: ParseMessage): Promise<void> {
+  async parseJob(msg: ParseMessage, receiptHandle?: string): Promise<void> {
     const parseStartTime = Date.now();
     this.parseCount++;
+    
+    // Store receipt handle for deadline extension
+    this.currentReceiptHandle = receiptHandle || null;
+    this.lastDeadlineExtension = Date.now();
     
     await templateRegistry.loadFromDatabase();
 
@@ -501,6 +520,18 @@ export class StreamParserService {
         csvWriter.flushPending();
       } else if (overWatermark && mem.rss < RAM_WATERMARK_LOW) {
         overWatermark = false;
+      }
+
+      // Extend Pub/Sub ack deadline periodically to prevent message redelivery
+      // This is critical for long-running parse jobs that exceed the default 60s deadline
+      if (this.currentReceiptHandle && Date.now() - this.lastDeadlineExtension > this.DEADLINE_EXTEND_INTERVAL_MS) {
+        try {
+          await modifyAckDeadline(settings.PARSE_QUEUE_URL, this.currentReceiptHandle, 60);
+          this.lastDeadlineExtension = Date.now();
+          this.logger.debug("ack_deadline_extended", { job_id: jobId });
+        } catch (err) {
+          this.logger.warn("ack_deadline_extension_failed", { job_id: jobId, error: String(err) });
+        }
       }
     };
 
@@ -773,7 +804,7 @@ export class StreamParserService {
       );
       
       for (const { payload, receiptHandle } of messages) {
-        this.currentJob = this.parseJob(payload);
+        this.currentJob = this.parseJob(payload, receiptHandle);
         try {
           await this.currentJob;
           await deleteMessage(settings.PARSE_QUEUE_URL, receiptHandle);
@@ -790,6 +821,7 @@ export class StreamParserService {
           }
         } finally {
           this.currentJob = null;
+          this.currentReceiptHandle = null;
         }
       }
     }
@@ -802,8 +834,8 @@ export class StreamParserService {
 const streamParserService = StreamParserService.getInstance();
 
 // Backward compatibility wrappers
-export async function parseJob(msg: ParseMessage): Promise<void> {
-  return streamParserService.parseJob(msg);
+export async function parseJob(msg: ParseMessage, receiptHandle?: string): Promise<void> {
+  return streamParserService.parseJob(msg, receiptHandle);
 }
 
 // Auto-start the service when module is loaded
