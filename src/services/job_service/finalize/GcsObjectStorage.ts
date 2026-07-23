@@ -1,4 +1,4 @@
-import { readFull, objectSize, putObject } from "@shared/GcsUtils.js";
+import { readFull, objectSize, putObject, deleteObject } from "@shared/GcsUtils.js";
 import { IObjectStorage } from "./IObjectStorage.js";
 import { StoragePath } from "./StoragePath.js";
 
@@ -26,11 +26,20 @@ export class GcsObjectStorage implements IObjectStorage {
   }
 
     /**
-   * Performs the size operation.
+   * Performs the size operation
    * @param storagePath - The storage path
    * @returns A promise that resolves to the result
    */
   async size(storagePath: StoragePath): Promise<number> {
     return objectSize(storagePath.bucket, storagePath.key);
+  }
+
+    /**
+   * Deletes the object
+   * @param storagePath - The storage path
+   * @returns A promise that resolves when deleted
+   */
+  async delete(storagePath: StoragePath): Promise<void> {
+    return deleteObject(storagePath.bucket, storagePath.key);
   }
 }

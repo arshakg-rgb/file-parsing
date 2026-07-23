@@ -278,6 +278,20 @@ class GcsUtils extends ServiceManager {
   }
 
     /**
+   * Deletes object
+   * @param bucket - The bucket
+   * @param key - The key
+   */
+  public async deleteObject(bucket: string, key: string): Promise<void> {
+    await this.withRetry(
+      () => this.withTimeout(async () => {
+        await this.getStorage().bucket(bucket).file(key).delete();
+      }, this.GCS_TIMEOUT_MS),
+      this.GCS_RETRIES
+    );
+  }
+
+    /**
    * Copies object
    * @param srcBucket - The src bucket
    * @param srcKey - The src key
@@ -690,6 +704,15 @@ export function putJson(bucket: string, key: string, data: Record<string, unknow
  */
 export function putParquet(bucket: string, key: string, body: Buffer): Promise<void> {
   return gcsUtils.putParquet(bucket, key, body);
+}
+
+/**
+ * Deletes object
+ * @param bucket - The bucket
+ * @param key - The key
+ */
+export function deleteObject(bucket: string, key: string): Promise<void> {
+  return gcsUtils.deleteObject(bucket, key);
 }
 
 /**

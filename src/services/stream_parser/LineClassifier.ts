@@ -126,7 +126,7 @@ export class LineClassifier implements IClassifier {
         nonPrintable++;
       }
     }
-    if (nonPrintable / trimmed.length > 0.3) {
+    if (nonPrintable / trimmed.length > 0.15) {
       return { verdict: "rubbish", template_id: "binary-gate" };
     }
 
@@ -135,7 +135,7 @@ export class LineClassifier implements IClassifier {
     // they're normal in real names/usernames and shouldn't reject the entire line.
     const binaryRe = /[\p{Cc}\p{Co}\p{Cn}\p{Cs}]/gu;
     const binaryCount = (trimmed.match(binaryRe) || []).length;
-    if (binaryCount / trimmed.length > 0.08) {
+    if (binaryCount / trimmed.length > 0.05) {
       return { verdict: "rubbish", template_id: "binary-gate" };
     }
 
@@ -156,7 +156,11 @@ export class LineClassifier implements IClassifier {
     // through to the structural recognizers below.
     if (this.columnMap) {
       const mapped = this.applyColumnMap(line);
-      if (mapped) return { verdict: "parsed", row: this.coerce(mapped), template_id: "csv-column-map" };
+      if (mapped) {
+        const coerced = this.coerce(mapped);
+        if (coerced) return { verdict: "parsed", row: coerced, template_id: "csv-column-map" };
+        return { verdict: "rubbish", template_id: "binary-field" };
+      }
     }
 
     // 1d. Header-detected CSV: try CSV parsing if a header was seen, but don't skip
@@ -170,7 +174,9 @@ export class LineClassifier implements IClassifier {
     // exact, so it wins for any line that is valid JSON or KV.
     const structural = this.parseJsonRecord(line) || this.parseKvRecord(line);
     if (structural) {
-      return { verdict: "parsed", row: this.coerce(structural.row), template_id: structural.template_id };
+      const coerced = this.coerce(structural.row);
+      if (coerced) return { verdict: "parsed", row: coerced, template_id: structural.template_id };
+      return { verdict: "rubbish", template_id: "binary-field" };
     }
 
     // 3. Validated delimited/CSV extraction: header-mapped when a header was seen, else
@@ -179,7 +185,9 @@ export class LineClassifier implements IClassifier {
     // only one weak field, dropping email/phone/location in the process.
     const delimited = this.parseDelimitedRecord(line);
     if (delimited) {
-      return { verdict: "parsed", row: this.coerce(delimited.row), template_id: delimited.usedHeader ? "csv-mapped" : "csv-auto" };
+      const coerced = this.coerce(delimited.row);
+      if (coerced) return { verdict: "parsed", row: coerced, template_id: delimited.usedHeader ? "csv-mapped" : "csv-auto" };
+      return { verdict: "rubbish", template_id: "binary-field" };
     }
 
     // 4. Known learned record templates (records have priority over rubbish).
@@ -219,14 +227,20 @@ export class LineClassifier implements IClassifier {
       }
     }
     if (bestRecord) {
-      return { verdict: "parsed", row: this.coerce(bestRecord.row), template_id: bestRecord.template.template_id, template_version: bestRecord.template.version };
+      const coerced = this.coerce(bestRecord.row);
+      if (coerced) return { verdict: "parsed", row: coerced, template_id: bestRecord.template.template_id, template_version: bestRecord.template.version };
+      return { verdict: "rubbish", template_id: "binary-field" };
     }
 
     // 4. AI-cached record (learned earlier in this job).
     const c3 = getCached();
     if (c3 && "field_map" in c3) {
       const row = this.extractLine(line, c3);
-      if (row) return { verdict: "parsed", row: this.coerce(row), template_id: c3.template_id, template_version: c3.version };
+      if (row) {
+        const coerced = this.coerce(row);
+        if (coerced) return { verdict: "parsed", row: coerced, template_id: c3.template_id, template_version: c3.version };
+        return { verdict: "rubbish", template_id: "binary-field" };
+      }
     }
 
     // 5. Known high-confidence rubbish templates.
@@ -341,7 +355,11 @@ export class LineClassifier implements IClassifier {
     }
     if ("field_map" in tmpl) {
       const row = this.extractLine(line, tmpl);
-      if (row) return { verdict: "parsed", row: this.coerce(row), template_id: tmpl.template_id, template_version: tmpl.version };
+      if (row) {
+        const coerced = this.coerce(row);
+        if (coerced) return { verdict: "parsed", row: coerced, template_id: tmpl.template_id, template_version: tmpl.version };
+        return { verdict: "rubbish", template_id: "binary-field" };
+      }
     }
     return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
   }
@@ -940,6 +958,13 @@ export class LineClassifier implements IClassifier {
         out[k] = v;
       } else {
         const s = String(v).trim();
+        // Field-level binary detection: reject rows with binary content in any field
+        const binaryRe = /[\p{Cc}\p{Co}\p{Cn}\p{Cs}]/gu;
+        const binaryCount = (s.match(binaryRe) || []).length;
+        if (binaryCount / s.length > 0.05) {
+          // If any field has >5% binary content, return null to reject the entire row
+          return null as unknown as Record<string, unknown>;
+        }
         out[k] = s;
       }
     }

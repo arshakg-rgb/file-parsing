@@ -93,10 +93,18 @@ class FinalizationService {
           console.log("finalize_cross_merge_rows", { jobId, rows_count: allRows.length });
           if (allRows.length) {
             this.normalizeLineNumbers(allRows);
-            const finalKey = `outputs/${jobId}/merged/output.parquet`;
+            const finalKey = `output/${jobId}.parquet`;
             const finalPath = new StoragePath(mergedStoragePaths[0].protocol, bucket, finalKey);
             await this.engine.writeRows(this.storage, finalPath, allRows);
             await this.backfillLineNumbers(jobId, [finalPath]);
+            // Delete raw parts after successful merge
+            for (const p of mergedStoragePaths) {
+              try {
+                await this.storage.delete(p);
+              } catch (err) {
+                console.error("finalize_delete_part_failed", { path: p.toString(), error: String(err) });
+              }
+            }
             console.log("finalize_cross_merge_success", { jobId, final_path: finalPath.toString() });
             return { failed: false, paths: [finalPath.toString()] };
           } else {
