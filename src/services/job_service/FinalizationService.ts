@@ -110,6 +110,19 @@ class FinalizationService {
               }
             }
             console.log("finalize_delete_parts_complete", { jobId });
+            // Delete per-template merged files after successful cross-merge
+            console.log("finalize_delete_merged_start", { jobId, merged_count: mergedPaths.length });
+            for (const p of mergedPaths) {
+              try {
+                const storagePath = StoragePath.parse(p);
+                console.log("finalize_delete_merged", { jobId, path: p });
+                await this.storage.delete(storagePath);
+                console.log("finalize_delete_merged_success", { jobId, path: p });
+              } catch (err) {
+                console.error("finalize_delete_merged_failed", { path: p, error: String(err) });
+              }
+            }
+            console.log("finalize_delete_merged_complete", { jobId });
             console.log("finalize_cross_merge_success", { jobId, final_path: finalPath.toString() });
             return { failed: false, paths: [finalPath.toString()] };
           } else {
