@@ -109,6 +109,11 @@ export class OutputBuffer {
    * @private
    */
   private flushCounter = 0;
+    /**
+   * Flushed Paths
+   * @private
+   */
+  private flushedPaths: string[] = [];
 
     /**
    * Constructs a new OutputBuffer instance.
@@ -171,6 +176,7 @@ export class OutputBuffer {
       const config = parquetOutputService.getGcsUtils().getConfig();
       const gcsPath = `gs://${config.settings.DATA_BUCKET}/output/${flushPartId}.parquet`;
       await parquetOutputService.getGcsUtils().putObject(config.settings.DATA_BUCKET, `output/${flushPartId}.parquet`, buffer);
+      this.flushedPaths.push(gcsPath);
 
       await fs.unlink(tempFile).catch(() => {});
 
@@ -188,6 +194,14 @@ export class OutputBuffer {
     if (this.flushPromise) {
       await this.flushPromise;
     }
+  }
+
+    /**
+   * Gets flushed paths
+   * @returns The flushed paths result
+   */
+  getFlushedPaths(): string[] {
+    return [...this.flushedPaths];
   }
 
     /**

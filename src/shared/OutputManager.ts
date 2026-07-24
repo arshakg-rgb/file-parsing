@@ -33,9 +33,10 @@ export class OutputManager {
 
     for (const buffer of this.buffers.values()) {
       await buffer.waitForPendingFlush();
-      const path = await buffer.flush();
-      if (path) {
-        paths.push(path);
+      await buffer.flush();
+      const flushedPaths = buffer.getFlushedPaths();
+      if (flushedPaths.length > 0) {
+        paths.push(...flushedPaths);
       }
     }
 
