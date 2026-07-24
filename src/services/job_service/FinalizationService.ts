@@ -233,7 +233,10 @@ class FinalizationService {
   private async mergeRows(paths: StoragePath[]): Promise<ParquetRow[]> {
     const rows: ParquetRow[] = [];
     for (const p of paths) {
-      rows.push(...(await this.engine.readRows(this.storage, p)));
+      const chunk = await this.engine.readRows(this.storage, p);
+      for (const row of chunk) {
+        rows.push(row);
+      }
     }
     return rows;
   }
