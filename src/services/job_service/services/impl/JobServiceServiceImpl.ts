@@ -166,7 +166,6 @@ export class JobServiceServiceImpl implements JobServiceService {
       counts: row.counts as JobCounts,
       timings: row.timings as JobTimings,
       output_paths: row.output_paths,
-      csv_output_path: ((row.timings as JobTimings)._csv_output_path as string | undefined) ?? null,
       error: row.error,
     };
   }
@@ -180,7 +179,6 @@ export class JobServiceServiceImpl implements JobServiceService {
       counts: row.counts as JobCounts,
       timings: row.timings as JobTimings,
       output_paths: row.output_paths,
-      csv_output_path: ((row.timings as JobTimings)._csv_output_path as string | undefined) ?? null,
       error: row.error,
     }));
   }

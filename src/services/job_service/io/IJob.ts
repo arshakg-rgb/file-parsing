@@ -31,7 +31,6 @@ export interface IJobResponse {
   counts: JobCounts;
   timings: JobTimings;
   output_paths: string[];
-  csv_output_path: string | null;
   error: string | null | undefined;
 }
 
