@@ -229,7 +229,7 @@ async function onParsingCompleted(event: JobEvent): Promise<void> {
     console.log("finalize_complete", { job_id: event.job_id, merged_paths_count: mergedPaths.length, merged_paths: mergedPaths });
 
     // Update output_paths in database immediately to ensure it's saved even if deletion fails
-    await transition(event.job_id, JobStatus.FINALIZING, undefined, { output_paths: mergedPaths });
+    await repositories.jobs.updateFields(event.job_id, { output_paths: mergedPaths });
 
     if (failedRatio > settings.FAILED_LINE_RATIO_THRESHOLD) {
       console.warn("quality_gate_held", { job_id: event.job_id, failed_ratio: failedRatio, threshold: settings.FAILED_LINE_RATIO_THRESHOLD });
