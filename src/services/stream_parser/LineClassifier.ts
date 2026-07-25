@@ -639,7 +639,7 @@ export class LineClassifier implements IClassifier {
       // such as "first name", "email_address", "mobile_2" via substring matching.
       if (value === undefined) {
         const accepted = Array.from(new Set([nf, ...(this.aliasMap.get(nf) || [])]));
-        const isName = nf === "name";
+        const noSubstring = nf === "name" || nf === "address";
         let bestScore = -1;
         let bestValue: unknown = undefined;
         let bestKey: string | undefined;
@@ -650,9 +650,9 @@ export class LineClassifier implements IClassifier {
           const segments = k.split(/[.\[\]]+/).filter(Boolean).map((s) => this.normalizeKey(s));
           const segmentMatch = segments.some((s) => accepted.includes(s));
           const prefixMatch = accepted.some((a) => nk.startsWith(a));
-          // For "name" we do NOT use substring matching because "schoolname" would
-          // incorrectly match; instead we use the first+last heuristic below.
-          const substringMatch = !isName && accepted.some((a) => a.length >= 3 && nk.includes(a));
+          // For "name" and "address" we do NOT use substring matching because
+          // "schoolname" would match name and "country_code" would match address.
+          const substringMatch = !noSubstring && accepted.some((a) => a.length >= 3 && nk.includes(a));
           if (!segmentMatch && !prefixMatch && !substringMatch) continue;
           const strVal = typeof val === "string" ? val : JSON.stringify(val);
           if (strVal.trim() === "") continue;
@@ -672,28 +672,32 @@ export class LineClassifier implements IClassifier {
         }
       }
 
-      // Semantic inference for name: if first and last exist, any value containing both
-      // is the display/full name, regardless of the key label (display_1, fullName, etc.).
-      if (value === undefined && nf === "name") {
+      // Semantic inference for name: if first and last exist, the full name should
+      // contain both. This overrides a fallback that accidentally landed on "first".
+      if (nf === "name") {
         const firstVal = normalizedObjKeys.get("first");
         const lastVal = normalizedObjKeys.get("last");
         if (typeof firstVal === "string" && typeof lastVal === "string" && firstVal.trim() && lastVal.trim()) {
           const fn = this.normalizeKey(firstVal);
           const ln = this.normalizeKey(lastVal);
-          let bestNameKey: string | undefined;
-          let bestNameValue: string | undefined;
-          for (const [k, val] of Object.entries(obj)) {
-            if (typeof val !== "string") continue;
-            if (this.normalizeKey(k).includes("first") || this.normalizeKey(k).includes("last")) continue;
-            const nv = this.normalizeKey(val);
-            if (nv.includes(fn) && nv.includes(ln) && (!bestNameValue || val.length > bestNameValue.length)) {
-              bestNameValue = val;
-              bestNameKey = k;
+          const current = typeof value === "string" ? this.normalizeKey(value) : "";
+          const hasBoth = current && current.includes(fn) && current.includes(ln);
+          if (!hasBoth) {
+            let bestNameKey: string | undefined;
+            let bestNameValue: string | undefined;
+            for (const [k, val] of Object.entries(obj)) {
+              if (typeof val !== "string") continue;
+              if (this.normalizeKey(k).includes("first") || this.normalizeKey(k).includes("last")) continue;
+              const nv = this.normalizeKey(val);
+              if (nv.includes(fn) && nv.includes(ln) && (!bestNameValue || val.length > bestNameValue.length)) {
+                bestNameValue = val;
+                bestNameKey = k;
+              }
             }
-          }
-          if (bestNameValue !== undefined) {
-            value = bestNameValue;
-            matchedKey = this.normalizeKey(bestNameKey!);
+            if (bestNameValue !== undefined) {
+              value = bestNameValue;
+              matchedKey = this.normalizeKey(bestNameKey!);
+            }
           }
         }
       }

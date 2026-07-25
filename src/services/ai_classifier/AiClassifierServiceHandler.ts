@@ -523,6 +523,26 @@ If uncertain:
   }
 
   /**
+   * Discover a reasonable field_spec for JSON records by asking the model
+   * which human-readable columns to extract from the provided samples.
+   */
+  async discoverJsonFieldSpec(jsonSamples: string[]): Promise<string[]> {
+    const joined = jsonSamples.map((s, i) => `Sample ${i + 1}: ${s}`).join("\n\n");
+    const prompt = `You are a data-parsing assistant. Given the following JSON record samples, suggest a concise list of meaningful column names to extract. Output ONLY a JSON array of strings, no prose.\n\n${joined}\n\nOutput:`;
+    try {
+      const raw = await this.askVertexAI(prompt);
+      const extracted = extractJsonFromMarkdown(raw);
+      const parsed = JSON.parse(extracted);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((x) => typeof x === "string" && x.trim() !== "") as string[];
+      }
+    } catch (err) {
+      this.logger.warn("json_field_discovery_failed", { error: String(err) });
+    }
+    return [];
+  }
+
+  /**
    * Quick fingerprint for line matching
    * @param line - The line to fingerprint
    * @returns Fingerprint hash
@@ -595,6 +615,10 @@ export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse
   const result = await aiClassifierService.classifyAi(req);
   aiClassifierService.logger.info("classify_ai_handler_done", { job_id: req.job_id, kind: result.kind, has_template: !!result.template });
   return result;
+}
+
+export async function discoverJsonFieldSpec(jsonSamples: string[]): Promise<string[]> {
+  return aiClassifierService.discoverJsonFieldSpec(jsonSamples);
 }
 
 // Export interfaces for external use

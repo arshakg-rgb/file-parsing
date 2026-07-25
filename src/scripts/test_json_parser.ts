@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { LineClassifier } from "../services/stream_parser/LineClassifier.js";
+import { discoverJsonFieldSpec } from "../services/ai_classifier/AiClassifierServiceHandler.js";
 
 const INPUT_FILE = process.env.INPUT || "test.json";
 const OUTPUT_FILE = process.env.OUTPUT || "test_json_output.csv";
@@ -35,13 +36,30 @@ for (const [i, item] of (data.education_multi_format_rows || []).entries()) {
 }
 if (data.quirky_edge_cases) addRecord("quirky_edge_cases", data.quirky_edge_cases);
 
-function classifyMode() {
-  const fieldSpec = process.env.FIELD_SPEC
+async function classifyMode() {
+  let fieldSpec = process.env.FIELD_SPEC
     ? process.env.FIELD_SPEC.split(",").map((s) => s.trim())
     : null;
 
   if (!fieldSpec) {
-    // No FIELD_SPEC: fall back to full dynamic JSON flattening.
+    if (process.env.USE_AI) {
+      // Ask AI to suggest columns from a few representative records.
+      const samples: string[] = [];
+      if (data.profile) samples.push(JSON.stringify(data.profile));
+      const conn3 = data.connections?.[3];
+      if (conn3) samples.push(JSON.stringify(conn3));
+      const edu2 = data.education_multi_format_rows?.[1];
+      if (edu2) samples.push(JSON.stringify(edu2));
+      const discovered = await discoverJsonFieldSpec(samples.length ? samples : [JSON.stringify(data)]);
+      if (discovered.length > 0) {
+        fieldSpec = discovered;
+        console.log(`AI discovered field_spec: ${fieldSpec.join(", ")}`);
+      }
+    }
+  }
+
+  if (!fieldSpec) {
+    // No FIELD_SPEC and no AI result: fall back to full dynamic JSON flattening.
     dynamicFlattenMode();
     return;
   }
@@ -146,4 +164,7 @@ function dynamicFlattenMode() {
   console.log(`  first columns: ${columns.slice(0, 10).join(", ")}${columns.length > 10 ? "..." : ""}`);
 }
 
-classifyMode();
+classifyMode().catch((err) => {
+  console.error("test_json_parser failed:", err);
+  process.exit(1);
+});
