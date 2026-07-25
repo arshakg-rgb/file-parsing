@@ -1,0 +1,6 @@
+{"firstName":"Alice","lastName":"Smith","contact":{"email":"alice.smith@example.com","phone":"+1-555-0101"},"headline":"Software Engineer","location":{"country":"US","city":"San Francisco"},"positions":[{"title":"Engineer","company":"Acme"}]}
+{"firstName":"Bob","lastName":"Jones","contact":"{\"email\":\"bob.jones@example.com\",\"phone\":\"+1-555-0202\"}","headline":"Product Manager","location":{"country":"US","city":"New York"}}
+[{"firstName":"Carol","lastName":"White","contact":{"email":"carol.white@example.com"}}]
+{"firstName":"David","lastName":"Brown","email":"david.brown@example.com","phone":"+1-555-0303","address":"123 Main St, Springfield, IL 62704","summary":"Experienced data scientist"}
+firstName,lastName,contact_json
+Eve,Williams,"{\"email\":\"eve.williams@example.com\",\"phone\":\"+1-555-0404\"}"
