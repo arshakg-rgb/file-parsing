@@ -521,17 +521,42 @@ export class LineClassifier implements IClassifier {
   }
 
   /**
-   * Extract only the field_spec fields from an object, matching by key name/alias.
-   * requireStrong=true (fragile "Label: value" lines): accept only when a strongly-typed
-   * field (email/phone) actually validates, or when ≥2 requested fields are present — so a
-   * one-off "name: foo" log fragment is declined, not force-parsed. requireStrong=false
-   * (a genuine JSON object, which is inherently structured): accept a single match.
+   * Recursively flatten a nested object into dot-notation keys. Array values are kept as-is
+   * (they become JSON strings in meta) so we do not explode wide contact arrays.
+   */
+  private flattenObject(obj: Record<string, unknown>, prefix = ""): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      const key = prefix ? `${prefix}.${k}` : k;
+      if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+        Object.assign(out, this.flattenObject(v as Record<string, unknown>, key));
+      } else {
+        // JSON-in-JSON: if a string value looks like an object/array, parse and flatten it.
+        if (typeof v === "string" && (v.trim().startsWith("{") || v.trim().startsWith("["))) {
+          try {
+            const parsed = JSON.parse(v);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+              Object.assign(out, this.flattenObject(parsed as Record<string, unknown>, key));
+              continue;
+            }
+          } catch { /* fall through to keep raw string */ }
+        }
+        out[key] = v;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Extract only the field_spec fields from a (possibly nested) object, matching by key name/alias.
+   * Nested objects are flattened first so `contact.email` maps to the `email` field_spec field.
    */
   private extractFromObject(
-    obj: Record<string, unknown>,
+    rawObj: Record<string, unknown>,
     templateId: string,
     requireStrong: boolean
   ): { row: Record<string, unknown>; template_id: string } | null {
+    const obj = this.flattenObject(rawObj);
     const row: Record<string, unknown> = {};
     let matched = 0;
     let strong = 0;
