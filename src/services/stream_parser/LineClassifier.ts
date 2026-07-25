@@ -62,7 +62,7 @@ export class LineClassifier implements IClassifier {
     email: ["email", "mail", "emailaddress", "e_mail", "emails"],
     name: ["name", "fullname", "full_name"],
     phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones"],
-    address: ["address", "addr", "streetaddress", "addresses"],
+    address: ["address", "addr", "streetaddress", "addresses", "city", "country", "street"],
   };
 
   // Static reusable regexes (compiled once).
@@ -615,12 +615,22 @@ export class LineClassifier implements IClassifier {
       const nf = this.normalizedFieldSpec[i];
       let value = normalizedObjKeys.get(nf);
       let matchedKey: string | undefined = nf;
+      if (value !== undefined) {
+        const vFull = leafToFull.get(nf);
+        if (consumedKeys.has(nf) || (vFull && consumedKeys.has(vFull))) value = undefined;
+      }
       if (value === undefined) {
         const aliases = this.aliasMap.get(nf);
         if (aliases) {
           for (const a of aliases) {
-            value = normalizedObjKeys.get(a);
-            if (value !== undefined) { matchedKey = a; break; }
+            const av = normalizedObjKeys.get(a);
+            if (av !== undefined) {
+              const aFull = leafToFull.get(a);
+              if (consumedKeys.has(a) || (aFull && consumedKeys.has(aFull))) continue;
+              value = av;
+              matchedKey = a;
+              break;
+            }
           }
         }
       }
@@ -636,6 +646,7 @@ export class LineClassifier implements IClassifier {
         for (const [k, val] of Object.entries(obj)) {
           if (val === null || val === undefined || val === "") continue;
           const nk = this.normalizeKey(k);
+          if (consumedKeys.has(nk)) continue;
           const segments = k.split(/[.\[\]]+/).filter(Boolean).map((s) => this.normalizeKey(s));
           const segmentMatch = segments.some((s) => accepted.includes(s));
           const prefixMatch = accepted.some((a) => nk.startsWith(a));
