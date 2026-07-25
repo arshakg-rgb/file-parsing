@@ -561,10 +561,20 @@ export class LineClassifier implements IClassifier {
     let matched = 0;
     let strong = 0;
     const normalizedObjKeys = new Map<string, unknown>();
+    const leafToFull = new Map<string, string>(); // leaf → full normalized key
     const consumedKeys = new Set<string>(); // Track which raw keys got mapped
     for (const [k, val] of Object.entries(obj)) {
       const nk = this.normalizeKey(k);
       if (!normalizedObjKeys.has(nk)) normalizedObjKeys.set(nk, val); // first wins
+      // Also map the leaf key so "contact.email" can match the "email" field_spec field.
+      if (k.includes(".")) {
+        const leaf = k.slice(k.lastIndexOf(".") + 1);
+        const nLeaf = this.normalizeKey(leaf);
+        if (!normalizedObjKeys.has(nLeaf)) {
+          normalizedObjKeys.set(nLeaf, val);
+          leafToFull.set(nLeaf, nk);
+        }
+      }
     }
     for (let i = 0; i < this.fieldSpec.length; i++) {
       const field = this.fieldSpec[i];
@@ -585,6 +595,8 @@ export class LineClassifier implements IClassifier {
         row[field] = value;
         matched++;
         consumedKeys.add(matchedKey!);
+        const fullKey = leafToFull.get(matchedKey!);
+        if (fullKey) consumedKeys.add(fullKey); // do not duplicate into meta
         if ((nf === "email" || nf === "phone") && this.validateField(field, value)) strong++;
       } else {
         row[field] = null;
