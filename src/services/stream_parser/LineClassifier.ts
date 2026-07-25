@@ -440,7 +440,7 @@ export class LineClassifier implements IClassifier {
       // Try different key-value separators: =, :, or -
       // Try different pair separators: ;, or " - "
       let parts: string[] = [];
-      
+
       // First try " - " as pair separator (common in key-value logs)
       if (line.includes(" - ")) {
         parts = line.split(" - ");
@@ -450,11 +450,11 @@ export class LineClassifier implements IClassifier {
         // Fallback to whitespace
         parts = line.split(/\s+/);
       }
-      
+
       for (const part of parts) {
         // Try different key-value separators
         let k: string | undefined, v: string | undefined;
-        
+
         if (part.includes("=")) {
           [k, v] = part.split("=", 2);
         } else if (part.includes(":")) {
@@ -462,7 +462,7 @@ export class LineClassifier implements IClassifier {
         } else if (part.includes("-")) {
           [k, v] = part.split("-", 2);
         }
-        
+
         if (k && v !== undefined) {
           obj[k.trim()] = v.trim();
         }
@@ -625,30 +625,65 @@ export class LineClassifier implements IClassifier {
         }
       }
       // Nested path fallback: a field like "phone" can live under "contact_info.phone.raw"
-      // and "location" under "person.location.city". Scan dotted/array path segments.
+      // and "location" under "person.location.city". Also tolerate renamed/numbered keys
+      // such as "first name", "email_address", "mobile_2" via substring matching.
       if (value === undefined) {
-        const accepted = new Set<string>([nf, ...(this.aliasMap.get(nf) || [])]);
+        const accepted = Array.from(new Set([nf, ...(this.aliasMap.get(nf) || [])]));
+        const isName = nf === "name";
         let bestScore = -1;
         let bestValue: unknown = undefined;
         let bestKey: string | undefined;
         for (const [k, val] of Object.entries(obj)) {
           if (val === null || val === undefined || val === "") continue;
+          const nk = this.normalizeKey(k);
           const segments = k.split(/[.\[\]]+/).filter(Boolean).map((s) => this.normalizeKey(s));
-          if (!segments.some((s) => accepted.has(s))) continue;
+          const segmentMatch = segments.some((s) => accepted.includes(s));
+          const prefixMatch = accepted.some((a) => nk.startsWith(a));
+          // For "name" we do NOT use substring matching because "schoolname" would
+          // incorrectly match; instead we use the first+last heuristic below.
+          const substringMatch = !isName && accepted.some((a) => a.length >= 3 && nk.includes(a));
+          if (!segmentMatch && !prefixMatch && !substringMatch) continue;
           const strVal = typeof val === "string" ? val : JSON.stringify(val);
           if (strVal.trim() === "") continue;
           const isString = typeof val === "string";
           const isValid = this.validateField(field, val);
-          const score = (isString ? 100000 : 0) + (isValid ? 10000 : 0) + strVal.length;
+          // First-match ordering wins over length so "first/current" entries are preferred.
+          const score = (isString ? 100000 : 0) + (isValid ? 10000 : 0);
           if (score > bestScore) {
             bestScore = score;
             bestValue = val;
-            bestKey = this.normalizeKey(k);
+            bestKey = nk;
           }
         }
         if (bestValue !== undefined) {
           value = bestValue;
           matchedKey = bestKey;
+        }
+      }
+
+      // Semantic inference for name: if first and last exist, any value containing both
+      // is the display/full name, regardless of the key label (display_1, fullName, etc.).
+      if (value === undefined && nf === "name") {
+        const firstVal = normalizedObjKeys.get("first");
+        const lastVal = normalizedObjKeys.get("last");
+        if (typeof firstVal === "string" && typeof lastVal === "string" && firstVal.trim() && lastVal.trim()) {
+          const fn = this.normalizeKey(firstVal);
+          const ln = this.normalizeKey(lastVal);
+          let bestNameKey: string | undefined;
+          let bestNameValue: string | undefined;
+          for (const [k, val] of Object.entries(obj)) {
+            if (typeof val !== "string") continue;
+            if (this.normalizeKey(k).includes("first") || this.normalizeKey(k).includes("last")) continue;
+            const nv = this.normalizeKey(val);
+            if (nv.includes(fn) && nv.includes(ln) && (!bestNameValue || val.length > bestNameValue.length)) {
+              bestNameValue = val;
+              bestNameKey = k;
+            }
+          }
+          if (bestNameValue !== undefined) {
+            value = bestNameValue;
+            matchedKey = this.normalizeKey(bestNameKey!);
+          }
         }
       }
       if (value !== undefined && value !== null && String(value).trim() !== "") {
@@ -844,13 +879,13 @@ export class LineClassifier implements IClassifier {
       const headerColCount = this.headerParts?.length ?? 0;
       const lineColCount = parts.length;
       const columnCountDiff = Math.abs(headerColCount - lineColCount);
-      
+
       // Accept header mapping if column counts match closely (within 2 columns).
       // Threshold of 2 allows for minor variations like trailing commas or empty trailing columns
       // while still catching major shape mismatches (e.g., 5-column header vs 30-column data row).
       // if strong fields (email/phone) from header mapping actually validate
       let useHeaderMap = columnCountDiff <= 2;
-      
+
       if (!useHeaderMap) {
         // Check if header-mapped strong fields validate (generalized to all validatable fields)
         const strongFields = ["email", "phone", "zip", "date", "url"];
@@ -865,12 +900,12 @@ export class LineClassifier implements IClassifier {
             }
           }
         }
-        
+
         if (anyValid) {
           useHeaderMap = true;
         }
       }
-      
+
       if (useHeaderMap) {
         usedHeader = true;
         const mappedIndices = new Set<number>(Object.values(this.headerMap));

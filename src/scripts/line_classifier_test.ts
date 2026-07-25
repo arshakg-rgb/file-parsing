@@ -49,6 +49,14 @@ check("deeply nested object: data.profile.phone maps to phone", () => {
   assert.equal(row.email, "bob@example.com");
 });
 
+check("renamed display key (display_1) is inferred as full name from first+last", () => {
+  const c = makeClassifier(["name", "first", "last"]);
+  const row = expectParsed(c.classify('{"first": "Wei", "last": "Zhang", "display_1": "Wei Zhang 王伟"}', 0, 0));
+  assert.equal(row.first, "Wei");
+  assert.equal(row.last, "Zhang");
+  assert.equal(row.name, "Wei Zhang 王伟");
+});
+
 check("unmapped nested keys land in meta", () => {
   const c = makeClassifier(["email"]);
   const row = expectParsed(c.classify('{"contact": {"email": "a@b.com"}, "extra": {"city": "Yerevan"}}', 0, 0));
