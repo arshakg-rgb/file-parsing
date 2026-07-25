@@ -624,6 +624,33 @@ export class LineClassifier implements IClassifier {
           }
         }
       }
+      // Nested path fallback: a field like "phone" can live under "contact_info.phone.raw"
+      // and "location" under "person.location.city". Scan dotted/array path segments.
+      if (value === undefined) {
+        const accepted = new Set<string>([nf, ...(this.aliasMap.get(nf) || [])]);
+        let bestScore = -1;
+        let bestValue: unknown = undefined;
+        let bestKey: string | undefined;
+        for (const [k, val] of Object.entries(obj)) {
+          if (val === null || val === undefined || val === "") continue;
+          const segments = k.split(/[.\[\]]+/).filter(Boolean).map((s) => this.normalizeKey(s));
+          if (!segments.some((s) => accepted.has(s))) continue;
+          const strVal = typeof val === "string" ? val : JSON.stringify(val);
+          if (strVal.trim() === "") continue;
+          const isString = typeof val === "string";
+          const isValid = this.validateField(field, val);
+          const score = (isString ? 100000 : 0) + (isValid ? 10000 : 0) + strVal.length;
+          if (score > bestScore) {
+            bestScore = score;
+            bestValue = val;
+            bestKey = this.normalizeKey(k);
+          }
+        }
+        if (bestValue !== undefined) {
+          value = bestValue;
+          matchedKey = bestKey;
+        }
+      }
       if (value !== undefined && value !== null && String(value).trim() !== "") {
         row[field] = value;
         matched++;
