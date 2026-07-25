@@ -521,8 +521,9 @@ export class LineClassifier implements IClassifier {
   }
 
   /**
-   * Recursively flatten a nested object into dot-notation keys. Array values are kept as-is
-   * (they become JSON strings in meta) so we do not explode wide contact arrays.
+   * Recursively flatten a nested object into dot-notation keys. Arrays of objects are flattened
+   * with numeric indexes (e.g. messages[0].body); scalar arrays are kept as arrays so they are
+   * JSON-stringified in meta/output rather than mangled to "[object Object]".
    */
   private flattenObject(obj: Record<string, unknown>, prefix = ""): Record<string, unknown> {
     const out: Record<string, unknown> = {};
@@ -530,19 +531,40 @@ export class LineClassifier implements IClassifier {
       const key = prefix ? `${prefix}.${k}` : k;
       if (v !== null && typeof v === "object" && !Array.isArray(v)) {
         Object.assign(out, this.flattenObject(v as Record<string, unknown>, key));
-      } else {
-        // JSON-in-JSON: if a string value looks like an object/array, parse and flatten it.
-        if (typeof v === "string" && (v.trim().startsWith("{") || v.trim().startsWith("["))) {
-          try {
-            const parsed = JSON.parse(v);
-            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-              Object.assign(out, this.flattenObject(parsed as Record<string, unknown>, key));
+        continue;
+      }
+      if (Array.isArray(v)) {
+        const allObjects = v.length > 0 && v.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
+        if (allObjects) {
+          for (let i = 0; i < v.length; i++) {
+            Object.assign(out, this.flattenObject(v[i] as Record<string, unknown>, `${key}[${i}]`));
+          }
+        } else {
+          out[key] = v;
+        }
+        continue;
+      }
+      if (typeof v === "string" && (v.trim().startsWith("{") || v.trim().startsWith("["))) {
+        try {
+          const parsed = JSON.parse(v);
+          if (parsed && typeof parsed === "object") {
+            if (Array.isArray(parsed)) {
+              const allObjects = parsed.length > 0 && parsed.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
+              if (allObjects) {
+                for (let i = 0; i < parsed.length; i++) {
+                  Object.assign(out, this.flattenObject(parsed[i] as Record<string, unknown>, `${key}[${i}]`));
+                }
+              } else {
+                out[key] = parsed;
+              }
               continue;
             }
-          } catch { /* fall through to keep raw string */ }
-        }
-        out[key] = v;
+            Object.assign(out, this.flattenObject(parsed as Record<string, unknown>, key));
+            continue;
+          }
+        } catch { /* fall through to keep raw string */ }
       }
+      out[key] = v;
     }
     return out;
   }
@@ -608,8 +630,9 @@ export class LineClassifier implements IClassifier {
     // column to the output CSV, so any extra source fields must land there or be lost.
     const metaObj: Record<string, string> = {};
     for (const [k, v] of Object.entries(obj)) {
-      if (!consumedKeys.has(this.normalizeKey(k)) && v !== undefined && v !== null && String(v).trim() !== "") {
-        metaObj[k] = String(v).trim();
+      if (!consumedKeys.has(this.normalizeKey(k)) && v !== undefined && v !== null) {
+        const metaStr = typeof v === "object" ? JSON.stringify(v) : String(v).trim();
+        if (metaStr !== "") metaObj[k] = metaStr;
       }
     }
     row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
@@ -628,7 +651,16 @@ export class LineClassifier implements IClassifier {
    */
   private parseJsonRecord(line: string): { row: Record<string, unknown>; template_id: string } | null {
     const t = line.trim();
-    if (t[0] !== "{" && t[0] !== "[") return null;
+    if (t[0] !== "{" && t[0] !== "[") {
+      // JSON-in-JSON: a cell that is itself a JSON-encoded string of a JSON object/array.
+      if (t.length >= 2 && t[0] === '"' && t[t.length - 1] === '"') {
+        try {
+          const inner = JSON.parse(t) as string;
+          if (typeof inner === "string") return this.parseJsonRecord(inner);
+        } catch { /* fall through */ }
+      }
+      return null;
+    }
     let parsed: unknown;
     try { parsed = JSON.parse(t); } catch { return null; }
     if (!parsed || typeof parsed !== "object") return null;
@@ -999,12 +1031,26 @@ export class LineClassifier implements IClassifier {
         out[k] = null;
       } else if (typeof v === "boolean" || typeof v === "number") {
         out[k] = v;
+      } else if (Array.isArray(v)) {
+        const nf = this.normalizeKey(k);
+        if (nf === "email" || nf === "phone" || nf === "url") {
+          const first = v.find((x) => x !== null && x !== undefined && this.validateField(k, x));
+          if (first !== undefined) {
+            out[k] = String(first).trim();
+            continue;
+          }
+        }
+        out[k] = JSON.stringify(v);
+      } else if (typeof v === "object") {
+        out[k] = JSON.stringify(v);
       } else {
         const s = String(v).trim();
-        // Field-level binary detection: reject rows with binary content in any field
+        // Field-level binary detection: reject rows with binary content in any field.
+        // Tabs, newlines and CR are legitimate whitespace, not binary garbage.
         const binaryRe = /[\p{Cc}\p{Co}\p{Cn}\p{Cs}]/gu;
-        const binaryCount = (s.match(binaryRe) || []).length;
-        if (binaryCount / s.length > 0.05) {
+        const binaryChars = s.match(binaryRe) || [];
+        const binaryCount = binaryChars.filter((c) => c !== "\t" && c !== "\n" && c !== "\r").length;
+        if (s.length > 0 && binaryCount / s.length > 0.05) {
           // If any field has >5% binary content, return null to reject the entire row
           return null as unknown as Record<string, unknown>;
         }
