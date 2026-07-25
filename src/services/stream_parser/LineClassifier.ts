@@ -544,9 +544,20 @@ export class LineClassifier implements IClassifier {
         }
         continue;
       }
-      if (typeof v === "string" && (v.trim().startsWith("{") || v.trim().startsWith("["))) {
+      let sv: unknown = v;
+      // Double-encoded JSON strings: unwrap a JSON string that contains another JSON string/object/array.
+      if (typeof sv === "string") {
+        const t = sv.trim();
+        if (t.length >= 2 && t[0] === '"' && t[t.length - 1] === '"') {
+          try {
+            const inner = JSON.parse(sv);
+            if (typeof inner === "string") sv = inner;
+          } catch { /* not a JSON string */ }
+        }
+      }
+      if (typeof sv === "string" && (sv.trim().startsWith("{") || sv.trim().startsWith("["))) {
         try {
-          const parsed = JSON.parse(v);
+          const parsed = JSON.parse(sv);
           if (parsed && typeof parsed === "object") {
             if (Array.isArray(parsed)) {
               const allObjects = parsed.length > 0 && parsed.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
@@ -564,7 +575,7 @@ export class LineClassifier implements IClassifier {
           }
         } catch { /* fall through to keep raw string */ }
       }
-      out[key] = v;
+      out[key] = sv;
     }
     return out;
   }
