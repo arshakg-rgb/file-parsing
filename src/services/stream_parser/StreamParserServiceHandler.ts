@@ -3,7 +3,7 @@ import { settings } from "@shared/Settings.js";
 import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ParseMessage, FailureClass, JobCounts, totalFailed, ColumnMap } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, publishEvent, modifyAckDeadline } from "@shared/QueueService.js";
-import { parseGcsUrl, streamLines, objectSize, readRange } from "@shared/GcsUtils.js";
+import { parseGcsUrl, streamLines, objectSize, readRange, readFull } from "@shared/GcsUtils.js";
 import { LineClassifier } from "./LineClassifier.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { OutputManager } from "@shared/OutputManager.js";
@@ -20,6 +20,32 @@ import MySqlManager from "@config/db/MySqlManager.js";
 import jschardet from "jschardet";
 import crypto from "crypto";
 import { normalizeEncoding, isLikelyUtf8 } from "@utils/normalizers/encoding.js";
+
+/**
+ * Extract JSON records from a parsed JSON value for processing as individual classifier inputs.
+ * Arrays become one record per element. Objects become one record per top-level value.
+ */
+function extractJsonRecords(data: unknown): string[] {
+  const records: string[] = [];
+  function pushRecord(value: unknown) {
+    if (value === null || value === undefined) return;
+    records.push(JSON.stringify(value));
+  }
+  if (Array.isArray(data)) {
+    for (const item of data) pushRecord(item);
+  } else if (typeof data === "object") {
+    for (const [, value] of Object.entries(data as Record<string, unknown>)) {
+      if (Array.isArray(value)) {
+        for (const item of value) pushRecord(item);
+      } else {
+        pushRecord(value);
+      }
+    }
+  } else {
+    pushRecord(data);
+  }
+  return records;
+}
 
 /**
  * AI Rate Limiter - Token bucket implementation
@@ -564,8 +590,29 @@ export class StreamParserService {
       }
     };
 
+    const isJsonFile = key.endsWith(".json") && !key.endsWith(".ndjson");
+    let jsonRecords: string[] | null = null;
+    if (isJsonFile) {
+      try {
+        const buf = await readFull(bucket, key);
+        const text = buf.toString(detectedEncoding as BufferEncoding).replace(/\0/g, "");
+        jsonRecords = extractJsonRecords(JSON.parse(text));
+      } catch (err) {
+        this.logger.warn("json_parse_failed", { job_id: jobId, s3_url: msg.s3_url, error: String(err) });
+      }
+    }
+
     try {
-      for await (const [line, byteOffset, byteLength] of streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding)) {
+      const lineSource: AsyncIterable<[string, number, number]> = jsonRecords
+        ? (async function* () {
+            for (let i = 0; i < jsonRecords!.length; i++) {
+              const line = jsonRecords![i];
+              yield [line, i, line.length] as [string, number, number];
+            }
+          })()
+        : streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding);
+
+      for await (const [line, byteOffset, byteLength] of lineSource) {
         lineNo += 1;
         this.stats.totalLinesProcessed++;
         
