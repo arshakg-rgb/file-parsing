@@ -42,24 +42,23 @@ async function classifyMode() {
     : null;
 
   if (!fieldSpec) {
-    if (process.env.USE_AI) {
-      // Ask AI to suggest columns from a few representative records.
-      const samples: string[] = [];
-      if (data.profile) samples.push(JSON.stringify(data.profile));
-      const conn3 = data.connections?.[3];
-      if (conn3) samples.push(JSON.stringify(conn3));
-      const edu2 = data.education_multi_format_rows?.[1];
-      if (edu2) samples.push(JSON.stringify(edu2));
+    // Always ask AI for a field spec first. If AI is unavailable, fall back to dynamic flattening.
+    const samples: string[] = [];
+    if (data.profile) samples.push(JSON.stringify(data.profile));
+    if (data.connections?.[0]) samples.push(JSON.stringify(data.connections[0]));
+    if (data.education_multi_format_rows?.[1]) samples.push(JSON.stringify(data.education_multi_format_rows[1]));
+    try {
       const discovered = await discoverJsonFieldSpec(samples.length ? samples : [JSON.stringify(data)]);
       if (discovered.length > 0) {
         fieldSpec = discovered;
         console.log(`AI discovered field_spec: ${fieldSpec.join(", ")}`);
       }
+    } catch (err) {
+      console.warn("AI field discovery failed; falling back to dynamic flattening:", String(err));
     }
   }
 
   if (!fieldSpec) {
-    // No FIELD_SPEC and no AI result: fall back to full dynamic JSON flattening.
     dynamicFlattenMode();
     return;
   }
@@ -69,7 +68,15 @@ async function classifyMode() {
   const csvRows: string[] = [columns.map(csvEscapeCell).join(",")];
 
   for (const { label, line } of records) {
-    const result = classifier.classify(line, 0, 0);
+    let result = classifier.classify(line, 0, 0);
+    // Local parser could not parse this record — ask AI.
+    if (result.verdict !== "parsed" && result.verdict !== "rubbish") {
+      try {
+        result = await classifier.classifyWithAI(line, []);
+      } catch (err) {
+        console.warn(`AI fallback failed for ${label}:`, String(err));
+      }
+    }
     if (result.verdict === "parsed" && result.row) {
       const row = result.row;
       const vals = columns.map((c) => csvEscapeCell(row[c]));
