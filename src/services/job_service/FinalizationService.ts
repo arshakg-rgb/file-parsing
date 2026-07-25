@@ -268,6 +268,16 @@ class FinalizationService {
       return;
     }
 
+    const sourcePath = StoragePath.parse(job.s3_url);
+    const key = sourcePath.key.toLowerCase();
+    if (key.endsWith(".json") && !key.endsWith(".ndjson")) {
+      // Pretty-printed JSON files are not line-oriented; byte offsets stored during parsing
+      // are record indexes, not source-file byte positions. Line-number backfill would map
+      // many records to the same source line and break the (job_id, line_no) unique constraint.
+      console.log("backfill_skip_json_source", { jobId, s3_url: job.s3_url });
+      return;
+    }
+
     const timings = (job.timings as Record<string, unknown>) || {};
     const rubbishLogPath = timings._rubbish_log_path as string | undefined;
 
