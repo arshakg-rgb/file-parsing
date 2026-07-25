@@ -616,11 +616,17 @@ export class LineClassifier implements IClassifier {
    */
   private parseJsonRecord(line: string): { row: Record<string, unknown>; template_id: string } | null {
     const t = line.trim();
-    if (t[0] !== "{") return null;
-    let obj: unknown;
-    try { obj = JSON.parse(t); } catch { return null; }
-    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
-    return this.extractFromObject(obj as Record<string, unknown>, "json", false);
+    if (t[0] !== "{" && t[0] !== "[") return null;
+    let parsed: unknown;
+    try { parsed = JSON.parse(t); } catch { return null; }
+    if (!parsed || typeof parsed !== "object") return null;
+    let obj = parsed as Record<string, unknown>;
+    if (Array.isArray(parsed)) {
+      const first = parsed.find((x) => x && typeof x === "object" && !Array.isArray(x)) as Record<string, unknown> | undefined;
+      if (!first) return null;
+      obj = first;
+    }
+    return this.extractFromObject(obj, "json", false);
   }
 
     /**
