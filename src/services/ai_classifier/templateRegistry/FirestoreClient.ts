@@ -49,5 +49,4 @@ export class FirestoreClient
   {
     return this.manager.getFirestoreClient;
   }
-
 }

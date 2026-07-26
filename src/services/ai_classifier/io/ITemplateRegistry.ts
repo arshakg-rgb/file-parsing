@@ -8,5 +8,4 @@ export interface ITemplateRegistry
   incrementMatchCount(templateId: string, fingerprint: string): void;
   listAll(kind?: TemplateKind): Template[];
   warmCache(): Promise<void>;
-  ensureTableExists(): void;
 }

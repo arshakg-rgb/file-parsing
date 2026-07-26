@@ -4,7 +4,7 @@ import FirestoreManager from "@config/firestore/FirestoreManager.js";
 import { ClassifyRequest, TemplateKind } from "@shared/models/template.js";
 import { classifyAi } from "./AiClassifierServiceHandler.js";
 import { mockClassify } from "./mock.js";
-import { ensureTableExists, listAll, warmCache } from "./templateRegistry.js";
+import { listAll, warmCache } from "./templateRegistry.js";
 import { createLogger } from "@utils/logger/logger.js";
 
 const logger = createLogger("AiClassifierServer");
@@ -54,7 +54,6 @@ const PORT = Number(process.env.PORT) || 8001;
 
 async function bootstrap(): Promise<void> {
   await FirestoreManager.getInstance().connect();
-  ensureTableExists();
   await warmCache();
   app.listen(PORT, () => {
     logger.info("ai_classifier_listening", { port: PORT });

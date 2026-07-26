@@ -3,23 +3,28 @@ import { Template, TemplateKind } from "@shared/models/template.js";
 /**
  * TemplateCache is responsible for template cache operations.
  */
-export class TemplateCache {
+export class TemplateCache
+{
     /**
    * Templates
    * @private
    */
+
   private readonly templates: Template[] = [];
     /**
    * Warmed
    * @private
    */
-  private warmed = false;
+
+  private warmed: boolean = false;
 
     /**
    * Checks whether warmed
    * @returns True if the condition is met, false otherwise
    */
-  isWarmed(): boolean {
+
+  public isWarmed(): boolean
+  {
     return this.warmed;
   }
 
@@ -27,7 +32,9 @@ export class TemplateCache {
    * Sets warmed
    * @param value - The value to use
    */
-  setWarmed(value: boolean): void {
+
+  public setWarmed(value: boolean): void
+  {
     this.warmed = value;
   }
 
@@ -36,8 +43,10 @@ export class TemplateCache {
    * @param fingerprint - The fingerprint
    * @returns The list of results
    */
-  getByFingerprint(fingerprint: string): Template[] {
-    return this.templates.filter((t) => t.fingerprint === fingerprint);
+
+  public getByFingerprint(fingerprint: string): Template[]
+  {
+    return this.templates.filter((template) => template.fingerprint === fingerprint);
   }
 
     /**
@@ -46,17 +55,26 @@ export class TemplateCache {
    * @param kind - The kind
    * @returns The template | null result
    */
-  getLatest(fingerprint: string, kind?: TemplateKind): Template | null {
-    const matches = this.getByFingerprint(fingerprint).filter((t) => (kind ? t.kind === kind : true));
-    if (!matches.length) return null;
-    return matches.reduce((max, t) => (t.version > max.version ? t : max));
+
+  public getLatest(fingerprint: string, kind?: TemplateKind): Template | null
+  {
+    const matches: Template[] = this.getByFingerprint(fingerprint).filter((template) => (kind ? template.kind === kind : true));
+
+    if (!matches.length)
+    {
+      return null;
+    }
+
+    return matches.reduce((max, template) => (template.version > max.version ? template : max));
   }
 
     /**
    * Adds the operation
    * @param template - The template
    */
-  add(template: Template): void {
+
+  public add(template: Template): void
+  {
     this.templates.push(template);
   }
 
@@ -66,8 +84,10 @@ export class TemplateCache {
    * @param fingerprint - The fingerprint
    * @returns The template | undefined result
    */
-  find(templateId: string, fingerprint: string): Template | undefined {
-    return this.templates.find((t) => t.template_id === templateId && t.fingerprint === fingerprint);
+
+  public find(templateId: string, fingerprint: string): Template | undefined
+  {
+    return this.templates.find((template) => template.template_id === templateId && template.fingerprint === fingerprint);
   }
 
     /**
@@ -75,16 +95,24 @@ export class TemplateCache {
    * @param kind - The kind
    * @returns The list of results
    */
-  listAll(kind?: TemplateKind): Template[] {
-    if (!kind) return [...this.templates];
-    return this.templates.filter((t) => t.kind === kind);
+
+  public listAll(kind?: TemplateKind): Template[]
+  {
+    if (!kind)
+    {
+      return [...this.templates];
+    }
+
+    return this.templates.filter((template) => template.kind === kind);
   }
 
     /**
    * Resets the operation
    * @param templates - The templates
    */
-  reset(templates: Template[]): void {
+
+  public reset(templates: Template[]): void
+  {
     this.templates.length = 0;
     this.templates.push(...templates);
   }

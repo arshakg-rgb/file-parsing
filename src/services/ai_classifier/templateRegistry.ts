@@ -58,10 +58,3 @@ export function listAll(kind?: TemplateKind): Template[] {
 export function warmCache(): Promise<void> {
   return registry.warmCache();
 }
-
-/**
- * Ensures table exists
- */
-export function ensureTableExists(): void {
-  registry.ensureTableExists();
-}

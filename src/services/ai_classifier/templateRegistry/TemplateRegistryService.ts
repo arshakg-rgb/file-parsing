@@ -10,26 +10,34 @@ import { createLogger, Logger } from "@utils/logger/logger.js";
 /**
  * TemplateRegistryService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
  */
-export class TemplateRegistryService extends ServiceManager implements ITemplateRegistry {
+export class TemplateRegistryService extends ServiceManager implements ITemplateRegistry
+{
     /**
    * Singleton instance
    * @private
    */
+
   protected static instance: TemplateRegistryService;
+
     /**
    * Cache
    * @private
    */
+
   private readonly cache: TemplateCache;
+
     /**
    * Repository
    * @private
    */
+
   private readonly repository: FirestoreTemplateRepository;
+
     /**
    * Warming
    * @private
    */
+
   private warming: Promise<void> | null = null;
   private logger: Logger;
 
@@ -40,14 +48,14 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
    * @param repository - The repository
    * @throws Error if instantiated directly
    */
-  private constructor(
-    enforce: () => void,
-    cache?: TemplateCache,
-    repository?: FirestoreTemplateRepository
-  ) {
-    if (enforce !== Enforce) {
+
+  private constructor(enforce: () => void, cache?: TemplateCache, repository?: FirestoreTemplateRepository)
+  {
+    if (enforce !== Enforce)
+    {
       throw new InstantiationError("Cannot instantiate TemplateRegistryService directly. Use getInstance()");
     }
+
     super(enforce);
     this.logger = createLogger("TemplateRegistryService");
     this.cache = cache ?? new TemplateCache();
@@ -58,18 +66,25 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
    * Gets the single instance of the TemplateRegistryService class.
    * @returns The single instance of the class
    */
-  static getInstance(): TemplateRegistryService {
-    if (!TemplateRegistryService.instance) {
+
+  static getInstance(): TemplateRegistryService
+  {
+    if (!TemplateRegistryService.instance)
+    {
       TemplateRegistryService.instance = new TemplateRegistryService(Enforce);
     }
+
     return TemplateRegistryService.instance;
   }
 
     /**
    * Ensures warmed
    */
-  ensureWarmed(): void {
-    if (!this.cache.isWarmed()) {
+
+  public ensureWarmed(): void
+  {
+    if (!this.cache.isWarmed())
+    {
       this.warmCache().catch(() => {});
     }
   }
@@ -79,7 +94,9 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
    * @param fingerprint - The fingerprint
    * @returns The list of results
    */
-  getByFingerprint(fingerprint: string): Template[] {
+
+  public getByFingerprint(fingerprint: string): Template[]
+  {
     this.ensureWarmed();
     return this.cache.getByFingerprint(fingerprint);
   }
@@ -90,7 +107,9 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
    * @param kind - The kind
    * @returns The template | null result
    */
-  getLatest(fingerprint: string, kind?: TemplateKind): Template | null {
+
+  public getLatest(fingerprint: string, kind?: TemplateKind): Template | null
+  {
     this.ensureWarmed();
     return this.cache.getLatest(fingerprint, kind);
   }
@@ -100,19 +119,30 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
    * @param tmpl - The tmpl
    * @returns A promise that resolves to the result
    */
-  async save(tmpl: Template): Promise<Template> {
+
+  public async save(tmpl: Template): Promise<Template>
+  {
     await this.warmCache();
-    const existing = this.cache.getLatest(tmpl.fingerprint, tmpl.kind);
-    if (existing) {
+
+    const existing: Template | null = this.cache.getLatest(tmpl.fingerprint, tmpl.kind);
+
+    if (existing)
+    {
       tmpl = { ...tmpl, version: existing.version + 1, template_id: randomUUID() };
     }
+
     tmpl.updated_at = new Date().toISOString();
     this.cache.add(tmpl);
-    try {
+
+    try
+    {
       await this.repository.save(tmpl);
-    } catch (e) {
-      this.logger.error("firestore_save_error", { template_id: tmpl.template_id, error: String(e) });
     }
+    catch (error)
+    {
+      this.logger.error("firestore_save_error", { template_id: tmpl.template_id, error: String(error) });
+    }
+
     return tmpl;
   }
 
@@ -121,12 +151,16 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
    * @param templateId - The template id
    * @param fingerprint - The fingerprint
    */
-  incrementMatchCount(templateId: string, fingerprint: string): void {
-    const t = this.cache.find(templateId, fingerprint);
-    if (t) {
-      t.match_count += 1;
-      t.updated_at = new Date().toISOString();
-      this.repository.updateMatchCount(templateId, t.match_count, t.updated_at)
+
+  public incrementMatchCount(templateId: string, fingerprint: string): void
+  {
+    const template: Template | undefined = this.cache.find(templateId, fingerprint);
+
+    if (template)
+    {
+      template.match_count += 1;
+      template.updated_at = new Date().toISOString();
+      this.repository.updateMatchCount(templateId, template.match_count, template.updated_at)
         .catch((e) => this.logger.warn("match_count_update_failed", { template_id: templateId, error: String(e) }));
     }
   }
@@ -136,7 +170,9 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
    * @param kind - The kind
    * @returns The list of results
    */
-  listAll(kind?: TemplateKind): Template[] {
+
+  public listAll(kind?: TemplateKind): Template[]
+  {
     this.ensureWarmed();
     return this.cache.listAll(kind);
   }
@@ -144,13 +180,27 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
     /**
    * Performs the warm cache operation.
    */
-  async warmCache(): Promise<void> {
-    if (this.cache.isWarmed()) return;
-    if (this.warming) return this.warming;
+
+  public async warmCache(): Promise<void>
+  {
+    if (this.cache.isWarmed())
+    {
+      return;
+    }
+
+    if (this.warming)
+    {
+      return this.warming;
+    }
+
     this.warming = this.loadCache();
-    try {
+
+    try
+    {
       await this.warming;
-    } finally {
+    }
+    finally
+    {
       this.cache.setWarmed(true);
       this.warming = null;
     }
@@ -159,20 +209,18 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
     /**
    * Loads cache
    */
-  private async loadCache(): Promise<void> {
-    try {
-      const templates = await this.repository.findAll();
+
+  private async loadCache(): Promise<void>
+  {
+    try
+    {
+      const templates: Template[] = await this.repository.findAll();
       this.cache.reset(templates);
       this.logger.info("template_cache_warmed", { count: this.cache.listAll().length });
-    } catch (e) {
-      this.logger.warn("template_cache_warm_failed", { error: String(e) });
     }
-  }
-
-    /**
-   * Ensures table exists
-   */
-  ensureTableExists(): void {
-    // Firestore is schemaless — no setup needed
+    catch (error)
+    {
+      this.logger.warn("template_cache_warm_failed", { error: String(error) });
+    }
   }
 }
