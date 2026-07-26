@@ -67,7 +67,8 @@ async function classifyMode() {
   const columns = [...fieldSpec.filter((f) => f !== "meta"), "meta"];
   const csvRows: string[] = [columns.map(csvEscapeCell).join(",")];
 
-  const aiEnabled = process.env.AI_INLINE_MODE !== "off";
+  const aiMode = process.env.AI_INLINE_MODE || "off";
+  const aiEnabled = aiMode !== "off";
   for (const { label, line } of records) {
     let result = classifier.classify(line, 0, 0);
     // Local parser could not parse this record — ask AI if enabled.

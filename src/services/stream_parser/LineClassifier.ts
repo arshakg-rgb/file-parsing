@@ -291,18 +291,25 @@ export class LineClassifier implements IClassifier {
       job_id: this.jobId,
     };
 
+    const { classifyAi, discoverJsonFieldSpec } = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
+    const trimmed = line.trim();
+    const isJsonLine = trimmed[0] === "{" || trimmed[0] === "[";
+
+    // JSON-shaped lines should never be parsed by generic regex/delimited record templates
+    // (those are for headerless CSV / fixed-format text). Use JSON-aware field discovery instead.
+    if (isJsonLine) {
+      this.logger.info("ai_call_initiated", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length, reason: "json_field_discovery" });
+      const { result, ai_calls_used } = await this.tryDiscoverJsonFields(line, discoverJsonFieldSpec);
+      if (result) return { ...result, ai_calls_used };
+      return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN, ai_calls_used };
+    }
+
     this.logger.info("ai_call_initiated", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length });
     if (this.aiRateLimiter) await this.aiRateLimiter.acquire();
-    const { classifyAi, discoverJsonFieldSpec } = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
     const resp = await classifyAi(req);
     let ai_calls_used = 1;
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
       this.logger.info("ai_call_uncertain", { fingerprint: fp, kind: resp.kind });
-      if (remainingBudget === undefined || ai_calls_used < remainingBudget) {
-        const { result, ai_calls_used: discoveryCalls } = await this.tryDiscoverJsonFields(line, discoverJsonFieldSpec);
-        if (result) return { ...result, ai_calls_used: ai_calls_used + discoveryCalls };
-        ai_calls_used += discoveryCalls;
-      }
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN, ai_calls_used };
     }
 
