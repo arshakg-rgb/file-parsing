@@ -362,7 +362,7 @@ export class LineClassifier implements IClassifier {
         // Map the AI-invented column names back onto the canonical fieldSpec keys.
         const aiSource = { ...extracted.row };
         delete aiSource["meta"];
-        const canonical = this.extractFromObject(aiSource, "ai-json-canon", this.fieldSpec, true);
+        const canonical = this.extractFromObject(aiSource, "ai-json-canon", this.fieldSpec);
         if (canonical) {
           canonical.row["meta"] = extracted.row["meta"];
           this.logger.info("ai_json_field_discovery_succeeded", { fingerprint: quickFingerprint(line), columns: discovered.length });
