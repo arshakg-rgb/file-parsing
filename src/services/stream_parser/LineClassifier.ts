@@ -357,10 +357,17 @@ export class LineClassifier implements IClassifier {
       if (this.aiRateLimiter) await this.aiRateLimiter.acquire();
       const discovered = await discoverJsonFieldSpec([JSON.stringify(obj)]);
       if (!discovered || discovered.length === 0) return { result: null, ai_calls_used: 1 };
-      const extracted = this.extractFromObject(obj, "ai-json", discovered);
+      const extracted = this.extractFromObject(obj, "ai-json", discovered, true);
       if (extracted) {
-        this.logger.info("ai_json_field_discovery_succeeded", { fingerprint: quickFingerprint(line), columns: discovered.length });
-        return { result: { verdict: "parsed", row: extracted.row, template_id: "ai-json" }, ai_calls_used: 1 };
+        // Map the AI-invented column names back onto the canonical fieldSpec keys.
+        const aiSource = { ...extracted.row };
+        delete aiSource["meta"];
+        const canonical = this.extractFromObject(aiSource, "ai-json-canon", this.fieldSpec, true);
+        if (canonical) {
+          canonical.row["meta"] = extracted.row["meta"];
+          this.logger.info("ai_json_field_discovery_succeeded", { fingerprint: quickFingerprint(line), columns: discovered.length });
+          return { result: { verdict: "parsed", row: canonical.row, template_id: "ai-json" }, ai_calls_used: 1 };
+        }
       }
     } catch (err) {
       this.logger.warn("ai_json_field_discovery_failed", { error: String(err) });
@@ -645,7 +652,8 @@ export class LineClassifier implements IClassifier {
   private extractFromObject(
     rawObj: Record<string, unknown>,
     templateId: string,
-    fieldSpecOverride?: string[]
+    fieldSpecOverride?: string[],
+    loose = false
   ): { row: Record<string, unknown>; template_id: string } | null {
     const obj = this.flattenObject(rawObj);
     const spec = fieldSpecOverride ?? this.fieldSpec;
@@ -786,9 +794,9 @@ export class LineClassifier implements IClassifier {
     row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
 
     const nonMetaSpec = spec.filter((f) => f !== "meta").length;
-    const minMatches = Math.max(1, Math.ceil(nonMetaSpec / 2));
+    const minMatches = Math.max(1, Math.ceil(nonMetaSpec * 0.75));
     const accept = strong >= 1 || matched >= minMatches;
-    return accept ? { row, template_id: templateId } : null;
+    return accept || loose ? { row, template_id: templateId } : null;
   }
 
     /**
