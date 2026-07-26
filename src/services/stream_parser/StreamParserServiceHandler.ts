@@ -736,23 +736,76 @@ export class StreamParserService {
           }
 
           case "uncertain": {
-            // Sanitize line before storage
-            const sanitizedUncertainLine = this.sanitizeForPg(line);
-            const failureClass = result.failure_class || FailureClass.UNCERTAIN;
-            dlqBatch.push({
-              dlq_id: crypto.randomUUID(),
-              job_id: jobId,
-              byte_offset: byteOffset,
-              byte_length: byteLength,
-              line_no: lineNo,
-              raw_bytes: sanitizedUncertainLine,
-              failure_class: failureClass,
-              error: result.failure_class || "Uncertain classification",
-              attempts: 0,
-              status: "pending",
-            });
-            if (!counts.failed_by_class[failureClass]) counts.failed_by_class[failureClass] = 0;
-            counts.failed_by_class[failureClass]++;
+            const trimmed = line.trim();
+            const isJsonShape = trimmed[0] === "{" || trimmed[0] === "[";
+            if (isJsonShape) {
+              // Unmapped JSON should still appear in the output as a meta row, not in DLQ.
+              const metaRow: Record<string, unknown> = {};
+              for (const f of fieldSpec) metaRow[f] = "";
+              metaRow["meta"] = line;
+              result = { verdict: "parsed", row: metaRow, template_id: "json-uncertain-meta", template_version: 1 };
+
+              // Sanitize row data before storage
+              const sanitizedRow = this.sanitizeRecord(result.row || {});
+
+              // Write-time guard: never emit a row whose email/phone is populated but invalid
+              if (!classifier.rowStrongFieldsOk(sanitizedRow)) {
+                counts.dropped_rubbish++;
+                break;
+              }
+
+              // Add to output buffer (one record index shared by the parquet row and its trace)
+              const idx = recordIndex++;
+              const outputBuffer = outputManager.getBuffer(jobId, result.template_id || "default");
+              outputBuffer.addRow({
+                ...sanitizedRow,
+                _job_id: jobId,
+                _byte_offset: byteOffset,
+                _byte_length: byteLength,
+                _record_index: idx,
+                _line_no: lineNo,
+                _template_id: result.template_id,
+                _template_version: result.template_version ?? 1,
+                _checksum: "",
+                _parsed_at: new Date(),
+                _part_id: "auto",
+              });
+
+              parsedBatch.push({
+                _job_id: jobId,
+                _byte_offset: byteOffset,
+                _byte_length: byteLength,
+                _record_index: idx,
+                _line_no: lineNo,
+                _template_id: result.template_id || "default",
+                _template_version: result.template_version || 1,
+                _checksum: "",
+                _parsed_at: new Date(),
+                _part_id: "auto",
+                fields: { s3_url: msg.s3_url, ...sanitizedRow }
+              });
+
+              counts.parsed++;
+              csvWriter.addRow(sanitizedRow, lineNo); // human-readable CSV mirror (best-effort)
+            } else {
+              // Sanitize line before storage
+              const sanitizedUncertainLine = this.sanitizeForPg(line);
+              const failureClass = result.failure_class || FailureClass.UNCERTAIN;
+              dlqBatch.push({
+                dlq_id: crypto.randomUUID(),
+                job_id: jobId,
+                byte_offset: byteOffset,
+                byte_length: byteLength,
+                line_no: lineNo,
+                raw_bytes: sanitizedUncertainLine,
+                failure_class: failureClass,
+                error: result.failure_class || "Uncertain classification",
+                attempts: 0,
+                status: "pending",
+              });
+              if (!counts.failed_by_class[failureClass]) counts.failed_by_class[failureClass] = 0;
+              counts.failed_by_class[failureClass]++;
+            }
             break;
           }
         }

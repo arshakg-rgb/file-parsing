@@ -194,7 +194,16 @@ export class LineClassifier implements IClassifier {
     }
 
     // 4. Known learned record templates (records have priority over rubbish).
-    // AI cache is only consumed in steps 4 and 6, so compute the fingerprint lazily.
+    // Stale generic/regex templates saved by earlier code (or other jobs) must never match
+    // JSON-shaped lines, because they split on commas/colons and produce junk like
+    // "location": "notes:Synthetic test file...". If structural/delimited parsing failed,
+    // the line is unmapped JSON and should go to the JSON-aware AI fallback.
+    const isJsonLine = trimmed[0] === "{" || trimmed[0] === "[";
+    if (isJsonLine) {
+      return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
+    }
+
+    // AI cache is only consumed in steps 5 and 7, so compute the fingerprint lazily.
     let computedCache = false;
     let cached: RecordTemplate | RubbishTemplate | undefined;
     const getCached = () => {
