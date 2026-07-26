@@ -11,6 +11,7 @@ import { createLogger } from "@utils/logger/logger.js";
 import { metrics } from "@utils/response/metrics.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import { waitForDb } from "@shared/DatabaseManager.js";
+import {aiClassifierService} from "@service/ai_classifier/AiClassifierServiceHandler.js";
 
 /**
  * Classification request interface
@@ -32,7 +33,7 @@ interface ClassifyResponse {
 
 /**
  * Detect Bootstrap Service - Senior Level ORM-Style Implementation
- * 
+ *
  * This service handles file property detection and job bootstrapping.
  * It uses adaptive probing to detect file structure, encoding, and row characteristics.
  * Follows ORM-style patterns with:
@@ -41,7 +42,7 @@ interface ClassifyResponse {
  * - Lifecycle management (initialize, start, stop)
  * - Repository-style methods for data operations
  * - Clean separation of concerns
- * 
+ *
  * @class DetectBootstrapService
  */
 export class DetectBootstrapService {
@@ -50,7 +51,7 @@ export class DetectBootstrapService {
    * @private
    */
   private static instance: DetectBootstrapService;
-  
+
   // Instance state
   private running: boolean = false;
     /**
@@ -68,7 +69,7 @@ export class DetectBootstrapService {
    * @private
    */
   private totalTemplatesCreated: number = 0;
-  
+
   // Statistics
   private stats = {
     csvDetected: 0,
@@ -80,13 +81,13 @@ export class DetectBootstrapService {
     cacheHits: 0,
     cacheMisses: 0
   };
-  
+
   // Dependencies (injected)
   private logger = createLogger("detect_bootstrap");
-  
+
   // Lazy loaded classifier
   private classify: ((req: ClassifyRequest) => Promise<ClassifyResponse>) | null = null;
-  
+
   /**
    * Private constructor for singleton pattern
    */
@@ -95,11 +96,11 @@ export class DetectBootstrapService {
     if (process.env.HEALTH_CHECK_PORT) {
       startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
-    
+
     // Initialize classifier lazily
     this.initializeClassifier();
   }
-  
+
   /**
    * Get singleton instance
    */
@@ -109,13 +110,13 @@ export class DetectBootstrapService {
     }
     return DetectBootstrapService.instance;
   }
-  
+
   /**
    * Initialize the classifier based on configuration
    */
   private async initializeClassifier(): Promise<void> {
     if (this.classify) return;
-    
+
     if (settings.BEDROCK_MODEL_ID === "mock") {
       const { mockClassify } = await import("@service/ai_classifier/mock.js");
       this.classify = async (req: ClassifyRequest) => {
@@ -123,21 +124,20 @@ export class DetectBootstrapService {
         return resp.template ? { kind: resp.kind, template: resp.template } : { kind: "uncertain" };
       };
     } else {
-      const { classifyAi } = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
       this.classify = async (req: ClassifyRequest) => {
         // Convert to the expected format for the AI classifier
         const aiReq = {
           ...req,
           context_lines: req.context_lines || []
         };
-        const aiResp = await classifyAi(aiReq);
+        const aiResp = await aiClassifierService.classifyAi(aiReq);
         return aiResp.template
           ? { kind: aiResp.kind as ClassifyResponse["kind"], template: aiResp.template }
           : { kind: "uncertain" };
       };
     }
   }
-  
+
   /**
    * Initialize the service
    */
@@ -147,7 +147,7 @@ export class DetectBootstrapService {
     await this.initializeClassifier();
     this.logger.info("detect_bootstrap_initialized");
   }
-  
+
   /**
    * Start the consumer loop
    */
@@ -157,14 +157,14 @@ export class DetectBootstrapService {
       this.logger.warn("detect_bootstrap_already_running");
       return;
     }
-    
+
     this.running = true;
     await this.initialize();
     this.logger.info("detect_bootstrap_started");
-    
+
     await this.consumerLoop();
   }
-  
+
   /**
    * Stop the service gracefully
    */
@@ -172,7 +172,7 @@ export class DetectBootstrapService {
     this.running = false;
     this.logger.info("detect_bootstrap_stopping");
   }
-  
+
   /**
    * Get service statistics
    */
@@ -187,7 +187,7 @@ export class DetectBootstrapService {
 
   /**
    * Emit a job event to the event system
-   * 
+   *
    * @param jobId - Job identifier
    * @param eventType - Type of event to emit
    * @param data - Event payload data
@@ -198,7 +198,7 @@ export class DetectBootstrapService {
 
   /**
    * Compute the optimal window size for probing
-   * 
+   *
    * @param avgRowBytes - Average row size in bytes
    * @param maxRowBytes - Maximum row size in bytes
    * @returns Optimal window size in bytes
@@ -212,7 +212,7 @@ export class DetectBootstrapService {
 
   /**
    * Compute probe offsets for adaptive file structure detection
-   * 
+   *
    * @param fileSize - Total file size in bytes
    * @param windowSize - Size of each probe window
    * @returns Array of byte offsets to probe
@@ -228,15 +228,15 @@ export class DetectBootstrapService {
 
   /**
    * Detect file encoding from raw bytes
-   * 
+   *
    * Prefers UTF-8 when bytes validate as UTF-8 to avoid jschardet misdetection.
-   * 
+   *
    * @param raw - Raw file bytes
    * @returns Detected encoding label
    */
   private detectEncoding(raw: Buffer): string {
     this.stats.encodingDetections++;
-    
+
     // Prefer UTF-8 when the bytes actually validate as UTF-8: jschardet frequently
     // misdetects UTF-8 with a few multibyte chars as ISO-8859-x at low confidence
     // (e.g. a UTF-8 file guessed as ISO-8859-2 @0.54 → mojibake). Valid UTF-8 with
@@ -251,7 +251,7 @@ export class DetectBootstrapService {
 
   /**
    * Measure row width statistics from raw bytes
-   * 
+   *
    * @param raw - Raw file bytes
    * @param encoding - File encoding
    * @returns Tuple of [average row bytes, maximum row bytes]
@@ -267,7 +267,7 @@ export class DetectBootstrapService {
 
   /**
    * Generate a fingerprint for a probe window
-   * 
+   *
    * @param raw - Raw probe bytes
    * @param encoding - File encoding
    * @returns SHA256 hash truncated to 24 characters
@@ -298,7 +298,7 @@ export class DetectBootstrapService {
 
   /**
    * Extract sample lines from raw bytes
-   * 
+   *
    * @param raw - Raw file bytes
    * @param encoding - File encoding
    * @param n - Maximum number of lines to extract
@@ -311,7 +311,7 @@ export class DetectBootstrapService {
 
   /**
    * Main bootstrap job handler - detects file properties and seeds templates
-   * 
+   *
    * This function performs adaptive probing to:
    * 1. Detect file encoding
    * 2. Measure row characteristics
@@ -319,14 +319,14 @@ export class DetectBootstrapService {
    * 4. Check for existing templates by fingerprint
    * 5. Classify unknown lines to create new seed templates
    * 6. Forward to parse service with seed template IDs
-   * 
+   *
    * @param msg - Classify message containing job details
    * @throws Error if bootstrapping fails
    */
   async bootstrapJob(msg: ClassifyMessage): Promise<void> {
     const bootstrapStartTime = Date.now();
     this.totalBootstraps++;
-    
+
     await templateRegistry.loadFromDatabase();
 
     const jobId = msg.job_id;
@@ -376,9 +376,9 @@ export class DetectBootstrapService {
       const hasHeader = /^[a-zA-Z_][a-zA-Z0-9_]*(,[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine) ||
                        /^[a-zA-Z_][a-zA-Z0-9_]*(;[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine) ||
                        /^[a-zA-Z_][a-zA-Z_0-9_]*(\t[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine);
-      
+
       console.log("detect_header_check", { job_id: jobId, firstLine, hasHeader, sampleLinesCount: sampleLines.length });
-      
+
       if (hasHeader && sampleLines.length > 1) {
         this.stats.headerSkips++;
         dataLines = sampleLines.slice(1);
@@ -431,11 +431,11 @@ export class DetectBootstrapService {
     }
 
     const bootstrapDuration = Date.now() - bootstrapStartTime;
-    this.logger.info("detect_complete", { 
-      job_id: jobId, 
-      seeds: seedTemplateIds.length, 
+    this.logger.info("detect_complete", {
+      job_id: jobId,
+      seeds: seedTemplateIds.length,
       probes: offsets.length,
-      duration_ms: bootstrapDuration 
+      duration_ms: bootstrapDuration
     });
     metrics.increment("detect.complete", 1, { seeds: String(seedTemplateIds.length) });
     metrics.set("detect.duration_ms", bootstrapDuration);
@@ -460,24 +460,24 @@ export class DetectBootstrapService {
 
   /**
    * Main consumer loop for processing classify messages
-   * 
+   *
    * Continuously polls the classify queue for messages and processes them.
    * Handles graceful shutdown and message acknowledgment.
-   * 
+   *
    * @throws Error if database connection fails
    */
   private async consumerLoop(): Promise<void> {
     await waitForDb();
     await templateRegistry.loadFromDatabase();
     this.logger.info("detect_bootstrap_consumer_started");
-    
+
     while (this.running) {
       const messages = await receiveMessages<ClassifyMessage>(
         settings.CLASSIFY_QUEUE_URL,
         (body) => JSON.parse(body) as ClassifyMessage,
         1
       );
-      
+
       for (const { payload, receiptHandle } of messages) {
         try {
           await this.bootstrapJob(payload);
@@ -491,7 +491,7 @@ export class DetectBootstrapService {
         }
       }
     }
-    
+
     this.logger.info("detect_bootstrap_consumer_stopped");
   }
 }

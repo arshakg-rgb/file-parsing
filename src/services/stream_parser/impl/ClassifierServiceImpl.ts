@@ -9,6 +9,7 @@ import { InstantiationError } from "@errors/InstantiationError.js";
 import { ClassifierService } from "@service/stream_parser/ClassifierService.js";
 import { IClassifier, ClassifyRequest, ClassifyResponse, ClassifyResult } from "@service/stream_parser/io/IClassifier.js";
 import { FIELD_ALIASES, DELIMITERS, MAX_LINE_LENGTH, BINARY_THRESHOLD, MIN_HEADER_FIELDS, HEADER_MATCH_RATIO, PHONE_MIN_DIGITS, PHONE_MAX_DIGITS, TEMPLATE_IDS } from "@service/stream_parser/io/ClassifierConstants.js";
+import {aiClassifierService} from "@service/ai_classifier/AiClassifierServiceHandler.js";
 
 enum AIVerdict {
   RECORD_TEMPLATE = "record-template",
@@ -253,7 +254,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
 
     this.logger.info("ai_call_initiated", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length });
     const handler = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
-    const resp = await handler.classifyAi(req);
+    const resp = await handler.aiClassifierService.classifyAi(req);
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
       this.logger.info("ai_call_uncertain", { fingerprint: fp, kind: resp.kind });
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
@@ -350,7 +351,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       // Try different key-value separators: =, :, or -
       // Try different pair separators: ;, or " - "
       let parts: string[] = [];
-      
+
       // First try " - " as pair separator (common in key-value logs)
       if (line.includes(" - ")) {
         parts = line.split(" - ");
@@ -360,11 +361,11 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
         // Fallback to whitespace
         parts = line.split(/\s+/);
       }
-      
+
       for (const part of parts) {
         // Try different key-value separators
         let k: string | undefined, v: string | undefined;
-        
+
         if (part.includes("=")) {
           [k, v] = part.split("=", 2);
         } else if (part.includes(":")) {
@@ -372,7 +373,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
         } else if (part.includes("-")) {
           [k, v] = part.split("-", 2);
         }
-        
+
         if (k && v !== undefined) {
           obj[k.trim()] = v.trim();
         }
@@ -407,7 +408,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     // Simple XML parsing for basic structures
     // For production, use a proper XML parser like xml2js
     if (!line.includes("<") || !line.includes(">")) return null;
-    
+
     const obj: Record<string, unknown> = {};
     const tagRegex = /<(\w+)>([^<]*)<\/\1>/g;
     let match;
@@ -415,7 +416,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       const [, tag, value] = match;
       obj[tag] = value.trim();
     }
-    
+
     return Object.keys(obj).length > 0 ? obj : null;
   }
 
@@ -428,7 +429,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     // Simple YAML parsing for key-value pairs
     // For production, use a proper YAML parser like js-yaml
     if (!line.includes(":")) return null;
-    
+
     const obj: Record<string, string> = {};
     for (const part of line.split("\n")) {
       const [k, v] = part.split(":", 2);
@@ -436,7 +437,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
         obj[k.trim()] = v.trim();
       }
     }
-    
+
     return Object.keys(obj).length > 0 ? obj : null;
   }
 
@@ -483,7 +484,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     const v = String(value).trim();
     if (v === "") return false;
     const nf = this.normalizeKey(field);
-    
+
     if (nf === "email") return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v);
     if (nf === "phone") {
       if (v.includes("@")) return false;
@@ -654,13 +655,13 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       const headerColCount = this.headerParts?.length ?? 0;
       const lineColCount = parts.length;
       const columnCountDiff = Math.abs(headerColCount - lineColCount);
-      
+
       // Accept header mapping if column counts match closely (within 2 columns).
       // Threshold of 2 allows for minor variations like trailing commas or empty trailing columns
       // while still catching major shape mismatches (e.g., 5-column header vs 30-column data row).
       // if strong fields (email/phone/zip/date/url) from header mapping actually validate
       let useHeaderMap = columnCountDiff <= 2;
-      
+
       if (!useHeaderMap) {
         // Check if header-mapped strong fields validate (generalized to all validatable fields)
         const strongFields = ["email", "phone", "zip", "date", "url"];
@@ -675,12 +676,12 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
             }
           }
         }
-        
+
         if (anyValid) {
           useHeaderMap = true;
         }
       }
-      
+
       if (useHeaderMap) {
         usedHeader = true;
         const mappedIndices = new Set<number>(Object.values(this.headerMap));

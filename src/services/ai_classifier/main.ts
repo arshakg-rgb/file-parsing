@@ -2,10 +2,10 @@ import express, { Request, Response, NextFunction } from "express";
 import { settings } from "@shared/Settings.js";
 import FirestoreManager from "@config/firestore/FirestoreManager.js";
 import { ClassifyRequest, TemplateKind } from "@shared/models/template.js";
-import { classifyAi } from "./AiClassifierServiceHandler.js";
 import { mockClassify } from "./mock.js";
 import { listAll, warmCache } from "./templateRegistry.js";
 import { createLogger } from "@utils/logger/logger.js";
+import {aiClassifierService} from "@service/ai_classifier/AiClassifierServiceHandler.js";
 
 const logger = createLogger("AiClassifierServer");
 
@@ -26,7 +26,7 @@ app.post("/classify", async (req: Request, res: Response, next: NextFunction) =>
       res.json(mockClassify(request));
       return;
     }
-    const result = await classifyAi(request);
+    const result = await aiClassifierService.classifyAi(request);
     res.json(result);
   } catch (err) {
     next(err);

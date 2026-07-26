@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import { LineClassifier } from "../services/stream_parser/LineClassifier.js";
-import { discoverJsonFieldSpec } from "../services/ai_classifier/AiClassifierServiceHandler.js";
-
+import {aiClassifierService} from "@service/ai_classifier/AiClassifierServiceHandler.js";
 const INPUT_FILE = process.env.INPUT || "test.json";
 const OUTPUT_FILE = process.env.OUTPUT || "test_json_output.csv";
 
@@ -11,7 +10,7 @@ const data = JSON.parse(raw);
 function csvEscapeCell(v: unknown): string {
   if (v === null || v === undefined) return "";
   const s = typeof v === "object" ? JSON.stringify(v) : String(v);
-  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  return /[",\r\n]/.test(s) ? "\"" + s.replace(/"/g, "\"\"") + "\"" : s;
 }
 
 const records: { label: string; line: string }[] = [];
@@ -48,10 +47,9 @@ async function classifyMode() {
     if (data.connections?.[0]) samples.push(JSON.stringify(data.connections[0]));
     if (data.education_multi_format_rows?.[1]) samples.push(JSON.stringify(data.education_multi_format_rows[1]));
     try {
-      const discovered = await discoverJsonFieldSpec(samples.length ? samples : [JSON.stringify(data)]);
+      const discovered = await aiClassifierService.discoverJsonFieldSpec(samples.length ? samples : [JSON.stringify(data)]);
       if (discovered.length > 0) {
         fieldSpec = discovered;
-        console.log(`AI discovered field_spec: ${fieldSpec.join(", ")}`);
       }
     } catch (err) {
       console.warn("AI field discovery failed; falling back to dynamic flattening:", String(err));
@@ -99,7 +97,7 @@ function dynamicFlattenMode() {
   function unwrapJsonString(v: unknown): unknown {
     if (typeof v !== "string") return v;
     const t = v.trim();
-    if (t.length >= 2 && t[0] === '"' && t[t.length - 1] === '"') {
+    if (t.length >= 2 && t[0] === "\"" && t[t.length - 1] === "\"") {
       try {
         const inner = JSON.parse(v);
         if (typeof inner === "string") return inner;
