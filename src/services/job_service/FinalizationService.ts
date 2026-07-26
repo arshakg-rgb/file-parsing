@@ -202,14 +202,13 @@ class FinalizationService {
    * @returns The string result
    */
   private extractTemplateId(key: string): string {
-    const filename = key.split("/").pop() || "";
-    const parts = filename.split("-");
-    const jobIdEndIndex = 5;
-    if (parts.length > jobIdEndIndex + 1) {
-      const timestampIndex = parts.length - 1;
-      return parts.slice(jobIdEndIndex, timestampIndex).join("-");
+    const segments = key.split("/");
+    const partsIndex = segments.lastIndexOf("parts");
+    if (partsIndex >= 0 && partsIndex + 1 < segments.length) {
+      return segments[partsIndex + 1];
     }
-    return "unknown";
+    const fallback = segments[segments.length - 2];
+    return fallback && fallback !== "" ? fallback : "unknown";
   }
 
     /**

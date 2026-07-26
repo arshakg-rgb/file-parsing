@@ -76,11 +76,9 @@ check("string field containing JSON object is parsed and flattened", () => {
 
 check("malformed JSON-in-JSON string kept as raw text", () => {
   const c = makeClassifier(["email"]);
-  const row = expectParsed(c.classify('{"payload": "{not valid json}"}', 0, 0));
-  // payload should end up in meta because it does not contain email
-  assert.equal(row.email, null);
-  const meta = JSON.parse(row.meta as string);
-  assert.ok(meta.payload);
+  const result = c.classify('{"payload": "{not valid json}"}', 0, 0);
+  // No real field was matched, so the record is rejected rather than accepted with only meta.
+  assert.notEqual(result.verdict, "parsed");
 });
 
 console.log("\n=== 3. JSON array-of-objects support ===");

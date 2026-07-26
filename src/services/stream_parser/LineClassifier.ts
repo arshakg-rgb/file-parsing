@@ -285,10 +285,12 @@ export class LineClassifier implements IClassifier {
     };
 
     this.logger.info("ai_call_initiated", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length });
-    const { classifyAi } = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
+    const { classifyAi, discoverJsonFieldSpec } = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
     const resp = await classifyAi(req);
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
       this.logger.info("ai_call_uncertain", { fingerprint: fp, kind: resp.kind });
+      const discovered = await this.tryDiscoverJsonFields(line, discoverJsonFieldSpec);
+      if (discovered) return discovered;
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
     }
 
@@ -308,6 +310,49 @@ export class LineClassifier implements IClassifier {
     }
     this.logger.info("ai_call_completed", { fingerprint: fp, template_id: t.template_id, verdict: "field_map" in t ? "parsed" : "rubbish" });
     return this.toResult(line, t);
+  }
+
+  /**
+   * Ask the model to discover a field_spec for a JSON line, then try to extract with it.
+   * This is the AI fallback for structurally-valid JSON that the local field_spec could not map.
+   */
+  private async tryDiscoverJsonFields(
+    line: string,
+    discoverJsonFieldSpec: (samples: string[]) => Promise<string[]>
+  ): Promise<ClassifyResult | null> {
+    const t = line.trim();
+    if (t[0] !== "{" && t[0] !== "[" && !(t.length >= 2 && t[0] === '"' && t[t.length - 1] === '"')) {
+      return null;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(t);
+    } catch {
+      return null;
+    }
+    if (!parsed || typeof parsed !== "object") return null;
+    let obj = parsed as Record<string, unknown>;
+    if (Array.isArray(parsed)) {
+      const first = parsed.find((x) => x && typeof x === "object" && !Array.isArray(x)) as Record<string, unknown> | undefined;
+      if (!first) return null;
+      obj = first;
+    }
+    // JSON-in-JSON string
+    if (typeof obj === "string") {
+      return this.tryDiscoverJsonFields(obj, discoverJsonFieldSpec);
+    }
+    try {
+      const discovered = await discoverJsonFieldSpec([JSON.stringify(obj)]);
+      if (!discovered || discovered.length === 0) return null;
+      const extracted = this.extractFromObject(obj, "ai-json", false, discovered);
+      if (extracted) {
+        this.logger.info("ai_json_field_discovery_succeeded", { fingerprint: quickFingerprint(line), columns: discovered.length });
+        return { verdict: "parsed", row: extracted.row, template_id: "ai-json" };
+      }
+    } catch (err) {
+      this.logger.warn("ai_json_field_discovery_failed", { error: String(err) });
+    }
+    return null;
   }
 
   /** Run classifier with a safety timeout to avoid hanging on pathological lines. */
@@ -587,9 +632,12 @@ export class LineClassifier implements IClassifier {
   private extractFromObject(
     rawObj: Record<string, unknown>,
     templateId: string,
-    requireStrong: boolean
+    requireStrong: boolean,
+    fieldSpecOverride?: string[]
   ): { row: Record<string, unknown>; template_id: string } | null {
     const obj = this.flattenObject(rawObj);
+    const spec = fieldSpecOverride ?? this.fieldSpec;
+    const normalizedSpec = fieldSpecOverride ? fieldSpecOverride.map((f) => this.normalizeKey(f)) : this.normalizedFieldSpec;
     const row: Record<string, unknown> = {};
     let matched = 0;
     let strong = 0;
@@ -609,10 +657,10 @@ export class LineClassifier implements IClassifier {
         }
       }
     }
-    for (let i = 0; i < this.fieldSpec.length; i++) {
-      const field = this.fieldSpec[i];
+    for (let i = 0; i < spec.length; i++) {
+      const field = spec[i];
       if (field === "meta") continue; // handled below
-      const nf = this.normalizedFieldSpec[i];
+      const nf = normalizedSpec[i];
       let value = normalizedObjKeys.get(nf);
       let matchedKey: string | undefined = nf;
       if (value !== undefined) {
@@ -724,11 +772,12 @@ export class LineClassifier implements IClassifier {
       }
     }
     row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
-    if (row["meta"] !== null) matched++;
 
+    const nonMetaSpec = spec.filter((f) => f !== "meta").length;
+    const minMatches = Math.min(Math.max(1, nonMetaSpec), 2);
     const accept = requireStrong
-      ? strong >= 1 || matched >= Math.min(2, this.fieldSpec.length)
-      : matched >= 1;
+      ? strong >= 1 || matched >= minMatches
+      : matched >= minMatches;
     return accept ? { row, template_id: templateId } : null;
   }
 
