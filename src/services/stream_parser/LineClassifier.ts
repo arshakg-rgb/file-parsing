@@ -200,6 +200,27 @@ export class LineClassifier implements IClassifier {
     // the line is unmapped JSON and should go to the JSON-aware AI fallback.
     const isJsonLine = trimmed[0] === "{" || trimmed[0] === "[";
     if (isJsonLine) {
+      // Fallback extraction: even if parseJsonRecord rejected the JSON, the line is
+      // still valid JSON and all unmapped keys must be preserved in meta rather than
+      // becoming uncertain / DLQ.
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
+      }
+      if (Array.isArray(parsed)) {
+        const first = parsed.find((x) => x && typeof x === "object" && !Array.isArray(x)) as Record<string, unknown> | undefined;
+        if (!first) return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
+        parsed = first;
+      }
+      if (!parsed || typeof parsed !== "object") {
+        return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
+      }
+      const extracted = this.extractFromObject(parsed as Record<string, unknown>, "json", undefined, true);
+      if (!extracted) return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
+      const coerced = this.coerce(extracted.row);
+      if (coerced) return { verdict: "parsed", row: coerced, template_id: "json" };
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
     }
 

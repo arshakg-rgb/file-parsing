@@ -282,7 +282,11 @@ export class StreamParserService {
     
     this.running = true;
     await this.initialize();
-    this.logger.info("stream_parser_started");
+    this.logger.info("stream_parser_started", {
+      k_revision: process.env.K_REVISION,
+      k_service: process.env.K_SERVICE,
+      ai_inline_mode: process.env.AI_INLINE_MODE,
+    });
     
     await this.consumerLoop();
   }
@@ -737,7 +741,17 @@ export class StreamParserService {
 
           case "uncertain": {
             const trimmed = line.trim();
-            const isJsonShape = trimmed[0] === "{" || trimmed[0] === "[";
+            let isJsonShape = trimmed[0] === "{" || trimmed[0] === "[";
+            // Catch JSON-in-string lines like "{\"...\": ...}" or "[...]"
+            if (!isJsonShape && trimmed[0] === '"') {
+              try {
+                const unwrapped = JSON.parse(trimmed);
+                if (typeof unwrapped === "string") {
+                  const inner = unwrapped.trim();
+                  isJsonShape = inner[0] === "{" || inner[0] === "[";
+                }
+              } catch { /* not a JSON string */ }
+            }
             if (isJsonShape) {
               // Unmapped JSON should still appear in the output as a meta row, not in DLQ.
               const metaRow: Record<string, unknown> = {};
