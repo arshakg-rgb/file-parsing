@@ -947,6 +947,8 @@ export class LineClassifier implements IClassifier {
    */
   private parseDelimitedRecord(line: string): { row: Record<string, unknown>; usedHeader: boolean } | null {
     if (this.fieldSpec.length === 0) return null;
+    const t = line.trim();
+    if (t[0] === "{" || t[0] === "[") return null;
     const parts = this.splitBestDelimited(line);
     if (!parts) return null;
 
