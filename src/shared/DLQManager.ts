@@ -1,7 +1,7 @@
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import MySqlManager from "@config/db/MySqlManager.js";
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 import crypto from "crypto";
@@ -47,7 +47,7 @@ export class DLQManager extends ServiceManager {
    * Db Manager
    * @private
    */
-  private dbManager: MySqlManager;
+  private dbManager: PostgreSqlManager;
     /**
    * Gcs Utils
    * @private
@@ -69,9 +69,9 @@ export class DLQManager extends ServiceManager {
       throw new InstantiationError("Cannot instantiate DLQManager directly. Use getInstance()");
     }
     super(enforce);
-    
+
     this.logger = createLogger("dlq-manager");
-    this.dbManager = MySqlManager.getInstance();
+    this.dbManager = PostgreSqlManager.getInstance();
     this.gcsUtils = FirestoreCacheUtils.getInstance();
   }
 
@@ -107,7 +107,7 @@ export class DLQManager extends ServiceManager {
     error: string
   ): Promise<string | null> {
     const dlqId = crypto.randomUUID();
-    
+
     const row = await this.dbManager.repositories.deadLetters.create(
       {
         dlq_id: dlqId,
@@ -123,12 +123,12 @@ export class DLQManager extends ServiceManager {
       },
       { conflictOn: "job_id_line_no" }
     );
-    
+
     if (!row) {
       this.logger.info("dlq_entry_duplicate_skipped", { job_id: jobId, line_no: lineNo, byte_offset: byteOffset });
       return null;
     }
-    
+
     this.logger.info("dlq_entry_added", { dlq_id: dlqId, job_id: jobId, failure_class: failureClass });
     return dlqId;
   }
@@ -172,9 +172,9 @@ export class DLQManager extends ServiceManager {
     await this.dbManager.repositories.deadLetters.incrementAttempts(dlqId, "retry");
 
     const line = await this.fetchFailedLine(entry as unknown as DeadLetterEntry, s3Url);
-    
+
     this.logger.info("dlq_retry_attempt", { dlq_id: dlqId, attempt: entry.attempts + 1 });
-    
+
     return true;
   }
 

@@ -1,7 +1,7 @@
 import { readFile, readdir } from "fs/promises";
 import { join } from "path";
 import { fileURLToPath } from "url";
-import MySqlManager from "@config/db/MySqlManager.js";
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 
 /**
  * The __filename
@@ -62,7 +62,7 @@ function splitStatements(sql: string): string[] {
  * @param db - The db
  * @returns A promise that resolves to the list
  */
-async function getAppliedVersions(db: MySqlManager): Promise<number[]> {
+async function getAppliedVersions(db: PostgreSqlManager): Promise<number[]> {
   return db.repositories.schemaMigrations.getAppliedVersions();
 }
 
@@ -70,7 +70,7 @@ async function getAppliedVersions(db: MySqlManager): Promise<number[]> {
  * Ensures migration table
  * @param db - The db
  */
-async function ensureMigrationTable(db: MySqlManager): Promise<void> {
+async function ensureMigrationTable(db: PostgreSqlManager): Promise<void> {
   await db.models.SchemaMigration.sync({ force: false });
 }
 
@@ -79,7 +79,7 @@ async function ensureMigrationTable(db: MySqlManager): Promise<void> {
  * @param db - The db
  * @param migration - The migration
  */
-async function runMigration(db: MySqlManager, migration: Migration): Promise<void> {
+async function runMigration(db: PostgreSqlManager, migration: Migration): Promise<void> {
   const statements = splitStatements(migration.up);
   await db.sequelize.transaction(async (transaction) => {
     for (const stmt of statements) {
@@ -98,7 +98,7 @@ async function runMigration(db: MySqlManager, migration: Migration): Promise<voi
  * Performs the migrate operation.
  */
 export async function migrate(): Promise<void> {
-  const db = MySqlManager.getInstance();
+  const db = PostgreSqlManager.getInstance();
   await db.initialize();
   await ensureMigrationTable(db);
 

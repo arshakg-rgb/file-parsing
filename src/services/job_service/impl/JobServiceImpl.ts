@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import { Server as HttpServer } from "node:http";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import MySqlManager from "@config/db/MySqlManager.js";
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 import { receiveMessages, deleteMessage } from "@shared/QueueService.js";
 import { JobEvent, EventType } from "@shared/models/events.js";
@@ -35,7 +35,7 @@ class JobServiceImpl extends ServiceManager implements JobService {
    * Db Manager
    * @private
    */
-  private dbManager: MySqlManager;
+  private dbManager: PostgreSqlManager;
     /**
    * Logger
    * @private
@@ -52,9 +52,9 @@ class JobServiceImpl extends ServiceManager implements JobService {
       throw new InstantiationError("Cannot instantiate JobServiceImpl directly. Use getInstance()");
     }
     super(enforce);
-    
+
     this.app = express();
-    this.dbManager = MySqlManager.getInstance();
+    this.dbManager = PostgreSqlManager.getInstance();
     this.logger = createLogger("JobServiceImpl");
     this.setupApp();
   }
@@ -86,8 +86,8 @@ class JobServiceImpl extends ServiceManager implements JobService {
         await this.dbManager.sequelize.authenticate();
         res.json({ status: "healthy", database: "connected", timestamp: new Date().toISOString() });
       } catch (err) {
-        res.status(500).json({ 
-          status: "unhealthy", 
+        res.status(500).json({
+          status: "unhealthy",
           database: "disconnected",
           timestamp: new Date().toISOString(),
           error: err instanceof Error ? err.message : String(err)

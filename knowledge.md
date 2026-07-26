@@ -428,7 +428,7 @@ config/
 ├── cors/
 │   └── CorsUtils.ts                # CORS configuration
 ├── db/
-│   ├── MySqlManager.ts             # MySQL database manager
+│   ├── PostgreSqlManager.ts             # MySQL database manager
 │   └── models/                     # Sequelize models
 │       ├── AiReport.ts
 │       ├── Announcement.ts
@@ -761,7 +761,7 @@ Key environment variables (`.env`):
 ## Database Configuration
 
 ### Sequelize Configuration
-- MySQL connection via `MySqlManager.ts`
+- MySQL connection via `PostgreSqlManager.ts`
 - Model definitions in `config/db/models/`
 - Migrations in `sequalize/migrations/`
 - Seeders in `sequalize/seeders/`

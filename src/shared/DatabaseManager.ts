@@ -1,5 +1,5 @@
-// Re-export from MySqlManager for backward compatibility
-import MySqlManager from "@config/db/MySqlManager.js";
+// Re-export from PostgreSqlManager for backward compatibility
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { ParseJobAttributes } from "@config/db/models/ParseJob.js";
 import type { OutputPartAttributes } from "@config/db/models/OutputPart.js";
 import type { DeadLetterAttributes } from "@config/db/models/DeadLetter.js";
@@ -8,7 +8,7 @@ import type { PendingArchiveEntryAttributes } from "@config/db/models/PendingArc
 /**
  * Database manager instance
  */
-const dbManager = MySqlManager.getInstance();
+const dbManager = PostgreSqlManager.getInstance();
 /**
  * Repository accessors
  */
@@ -155,4 +155,4 @@ export async function createTables(): Promise<void> {
 }
 
 // Export the manager class for direct use
-export { default as DatabaseManager } from "@config/db/MySqlManager.js";
+export { default as DatabaseManager } from "@config/db/PostgreSqlManager.js";

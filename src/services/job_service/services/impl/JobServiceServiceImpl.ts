@@ -3,7 +3,7 @@ import { InstantiationError } from "@errors/InstantiationError.js";
 import { CustomError } from "@errors/CustomError.js";
 import { ValidationError } from "@errors/ValidationError.js";
 import { settings } from "@shared/Settings.js";
-import MySqlManager from "@config/db/MySqlManager.js";
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { ParseJobRow } from "@shared/DatabaseManager.js";
 import { SourceType, JobStatus, JobTimings, JobCounts } from "@shared/models/job.js";
 import { sendRaw } from "@shared/QueueService.js";
@@ -18,10 +18,10 @@ import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse
  */
 export class JobServiceServiceImpl implements JobServiceService {
   private static instance: JobServiceServiceImpl;
-  private readonly mySqlManager: MySqlManager;
+  private readonly mySqlManager: PostgreSqlManager;
   private readonly logger: Logger;
 
-  private constructor(enforce: () => void, mySqlManager: MySqlManager) {
+  private constructor(enforce: () => void, mySqlManager: PostgreSqlManager) {
     if (enforce !== Enforce) {
       throw new InstantiationError("Cannot instantiate JobServiceServiceImpl directly. Use getInstance()");
     }
@@ -31,7 +31,7 @@ export class JobServiceServiceImpl implements JobServiceService {
 
   public static getInstance(): JobServiceServiceImpl {
     if (!JobServiceServiceImpl.instance) {
-      JobServiceServiceImpl.instance = new JobServiceServiceImpl(Enforce, MySqlManager.getInstance());
+      JobServiceServiceImpl.instance = new JobServiceServiceImpl(Enforce, PostgreSqlManager.getInstance());
     }
     return JobServiceServiceImpl.instance;
   }

@@ -116,7 +116,7 @@ class FirestoreManager extends ServiceManager
     catch (error)
     {
         const err: Error = error instanceof Error ? error : new Error(String(error));
-        const errorCode = (error as { code?: number }).code;
+        const errorCode: number | undefined = (error as { code?: number }).code;
 
         this.logger.error(`Unable to connect to Firestore: ${err.message}`);
 

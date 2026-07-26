@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { Server as HttpServer } from "node:http";
 import * as http from "node:http";
 import { createLogger, Logger } from "@utils/logger/Log.js";
-import MySqlManager from "@config/db/MySqlManager.js";
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import express, { Express } from "express";
 import ServiceManager from "@config/ServiceManager.js";
 import { Constants } from "@common/io/Constants.js";
@@ -61,7 +61,7 @@ export class App {
       await ApiRouter.getInstance().initializeRoutes();
 
       this.server.listen(port, "0.0.0.0", async (): Promise<void> => {
-        await MySqlManager.getInstance().sequelize
+        await PostgreSqlManager.getInstance().sequelize
           .sync({ force: false })
           .then((): void => logger.info("Database & tables created!"))
           .catch((error: Error): void =>

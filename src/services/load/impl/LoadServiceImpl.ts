@@ -2,7 +2,7 @@ import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
-import MySqlManager from "@config/db/MySqlManager.js";
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, LoadMessage } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, publishEvent } from "@shared/QueueService.js";
@@ -36,7 +36,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
    * Db Manager
    * @private
    */
-  private dbManager: MySqlManager;
+  private dbManager: PostgreSqlManager;
     /**
    * S Y S T E M_ C O L S
    * @private
@@ -67,14 +67,14 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
       throw new InstantiationError("Cannot instantiate LoadServiceImpl directly. Use getInstance()");
     }
     super(enforce);
-    
+
     this.PARAMS_PER_ROW = this.SYSTEM_COLS.length + 1;
     this.UPSERT_BATCH = Math.floor(60000 / this.PARAMS_PER_ROW);
-    
+
     this.logger = createLogger("load");
     this.gcsUtils = FirestoreCacheUtils.getInstance();
-    this.dbManager = MySqlManager.getInstance();
-    
+    this.dbManager = PostgreSqlManager.getInstance();
+
     if (process.env.HEALTH_CHECK_PORT) {
       startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
@@ -111,7 +111,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
    * Gets db manager
    * @returns The my sql manager result
    */
-  public getDbManager(): MySqlManager {
+  public getDbManager(): PostgreSqlManager {
     return this.dbManager;
   }
 

@@ -13,7 +13,7 @@ async function bootstrap(): Promise<void> {
 
   const [{ App }, { default: MySqlManager }, { default: FirestoreManager }] = await Promise.all([
     import("./app.js"),
-    import("@config/db/MySqlManager.js"),
+    import("@config/db/PostgreSqlManager.js"),
     import("@config/firestore/FirestoreManager.js"),
   ]);
 
