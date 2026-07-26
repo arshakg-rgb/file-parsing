@@ -546,6 +546,42 @@ If uncertain:
   }
 
   /**
+   * Ask the model to parse a JSON record into the requested target columns plus a meta
+   * column for all unmapped fields. Returns null only for invalid JSON or a model failure.
+   */
+  async parseJsonLine(jsonLine: string, targetColumns: string[] = []): Promise<Record<string, unknown> | null> {
+    const targetHint = targetColumns.length
+      ? `Target columns: ${targetColumns.join(", ")}.`
+      : `No target columns were specified; return the most reasonable top-level/flattened fields as columns.`;
+    const prompt = `You are a JSON parsing assistant. Given the JSON record below, extract values and return ONLY a JSON object.
+${targetHint}
+For each target column, use the source field or path that best matches it; if nothing matches, use null.
+Add a "meta" key containing a JSON-string of all source fields/paths NOT represented by the target columns.
+If target columns are empty, return all source keys as columns and put any remaining nested/unmapped data in "meta".
+Do not wrap the output in markdown; return raw JSON only.
+
+JSON record:
+${jsonLine}
+
+Output:`;
+    try {
+      const raw = await this.askVertexAI(prompt, 8000);
+      const extracted = extractJsonFromMarkdown(raw);
+      const parsed = JSON.parse(extracted);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        // Ensure meta is a string for CSV/Parquet compatibility.
+        if ("meta" in parsed && parsed.meta !== null && parsed.meta !== undefined && typeof parsed.meta !== "string") {
+          parsed.meta = JSON.stringify(parsed.meta);
+        }
+        return parsed as Record<string, unknown>;
+      }
+    } catch (err) {
+      this.logger.warn("json_line_parse_failed", { error: String(err) });
+    }
+    return null;
+  }
+
+  /**
    * Quick fingerprint for line matching
    * @param line - The line to fingerprint
    * @returns Fingerprint hash
@@ -622,6 +658,10 @@ export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse
 
 export async function discoverJsonFieldSpec(jsonSamples: string[], targetColumns?: string[]): Promise<string[]> {
   return aiClassifierService.discoverJsonFieldSpec(jsonSamples, targetColumns);
+}
+
+export async function parseJsonLine(jsonLine: string, targetColumns?: string[]): Promise<Record<string, unknown> | null> {
+  return aiClassifierService.parseJsonLine(jsonLine, targetColumns);
 }
 
 // Export interfaces for external use

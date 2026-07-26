@@ -752,12 +752,14 @@ export class StreamParserService {
                 }
               } catch { /* not a JSON string */ }
             }
-            if (isJsonShape) {
-              // Unmapped JSON should still appear in the output as a meta row, not in DLQ.
+            const isJsonLike = isJsonFile || isJsonShape;
+            if (isJsonLike) {
+              // Unmapped JSON (or any line inside a .json file) should still appear in the
+              // output as a meta row, not in DLQ, so scalars and JSON-in-JSON strings are not lost.
               const metaRow: Record<string, unknown> = {};
               for (const f of fieldSpec) metaRow[f] = "";
               metaRow["meta"] = line;
-              result = { verdict: "parsed", row: metaRow, template_id: "json-uncertain-meta", template_version: 1 };
+              result = { verdict: "parsed", row: metaRow, template_id: "json-raw-meta", template_version: 1 };
 
               // Sanitize row data before storage
               const sanitizedRow = this.sanitizeRecord(result.row || {});

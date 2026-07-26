@@ -321,15 +321,15 @@ export class LineClassifier implements IClassifier {
       job_id: this.jobId,
     };
 
-    const { classifyAi, discoverJsonFieldSpec } = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
+    const { classifyAi, parseJsonLine } = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
     const trimmed = line.trim();
     const isJsonLine = trimmed[0] === "{" || trimmed[0] === "[";
 
-    // JSON-shaped lines should never be parsed by generic regex/delimited record templates
-    // (those are for headerless CSV / fixed-format text). Use JSON-aware field discovery instead.
+    // JSON-shaped lines should not be parsed by generic regex/delimited record templates.
+    // Ask the model to parse the JSON directly into the target field_spec + meta.
     if (isJsonLine) {
-      this.logger.info("ai_call_initiated", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length, reason: "json_field_discovery" });
-      const { result, ai_calls_used } = await this.tryDiscoverJsonFields(line, discoverJsonFieldSpec);
+      this.logger.info("ai_call_initiated", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length, reason: "json_parse" });
+      const { result, ai_calls_used } = await this.tryDiscoverJsonFields(line, parseJsonLine);
       if (result) return { ...result, ai_calls_used };
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN, ai_calls_used };
     }
@@ -362,12 +362,13 @@ export class LineClassifier implements IClassifier {
   }
 
   /**
-   * Ask the model to discover a field_spec for a JSON line, then try to extract with it.
-   * This is the AI fallback for structurally-valid JSON that the local field_spec could not map.
+   * AI fallback for structurally-valid JSON that local parsing could not map.
+   * Asks the model to parse the JSON record directly into target columns + meta.
+   * If the model fails, falls back to a flat local extraction so no data is lost.
    */
   private async tryDiscoverJsonFields(
     line: string,
-    discoverJsonFieldSpec: (samples: string[], targets?: string[]) => Promise<string[]>
+    parseJsonLine: (jsonLine: string, targets: string[]) => Promise<Record<string, unknown> | null>
   ): Promise<{ result: ClassifyResult | null; ai_calls_used: number }> {
     const t = line.trim();
     if (t[0] !== "{" && t[0] !== "[" && !(t.length >= 2 && t[0] === '"' && t[t.length - 1] === '"')) {
@@ -388,36 +389,26 @@ export class LineClassifier implements IClassifier {
     }
     // JSON-in-JSON string
     if (typeof obj === "string") {
-      return this.tryDiscoverJsonFields(obj, discoverJsonFieldSpec);
+      return this.tryDiscoverJsonFields(obj, parseJsonLine);
     }
     try {
       if (this.aiRateLimiter) await this.aiRateLimiter.acquire();
-      const discovered = await discoverJsonFieldSpec([JSON.stringify(obj)], this.fieldSpec);
-      if (!discovered || discovered.length === 0) return { result: null, ai_calls_used: 1 };
-      const extracted = this.extractFromObject(obj, "ai-json", discovered, true);
-      if (extracted) {
-        // Map the AI-invented column names back onto the canonical fieldSpec keys.
-        const aiSource = { ...extracted.row };
-        delete aiSource["meta"];
-        // Use loose canonical extraction so a single discovered target field is preserved.
-        const canonical = this.extractFromObject(aiSource, "ai-json-canon", this.fieldSpec, true);
-        if (canonical) {
-          const hasCanon = this.fieldSpec.some(
-            (f) =>
-              f !== "meta" &&
-              canonical.row[f] !== null &&
-              canonical.row[f] !== undefined &&
-              String(canonical.row[f]).trim() !== ""
-          );
-          if (hasCanon) {
-            canonical.row["meta"] = extracted.row["meta"];
-            this.logger.info("ai_json_field_discovery_succeeded", { fingerprint: quickFingerprint(line), columns: discovered.length });
-            return { result: { verdict: "parsed", row: canonical.row, template_id: "ai-json" }, ai_calls_used: 1 };
-          }
+      const aiRow = await parseJsonLine(line, this.fieldSpec);
+      if (aiRow && typeof aiRow === "object" && !Array.isArray(aiRow)) {
+        const coerced = this.coerce(aiRow);
+        if (coerced) {
+          this.logger.info("ai_json_parse_succeeded", { fingerprint: quickFingerprint(line), keys: Object.keys(coerced).length });
+          return { result: { verdict: "parsed", row: coerced, template_id: "ai-json" }, ai_calls_used: 1 };
         }
       }
     } catch (err) {
-      this.logger.warn("ai_json_field_discovery_failed", { error: String(err) });
+      this.logger.warn("ai_json_parse_failed", { error: String(err) });
+    }
+    // Local flatten fallback: always preserve the full JSON in meta.
+    const extracted = this.extractFromObject(obj, "json", this.fieldSpec, true);
+    if (extracted) {
+      const coerced = this.coerce(extracted.row);
+      if (coerced) return { result: { verdict: "parsed", row: coerced, template_id: "json" }, ai_calls_used: 1 };
     }
     return { result: null, ai_calls_used: 1 };
   }
@@ -872,7 +863,7 @@ export class LineClassifier implements IClassifier {
       if (!first) return null;
       obj = first;
     }
-    return this.extractFromObject(obj, "json", undefined, true);
+    return this.extractFromObject(obj, "json");
   }
 
     /**
