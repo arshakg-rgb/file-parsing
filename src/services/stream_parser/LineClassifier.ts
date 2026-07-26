@@ -851,7 +851,7 @@ export class LineClassifier implements IClassifier {
       if (!first) return null;
       obj = first;
     }
-    return this.extractFromObject(obj, "json");
+    return this.extractFromObject(obj, "json", undefined, true);
   }
 
     /**
