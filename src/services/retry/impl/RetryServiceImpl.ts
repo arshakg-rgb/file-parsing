@@ -1,7 +1,7 @@
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import MySqlManager from "@config/db/MySqlManager.js";
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { DeadLetterAttributes } from "@config/db/models/DeadLetter.js";
 import { DLQMessage, DLQStatus, FailureClass, JobStatus, LoadMessage } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, sendMessage } from "@shared/QueueService.js";
@@ -31,7 +31,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
    * Db Manager
    * @private
    */
-  private dbManager: MySqlManager;
+  private dbManager: PostgreSqlManager;
     /**
    * A L T_ E N C O D I N G S
    * @private
@@ -48,10 +48,10 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
       throw new InstantiationError("Cannot instantiate RetryServiceImpl directly. Use getInstance()");
     }
     super(enforce);
-    
+
     this.logger = createLogger("retry");
-    this.dbManager = MySqlManager.getInstance();
-    
+    this.dbManager = PostgreSqlManager.getInstance();
+
     if (process.env.HEALTH_CHECK_PORT) {
       startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
@@ -80,7 +80,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
    * Gets db manager
    * @returns The my sql manager result
    */
-  public getDbManager(): MySqlManager {
+  public getDbManager(): PostgreSqlManager {
     return this.dbManager;
   }
 

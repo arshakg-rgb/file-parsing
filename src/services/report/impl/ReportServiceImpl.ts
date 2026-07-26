@@ -2,7 +2,7 @@ import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
-import MySqlManager from "@config/db/MySqlManager.js";
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ReportMessage, JobCounts, JobTimings } from "@shared/models/job.js";
 import type { ParseJobAttributes } from "@config/db/models/ParseJob.js";
@@ -38,7 +38,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
    * Db Manager
    * @private
    */
-  private dbManager: MySqlManager;
+  private dbManager: PostgreSqlManager;
 
     /**
    * Constructs a new ReportServiceImpl instance.
@@ -50,11 +50,11 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
       throw new InstantiationError("Cannot instantiate ReportServiceImpl directly. Use getInstance()");
     }
     super(enforce);
-    
+
     this.logger = createLogger("report");
     this.gcsUtils = FirestoreCacheUtils.getInstance();
-    this.dbManager = MySqlManager.getInstance();
-    
+    this.dbManager = PostgreSqlManager.getInstance();
+
     if (process.env.HEALTH_CHECK_PORT) {
       startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
@@ -91,7 +91,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
    * Gets db manager
    * @returns The my sql manager result
    */
-  public getDbManager(): MySqlManager {
+  public getDbManager(): PostgreSqlManager {
     return this.dbManager;
   }
 

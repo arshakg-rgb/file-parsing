@@ -22,17 +22,17 @@ import {IDatabaseConfig} from "@config/system-config/io/IDatabaseConfig.js";
 const { Pool } = pg;
 
 /**
- * MySqlManager is a singleton class responsible for managing the MySQL/PostgreSQL connection.
+ * PostgreSqlManager is a singleton class responsible for managing the MySQL/PostgreSQL connection.
  * It provides methods to connect to and gracefully stop the database.
  */
-export class MySqlManager extends ServiceManager
+export class PostgreSqlManager extends ServiceManager
 {
   /**
-   * Singleton instance of the MySqlManager class.
+   * Singleton instance of the PostgreSqlManager class.
    * @protected
    */
 
-  protected static instance: MySqlManager;
+  protected static instance: PostgreSqlManager;
 
   /**
    * The Sequelize instance.
@@ -69,7 +69,7 @@ export class MySqlManager extends ServiceManager
   private logger: Logger;
 
   /**
-   * Constructs a new MySqlManager instance.
+   * Constructs a new PostgreSqlManager instance.
    * @param enforce - A function to enforce the Singleton pattern.
    */
 
@@ -79,25 +79,25 @@ export class MySqlManager extends ServiceManager
 
       if (enforce !== Enforce)
       {
-        throw new InstantiationError("Cannot instantiate MySqlManager directly. Use getInstance()");
+        throw new InstantiationError("Cannot instantiate PostgreSqlManager directly. Use getInstance()");
       }
 
-      this.logger = createLogger("MySqlManager");
+      this.logger = createLogger("PostgreSqlManager");
   }
 
   /**
-   * Gets the single instance of the MySqlManager class.
+   * Gets the single instance of the PostgreSqlManager class.
    * @returns The single instance of the class.
    */
 
-  public static getInstance(): MySqlManager
+  public static getInstance(): PostgreSqlManager
   {
-      if (!MySqlManager.instance)
+      if (!PostgreSqlManager.instance)
       {
-        MySqlManager.instance = new MySqlManager(Enforce);
+        PostgreSqlManager.instance = new PostgreSqlManager(Enforce);
       }
 
-      return MySqlManager.instance;
+      return PostgreSqlManager.instance;
   }
 
   /**
@@ -151,14 +151,14 @@ export class MySqlManager extends ServiceManager
 
   public async connect(): Promise<void>
   {
-      this.logger.info("Connecting MySqlManager...");
+      this.logger.info("Connecting PostgreSqlManager...");
 
       this._sequelize ??= this.buildSequelize();
       await this.waitForDb();
       this.models;
       await this.sequelize.authenticate();
 
-      this.logger.info("MySqlManager connected");
+      this.logger.info("PostgreSqlManager connected");
   }
 
   /**
@@ -166,7 +166,7 @@ export class MySqlManager extends ServiceManager
    */
   public async gracefulStop(): Promise<void>
   {
-    this.logger.info("Stopping MySqlManager...");
+    this.logger.info("Stopping PostgreSqlManager...");
 
     if (this._pool)
     {
@@ -288,4 +288,4 @@ export class MySqlManager extends ServiceManager
 
 
 
-export default MySqlManager;
+export default PostgreSqlManager;

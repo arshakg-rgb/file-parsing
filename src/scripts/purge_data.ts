@@ -1,4 +1,4 @@
-import MySqlManager from "@config/db/MySqlManager.js";
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import { createLogger } from "@utils/logger/logger.js";
 
 /**
@@ -12,7 +12,7 @@ const logger = createLogger("purge-data");
 export async function purgeDatabase(): Promise<void> {
   logger.info("Starting database purge...");
 
-  const dbManager = MySqlManager.getInstance();
+  const dbManager = PostgreSqlManager.getInstance();
   await dbManager.initialize();
   const { ParseJob, OutputPart, RubbishLog, DeadLetter, PendingArchiveEntry, ParsedRecord } = dbManager.models;
 
@@ -42,7 +42,7 @@ async function main() {
   try {
     await purgeDatabase();
   } finally {
-    await MySqlManager.getInstance().shutdown();
+    await PostgreSqlManager.getInstance().shutdown();
   }
 }
 

@@ -2,7 +2,7 @@ import crypto from "crypto";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import MySqlManager from "@config/db/MySqlManager.js";
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 
 export interface RecordTemplate {
   template_id: string;
@@ -78,7 +78,7 @@ export class TemplateRegistryService extends ServiceManager {
    * Db Manager
    * @private
    */
-  private dbManager: MySqlManager;
+  private dbManager: PostgreSqlManager;
 
     /**
    * Constructs a new TemplateRegistryService instance.
@@ -90,8 +90,8 @@ export class TemplateRegistryService extends ServiceManager {
       throw new InstantiationError("Cannot instantiate TemplateRegistryService directly. Use getInstance()");
     }
     super(enforce);
-    
-    this.dbManager = MySqlManager.getInstance();
+
+    this.dbManager = PostgreSqlManager.getInstance();
   }
 
     /**
@@ -133,11 +133,11 @@ export class TemplateRegistryService extends ServiceManager {
   static passesLengthGate(line: string, fieldSpec: string[]): boolean {
     const lineLength = line.length;
     if (lineLength === 0) return false;
-    
+
     const fieldCount = fieldSpec.length;
     const minExpectedLength = fieldCount * 2;
     const maxExpectedLength = fieldCount * 1000;
-    
+
     return lineLength >= minExpectedLength && lineLength <= maxExpectedLength;
   }
 
@@ -150,12 +150,12 @@ export class TemplateRegistryService extends ServiceManager {
   matchRecordTemplate(line: string, fieldSpec: string[]): RecordTemplate | null {
     const fingerprint = TemplateRegistryService.generateFingerprint(line);
     const template = this.recordCache.get(fingerprint);
-    
+
     if (template) {
       this.updateMatchRate(true);
       return template;
     }
-    
+
     this.updateMatchRate(false);
     return null;
   }
@@ -168,12 +168,12 @@ export class TemplateRegistryService extends ServiceManager {
   matchRubbishTemplate(line: string): RubbishTemplate | null {
     const fingerprint = TemplateRegistryService.generateFingerprint(line);
     const template = this.rubbishCache.get(fingerprint);
-    
+
     if (template && template.confidence > 0.9) {
       this.updateMatchRate(true);
       return template;
     }
-    
+
     this.updateMatchRate(false);
     return null;
   }
@@ -261,7 +261,7 @@ export class TemplateRegistryService extends ServiceManager {
     }
     try {
       const recordRows = await this.dbManager.repositories.templates.findByKind("record");
-      
+
       for (const row of recordRows) {
         let fieldMap;
         if (typeof row.field_map === "string") {
@@ -271,7 +271,7 @@ export class TemplateRegistryService extends ServiceManager {
         } else {
           fieldMap = {};
         }
-        
+
         this.recordCache.set(row.fingerprint, {
           template_id: row.template_id,
           fingerprint: row.fingerprint,
@@ -285,7 +285,7 @@ export class TemplateRegistryService extends ServiceManager {
       }
 
       const rubbishRows = await this.dbManager.repositories.templates.findByKind("rubbish");
-      
+
       for (const row of rubbishRows) {
         this.rubbishCache.set(row.fingerprint, {
           template_id: row.template_id,

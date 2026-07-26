@@ -1,7 +1,7 @@
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import MySqlManager from "@config/db/MySqlManager.js";
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 import { totalFailed } from "@shared/models/job.js";
 
@@ -31,7 +31,7 @@ export class QualityGate extends ServiceManager {
    * Db Manager
    * @private
    */
-  private dbManager: MySqlManager;
+  private dbManager: PostgreSqlManager;
     /**
    * F A I L E D_ L I N E_ R A T I O_ T H R E S H O L D
    * @private
@@ -48,9 +48,9 @@ export class QualityGate extends ServiceManager {
       throw new InstantiationError("Cannot instantiate QualityGate directly. Use getInstance()");
     }
     super(enforce);
-    
+
     this.logger = createLogger("quality-gate");
-    this.dbManager = MySqlManager.getInstance();
+    this.dbManager = PostgreSqlManager.getInstance();
     this.FAILED_LINE_RATIO_THRESHOLD = 0.1;
   }
 
@@ -72,11 +72,11 @@ export class QualityGate extends ServiceManager {
    */
   public async calculateMetrics(jobId: string): Promise<QualityMetrics> {
     const counts = await this.dbManager.repositories.jobs.getCounts(jobId);
-    
+
     if (!counts) {
       throw new Error(`Job not found: ${jobId}`);
     }
-    
+
     const failed = totalFailed(counts);
     const totalLines = counts.parsed + counts.dropped_rubbish + failed;
     const failedLineRatio = totalLines > 0 ? failed / totalLines : 0;
@@ -97,11 +97,11 @@ export class QualityGate extends ServiceManager {
    */
   public async passesQualityGate(jobId: string): Promise<{ passes: boolean; reason?: string }> {
     const metrics = await this.calculateMetrics(jobId);
-    
-    this.logger.info("quality_gate_check", { 
-      job_id: jobId, 
+
+    this.logger.info("quality_gate_check", {
+      job_id: jobId,
       failed_line_ratio: metrics.failedLineRatio,
-      threshold: this.FAILED_LINE_RATIO_THRESHOLD 
+      threshold: this.FAILED_LINE_RATIO_THRESHOLD
     });
 
     if (metrics.failedLineRatio > this.FAILED_LINE_RATIO_THRESHOLD) {
@@ -120,7 +120,7 @@ export class QualityGate extends ServiceManager {
    */
   public async applyQualityGate(jobId: string): Promise<void> {
     const { passes, reason } = await this.passesQualityGate(jobId);
-    
+
     if (!passes) {
       await this.dbManager.repositories.jobs.hold(jobId, reason);
       this.logger.warn("quality_gate_failed", { job_id: jobId, reason });

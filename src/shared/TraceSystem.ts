@@ -1,7 +1,7 @@
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import MySqlManager from "@config/db/MySqlManager.js";
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 import type { ParsedRecordAttributes } from "@config/db/models/ParsedRecord.js";
 import crypto from "crypto";
@@ -39,7 +39,7 @@ export class TraceSystem extends ServiceManager {
    * Db Manager
    * @private
    */
-  private dbManager: MySqlManager;
+  private dbManager: PostgreSqlManager;
 
     /**
    * Constructs a new TraceSystem instance.
@@ -51,9 +51,9 @@ export class TraceSystem extends ServiceManager {
       throw new InstantiationError("Cannot instantiate TraceSystem directly. Use getInstance()");
     }
     super(enforce);
-    
+
     this.logger = createLogger("trace-system");
-    this.dbManager = MySqlManager.getInstance();
+    this.dbManager = PostgreSqlManager.getInstance();
   }
 
     /**
@@ -86,17 +86,17 @@ export class TraceSystem extends ServiceManager {
         _part_id: trace.part_id,
         fields: { s3_url: trace.s3_url, ...trace.row_data },
       });
-      
-      this.logger.debug("trace_created", { 
-        job_id: trace.job_id, 
+
+      this.logger.debug("trace_created", {
+        job_id: trace.job_id,
         byte_offset: trace.byte_offset,
-        line_no: trace.line_no 
+        line_no: trace.line_no
       });
     } catch (error) {
-      this.logger.error("trace_creation_error", { 
-        job_id: trace.job_id, 
-        byte_offset: trace.byte_offset, 
-        error: String(error) 
+      this.logger.error("trace_creation_error", {
+        job_id: trace.job_id,
+        byte_offset: trace.byte_offset,
+        error: String(error)
       });
       throw error;
     }
@@ -125,18 +125,18 @@ export class TraceSystem extends ServiceManager {
         raw_bytes: rawBytes,
         matched_template_id: matchedTemplateId,
       });
-      
-      this.logger.debug("rubbish_logged", { 
-        job_id: jobId, 
+
+      this.logger.debug("rubbish_logged", {
+        job_id: jobId,
         byte_offset: byteOffset,
         line_no: lineNo,
-        template_id: matchedTemplateId 
+        template_id: matchedTemplateId
       });
     } catch (error) {
-      this.logger.error("rubbish_log_error", { 
-        job_id: jobId, 
-        byte_offset: byteOffset, 
-        error: String(error) 
+      this.logger.error("rubbish_log_error", {
+        job_id: jobId,
+        byte_offset: byteOffset,
+        error: String(error)
       });
       throw error;
     }
@@ -208,7 +208,7 @@ export class TraceSystem extends ServiceManager {
       this.dbManager.repositories.rubbishLogs.countByJob(jobId),
       this.dbManager.repositories.deadLetters.countByJob(jobId),
     ]);
-    
+
     return { parsed, dropped, failed };
   }
 }

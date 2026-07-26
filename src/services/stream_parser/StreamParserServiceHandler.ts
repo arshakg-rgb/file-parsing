@@ -16,7 +16,7 @@ import { createLogger, Logger } from "@utils/logger/logger.js";
 import { metrics } from "@utils/response/metrics.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import { waitForDb } from "@shared/DatabaseManager.js";
-import MySqlManager from "@config/db/MySqlManager.js";
+import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import jschardet from "jschardet";
 import crypto from "crypto";
 import { normalizeEncoding, isLikelyUtf8 } from "@utils/normalizers/encoding.js";
@@ -93,10 +93,10 @@ class AIRateLimiter {
   async acquire(): Promise<void> {
     const now = Date.now();
     const oneMinuteAgo = now - 60000;
-    
+
     // Remove requests older than 1 minute
     this.requests = this.requests.filter(time => time > oneMinuteAgo);
-    
+
     // Check burst limit
     if (this.requests.length >= this.burst) {
       const oldestRequest = this.requests[0];
@@ -107,7 +107,7 @@ class AIRateLimiter {
         this.requests = this.requests.filter(time => time > oneMinuteAgo);
       }
     }
-    
+
     // Check RPM limit
     if (this.requests.length >= this.rpm) {
       const oldestRequest = this.requests[0];
@@ -118,7 +118,7 @@ class AIRateLimiter {
         this.requests = this.requests.filter(time => time > oneMinuteAgo);
       }
     }
-    
+
     this.requests.push(now);
     this.logger.debug("ai_rate_limit_acquired", { currentRequests: this.requests.length, rpm: this.rpm, burst: this.burst });
   }
@@ -145,7 +145,7 @@ class AIRateLimiter {
 
 /**
  * Stream Parser Service - Senior Level ORM-Style Implementation
- * 
+ *
  * This service handles streaming file parsing with inline AI classification.
  * Follows ORM-style patterns with:
  * - Class-based architecture with instance state
@@ -153,7 +153,7 @@ class AIRateLimiter {
  * - Lifecycle management (initialize, start, stop)
  * - Repository-style methods for data operations
  * - Clean separation of concerns
- * 
+ *
  * @class StreamParserService
  */
 export class StreamParserService {
@@ -162,7 +162,7 @@ export class StreamParserService {
    * @private
    */
   private static instance: StreamParserService;
-  
+
   // Instance state
   private running: boolean = false;
     /**
@@ -205,7 +205,7 @@ export class StreamParserService {
    * @private
    */
   private lastCacheFlush: number = Date.now();
-  
+
   // Statistics
   private stats = {
     totalLinesProcessed: 0,
@@ -214,10 +214,10 @@ export class StreamParserService {
     cacheHits: 0,
     cacheMisses: 0
   };
-  
+
   // Dependencies (injected)
   private logger = createLogger("stream_parser");
-  
+
   /**
    * Private constructor for singleton pattern
    */
@@ -226,11 +226,11 @@ export class StreamParserService {
     if (process.env.HEALTH_CHECK_PORT) {
       startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
-    
+
     // Register signal handlers for graceful shutdown
     this.registerSignalHandlers();
   }
-  
+
   /**
    * Get singleton instance
    */
@@ -240,7 +240,7 @@ export class StreamParserService {
     }
     return StreamParserService.instance;
   }
-  
+
   /**
    * Register signal handlers for graceful shutdown
    */
@@ -248,7 +248,7 @@ export class StreamParserService {
     process.on("SIGTERM", () => this.shutdown("SIGTERM"));
     process.on("SIGINT", () => this.shutdown("SIGINT"));
   }
-  
+
   /**
    * Graceful shutdown handler
    */
@@ -261,7 +261,7 @@ export class StreamParserService {
       process.exit(0);
     }
   }
-  
+
   /**
    * Initialize the service
    */
@@ -270,7 +270,7 @@ export class StreamParserService {
     await templateRegistry.loadFromDatabase();
     this.logger.info("stream_parser_initialized");
   }
-  
+
   /**
    * Start the consumer loop
    */
@@ -279,7 +279,7 @@ export class StreamParserService {
       this.logger.warn("stream_parser_already_running");
       return;
     }
-    
+
     this.running = true;
     await this.initialize();
     this.logger.info("stream_parser_started", {
@@ -287,10 +287,10 @@ export class StreamParserService {
       k_service: process.env.K_SERVICE,
       ai_inline_mode: process.env.AI_INLINE_MODE,
     });
-    
+
     await this.consumerLoop();
   }
-  
+
   /**
    * Stop the service gracefully
    */
@@ -298,7 +298,7 @@ export class StreamParserService {
     this.running = false;
     this.logger.info("stream_parser_stopping");
   }
-  
+
   /**
    * Get service statistics
    */
@@ -315,7 +315,7 @@ export class StreamParserService {
    * Sanitize text for PostgreSQL storage
    * - Strip null bytes (Postgres text/JSON columns reject \u0000)
    * - Escape lone/invalid \u sequences that aren't valid unicode
-   * 
+   *
    * @param str - Input string to sanitize
    * @returns Sanitized string safe for PostgreSQL
    */
@@ -327,7 +327,7 @@ export class StreamParserService {
 
   /**
    * Sanitize all values recursively - single source of truth for type handling
-   * 
+   *
    * @param value - Any value to sanitize
    * @returns Sanitized value
    */
@@ -342,7 +342,7 @@ export class StreamParserService {
   /**
    * Sanitize all string values in a record recursively
    * Handles nested objects, arrays, and Date objects correctly
-   * 
+   *
    * @param record - Record to sanitize
    * @returns Sanitized record
    */
@@ -367,7 +367,7 @@ export class StreamParserService {
 
   /**
    * Emit a job event to the event system
-   * 
+   *
    * @param jobId - Job identifier
    * @param eventType - Type of event to emit
    * @param data - Event payload data
@@ -378,7 +378,7 @@ export class StreamParserService {
 
   /**
    * Parse a file job with streaming line-by-line processing
-   * 
+   *
    * This is the main entry point for parsing a single file. It:
    * 1. Loads templates from the database
    * 2. Detects file encoding and structure via adaptive probing
@@ -386,18 +386,18 @@ export class StreamParserService {
    * 4. Uses inline AI for uncertain lines (if enabled)
    * 5. Outputs to Parquet and CSV
    * 6. Maintains trace records and DLQ for failed lines
-   * 
+   *
    * @param msg - Parse message containing job details
    * @throws Error if fatal error occurs during parsing
    */
   async parseJob(msg: ParseMessage, receiptHandle?: string): Promise<void> {
     const parseStartTime = Date.now();
     this.parseCount++;
-    
+
     // Store receipt handle for deadline extension
     this.currentReceiptHandle = receiptHandle || null;
     this.lastDeadlineExtension = Date.now();
-    
+
     await templateRegistry.loadFromDatabase();
 
     const jobId = msg.job_id;
@@ -406,7 +406,7 @@ export class StreamParserService {
     metrics.increment("parse.start", 1);
 
     const [bucket, key] = parseGcsUrl(msg.s3_url);
-    
+
     // Parse field_spec if it's a JSON string
     let fieldSpec: string[] = [];
     if (typeof msg.field_spec === "string") {
@@ -425,7 +425,7 @@ export class StreamParserService {
     const probing = AdaptiveProbing.getInstance();
     const probeCount = probing.calculateProbeCount(fileSize);
     const probeOffsets = probing.generateProbeOffsets(fileSize, probeCount);
-    
+
     this.logger.info("adaptive_probing", { job_id: jobId, probe_count: probeCount, file_size: fileSize });
     metrics.increment("parse.probing_start", 1, { probe_count: String(probeCount) });
 
@@ -449,7 +449,7 @@ export class StreamParserService {
             detectedEncoding = normalizeEncoding(detected.encoding);
           }
         }
-        
+
         // Analyze row widths
         const content = buffer.toString("utf-8").replace(/\0/g, ""); // Remove null bytes
         const lines = content.split("\n").filter(line => line.trim());
@@ -463,11 +463,11 @@ export class StreamParserService {
       }
     }
 
-    this.logger.info("probing_complete", { 
-      job_id: jobId, 
-      encoding: detectedEncoding, 
+    this.logger.info("probing_complete", {
+      job_id: jobId,
+      encoding: detectedEncoding,
       avg_row_width: avgRowWidth,
-      max_row_width: maxRowWidth 
+      max_row_width: maxRowWidth
     });
 
     const recordTemplates = templateRegistry.getAllRecordTemplates();
@@ -501,7 +501,7 @@ export class StreamParserService {
     let parsedBatch: Record<string, unknown>[] = [];
     let rubbishBatch: Record<string, unknown>[] = [];
     let dlqBatch: Record<string, unknown>[] = [];
-    const repositories = MySqlManager.getInstance().repositories;
+    const repositories = PostgreSqlManager.getInstance().repositories;
     const bgFlushes: Promise<void>[] = [];
 
     // RAM watermark hysteresis: high threshold triggers flush, low threshold resets.
@@ -574,7 +574,7 @@ export class StreamParserService {
           this.logger.warn("parsed_batch_flush_error", { error: String(e) });
         }));
       }
-      
+
       if (force && rubbishBatch.length > 0) {
         const batch = rubbishBatch; rubbishBatch = [];
         flushTasks.push(repositories.rubbishLogs.bulkCreate(batch as any).catch(e => {
@@ -619,7 +619,7 @@ export class StreamParserService {
       for await (const [line, byteOffset, byteLength] of lineSource) {
         lineNo += 1;
         this.stats.totalLinesProcessed++;
-        
+
         if (lineNo % 10000 === 0) {
           console.log("parse_progress", { jobId, lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
         }
@@ -861,10 +861,10 @@ export class StreamParserService {
       }));
 
       const parseDuration = Date.now() - parseStartTime;
-      this.logger.info("parse_complete", { 
-        job_id: jobId, 
-        parsed: counts.parsed, 
-        dropped: counts.dropped_rubbish, 
+      this.logger.info("parse_complete", {
+        job_id: jobId,
+        parsed: counts.parsed,
+        dropped: counts.dropped_rubbish,
         failed: totalFailed(counts),
         duration_ms: parseDuration,
         ai_calls: aiCalls,
@@ -903,17 +903,17 @@ export class StreamParserService {
 
   /**
    * Main consumer loop for processing parse messages
-   * 
+   *
    * Continuously polls the parse queue for messages and processes them.
    * Handles graceful shutdown and message acknowledgment.
-   * 
+   *
    * @throws Error if database connection fails
    */
   private async consumerLoop(): Promise<void> {
     await waitForDb();
     await templateRegistry.loadFromDatabase();
     this.logger.info("stream_parser_consumer_started");
-    
+
     while (this.running) {
       const messages = await receiveMessages<ParseMessage>(
         settings.PARSE_QUEUE_URL,
@@ -921,7 +921,7 @@ export class StreamParserService {
         1,
         5
       );
-      
+
       for (const { payload, receiptHandle } of messages) {
         this.currentJob = this.parseJob(payload, receiptHandle);
         try {
@@ -944,7 +944,7 @@ export class StreamParserService {
         }
       }
     }
-    
+
     this.logger.info("stream_parser_consumer_stopped");
   }
 }
