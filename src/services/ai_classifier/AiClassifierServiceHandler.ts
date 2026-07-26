@@ -526,9 +526,12 @@ If uncertain:
    * Discover a reasonable field_spec for JSON records by asking the model
    * which human-readable columns to extract from the provided samples.
    */
-  async discoverJsonFieldSpec(jsonSamples: string[]): Promise<string[]> {
+  async discoverJsonFieldSpec(jsonSamples: string[], targetColumns?: string[]): Promise<string[]> {
     const joined = jsonSamples.map((s, i) => `Sample ${i + 1}: ${s}`).join("\n\n");
-    const prompt = `You are a data-parsing assistant. Given the following JSON record samples, suggest a concise list of meaningful column names to extract. Output ONLY a JSON array of strings, no prose.\n\n${joined}\n\nOutput:`;
+    const targetHint = targetColumns?.length
+      ? ` Only return field/path names from the sample that correspond to one of these target columns: ${targetColumns.join(", ")}. If none match, return [].`
+      : "";
+    const prompt = `You are a data-parsing assistant. Given the following JSON record sample, suggest which fields to extract as the requested target columns. Output ONLY a JSON array of the exact source field/path names that match, no prose.${targetHint}\n\n${joined}\n\nOutput:`;
     try {
       const raw = await this.askVertexAI(prompt, 8000);
       const extracted = extractJsonFromMarkdown(raw);
@@ -617,8 +620,8 @@ export async function classifyAi(req: ClassifyRequest): Promise<ClassifyResponse
   return result;
 }
 
-export async function discoverJsonFieldSpec(jsonSamples: string[]): Promise<string[]> {
-  return aiClassifierService.discoverJsonFieldSpec(jsonSamples);
+export async function discoverJsonFieldSpec(jsonSamples: string[], targetColumns?: string[]): Promise<string[]> {
+  return aiClassifierService.discoverJsonFieldSpec(jsonSamples, targetColumns);
 }
 
 // Export interfaces for external use

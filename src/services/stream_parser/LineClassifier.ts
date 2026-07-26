@@ -337,7 +337,7 @@ export class LineClassifier implements IClassifier {
    */
   private async tryDiscoverJsonFields(
     line: string,
-    discoverJsonFieldSpec: (samples: string[]) => Promise<string[]>
+    discoverJsonFieldSpec: (samples: string[], targets?: string[]) => Promise<string[]>
   ): Promise<{ result: ClassifyResult | null; ai_calls_used: number }> {
     const t = line.trim();
     if (t[0] !== "{" && t[0] !== "[" && !(t.length >= 2 && t[0] === '"' && t[t.length - 1] === '"')) {
@@ -362,18 +362,28 @@ export class LineClassifier implements IClassifier {
     }
     try {
       if (this.aiRateLimiter) await this.aiRateLimiter.acquire();
-      const discovered = await discoverJsonFieldSpec([JSON.stringify(obj)]);
+      const discovered = await discoverJsonFieldSpec([JSON.stringify(obj)], this.fieldSpec);
       if (!discovered || discovered.length === 0) return { result: null, ai_calls_used: 1 };
       const extracted = this.extractFromObject(obj, "ai-json", discovered, true);
       if (extracted) {
         // Map the AI-invented column names back onto the canonical fieldSpec keys.
         const aiSource = { ...extracted.row };
         delete aiSource["meta"];
-        const canonical = this.extractFromObject(aiSource, "ai-json-canon", this.fieldSpec);
+        // Use loose canonical extraction so a single discovered target field is preserved.
+        const canonical = this.extractFromObject(aiSource, "ai-json-canon", this.fieldSpec, true);
         if (canonical) {
-          canonical.row["meta"] = extracted.row["meta"];
-          this.logger.info("ai_json_field_discovery_succeeded", { fingerprint: quickFingerprint(line), columns: discovered.length });
-          return { result: { verdict: "parsed", row: canonical.row, template_id: "ai-json" }, ai_calls_used: 1 };
+          const hasCanon = this.fieldSpec.some(
+            (f) =>
+              f !== "meta" &&
+              canonical.row[f] !== null &&
+              canonical.row[f] !== undefined &&
+              String(canonical.row[f]).trim() !== ""
+          );
+          if (hasCanon) {
+            canonical.row["meta"] = extracted.row["meta"];
+            this.logger.info("ai_json_field_discovery_succeeded", { fingerprint: quickFingerprint(line), columns: discovered.length });
+            return { result: { verdict: "parsed", row: canonical.row, template_id: "ai-json" }, ai_calls_used: 1 };
+          }
         }
       }
     } catch (err) {
