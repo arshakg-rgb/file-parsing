@@ -19,10 +19,11 @@ export interface ClassifyResult {
   template_id?: string;
   template_version?: number;
   failure_class?: FailureClass;
+  ai_calls_used?: number;
 }
 
 export interface IClassifier {
   classify(line: string, byteOffset: number, byteLength: number): ClassifyResult;
-  classifyWithAI(line: string, contextLines: string[]): Promise<ClassifyResult>;
-  classifyWithTimeout(line: string, contextLines: string[], timeoutMs: number): Promise<ClassifyResult>;
+  classifyWithAI(line: string, contextLines: string[], remainingBudget?: number): Promise<ClassifyResult>;
+  classifyWithTimeout(line: string, contextLines: string[], timeoutMs: number, remainingBudget?: number): Promise<ClassifyResult>;
 }

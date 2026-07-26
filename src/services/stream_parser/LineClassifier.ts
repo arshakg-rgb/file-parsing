@@ -56,6 +56,7 @@ export class LineClassifier implements IClassifier {
   private logger: Logger;
   private normalizedFieldSpec: string[];
   private aliasMap: Map<string, Set<string>>;
+  private aiRateLimiter?: { acquire(): Promise<void> };
 
   // Common column/key synonyms so field_spec names match real-world headers and JSON keys.
   private static readonly ALIASES: Record<string, string[]> = {
@@ -83,13 +84,15 @@ export class LineClassifier implements IClassifier {
     fieldSpec: string[],
     recordTemplates: RecordTemplate[],
     rubbishTemplates: RubbishTemplate[],
-    columnMap?: ColumnMap | null
+    columnMap?: ColumnMap | null,
+    aiRateLimiter?: { acquire(): Promise<void> } | null
   ) {
     this.jobId = jobId;
     this.fieldSpec = fieldSpec;
     this.recordTemplates = recordTemplates;
     this.rubbishTemplates = rubbishTemplates;
     this.columnMap = columnMap && Object.keys(columnMap).length > 0 ? columnMap : null;
+    this.aiRateLimiter = aiRateLimiter ?? undefined;
     this.aiCache = new Map();
     this.logger = createLogger(`LineClassifier:${this.jobId}`);
     this.normalizedFieldSpec = fieldSpec.map((f) => this.normalizeKey(f));
@@ -268,14 +271,18 @@ export class LineClassifier implements IClassifier {
    * @param contextLines - The context lines
    * @returns A promise that resolves to the result
    */
-  async classifyWithAI(line: string, contextLines: string[]): Promise<ClassifyResult> {
+  async classifyWithAI(line: string, contextLines: string[], remainingBudget?: number): Promise<ClassifyResult> {
     const fp = quickFingerprint(line);
     const cached = this.aiCache.get(fp);
     if (cached) {
       this.logger.info("ai_cache_hit", { fingerprint: fp, template_id: cached.template_id });
-      return this.toResult(line, cached);
+      return { ...this.toResult(line, cached), ai_calls_used: 0 };
     }
     this.logger.info("ai_cache_miss", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length });
+
+    if (remainingBudget !== undefined && remainingBudget <= 0) {
+      return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN, ai_calls_used: 0 };
+    }
 
     const req: ClassifyRequest = {
       unknown_line: line,
@@ -285,13 +292,18 @@ export class LineClassifier implements IClassifier {
     };
 
     this.logger.info("ai_call_initiated", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length });
+    if (this.aiRateLimiter) await this.aiRateLimiter.acquire();
     const { classifyAi, discoverJsonFieldSpec } = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
     const resp = await classifyAi(req);
+    let ai_calls_used = 1;
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
       this.logger.info("ai_call_uncertain", { fingerprint: fp, kind: resp.kind });
-      const discovered = await this.tryDiscoverJsonFields(line, discoverJsonFieldSpec);
-      if (discovered) return discovered;
-      return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
+      if (remainingBudget === undefined || ai_calls_used < remainingBudget) {
+        const { result, ai_calls_used: discoveryCalls } = await this.tryDiscoverJsonFields(line, discoverJsonFieldSpec);
+        if (result) return { ...result, ai_calls_used: ai_calls_used + discoveryCalls };
+        ai_calls_used += discoveryCalls;
+      }
+      return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN, ai_calls_used };
     }
 
     this.aiCache.set(fp, resp.template);
@@ -309,7 +321,7 @@ export class LineClassifier implements IClassifier {
       this.logger.info("ai_template_learned", { template_id: t.template_id, kind: "rubbish", source: "ai_call" });
     }
     this.logger.info("ai_call_completed", { fingerprint: fp, template_id: t.template_id, verdict: "field_map" in t ? "parsed" : "rubbish" });
-    return this.toResult(line, t);
+    return { ...this.toResult(line, t), ai_calls_used };
   }
 
   /**
@@ -319,22 +331,22 @@ export class LineClassifier implements IClassifier {
   private async tryDiscoverJsonFields(
     line: string,
     discoverJsonFieldSpec: (samples: string[]) => Promise<string[]>
-  ): Promise<ClassifyResult | null> {
+  ): Promise<{ result: ClassifyResult | null; ai_calls_used: number }> {
     const t = line.trim();
     if (t[0] !== "{" && t[0] !== "[" && !(t.length >= 2 && t[0] === '"' && t[t.length - 1] === '"')) {
-      return null;
+      return { result: null, ai_calls_used: 0 };
     }
     let parsed: unknown;
     try {
       parsed = JSON.parse(t);
     } catch {
-      return null;
+      return { result: null, ai_calls_used: 0 };
     }
-    if (!parsed || typeof parsed !== "object") return null;
+    if (!parsed || typeof parsed !== "object") return { result: null, ai_calls_used: 0 };
     let obj = parsed as Record<string, unknown>;
     if (Array.isArray(parsed)) {
       const first = parsed.find((x) => x && typeof x === "object" && !Array.isArray(x)) as Record<string, unknown> | undefined;
-      if (!first) return null;
+      if (!first) return { result: null, ai_calls_used: 0 };
       obj = first;
     }
     // JSON-in-JSON string
@@ -342,24 +354,25 @@ export class LineClassifier implements IClassifier {
       return this.tryDiscoverJsonFields(obj, discoverJsonFieldSpec);
     }
     try {
+      if (this.aiRateLimiter) await this.aiRateLimiter.acquire();
       const discovered = await discoverJsonFieldSpec([JSON.stringify(obj)]);
-      if (!discovered || discovered.length === 0) return null;
-      const extracted = this.extractFromObject(obj, "ai-json", false, discovered);
+      if (!discovered || discovered.length === 0) return { result: null, ai_calls_used: 1 };
+      const extracted = this.extractFromObject(obj, "ai-json", discovered);
       if (extracted) {
         this.logger.info("ai_json_field_discovery_succeeded", { fingerprint: quickFingerprint(line), columns: discovered.length });
-        return { verdict: "parsed", row: extracted.row, template_id: "ai-json" };
+        return { result: { verdict: "parsed", row: extracted.row, template_id: "ai-json" }, ai_calls_used: 1 };
       }
     } catch (err) {
       this.logger.warn("ai_json_field_discovery_failed", { error: String(err) });
     }
-    return null;
+    return { result: null, ai_calls_used: 1 };
   }
 
   /** Run classifier with a safety timeout to avoid hanging on pathological lines. */
-  async classifyWithTimeout(line: string, contextLines: string[], timeoutMs: number): Promise<ClassifyResult> {
+  async classifyWithTimeout(line: string, contextLines: string[], timeoutMs: number, remainingBudget?: number): Promise<ClassifyResult> {
     this.logger.info("ai_call_timeout_scheduled", { line_length: line.length, timeout_ms: timeoutMs });
     return Promise.race([
-      this.classifyWithAI(line, contextLines),
+      this.classifyWithAI(line, contextLines, remainingBudget),
       new Promise<ClassifyResult>((resolve) =>
         setTimeout(() => {
           this.logger.warn("ai_call_timeout_reached", { line_length: line.length, timeout_ms: timeoutMs });
@@ -632,7 +645,6 @@ export class LineClassifier implements IClassifier {
   private extractFromObject(
     rawObj: Record<string, unknown>,
     templateId: string,
-    requireStrong: boolean,
     fieldSpecOverride?: string[]
   ): { row: Record<string, unknown>; template_id: string } | null {
     const obj = this.flattenObject(rawObj);
@@ -774,10 +786,8 @@ export class LineClassifier implements IClassifier {
     row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
 
     const nonMetaSpec = spec.filter((f) => f !== "meta").length;
-    const minMatches = Math.min(Math.max(1, nonMetaSpec), 2);
-    const accept = requireStrong
-      ? strong >= 1 || matched >= minMatches
-      : matched >= minMatches;
+    const minMatches = Math.max(1, Math.ceil(nonMetaSpec / 2));
+    const accept = strong >= 1 || matched >= minMatches;
     return accept ? { row, template_id: templateId } : null;
   }
 
@@ -807,7 +817,7 @@ export class LineClassifier implements IClassifier {
       if (!first) return null;
       obj = first;
     }
-    return this.extractFromObject(obj, "json", false);
+    return this.extractFromObject(obj, "json");
   }
 
     /**
@@ -825,7 +835,7 @@ export class LineClassifier implements IClassifier {
       if (m) obj[m[1].trim()] = m[2].trim();
     }
     if (Object.keys(obj).length === 0) return null;
-    return this.extractFromObject(obj, "kv", true);
+    return this.extractFromObject(obj, "kv");
   }
 
     /**

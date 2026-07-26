@@ -469,7 +469,7 @@ export class StreamParserService {
     const recordTemplates = templateRegistry.getAllRecordTemplates();
     const rubbishTemplates = templateRegistry.getAllRubbishTemplates();
     const columnMap = (msg as unknown as Record<string, unknown>).column_map as ColumnMap | undefined;
-    const classifier = new LineClassifier(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap);
+    const classifier = new LineClassifier(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, this.getAIRateLimiter());
     const outputManager = new OutputManager();
     const csvWriter = new CsvOutputWriter(jobId, fieldSpec);
     const dlqManager = DLQManager.getInstance();
@@ -640,22 +640,23 @@ export class StreamParserService {
         // budget; when exhausted the file is flagged and remaining unknowns dead-lettered as before.
         if (result.verdict === "uncertain" && aiEnabled) {
           if (aiCalls < aiBudget) {
-            aiCalls++;
-            this.stats.totalAiCalls++;
-            this.logger.info("ai_call_initiated", { job_id: jobId, line_no: lineNo, ai_call: aiCalls, ai_budget: aiBudget, context_lines: recentLines.slice(-3).length });
+            const remainingBudget = aiBudget - aiCalls;
+            this.logger.info("ai_call_initiated", { job_id: jobId, line_no: lineNo, ai_calls: aiCalls, ai_budget: aiBudget, remaining_budget: remainingBudget, context_lines: recentLines.slice(-3).length });
             try {
-              await this.getAIRateLimiter().acquire();
-              const aiResult = await classifier.classifyWithTimeout(line, recentLines.slice(-3), settings.AI_CLASSIFY_TIMEOUT_MS);
-              this.logger.info("ai_call_completed", { job_id: jobId, line_no: lineNo, ai_call: aiCalls, verdict: aiResult.verdict, template_id: aiResult.template_id });
+              const aiResult = await classifier.classifyWithTimeout(line, recentLines.slice(-3), settings.AI_CLASSIFY_TIMEOUT_MS, remainingBudget);
+              const used = aiResult.ai_calls_used ?? 0;
+              aiCalls += used;
+              this.stats.totalAiCalls += used;
+              this.logger.info("ai_call_completed", { job_id: jobId, line_no: lineNo, ai_calls: aiCalls, ai_calls_used: used, verdict: aiResult.verdict, template_id: aiResult.template_id });
               if (aiResult.verdict !== "uncertain") {
                 aiLocalRecoveries++;
                 this.stats.totalAiRecoveries++;
                 result = aiResult;
               } else {
-                this.logger.info("ai_call_uncertain", { job_id: jobId, line_no: lineNo, ai_call: aiCalls });
+                this.logger.info("ai_call_uncertain", { job_id: jobId, line_no: lineNo, ai_calls: aiCalls });
               }
             } catch (aiErr) {
-              this.logger.error("inline_ai_failed", { job_id: jobId, line_no: lineNo, ai_call: aiCalls, error: aiErr instanceof Error ? aiErr.message : String(aiErr) });
+              this.logger.error("inline_ai_failed", { job_id: jobId, line_no: lineNo, ai_calls: aiCalls, error: aiErr instanceof Error ? aiErr.message : String(aiErr) });
             }
           } else if (!aiBudgetFlagged) {
             aiBudgetFlagged = true;
