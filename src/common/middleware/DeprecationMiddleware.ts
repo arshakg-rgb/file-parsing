@@ -3,10 +3,12 @@ import { Request, Response, NextFunction } from "express";
 /**
  * DeprecationMiddleware is responsible for deprecation middleware operations.
  */
-export class DeprecationMiddleware {
+export class DeprecationMiddleware
+{
   /**
    * Adds deprecation warning headers to API responses
    */
+
   static deprecationWarning()
   {
     return (req: Request, res: Response, next: NextFunction): void =>

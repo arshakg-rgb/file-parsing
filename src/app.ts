@@ -6,44 +6,47 @@ import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import express, { Express } from "express";
 import ServiceManager from "@config/ServiceManager.js";
 import { Constants } from "@common/io/Constants.js";
-import { error404Handler, errorPageHandler } from "@middleware/CommonMiddleware.js";
 import bodyParser from "body-parser";
 import CorsUtils from "@config/cors/CorsUtils.js";
-import ApiRouter from "@routes/ApiRouter.js";
-import { DeprecationMiddleware } from "@middleware/DeprecationMiddleware.js";
-
-/**
- * Logger instance for the module
- */
+import {error404Handler, errorPageHandler} from "@common/middleware/CommonMiddleware.js";
+import { DeprecationMiddleware } from "@common/middleware/DeprecationMiddleware.js";
+import ApiRouter from "@common/routes/ApiRouter.js";
 const logger: Logger = createLogger("app");
 
 /**
  * Application entry point class.
  */
-export class App {
+
+export class App
+{
   /**
    * The Express application instance.
    * @private
    */
+
   private readonly app: Express;
 
   /**
    * The HTTP server instance.
    * @private
    */
+
   private readonly server: HttpServer;
 
   /**
    * The service managers for the application.
    * @private
    */
+
   private serviceManagers: ServiceManager[];
 
     /**
    * Constructs a new App instance.
    * @param serviceManagers - The serviceManagers arguments
    */
-  constructor(...serviceManagers: ServiceManager[]) {
+
+  constructor(...serviceManagers: ServiceManager[])
+  {
     this.app = express();
     this.initializeApp();
     this.server = this.createServer();
@@ -53,10 +56,13 @@ export class App {
   /**
    * Starts the Express server and initializes the managers.
    */
-  public async listen(): Promise<void> {
+
+  public async listen(): Promise<void>
+  {
     const port: number = parseInt(process.env.PORT || process.env.APP_PORT || "3000");
 
-    try {
+    try
+    {
       await this.initializeManagers();
       await ApiRouter.getInstance().initializeRoutes();
 
@@ -73,7 +79,9 @@ export class App {
 
       process.on(Constants.SIGINT, this.shutdown.bind(this));
       process.on(Constants.SIGTERM, this.shutdown.bind(this));
-    } catch (error) {
+    }
+    catch (error)
+    {
       logger.error(`Failed to initialize services or start the server: ${error instanceof Error ? error.message : String(error)}`);
       process.exit(1);
     }
@@ -82,16 +90,18 @@ export class App {
   /**
    * Initializes managers with parallel execution
    */
-  private async initializeManagers(): Promise<void> {
-    await Promise.all(
-      this.serviceManagers.map((manager: ServiceManager): Promise<void> => manager.initialize())
-    );
+
+  private async initializeManagers(): Promise<void>
+  {
+    await Promise.all(this.serviceManagers.map((manager: ServiceManager): Promise<void> => manager.initialize()));
   }
 
   /**
    * Sets up the middleware for the Express application.
    */
-  private setupMiddlewares(): void {
+
+  private setupMiddlewares(): void
+  {
     const requestBodyLimit: string = process.env.REQUEST_BODY_LIMIT || "10mb";
 
     this.app.use(CorsUtils.setupCors());
@@ -104,13 +114,16 @@ export class App {
         limit: requestBodyLimit,
       })
     );
+
     this.app.use(bodyParser.urlencoded({ extended: true, limit: requestBodyLimit }));
   }
 
   /**
    * Initializes the Express application.
    */
-  private initializeApp(): void {
+
+  private initializeApp(): void
+  {
     this.setupMiddlewares();
     this.setupRoutes();
   }
@@ -118,7 +131,9 @@ export class App {
   /**
    * Sets up the routes for the Express application.
    */
-  private setupRoutes(): void {
+
+  private setupRoutes(): void
+  {
     this.app.use(DeprecationMiddleware.deprecationWarning());
 
     this.app.use(ApiRouter.getInstance().getRouter());
@@ -130,25 +145,30 @@ export class App {
   /**
    * Creates an HTTP server.
    */
-  private createServer(): HttpServer {
+
+  private createServer(): HttpServer
+  {
     return http.createServer(this.app);
   }
 
   /**
    * Gracefully shuts down the managers and exits the process.
    */
-  private async shutdown(): Promise<void> {
+
+  private async shutdown(): Promise<void>
+  {
     logger.info("Shutting down gracefully");
-    await Promise.all(
-      this.serviceManagers.map((serviceManager: ServiceManager): Promise<void> => serviceManager.shutdown())
-    );
+
+    await Promise.all(this.serviceManagers.map((serviceManager: ServiceManager): Promise<void> => serviceManager.shutdown()));
     process.exit(0);
   }
 
   /**
    * Gets the Express application instance (for testing purposes).
    */
-  public getApp(): Express {
+
+  public getApp(): Express
+  {
     return this.app;
   }
 }

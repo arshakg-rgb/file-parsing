@@ -6,7 +6,9 @@ import { CustomError } from "@errors/CustomError.js";
  * @param req - The HTTP request object
  * @param res - The HTTP response object
  */
-export function error404Handler(req: Request, res: Response): void {
+
+export function error404Handler(req: Request, res: Response): void
+{
   res.status(404).json({
     error: {
       message: "Resource not found",
@@ -24,15 +26,11 @@ export function error404Handler(req: Request, res: Response): void {
  * @param res - The HTTP response object
  * @param next - The next middleware function
  */
-export function errorPageHandler(
-  err: Error,
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void {
-  console.error("Error:", err);
 
-  if (err instanceof CustomError) {
+export function errorPageHandler(err: Error, req: Request, res: Response, next: NextFunction): void
+{
+  if (err instanceof CustomError)
+  {
     res.status(err.statusCode).json({
       error: {
         message: err.message,
@@ -40,7 +38,8 @@ export function errorPageHandler(
         details: err.details,
       },
     });
-  } else {
+  }
+  else {
     res.status(500).json({
       error: {
         message: "Internal server error",
