@@ -3,7 +3,7 @@ import pino from "pino";
 import {CustomError} from "@errors/CustomError.js";
 import {createLogger} from "@utils/logger/Log.js";
 
-const logger: pino.Logger = createLogger(module);
+const logger: pino.Logger = createLogger(import.meta.url);
 
 export class InstantiationError extends CustomError
 {
