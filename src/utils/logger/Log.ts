@@ -1,5 +1,5 @@
 import path from "node:path";
-import { pino, type Logger } from "pino";
+import pino, { type Logger } from "pino";
 import dotenv from "dotenv";
 import process from "node:process";
 import type { LokiOptions } from "pino-loki";

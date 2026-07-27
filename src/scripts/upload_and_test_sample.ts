@@ -11,12 +11,8 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Storage } from "@google-cloud/storage";
 import { LineClassifier } from "../services/stream_parser/LineClassifier.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const SAMPLE_FILE = path.join(__dirname, "../../samples/test-linkedin.ndjson");
 const BUCKET = process.env.GCS_SAMPLE_BUCKET || "datalead-osint";
@@ -64,5 +60,7 @@ async function uploadToGcs() {
   console.log(`You can now submit this URL to the ingest endpoint to run the full pipeline.`);
 }
 
-await classifyLocal();
-await uploadToGcs();
+(async () => {
+  await classifyLocal();
+  await uploadToGcs();
+})();

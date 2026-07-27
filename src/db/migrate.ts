@@ -1,16 +1,6 @@
 import { readFile, readdir } from "fs/promises";
 import { join } from "path";
-import { fileURLToPath } from "url";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
-
-/**
- * The __filename
- */
-const __filename = fileURLToPath(import.meta.url);
-/**
- * The __dirname
- */
-const __dirname = join(__filename, "..");
 
 interface Migration {
   version: number;
@@ -120,7 +110,7 @@ export async function migrate(): Promise<void> {
   console.log("Migrations completed successfully");
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (require.main === module) {
   migrate()
     .then(() => process.exit(0))
     .catch((err) => {

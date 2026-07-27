@@ -2,7 +2,6 @@
   "name": "file-parsing-pipeline-node",
   "version": "1.0.0",
   "description": "Node.js/TypeScript port of the file parsing pipeline S3 utilities",
-  "type": "module",
   "main": "dist/shared/S3Utils.js",
   "types": "dist/shared/S3Utils.d.ts",
   "scripts": {
