@@ -37,4 +37,4 @@ RUN addgroup -g 1001 -S nodejs && \
 
 USER nodejs
 
-CMD ["sh", "-c", "node dist/shared/HealthServer.js & exec node dist/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.js"]
+CMD ["node", "dist/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.js"]

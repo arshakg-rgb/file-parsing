@@ -28,4 +28,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "node dist/shared/HealthServer.js & exec node dist/services/load/LoadServiceHandler.js"]
+CMD ["node", "dist/services/load/LoadServiceHandler.js"]

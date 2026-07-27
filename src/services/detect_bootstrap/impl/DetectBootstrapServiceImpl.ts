@@ -11,7 +11,6 @@ import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "@uti
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 import { metrics } from "@utils/response/metrics.js";
-import { startHealthCheckServer } from "@utils/response/health.js";
 import { AiClassifierService } from "@service/ai_classifier/AiClassifierServiceHandler.js";
 import { mockClassify } from "@service/ai_classifier/mock.js";
 import { DetectBootstrapService } from "@service/detect_bootstrap/DetectBootstrapService.js";
@@ -73,9 +72,6 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
       };
     }
     
-    if (process.env.HEALTH_CHECK_PORT) {
-      startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
-    }
   }
 
     /**
