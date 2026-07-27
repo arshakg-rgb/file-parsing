@@ -18,9 +18,11 @@ class PrometheusService extends ServiceManager {
    * @param enforce - A function to enforce the Singleton pattern
    * @throws Error if instantiated directly
    */
-  private constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate PrometheusService directly. Use getInstance()");
+  private constructor(enforce: () => void)
+    {
+    if (enforce !== Enforce)
+    {
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate PrometheusService directly. Use getInstance()");
     }
     super(enforce);
   }
@@ -57,7 +59,7 @@ class PrometheusService extends ServiceManager {
       lines.push(`# TYPE ${name} counter`);
       lines.push(`${name}{${tagStr}} ${value}`);
     }
-  
+
     for (const [key, value] of Object.entries(snapshot.gauges)) {
       const [name, ...tags] = key.split(",");
       const tagStr = tags.map((t) => {
@@ -80,7 +82,7 @@ class PrometheusService extends ServiceManager {
       lines.push(`${name}_min{${tagStr}} ${value.min}`);
       lines.push(`${name}_max{${tagStr}} ${value.max}`);
     }
-  
+
     return lines.join("\n");
   }
 }

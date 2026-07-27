@@ -1,6 +1,16 @@
-export interface ErrorInfo {
-  message: string;
+/**
+ * Error information object.
+ */
+export interface ErrorInfo
+{
+  name?: string;
   code?: string;
-  statusCode?: number;
-  details?: unknown;
+  service?: string;
+  timestamp?: number;
+  forwarded?: string[];
+  message?: string | null;
+  fields?: string[];
+  info?: Record<string, any>;
+  stack?: string | string[];
 }
+

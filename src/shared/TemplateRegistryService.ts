@@ -87,7 +87,7 @@ export class TemplateRegistryService extends ServiceManager {
    */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate TemplateRegistryService directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate TemplateRegistryService directly. Use getInstance()");
     }
     super(enforce);
 

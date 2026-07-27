@@ -46,9 +46,11 @@ export class TraceSystem extends ServiceManager {
    * @param enforce - A function to enforce the Singleton pattern
    * @throws Error if instantiated directly
    */
-  private constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate TraceSystem directly. Use getInstance()");
+  private constructor(enforce: () => void)
+  {
+    if (enforce !== Enforce)
+    {
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate TraceSystem directly. Use getInstance()");
     }
     super(enforce);
 

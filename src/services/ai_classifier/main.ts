@@ -3,7 +3,7 @@ import { settings } from "@shared/Settings.js";
 import FirestoreManager from "@config/firestore/FirestoreManager.js";
 import { ClassifyRequest, TemplateKind } from "@shared/models/template.js";
 import { mockClassify } from "./mock.js";
-import { listAll, warmCache } from "./templateRegistry.js";
+import { TemplateRegistryFacade } from "./templateRegistry.js";
 import { createLogger } from "@utils/logger/logger.js";
 import {aiClassifierService} from "@service/ai_classifier/AiClassifierServiceHandler.js";
 
@@ -36,7 +36,7 @@ app.post("/classify", async (req: Request, res: Response, next: NextFunction) =>
 app.get("/templates", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const kind = req.query.kind ? (req.query.kind as TemplateKind) : undefined;
-    res.json(listAll(kind));
+    res.json(TemplateRegistryFacade.getInstance().listAll(kind));
   } catch (err) {
     next(err);
   }
@@ -54,7 +54,7 @@ const PORT = Number(process.env.PORT) || 8001;
 
 async function bootstrap(): Promise<void> {
   await FirestoreManager.getInstance().connect();
-  await warmCache();
+  await TemplateRegistryFacade.getInstance().warmCache();
   app.listen(PORT, () => {
     logger.info("ai_classifier_listening", { port: PORT });
   });

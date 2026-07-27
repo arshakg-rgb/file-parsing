@@ -1,29 +1,74 @@
-import { CustomError } from "./CustomError.js";
+import { constants as HttpStatuses } from "http2";
+import pino from "pino";
+import {CustomError} from "@errors/CustomError.js";
+import {createLogger} from "@utils/logger/Log.js";
+
+const logger: pino.Logger = createLogger(module);
 
 /**
- * Class representing a validation error error.
+ * Class representing a validation error.
+ * Extends the CustomError class.
  */
-export class ValidationError extends CustomError {
-    /**
-   * The i n p u t value
+export class ValidationError extends CustomError
+{
+  /**
+   * Error code for input data validation.
    */
-  static readonly INPUT = "VALIDATION_ERROR";
-    /**
-   * The m i s s i n g_ f i e l d value
-   */
-  static readonly MISSING_FIELD = "MISSING_FIELD";
-    /**
-   * The i n v a l i d_ f o r m a t value
-   */
-  static readonly INVALID_FORMAT = "INVALID_FORMAT";
 
-    /**
-   * Constructs a new ValidationError instance.
-   * @param message - The message
-   * @param code - The code
-   * @param details - The details
+  public static INPUT: string = "INPUT";
+
+  /**
+   * Error code for output data validation
    */
-  constructor(message: string, code: string = ValidationError.INPUT, details?: unknown) {
-    super(message, code, 400, details);
+
+  public static OUTPUT: string = "OUTPUT";
+
+  /**
+   * Error code for duplicate entry errors.
+   */
+
+  public static DUPLICATE_ENTRY: string = "DUPLICATE_ENTRY";
+
+  /**
+   * Constructs a new instance of the ValidationError class.
+   * @param code - The error code.
+   * @param message - The error message.
+   * @param fields - Optional array of fields related to the error.
+   * @param data - Optional additional data associated with the error.
+   * @param info - Optional additional information associated with the error.
+   */
+
+  constructor(code: string, message: string, fields?: string[], info?: Record<string, any>, data?: Record<string, any>)
+  {
+    super("ValidationError");
+    this.code = code;
+    this.message = message;
+    this.status = this.getStatus();
+    this.fields = fields;
+    this.info = info;
+    this.data = data;
+  }
+
+  /**
+   * Gets the HTTP status code based on the error code.
+   * @returns The HTTP status code.
+   */
+
+  private getStatus(): number
+  {
+    const statusMap: Record<string, number> = {
+      [ValidationError.INPUT]: HttpStatuses.HTTP_STATUS_BAD_REQUEST,
+      [ValidationError.OUTPUT]: HttpStatuses.HTTP_STATUS_INTERNAL_SERVER_ERROR,
+      [ValidationError.DUPLICATE_ENTRY]: HttpStatuses.HTTP_STATUS_CONFLICT
+    };
+
+    const retStatus: number = statusMap[this.code || ""] || HttpStatuses.HTTP_STATUS_BAD_REQUEST;
+
+    if (!statusMap[this.code || ""])
+    {
+      logger.warn(`Unknown error status code ${this.code}`);
+    }
+
+    return retStatus;
   }
 }

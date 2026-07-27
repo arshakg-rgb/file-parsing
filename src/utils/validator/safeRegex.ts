@@ -27,9 +27,11 @@ class SafeRegexService extends ServiceManager {
    * @param enforce - A function to enforce the Singleton pattern
    * @throws Error if instantiated directly
    */
-  private constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate SafeRegexService directly. Use getInstance()");
+  private constructor(enforce: () => void)
+    {
+    if (enforce !== Enforce)
+    {
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate SafeRegexService directly. Use getInstance()");
     }
     super(enforce);
   }

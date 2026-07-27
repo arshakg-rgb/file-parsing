@@ -47,7 +47,7 @@ class AiClassifierServiceImpl extends ServiceManager implements AiClassifierServ
    */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate AiClassifierServiceImpl directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate AiClassifierServiceImpl directly. Use getInstance()");
     }
     super(enforce);
     this.logger = createLogger("AiClassifierServiceImpl");

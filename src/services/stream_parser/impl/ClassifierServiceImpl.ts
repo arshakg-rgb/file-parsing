@@ -71,7 +71,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
    */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate ClassifierServiceImpl directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate ClassifierServiceImpl directly. Use getInstance()");
     }
     super(enforce);
     this.logger = createLogger("ClassifierServiceImpl");

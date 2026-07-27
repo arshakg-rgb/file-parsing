@@ -43,7 +43,7 @@ class QueueService extends ServiceManager {
    * @private
    */
   private readonly QUEUE_TIMEOUT_RECEIVE = 120000;
-  
+
     /**
    * Pub Publisher
    * @private
@@ -67,10 +67,10 @@ class QueueService extends ServiceManager {
    */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate QueueService directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate QueueService directly. Use getInstance()");
     }
     super(enforce);
-    
+
     this.logger = createLogger("queue-utils");
   }
 

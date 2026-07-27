@@ -27,7 +27,7 @@ class SecretsService {
    */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate SecretsService directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate SecretsService directly. Use getInstance()");
     }
   }
 
@@ -74,15 +74,15 @@ class SecretsService {
       const response = await client.send(
         new GetSecretValueCommand({ SecretId: secretName })
       );
-    
+
       if (response.SecretString) {
         return response.SecretString;
       }
-    
+
       if (response.SecretBinary) {
         return Buffer.from(response.SecretBinary).toString("utf-8");
       }
-    
+
       return null;
     } catch (err: unknown) {
       const e = err as { name?: string; message?: string };
@@ -101,7 +101,7 @@ class SecretsService {
   public async getSecretJson<T = Record<string, unknown>>(secretName: string): Promise<T | null> {
     const secret = await this.getSecret(secretName);
     if (!secret) return null;
-  
+
     try {
       return JSON.parse(secret) as T;
     } catch (err) {
@@ -118,7 +118,7 @@ class SecretsService {
       FIRESTORE_CREDENTIALS: "firestore-credentials",
       BEDROCK_API_KEY: "bedrock-api-key",
     };
-  
+
     for (const [envKey, secretName] of Object.entries(secretMappings)) {
       if (!process.env[envKey]) {
         const secret = await this.getSecret(secretName);

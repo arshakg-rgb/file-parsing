@@ -43,7 +43,7 @@ class FirestoreManager extends ServiceManager
   {
       if (enforce !== Enforce)
       {
-        throw new InstantiationError("Error: Instantiation failed: Use FirestoreManager.getInstance() instead of new.");
+        throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Error: Instantiation failed: Use FirestoreManager.getInstance() instead of new.");
       }
 
       super(enforce);

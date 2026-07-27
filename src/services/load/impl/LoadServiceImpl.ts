@@ -64,7 +64,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
    */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate LoadServiceImpl directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate LoadServiceImpl directly. Use getInstance()");
     }
     super(enforce);
 

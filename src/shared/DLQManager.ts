@@ -66,7 +66,7 @@ export class DLQManager extends ServiceManager {
    */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate DLQManager directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate DLQManager directly. Use getInstance()");
     }
     super(enforce);
 

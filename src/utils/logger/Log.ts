@@ -1,168 +1,112 @@
-import Config from "@config/system-config/Config.js";
+import path from "node:path";
+import { pino, type Logger } from "pino";
+import dotenv from "dotenv";
+import process from "node:process";
+import type { LokiOptions } from "pino-loki";
+import {Constants} from "@common/io/Constants.js";
+
+dotenv.config();
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+}
+
+const transport = pino.transport<LokiOptions>({
+  target: "pino-loki",
+  options: {
+    batching: {
+      interval: 5,
+    },
+    labels: {
+      app: requireEnv("APP_NAME"),
+      env: process.env.NODE_ENV ?? Constants.ENVIRONMENTS.DEVELOPMENT,
+    },
+    host: requireEnv("LOKI_HOST"),
+    basicAuth: {
+      username: requireEnv("LOKI_USERNAME"),
+      password: requireEnv("LOKI_PASSWORD"),
+    },
+  },
+});
 
 /**
- * The config
+ * Factory function to create a pino logger with a specified name.
+ * @param loggerName - The name of the logger.
+ * @returns A pino.Logger instance.
  */
-const config = Config.getInstance();
 
-export interface LogContext {
-  job_id?: string;
-  [key: string]: unknown;
+function logFactory(loggerName: string): pino.Logger
+{
+  const isProduction: boolean = false;
+
+
+  return pino({
+    name: loggerName,
+    formatters: {
+      level: (label: string, number: number) => ({ level: number })
+    },
+    base: undefined,
+    timestamp: () => `,"timestamp":"${new Date().toISOString()}"`
+  }, isProduction ? transport : undefined);
 }
 
 /**
- * Logger is responsible for logger operations.
+ * Creates a logger instance with a specified name.
+ * @param name - The name of the logger or the NodeModule.
+ * @returns A pino.Logger instance.
  */
-export class Logger {
-    /**
-   * Service
-   * @private
-   */
-  private service: string;
-    /**
-   * Loki Enabled
-   * @private
-   */
-  private lokiEnabled: boolean;
 
-    /**
-   * Constructs a new Logger instance.
-   * @param service - The service
-   */
-  constructor(service: string) {
-    this.service = service;
-    this.lokiEnabled = !!(config.settings.LOKI_HOST && config.settings.LOKI_USERNAME && config.settings.LOKI_PASSWORD);
-  }
+export function createLogger(name?: string | NodeModule): pino.Logger
+{
+  const loggerName: string =
+      typeof name === "string"
+          ? name
+          : name?.filename
+              ? name.filename.split(path.sep).slice(-2).join(path.sep)
+              : "default";
 
-    /**
-   * Formats the operation
-   * @param level - The level
-   * @param message - The message
-   * @param context - The context object
-   * @returns The string result
-   */
-  private format(level: string, message: string, context: LogContext = {}): string {
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      level,
-      service: this.service,
-      message,
-      ...context,
-    };
-    return JSON.stringify(logEntry);
-  }
-
-    /**
-   * Sends to loki
-   * @param level - The level
-   * @param message - The message
-   * @param context - The context object
-   */
-  private async sendToLoki(level: string, message: string, context: LogContext = {}): Promise<void> {
-    if (!this.lokiEnabled) {
-      return;
-    }
-
-    try {
-      // Loki expects nanosecond timestamps
-      const timestamp = Date.now() * 1000000; // Convert to nanoseconds
-      
-      const logEntry = {
-        streams: [
-          {
-            stream: {
-              service: this.service,
-              level,
-              ...(context.job_id ? { job_id: context.job_id } : {}),
-            },
-            values: [
-              [
-                String(timestamp),
-                this.format(level, message, context),
-              ],
-            ],
-          },
-        ],
-      };
-
-      const response = await fetch(`${config.settings.LOKI_HOST}/loki/api/v1/push`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Basic ${btoa(`${config.settings.LOKI_USERNAME}:${config.settings.LOKI_PASSWORD}`)}`,
-        },
-        body: JSON.stringify(logEntry),
-        signal: AbortSignal.timeout(10000), // 10 second timeout
-      });
-
-      if (!response.ok) {
-        console.error("loki_send_failed", { status: response.status, statusText: response.statusText });
-      }
-    } catch (error) {
-      // Silently fail Loki errors to avoid disrupting application
-      console.error("loki_send_error", { error: String(error) });
-    }
-  }
-
-    /**
-   * Logs information about the operation
-   * @param message - The message
-   * @param context - The context object
-   */
-  info(message: string, context: LogContext = {}): void {
-    const formatted = this.format("info", message, context);
-    console.log(formatted);
-    this.sendToLoki("info", message, context).catch(() => {});
-  }
-
-    /**
-   * Warns about the operation
-   * @param message - The message
-   * @param context - The context object
-   */
-  warn(message: string, context: LogContext = {}): void {
-    const formatted = this.format("warn", message, context);
-    console.warn(formatted);
-    this.sendToLoki("warn", message, context).catch(() => {});
-  }
-
-    /**
-   * Logs an error for the operation
-   * @param message - The message
-   * @param context - The context object
-   * @param error - The error that occurred
-   */
-  error(message: string, context: LogContext = {}, error?: Error): void {
-    const entry = this.format("error", message, {
-      ...context,
-      ...(error ? { error: error.message, stack: error.stack } : {}),
-    });
-    console.error(entry);
-    this.sendToLoki("error", message, {
-      ...context,
-      ...(error ? { error: error.message, stack: error.stack } : {}),
-    }).catch(() => {});
-  }
-
-    /**
-   * Debugs the operation
-   * @param message - The message
-   * @param context - The context object
-   */
-  debug(message: string, context: LogContext = {}): void {
-    if (process.env.LOG_LEVEL === "debug") {
-      const formatted = this.format("debug", message, context);
-      console.log(formatted);
-      this.sendToLoki("debug", message, context).catch(() => {});
-    }
-  }
+  return logFactory(loggerName);
 }
+
+
+const logger: pino.Logger = logFactory("unhandled");
 
 /**
- * Creates logger
- * @param service - The service
- * @returns The logger result
+ * Handles uncaught exceptions by logging the error.
+ *
+ * @param err - The error object.
  */
-export function createLogger(service: string): Logger {
-  return new Logger(service);
-}
+
+process.on("uncaughtException", (err: Error) =>
+{
+  if (err && err.stack)
+  {
+    logger.error(err, err.message);
+  }
+  else
+  {
+    logger.error("uncaughtException, no stack trace available");
+  }
+});
+
+/**
+ * Handles unhandled promise rejections by logging the error.
+ *
+ * @param err - The error object.
+ */
+
+process.on("unhandledRejection", (err: Error) =>
+{
+  if (err && err.stack)
+  {
+    logger.error(err, err.message);
+  }
+  else
+  {
+    logger.error("unhandledRejection, no stack trace available");
+  }
+});

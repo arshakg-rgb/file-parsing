@@ -47,7 +47,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
    */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate ReportServiceImpl directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate ReportServiceImpl directly. Use getInstance()");
     }
     super(enforce);
 

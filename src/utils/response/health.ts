@@ -20,9 +20,11 @@ class HealthService extends ServiceManager {
    * @param enforce - A function to enforce the Singleton pattern
    * @throws Error if instantiated directly
    */
-  private constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate HealthService directly. Use getInstance()");
+  private constructor(enforce: () => void)
+  {
+    if (enforce !== Enforce)
+    {
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate HealthService directly. Use getInstance()");
     }
     super(enforce);
   }

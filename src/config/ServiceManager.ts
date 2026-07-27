@@ -16,7 +16,7 @@ export class ServiceManager {
 
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate ServiceManager directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate ServiceManager directly. Use getInstance()");
     }
     this.config = Config.getInstance();
   }

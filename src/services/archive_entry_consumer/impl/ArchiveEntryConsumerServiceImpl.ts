@@ -76,15 +76,15 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
    */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate ArchiveEntryConsumerServiceImpl directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate ArchiveEntryConsumerServiceImpl directly. Use getInstance()");
     }
     super(enforce);
-    
+
     this.logger = createLogger("archive-entry-consumer");
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.passwordCache = new Map<string, Buffer>();
     this.passwordAttempts = new Map<string, number>();
-    
+
     if (process.env.HEALTH_CHECK_PORT) {
       startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
@@ -196,48 +196,48 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
     const [bucket, archiveKey] = this.gcsUtils.parseGcsUrl(archiveS3Url);
     const mountPath = process.env.RAR_TEMP_MOUNT || "/mnt/scratch";
     const tmpPath = path.join(mountPath, `${crypto.randomUUID()}.rar`);
-  
+
     this.logger.info("archive_entry_download_start", { job_id: jobId, archive_s3_url: archiveS3Url, tmp_path: tmpPath });
-  
+
     // Download archive to local mount
     const fileStream = this.gcsUtils.getStorage().bucket(bucket).file(archiveKey).createReadStream();
     const writeStream = createWriteStream(tmpPath);
-  
+
     fileStream.on("error", (err) => {
       this.logger.error("archive_entry_download_stream_error", { job_id: jobId, error: err.message });
     });
-  
+
     writeStream.on("error", (err) => {
       this.logger.error("archive_entry_download_write_error", { job_id: jobId, error: err.message });
     });
-  
+
     await pipeline(fileStream, writeStream);
     this.logger.info("archive_entry_download_complete", { job_id: jobId, tmp_path: tmpPath });
-  
+
     try {
       // Extract single entry using unrar
       const safeEntryName = entryName.replace(/[#\s]+/g, "_");
       const entryKey = `ingested/${jobId}/entries/${safeEntryName}`;
       const entryFile = this.gcsUtils.getStorage().bucket(bucket).file(entryKey);
       const writeStream = entryFile.createWriteStream();
-      
+
       const extractArgs = ["p", "-inul", tmpPath, entryName];
       if (password) {
         extractArgs.push("-p" + password);
       }
-      
+
       this.logger.info("archive_entry_extract_start", { job_id: jobId, entry_name: entryName, extract_args: extractArgs });
       const extractProcess = spawn("unrar", extractArgs);
-      
+
       extractProcess.stdout.pipe(writeStream);
-      
+
       // Capture stderr for debugging
       let stderrOutput = "";
       extractProcess.stderr.on("data", (data) => {
         stderrOutput += data.toString();
         this.logger.error("archive_entry_extract_stderr", { job_id: jobId, entry_name: entryName, stderr: data.toString() });
       });
-      
+
       await new Promise<void>((resolve, reject) => {
         writeStream.on("finish", resolve);
         writeStream.on("error", (err) => {
@@ -257,13 +257,13 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
           }
         });
       });
-      
+
       this.logger.info("archive_entry_extract_complete", { job_id: jobId, entry_name: entryName });
-      
+
       // Get the size of the extracted file
       const [meta] = await entryFile.getMetadata();
       const size = Number((meta as { size?: string | number }).size ?? 0);
-      
+
       const s3Url = `gs://${bucket}/${entryKey}`;
       return { s3Url, size };
     } finally {

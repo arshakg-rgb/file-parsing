@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { Server as HttpServer } from "node:http";
 import * as http from "node:http";
-import { createLogger, Logger } from "@utils/logger/Log.js";
+import { createLogger  } from "@utils/logger/Log.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import express, { Express } from "express";
 import ServiceManager from "@config/ServiceManager.js";
@@ -11,6 +11,7 @@ import CorsUtils from "@config/cors/CorsUtils.js";
 import {error404Handler, errorPageHandler} from "@common/middleware/CommonMiddleware.js";
 import { DeprecationMiddleware } from "@common/middleware/DeprecationMiddleware.js";
 import ApiRouter from "@common/routes/ApiRouter.js";
+import {Logger} from "pino";
 const logger: Logger = createLogger("app");
 
 /**

@@ -43,7 +43,7 @@ export default class Config
     {
         if (enforce !== Enforce)
         {
-            throw new InstantiationError("Error: Instantiation failed: Use Config.getInstance() instead of new.");
+            throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Error: Instantiation failed: Use Config.getInstance() instead of new.");
         }
 
         try

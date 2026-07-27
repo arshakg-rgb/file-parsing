@@ -30,10 +30,10 @@ class EncodingService extends ServiceManager {
    */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate EncodingService directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate EncodingService directly. Use getInstance()");
     }
     super(enforce);
-    
+
     this.NATIVE = {
       "utf-8": "utf8",
       "utf8": "utf8",

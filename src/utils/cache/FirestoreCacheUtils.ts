@@ -43,9 +43,11 @@ class FirestoreCacheUtils {
    * @param enforce - A function to enforce the Singleton pattern
    * @throws Error if instantiated directly
    */
-  private constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate FirestoreCacheUtils directly. Use getInstance()");
+  private constructor(enforce: () => void)
+  {
+    if (enforce !== Enforce)
+    {
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate FirestoreCacheUtils directly. Use getInstance()");
     }
     this.config = Config.getInstance();
     this.storage = new Storage({
@@ -262,7 +264,7 @@ class FirestoreCacheUtils {
     }
     const [meta] = await srcFile.getMetadata();
     const size = Number((meta as { size?: string | number }).size ?? 0);
-  
+
     if (size > 100 * 1024 * 1024) {
       console.log(`Using streaming copy for large file: ${size} bytes`);
       await this.streamCopy(srcBucket, srcKey, dstBucket, dstKey);
@@ -294,22 +296,22 @@ class FirestoreCacheUtils {
   ): Promise<void> {
     const srcFile = this.storage.bucket(srcBucket).file(srcKey);
     const dstFile = this.storage.bucket(dstBucket).file(dstKey);
-  
+
     const [exists] = await dstFile.exists();
     if (exists) {
       await dstFile.delete();
     }
-  
+
     const writeStream = dstFile.createWriteStream({
       resumable: false,
     });
-  
+
     const readStream = srcFile.createReadStream();
-  
+
     return new Promise((resolve, reject) => {
       let bytesCopied = 0;
       const startTime = Date.now();
-    
+
       readStream.on("data", (chunk) => {
         bytesCopied += chunk.length;
         const elapsed = (Date.now() - startTime) / 1000;
@@ -318,7 +320,7 @@ class FirestoreCacheUtils {
           console.log(`stream_copy_progress: ${bytesCopied / (1024 * 1024)}MB at ${speed.toFixed(2)}MB/s`);
         }
       });
-    
+
       readStream.pipe(writeStream)
         .on("error", (error) => {
           console.error("stream_copy_error:", error);
@@ -452,7 +454,7 @@ class FirestoreCacheUtils {
     if (result.lineStart < data.length) {
       const raw = data.slice(result.lineStart);
       const text = decode(raw, encoding).replace(/\r\n$|\n$/, "");
-      
+
       // Detect and split run-on KV records (multiple records joined by space instead of newline)
       // Pattern: Email: X - Name: Y - Followers: N - Created At: ... Email: A - Name: B...
       if (text.includes("Email:") && (text.match(/Email:/g) || []).length > 1) {
@@ -488,7 +490,7 @@ class FirestoreCacheUtils {
     const NL = 0x0a;
     const CR = 0x0d;
     const QUOTE = 0x22;
-    
+
     let pos = 0;
     let lineStart = 0;
     let endedAtBoundary = false;

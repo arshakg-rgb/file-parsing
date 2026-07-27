@@ -45,7 +45,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
    */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate RetryServiceImpl directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate RetryServiceImpl directly. Use getInstance()");
     }
     super(enforce);
 

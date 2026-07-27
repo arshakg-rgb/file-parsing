@@ -7,7 +7,7 @@ import { createLogger, Logger } from "@utils/logger/logger.js";
 /**
  * CloudWatchService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
  */
-class CloudWatchService extends ServiceManager 
+class CloudWatchService extends ServiceManager
 {
   /**
    * Singleton instance
@@ -15,7 +15,7 @@ class CloudWatchService extends ServiceManager
    */
 
   protected static instance: CloudWatchService;
-  
+
   /**
    * Logs Client
    * @private
@@ -45,12 +45,12 @@ class CloudWatchService extends ServiceManager
 
   private constructor(enforce: () => void)
    {
-    if (enforce !== Enforce) 
+    if (enforce !== Enforce)
     {
-      throw new InstantiationError("Cannot instantiate CloudWatchService directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate CloudWatchService directly. Use getInstance()");
     }
     super(enforce);
-    
+
     this.logger = createLogger("cloudwatch");
   }
 
@@ -144,13 +144,13 @@ class CloudWatchService extends ServiceManager
     timestamp?: Date
   ): Promise<void> {
     const client = this.getLogsClient();
-  
+
     await this.ensureLogGroup(logGroupName);
     await this.ensureLogStream(logGroupName, logStreamName);
-  
+
     const tokenKey = this.getSequenceTokenKey(logGroupName, logStreamName);
     const sequenceToken = this.sequenceTokens.get(tokenKey);
-  
+
     const params: PutLogEventsCommandInput = {
       logGroupName,
       logStreamName,
@@ -161,17 +161,17 @@ class CloudWatchService extends ServiceManager
         },
       ],
     };
-  
+
     if (sequenceToken) {
       params.sequenceToken = sequenceToken;
     }
-  
+
     const response = await client.send(new PutLogEventsCommand(params));
-  
+
     if (response.nextSequenceToken) {
       this.sequenceTokens.set(tokenKey, response.nextSequenceToken);
     }
-    
+
     this.logger.debug("log_event_sent", { logGroupName, logStreamName });
   }
 

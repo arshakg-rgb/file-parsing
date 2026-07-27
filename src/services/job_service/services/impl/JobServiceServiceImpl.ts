@@ -1,6 +1,5 @@
 import { randomUUID } from "crypto";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import { CustomError } from "@errors/CustomError.js";
 import { ValidationError } from "@errors/ValidationError.js";
 import { settings } from "@shared/Settings.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
@@ -12,6 +11,8 @@ import { transition } from "@service/job_service/stateMachine.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 import { JobServiceService } from "@service/job_service/services/JobServiceService.js";
 import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest } from "@service/job_service/io/IJob.js";
+import {HttpError} from "@errors/HttpError.js";
+import {ServerError} from "@errors/ServerError.js";
 
 /**
  * Singleton implementation of the Job Service business layer.
@@ -23,7 +24,7 @@ export class JobServiceServiceImpl implements JobServiceService {
 
   private constructor(enforce: () => void, mySqlManager: PostgreSqlManager) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate JobServiceServiceImpl directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate JobServiceServiceImpl directly. Use getInstance()");
     }
     this.mySqlManager = mySqlManager;
     this.logger = createLogger("JobServiceServiceImpl");
@@ -56,37 +57,37 @@ export class JobServiceServiceImpl implements JobServiceService {
     }
 
     if (!source_type || !Object.values(SourceType).includes(source_type as SourceType)) {
-      throw new ValidationError(`Invalid source_type: ${source_type}`);
+      throw new ValidationError(ValidationError.INPUT, `Invalid source_type: ${source_type}`);
     }
 
     if ([SourceType.S3, SourceType.URL, SourceType.ARCHIVE_ENTRY].includes(source_type) && !source_ref) {
-      throw new ValidationError("source_ref is required for s3, url and archive_entry sources");
+      throw new ValidationError(ValidationError.INPUT, "source_ref is required for s3, url and archive_entry sources");
     }
 
     if ((source_type === SourceType.S3 || source_type === SourceType.ARCHIVE_ENTRY) && source_ref) {
       if (!/^gs:\/\/|^s3:\/\//i.test(source_ref)) {
-        throw new ValidationError(`source_ref must be a gs:// or s3:// URL: ${source_ref}`);
+        throw new ValidationError(ValidationError.INPUT, `source_ref must be a gs:// or s3:// URL: ${source_ref}`);
       }
       let bucket: string;
       let key: string;
       try {
         [bucket, key] = parseGcsUrl(source_ref);
       } catch {
-        throw new ValidationError(`source_ref must be a gs:// or s3:// URL: ${source_ref}`);
+        throw new ValidationError(ValidationError.INPUT, `source_ref must be a gs:// or s3:// URL: ${source_ref}`);
       }
       try {
         const size = await objectSize(bucket, key);
         if (size === 0) {
-          throw new ValidationError(`source_ref file is empty: ${source_ref}`);
+          throw new ValidationError(ValidationError.INPUT, `source_ref file is empty: ${source_ref}`);
         }
       } catch (err) {
         if (err instanceof ValidationError) throw err;
-        throw new ValidationError(`source_ref file not found or unreadable: ${source_ref}`);
+        throw new ValidationError(ValidationError.INPUT, `source_ref file not found or unreadable: ${source_ref}`);
       }
     }
 
     if (source_type === SourceType.URL && source_ref && !/^https?:\/\//i.test(source_ref)) {
-      throw new ValidationError(`source_ref must be an http(s) URL for url sources: ${source_ref}`);
+      throw new ValidationError(ValidationError.INPUT, `source_ref must be an http(s) URL for url sources: ${source_ref}`);
     }
 
     const namesFromArray = (arr: unknown[]): string[] =>
@@ -97,12 +98,12 @@ export class JobServiceServiceImpl implements JobServiceService {
       if (Array.isArray(field_spec)) {
         fieldNames = namesFromArray(field_spec);
       } else {
-        throw new ValidationError("field_spec must be an array of field names, not a string");
+        throw new ValidationError(ValidationError.INPUT, "field_spec must be an array of field names, not a string");
       }
     }
 
     if (!fieldNames.length) {
-      throw new ValidationError("field_spec must contain at least one valid field name");
+      throw new ValidationError(ValidationError.INPUT, "field_spec must contain at least one valid field name");
     }
 
     const jobId = randomUUID();
@@ -186,10 +187,10 @@ export class JobServiceServiceImpl implements JobServiceService {
   public async providePassword(jobId: string, request: IProvidePasswordRequest): Promise<void> {
     const row = await this.mySqlManager.repositories.jobs.findById(jobId);
     if (!row) {
-      throw new CustomError("Job not found", "NOT_FOUND", 404);
+      throw new HttpError(HttpError.NOT_FOUND, "Job not found");
     }
     if (row.status !== JobStatus.AWAITING_PASSWORD) {
-      throw new CustomError(`Job is not awaiting a password (status=${row.status})`, "CONFLICT", 409);
+      throw new ServerError(ServerError.CONFLICT, `Job is not awaiting a password (status=${row.status})`);
     }
     await sendRaw(settings.INGEST_QUEUE_URL, {
       job_id: jobId,
@@ -203,7 +204,7 @@ export class JobServiceServiceImpl implements JobServiceService {
     try {
       await transition(jobId, JobStatus.LOADING);
     } catch (err) {
-      throw new CustomError(err instanceof Error ? err.message : String(err), "CONFLICT", 409);
+      throw new ServerError(ServerError.CONFLICT, err instanceof Error ? err.message : String(err));
     }
     await sendRaw(settings.LOAD_QUEUE_URL, { job_id: jobId, manual_override: true });
   }
@@ -211,7 +212,7 @@ export class JobServiceServiceImpl implements JobServiceService {
   public async markFailed(jobId: string, request: IMarkFailedRequest): Promise<void> {
     const row = await this.mySqlManager.repositories.jobs.findById(jobId);
     if (!row) {
-      throw new CustomError("Job not found", "NOT_FOUND", 404);
+      throw new HttpError(HttpError.NOT_FOUND, "Job not found");
     }
     await this.mySqlManager.repositories.jobs.markFailed(jobId, request.reason || "manually_failed");
     this.logger.info("job_marked_failed", { job_id: jobId, reason: request.reason });
@@ -221,7 +222,7 @@ export class JobServiceServiceImpl implements JobServiceService {
     const { target_status } = request;
     const row = await this.mySqlManager.repositories.jobs.findById(jobId);
     if (!row) {
-      throw new CustomError("Job not found", "NOT_FOUND", 404);
+      throw new HttpError(HttpError.NOT_FOUND, "Job not found");
     }
 
     let queueUrl: string;
@@ -265,13 +266,13 @@ export class JobServiceServiceImpl implements JobServiceService {
         queueUrl = settings.REPORT_QUEUE_URL;
         break;
       default:
-        throw new ValidationError(`Invalid target_status: ${target_status}`);
+        throw new ValidationError(ValidationError.INPUT,`Invalid target_status: ${target_status}`);
     }
 
     try {
       await transition(jobId, target_status);
     } catch (err) {
-      throw new CustomError(err instanceof Error ? err.message : String(err), "CONFLICT", 409);
+      throw new ServerError(ServerError.CONFLICT, err instanceof Error ? err.message : String(err));
     }
     await sendRaw(queueUrl, message);
   }

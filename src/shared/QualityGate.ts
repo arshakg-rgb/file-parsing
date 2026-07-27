@@ -45,7 +45,7 @@ export class QualityGate extends ServiceManager {
    */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate QualityGate directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate QualityGate directly. Use getInstance()");
     }
     super(enforce);
 

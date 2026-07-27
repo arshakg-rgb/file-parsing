@@ -16,7 +16,7 @@ export class JobServiceRouter extends CustomRouter {
 
   constructor(controller: JobServiceController, enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate JobServiceRouter directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate JobServiceRouter directly. Use getInstance()");
     }
     super();
     this.controller = controller;

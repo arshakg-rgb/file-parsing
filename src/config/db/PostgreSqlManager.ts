@@ -79,7 +79,7 @@ export class PostgreSqlManager extends ServiceManager
 
       if (enforce !== Enforce)
       {
-        throw new InstantiationError("Cannot instantiate PostgreSqlManager directly. Use getInstance()");
+        throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate PostgreSqlManager directly. Use getInstance()");
       }
 
       this.logger = createLogger("PostgreSqlManager");
@@ -209,7 +209,7 @@ export class PostgreSqlManager extends ServiceManager
         }
     }
 
-    throw new ServerError(`Database connection failed after ${maxAttempts} attempts`, ServerError.INTERNAL, 500);
+    throw new ServerError(ServerError.INTERNAL,`Database connection failed after ${maxAttempts} attempts`);
   }
 
   /**

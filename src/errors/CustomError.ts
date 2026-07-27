@@ -1,57 +1,38 @@
-import { ErrorInfo } from "@errors/io/ErrorInfo.js";
-
 /**
- * Class representing a custom error error.
+ * Abstract class representing a custom error.
+ * This class extends the built-in Error class and provides additional properties for error handling.
  */
-
-export class CustomError extends Error
+export abstract class CustomError extends Error
 {
-    /**
-   * Code
-   */
+  public status: number | undefined;
+  public code?: string;
+  public name: string;
+  public message: string;
+  public data?: Record<string, any>;
+  public info?: Record<string, any>;
+  public fields?: string[];
 
-  public readonly code: string;
-    /**
-   * Status Code
-   */
-
-  public readonly statusCode: number;
-    /**
-   * Details
-   */
-
-  public readonly details?: unknown;
-
-    /**
+  /**
    * Constructs a new CustomError instance.
-   * @param message - The message
-   * @param code - The code
-   * @param statusCode - The status code
-   * @param details - The details
+   *
+   * @param name - The name of the error.
+   * @param message - Error message (default empty).
+   * @param code - Optional error code.
+   * @param fields - Optional array of fields related to the error.
+   * @param data - Optional additional data associated with the error.
+   * @param info - Optional additional information associated with the error.
    */
 
-  constructor(message: string, code: string = "CUSTOM_ERROR", statusCode: number = 500, details?: unknown)
-    {
+  protected constructor(name: string, message: string = "", code?: string, fields?: string[], info?: Record<string, any>, data?: Record<string, any>,)
+  {
     super(message);
-    this.name = this.constructor.name;
+    this.name = name;
+    this.message = message;
     this.code = code;
-    this.statusCode = statusCode;
-    this.details = details;
+    this.fields = fields;
+    this.data = data;
+    this.info = info;
+
     Error.captureStackTrace(this, this.constructor);
-  }
-
-    /**
-   * Performs the to j s o n operation.
-   * @returns The error info result
-   */
-
-  toJSON(): ErrorInfo
-    {
-    return {
-      message: this.message,
-      code: this.code,
-      statusCode: this.statusCode,
-      details: this.details,
-    };
   }
 }

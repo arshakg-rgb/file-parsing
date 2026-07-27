@@ -48,13 +48,13 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
    */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate DetectBootstrapServiceImpl directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate DetectBootstrapServiceImpl directly. Use getInstance()");
     }
     super(enforce);
-    
+
     this.logger = createLogger("detect_bootstrap");
     this.gcsUtils = FirestoreCacheUtils.getInstance();
-    
+
     const config = this.getConfig();
     if (config.settings.BEDROCK_MODEL_ID === "mock") {
       this.classify = async (req: ClassifyRequest) => {
@@ -71,7 +71,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
         return (await aiService.classifyAi(aiReq)) as ClassifyResponse;
       };
     }
-    
+
   }
 
     /**
@@ -264,9 +264,9 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
       const hasHeader = /^[a-zA-Z_][a-zA-Z0-9_]*(,[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine) ||
                        /^[a-zA-Z_][a-zA-Z0-9_]*(;[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine) ||
                        /^[a-zA-Z_][a-zA-Z0-9_]*(\t[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine);
-      
+
       console.log("detect_header_check", { job_id: jobId, firstLine, hasHeader, sampleLinesCount: sampleLines.length });
-      
+
       if (hasHeader && sampleLines.length > 1) {
         dataLines = sampleLines.slice(1);
         console.log("detect_header_skipped", { job_id: jobId, dataLinesCount: dataLines.length });

@@ -11,6 +11,7 @@ import {
   IRetryJobRequest,
 } from "@service/job_service/io/IJob.js";
 import { ServiceResponse } from "@utils/response/ServiceResponse.js";
+import { HttpError } from "@errors/HttpError.js";
 
 /**
  * Singleton implementation of the Job Service HTTP controller.
@@ -24,7 +25,7 @@ export class JobServiceControllerImpl implements JobServiceController {
 
   private constructor(service: JobServiceService, enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate JobServiceControllerImpl directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate JobServiceControllerImpl directly. Use getInstance()");
     }
     this.service = service;
   }
@@ -79,7 +80,7 @@ export class JobServiceControllerImpl implements JobServiceController {
     try {
       const result = await this.service.getJob(String(req.params.job_id));
       if (!result) {
-        next(new CustomError("Job not found", "NOT_FOUND", 404));
+        next(new HttpError(HttpError.NOT_FOUND, "NOT_FOUND", ));
         return;
       }
       this.handleSuccessResponse(res, result);

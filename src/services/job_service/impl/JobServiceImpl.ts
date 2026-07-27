@@ -49,7 +49,7 @@ class JobServiceImpl extends ServiceManager implements JobService {
    */
   protected constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate JobServiceImpl directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate JobServiceImpl directly. Use getInstance()");
     }
     super(enforce);
 

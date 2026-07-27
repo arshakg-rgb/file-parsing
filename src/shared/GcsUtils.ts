@@ -63,10 +63,10 @@ class GcsUtils extends ServiceManager {
    */
   private constructor(enforce: () => void) {
     if (enforce !== Enforce) {
-      throw new InstantiationError("Cannot instantiate GcsUtils directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate GcsUtils directly. Use getInstance()");
     }
     super(enforce);
-    
+
     this.logger = createLogger("gcs-utils");
   }
 
@@ -311,7 +311,7 @@ class GcsUtils extends ServiceManager {
     }
     const [meta] = await srcFile.getMetadata();
     const size = Number((meta as { size?: string | number }).size ?? 0);
-  
+
     if (size > 100 * 1024 * 1024) {
       this.logger.info(`Using streaming copy for large file: ${size} bytes`);
       await this.streamCopy(srcBucket, srcKey, dstBucket, dstKey);
@@ -343,22 +343,22 @@ class GcsUtils extends ServiceManager {
   ): Promise<void> {
     const srcFile = this.getStorage().bucket(srcBucket).file(srcKey);
     const dstFile = this.getStorage().bucket(dstBucket).file(dstKey);
-  
+
     const [exists] = await dstFile.exists();
     if (exists) {
       await dstFile.delete();
     }
-  
+
     const writeStream = dstFile.createWriteStream({
       resumable: false,
     });
-  
+
     const readStream = srcFile.createReadStream();
-  
+
     return new Promise((resolve, reject) => {
       let bytesCopied = 0;
       const startTime = Date.now();
-    
+
       readStream.on("data", (chunk) => {
         bytesCopied += chunk.length;
         const elapsed = (Date.now() - startTime) / 1000;
@@ -367,7 +367,7 @@ class GcsUtils extends ServiceManager {
           this.logger.debug(`stream_copy_progress: ${bytesCopied / (1024 * 1024)}MB at ${speed.toFixed(2)}MB/s`);
         }
       });
-    
+
       readStream.pipe(writeStream)
         .on("error", (error) => {
           this.logger.error("stream_copy_error:", { error: error.message, stack: error.stack });
@@ -502,7 +502,7 @@ class GcsUtils extends ServiceManager {
     if (result.lineStart < data.length) {
       const raw = data.slice(result.lineStart);
       const text = decode(raw, encoding).replace(/\r\n$|\n$/, "");
-      
+
       // Detect and split run-on KV records (multiple records joined by space instead of newline)
       // Pattern: Email: X - Name: Y - Followers: N - Created At: ... Email: A - Name: B...
       if (text.includes("Email:") && (text.match(/Email:/g) || []).length > 1) {
