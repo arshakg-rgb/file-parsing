@@ -15,23 +15,29 @@ function requireEnv(name: string): string {
   return value;
 }
 
-const transport = pino.transport<LokiOptions>({
-  target: "pino-loki",
-  options: {
-    batching: {
-      interval: 5,
+const isProduction: boolean = false;
+
+let transport: any = undefined;
+if (isProduction)
+{
+  transport = pino.transport<LokiOptions>({
+    target: "pino-loki",
+    options: {
+      batching: {
+        interval: 5,
+      },
+      labels: {
+        app: requireEnv("APP_NAME"),
+        env: process.env.NODE_ENV ?? Constants.ENVIRONMENTS.DEVELOPMENT,
+      },
+      host: requireEnv("LOKI_HOST"),
+      basicAuth: {
+        username: requireEnv("LOKI_USERNAME"),
+        password: requireEnv("LOKI_PASSWORD"),
+      },
     },
-    labels: {
-      app: requireEnv("APP_NAME"),
-      env: process.env.NODE_ENV ?? Constants.ENVIRONMENTS.DEVELOPMENT,
-    },
-    host: requireEnv("LOKI_HOST"),
-    basicAuth: {
-      username: requireEnv("LOKI_USERNAME"),
-      password: requireEnv("LOKI_PASSWORD"),
-    },
-  },
-});
+  });
+}
 
 /**
  * Factory function to create a pino logger with a specified name.
@@ -41,9 +47,6 @@ const transport = pino.transport<LokiOptions>({
 
 function logFactory(loggerName: string): pino.Logger
 {
-  const isProduction: boolean = false;
-
-
   return pino({
     name: loggerName,
     formatters: {
