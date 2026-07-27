@@ -1,29 +1,16 @@
 import { settings } from "@shared/Settings.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 import { FailureClass, ColumnMap } from "@shared/models/job.js";
-import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
+import { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { safeRegex, safeRegexTest } from "@utils/validator/safeRegex.js";
-import { AIVerdict, ClassifyRequest, ClassifyResponse } from "@service/ai_classifier/io/IAiClassifier.js";
-import { ClassifyResult, IClassifier } from "@service/stream_parser/io/IClassifier.js";
+import { AIVerdict, ClassifyRequest } from "@service/ai_classifier/io/IAiClassifier.js";
+import {ClassifyResponse, ClassifyResult, IClassifier} from "@service/stream_parser/io/IClassifier.js";
 import {aiClassifierService} from "@service/ai_classifier/AiClassifierServiceHandler.js";
 
 export type { ClassifyResult } from "@service/stream_parser/io/IClassifier.js";
 
-/**
- * LineClassifier turns a single raw input line into a `ClassifyResult`.
- *
- * `classify()` runs the line through a fixed pipeline of cheap, deterministic stages
- * (length/binary gate → header capture → client column map → structural JSON/KV →
- * delimited/CSV → unmapped-JSON flatten → learned templates → AI-cached template →
- * rubbish templates), stopping at the first stage that produces a verdict. Anything
- * that survives every stage is "uncertain" and left for the caller to escalate to
- * `classifyWithAI`.
- *
- * Stage order matters and is deliberate: structural/delimited parsing runs before
- * learned/AI-cached templates so a stale template (learned from a different file
- * shape) can never hijack a line that parses cleanly on its own.
- */
-export class LineClassifier implements IClassifier {
+export class LineClassifier implements IClassifier
+{
   private jobId: string;
   private fieldSpec: string[];
   private recordTemplates: RecordTemplate[];
@@ -32,13 +19,12 @@ export class LineClassifier implements IClassifier {
   private headerMap: Record<string, number> | null = null;
   private headerParts: string[] | null = null;
   private columnMap: ColumnMap | null = null;
-  private firstLine = true;
+  private firstLine: boolean = true;
   private logger: Logger;
   private normalizedFieldSpec: string[];
   private aliasMap: Map<string, Set<string>>;
   private aiRateLimiter?: { acquire(): Promise<void> };
-
-  // Common column/key synonyms so field_spec names match real-world headers and JSON keys.
+  private defaultMinMatches!: number;
   private static readonly ALIASES: Record<string, string[]> = {
     email: ["email", "mail", "emailaddress", "e_mail", "emails"],
     name: ["name", "fullname", "full_name"],
@@ -46,38 +32,51 @@ export class LineClassifier implements IClassifier {
     address: ["address", "addr", "streetaddress", "addresses", "city", "country", "street"],
   };
 
-  // --- Compiled-once regexes and thresholds. Grouped here (rather than declared inline
-  // inside the methods that use them) so every magic number/pattern in the classifier is
-  // discoverable and documented in one place. ---
-  private static readonly EMAIL_RE = /^[A-Za-z0-9._%+=\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
-  private static readonly HEADER_LABEL_RE = /^[A-Za-z][A-Za-z0-9 _.\-]*$/;
-  private static readonly KV_SEG_RE = /^\s*([A-Za-z][A-Za-z0-9 _]*?)\s*:\s*(.*)$/;
+  private static readonly EMAIL_RE: RegExp = /^[A-Za-z0-9._%+=\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
+  private static readonly HEADER_LABEL_RE: RegExp = /^[A-Za-z][A-Za-z0-9 _.\-]*$/;
+
+  private static readonly KV_SEG_RE: RegExp = /^\s*([A-Za-z][A-Za-z0-9 _]*?)\s*:\s*(.*)$/;
+
   /** Matches control/private-use/unassigned/surrogate code points — true binary corruption.
    *  Deliberately excludes emoji/symbol categories (So/Sm/Sk), which are normal in real
    *  names/usernames and must not reject an otherwise-valid line. Reused by both the
-   *  line-level binary gate and the field-level check in `coerce()`. */
-  private static readonly BINARY_RE = /[\p{Cc}\p{Co}\p{Cn}\p{Cs}]/gu;
-  private static readonly MAX_LINE_LENGTH = 64 * 1024;
-  private static readonly NON_PRINTABLE_RATIO_MAX = 0.15;
-  private static readonly BINARY_RATIO_MAX = 0.05;
-  /** Columns that look like a synthetic/opaque ID rather than free text, so they're
-   *  excluded from best-effort weak-field (name/address) grouping in headerless CSVs. */
-  private static readonly ID_LIKE_RE = /^\d{7,}$|^OD\d+$/i;
-  private static readonly SALUTATION_RE = /^(Mr|Mrs|Ms|Master|Miss)\.?$/i;
-  private static readonly DELIMITER_ONLY_RE = /^[,;]+$/;
-  private static readonly ZIP_RE = /^\d{4,6}$/;
-  /** Delimiters tried, in order, when guessing a line's column separator. Shared by the
-   *  column splitter and the fingerprinting helper. */
-  private static readonly DELIMITER_CANDIDATES = [",", ";", "\t", "|"] as const;
+   *  line-level binary gate and the field-level check in `coerce()`.
+   */
 
-  constructor(
-      jobId: string,
-      fieldSpec: string[],
-      recordTemplates: RecordTemplate[],
-      rubbishTemplates: RubbishTemplate[],
-      columnMap?: ColumnMap | null,
-      aiRateLimiter?: { acquire(): Promise<void> } | null
-  ) {
+  private static readonly BINARY_RE: RegExp = /[\p{Cc}\p{Co}\p{Cn}\p{Cs}]/gu;
+  private static readonly MAX_LINE_LENGTH: number = 64 * 1024;
+  private static readonly NON_PRINTABLE_RATIO_MAX: number = 0.15;
+  private static readonly BINARY_RATIO_MAX: number = 0.05;
+  private static readonly NORMALIZE_CACHE_MAX: number = 2000;
+
+  /** Columns that look like a synthetic/opaque ID rather than free text, so they're
+   *  excluded from best-effort weak-field (name/address) grouping in headerless CSVs.
+   */
+
+  private static readonly ID_LIKE_RE: RegExp = /^\d{7,}$|^OD\d+$/i;
+  private static readonly SALUTATION_RE: RegExp = /^(Mr|Mrs|Ms|Master|Miss)\.?$/i;
+  private static readonly DELIMITER_ONLY_RE: RegExp = /^[,;]+$/;
+  private static readonly ZIP_RE: RegExp = /^\d{4,6}$/;
+
+  /** Delimiters tried, in order, when guessing a line's column separator. Shared by the
+   *  column splitter and the fingerprinting helper.
+   */
+
+  private static readonly DELIMITER_CANDIDATES = [",", ";", "\t", "|"] as const;
+  private normalizeKeyCache: Map<string, string> = new Map<string, string>();
+
+  /**
+   * @param jobId - Identifier of the job this classifier instance is bound to; used for logging and AI requests.
+   * @param fieldSpec - Ordered list of target field names the classifier should extract from every line.
+   * @param recordTemplates - Learned record templates (local + previously AI-discovered) available for matching.
+   * @param rubbishTemplates - Known rubbish/noise signatures available for matching.
+   * @param columnMap - Optional client-supplied fixed column map for headerless delimited files.
+   * @param aiRateLimiter - Optional rate limiter whose `acquire()` is awaited before any AI call.
+   * @returns A new LineClassifier instance configured for the given job and field spec.
+   */
+
+  public constructor(jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: { acquire(): Promise<void> } | null)
+  {
     this.jobId = jobId;
     this.fieldSpec = fieldSpec;
     this.recordTemplates = recordTemplates;
@@ -88,108 +87,174 @@ export class LineClassifier implements IClassifier {
     this.logger = createLogger(`LineClassifier:${this.jobId}`);
     this.normalizedFieldSpec = fieldSpec.map((f) => this.normalizeKey(f));
     this.aliasMap = new Map<string, Set<string>>();
-    for (const [base, aliases] of Object.entries(LineClassifier.ALIASES)) {
+
+    for (const [base, aliases] of Object.entries(LineClassifier.ALIASES))
+    {
       const set = new Set<string>();
       for (const a of aliases) set.add(this.normalizeKey(a));
       this.aliasMap.set(this.normalizeKey(base), set);
     }
-  }
 
-  // ===========================================================================================
-  // Pipeline orchestration
-  // ===========================================================================================
+    this.defaultMinMatches = Math.max(1, Math.ceil(fieldSpec.filter((f) => f !== "meta").length * 0.75));
+  }
 
   /**
    * Classifies one line. Stages run in order; the first stage to return a non-null
    * result wins. See the class-level doc comment for the rationale behind the order.
+   *
+   * @param line - The raw line of input to classify.
+   * @param _byteOffset - Byte offset of the line within its source stream (unused by current logic, kept for interface compatibility).
+   * @param _byteLength - Byte length of the line within its source stream (unused by current logic, kept for interface compatibility).
+   * @returns The synchronous classification verdict for this line (parsed, rubbish, or uncertain).
    */
-  classify(line: string, _byteOffset: number, _byteLength: number): ClassifyResult {
-    const trimmed = line.trim();
 
-    const gated = this.applyLengthAndBinaryGate(line, trimmed);
-    if (gated) return gated;
+  public classify(line: string, _byteOffset: number, _byteLength: number): ClassifyResult
+  {
+    const trimmed: string = line.trim();
 
-    // First data line only: capture a header→column map, if this line looks like one,
-    // and drop it (never emitted as a data row).
-    if (this.firstLine) {
+    const gated: ClassifyResult | null = this.applyLengthAndBinaryGate(line, trimmed);
+
+    if (gated)
+    {
+      return gated;
+    }
+
+    if (this.firstLine)
+    {
       this.firstLine = false;
-      const header = this.detectHeader(line);
-      if (header) {
+      const header: Record<string, number> | null = this.detectHeader(line);
+
+      if (header)
+      {
         this.headerMap = header;
         return { verdict: "rubbish", template_id: "header" };
       }
     }
 
-    const columnMapped = this.classifyViaColumnMap(line);
-    if (columnMapped) return columnMapped;
+    const columnMapped: ClassifyResult | null = this.classifyViaColumnMap(line);
 
-    // Deterministic structural recognizers (JSON object, "Label: value"/"k=v" KV) win over
-    // learned/AI templates: stale templates can otherwise force junk values onto lines that
-    // actually parse exactly.
-    const structural = this.parseJsonRecord(line) || this.parseKvRecord(line);
-    if (structural) return this.finalizeParsedOrReject(structural.row, structural.template_id);
+    if (columnMapped)
+    {
+      return columnMapped;
+    }
 
-    // Validated delimited/CSV extraction, header-mapped when a header was seen, else by
-    // content (email/phone). Also runs before learned templates for the same reason.
-    const delimited = this.parseDelimitedRecord(line);
-    if (delimited) {
+    const jsonParsed: { row: Record<string, unknown>; template_id: string; obj: Record<string, unknown> } | null = this.parseJsonRecord(line);
+    const jsonObj: Record<string, unknown> | undefined = jsonParsed?.obj;
+
+    if (jsonParsed)
+    {
+      return this.finalizeParsedOrReject(jsonParsed.row, jsonParsed.template_id);
+    }
+
+    const kvParsed: { row: Record<string, unknown>; template_id: string } | null = this.parseKvRecord(line);
+
+    if (kvParsed)
+    {
+      return this.finalizeParsedOrReject(kvParsed.row, kvParsed.template_id);
+    }
+
+    const delimited: { row: Record<string, unknown>; usedHeader: boolean } | null = this.parseDelimitedRecord(line);
+
+    if (delimited)
+    {
       return this.finalizeParsedOrReject(delimited.row, delimited.usedHeader ? "csv-mapped" : "csv-auto");
     }
 
-    // Unmapped JSON: still valid JSON, so every key must be preserved (in field_spec
-    // columns or folded into meta) rather than becoming uncertain/DLQ.
-    const looksLikeJson = trimmed[0] === "{" || trimmed[0] === "[";
-    if (looksLikeJson) return this.classifyUnmappedJson(trimmed);
+    const looksLikeJson: boolean = trimmed[0] === "{" || trimmed[0] === "[";
 
-    // From here on, template matching may need the line's fingerprint for AI-cache lookups.
-    // Computed lazily since most lines resolve via the structural/delimited stages above.
-    let cacheComputed = false;
+    if (looksLikeJson)
+    {
+      return this.classifyUnmappedJson(trimmed, jsonObj);
+    }
+
+    let cacheComputed: boolean = false;
     let cached: RecordTemplate | RubbishTemplate | undefined;
-    const getCached = (): RecordTemplate | RubbishTemplate | undefined => {
-      if (!cacheComputed) {
+
+    const getCached: () => (RecordTemplate | RubbishTemplate | undefined) = (): RecordTemplate | RubbishTemplate | undefined =>
+    {
+      if (!cacheComputed)
+      {
         cacheComputed = true;
         cached = this.aiCache.get(LineClassifier.quickFingerprint(line));
       }
+
       return cached;
     };
 
-    const learned = this.classifyViaLearnedRecordTemplates(line);
-    if (learned) return learned;
+    const learned: ClassifyResult | null = this.classifyViaLearnedRecordTemplates(line);
 
-    const aiCachedRecord = this.classifyViaCachedRecordTemplate(line, getCached());
-    if (aiCachedRecord) return aiCachedRecord;
+    if (learned)
+    {
+      return learned;
+    }
 
-    const rubbish = this.classifyViaRubbishTemplates(line, getCached());
-    if (rubbish) return rubbish;
+    const aiCachedRecord: ClassifyResult | null = this.classifyViaCachedRecordTemplate(line, getCached());
 
-    // Nothing matched — keep-and-check. Caller escalates to AI, then human review.
+    if (aiCachedRecord)
+    {
+      return aiCachedRecord;
+    }
+
+    const rubbish: ClassifyResult | null = this.classifyViaRubbishTemplates(line, getCached());
+
+    if (rubbish)
+    {
+      return rubbish;
+    }
+
     return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
   }
 
-  /** Stage: length/empty/binary gate. Cheapest checks first; declined locally, never AI. */
-  private applyLengthAndBinaryGate(line: string, trimmed: string): ClassifyResult | null {
-    if (trimmed === "") return { verdict: "rubbish", template_id: "length-gate" };
-    if (line.length > LineClassifier.MAX_LINE_LENGTH) {
+  /**
+   * Stage: length/empty/binary gate. Cheapest checks first; declined locally, never AI.
+   *
+   * @param line - The raw (untrimmed) line, used for the max-length check.
+   * @param trimmed - The trimmed line, used for emptiness and character-ratio checks.
+   * @returns A `rubbish`/`uncertain` verdict if the line is empty, oversized, or binary-corrupted; otherwise `null` to continue to later stages.
+   */
+
+  private applyLengthAndBinaryGate(line: string, trimmed: string): ClassifyResult | null
+  {
+    if (trimmed === "")
+    {
+      return {verdict: "rubbish", template_id: "length-gate"};
+    }
+
+    if (line.length > LineClassifier.MAX_LINE_LENGTH)
+    {
       return { verdict: "uncertain", failure_class: FailureClass.TRANSFORM_ERROR };
     }
 
-    // Count only true control/non-printable characters (C0 + C1 blocks). Cyrillic and other
-    // Unicode letters/digits/punctuation are printable text, not binary.
-    let nonPrintable = 0;
-    for (let i = 0; i < trimmed.length; i++) {
-      const c = trimmed.charCodeAt(i);
-      if ((c <= 0x08) || (c >= 0x0b && c <= 0x0c) || (c >= 0x0e && c <= 0x1f) || (c >= 0x7f && c <= 0x9f)) {
+    let nonPrintable: number = 0;
+
+    for (let i = 0; i < trimmed.length; i++)
+    {
+      const c: number = trimmed.charCodeAt(i);
+
+      if ((c <= 0x08) || (c >= 0x0b && c <= 0x0c) || (c >= 0x0e && c <= 0x1f) || (c >= 0x7f && c <= 0x9f))
+      {
         nonPrintable++;
       }
     }
-    if (nonPrintable / trimmed.length > LineClassifier.NON_PRINTABLE_RATIO_MAX) {
+
+    if (nonPrintable / trimmed.length > LineClassifier.NON_PRINTABLE_RATIO_MAX)
+    {
       return { verdict: "rubbish", template_id: "binary-gate" };
     }
 
-    const binaryCount = (trimmed.match(LineClassifier.BINARY_RE) || []).length;
-    if (binaryCount / trimmed.length > LineClassifier.BINARY_RATIO_MAX) {
+    let binaryCount: number = 0;
+    LineClassifier.BINARY_RE.lastIndex = 0;
+
+    while (LineClassifier.BINARY_RE.exec(trimmed) !== null)
+    {
+      binaryCount++;
+    }
+
+    if (binaryCount / trimmed.length > LineClassifier.BINARY_RATIO_MAX)
+    {
       return { verdict: "rubbish", template_id: "binary-gate" };
     }
+
     return null;
   }
 
@@ -198,136 +263,238 @@ export class LineClassifier implements IClassifier {
    * Authoritative for delimited rows — wins over learned templates — but only accepts a
    * line whose mapped email/phone column actually validates, so kv/JSON/binary lines
    * decline here and fall through to the structural recognizers.
+   *
+   * @param line - The raw line to attempt to classify via the configured column map.
+   * @returns A `parsed`/`rubbish` verdict if the column map applies and a strong field validates; otherwise `null`.
    */
-  private classifyViaColumnMap(line: string): ClassifyResult | null {
-    if (!this.columnMap) return null;
-    const mapped = this.applyColumnMap(line);
-    if (!mapped) return null;
+
+  private classifyViaColumnMap(line: string): ClassifyResult | null
+  {
+    if (!this.columnMap)
+    {
+      return null;
+    }
+
+    const mapped: Record<string, unknown> | null = this.applyColumnMap(line);
+
+    if (!mapped)
+    {
+      return null;
+    }
     return this.finalizeParsedOrReject(mapped, "csv-column-map");
   }
 
-  /** Stage: unmapped-but-valid JSON. Flattens and folds every key into field_spec + meta. */
-  private classifyUnmappedJson(trimmed: string): ClassifyResult {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(trimmed);
-    } catch {
-      return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
-    }
-    if (Array.isArray(parsed)) {
-      const first = parsed.find((x) => x && typeof x === "object" && !Array.isArray(x)) as
-          | Record<string, unknown>
-          | undefined;
-      if (!first) return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
-      parsed = first;
-    }
-    if (!parsed || typeof parsed !== "object") {
-      return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
+  /**
+   * Stage: unmapped-but-valid JSON. Flattens and folds every key into field_spec + meta.
+   *
+   * @param trimmed - The trimmed line, expected to start with `{` or `[`.
+   * @param preParsed - An already-parsed JSON object to reuse instead of re-parsing `trimmed` (avoids a duplicate `JSON.parse` when the caller already parsed it).
+   * @returns A `parsed` verdict on success, or `uncertain` if the line isn't valid/extractable JSON.
+   */
+
+  private classifyUnmappedJson(trimmed: string, preParsed?: Record<string, unknown>): ClassifyResult
+  {
+    const parsed: Record<string, unknown> | null = preParsed ?? this.tryParseJsonObject(trimmed);
+
+    if (!parsed)
+    {
+      return {verdict: "uncertain", failure_class: FailureClass.UNCERTAIN};
     }
 
-    const extracted = this.extractFromObject(parsed as Record<string, unknown>, "json", undefined, true);
-    if (!extracted) return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
-    // Note: unlike finalizeParsedOrReject, a coerce failure here yields "uncertain" (not
-    // "rubbish") — this branch is a best-effort fallback for already-valid JSON, so a
-    // binary-corrupted field is treated as ambiguous rather than confidently junk.
-    const coerced = this.coerce(extracted.row);
-    if (coerced) return { verdict: "parsed", row: coerced, template_id: "json" };
+    const extracted = this.extractFromObject(parsed, "json", undefined, true);
+
+    if (!extracted)
+    {
+      return {verdict: "uncertain", failure_class: FailureClass.UNCERTAIN};
+    }
+
+    const coerced: Record<string, unknown> = this.coerce(extracted.row);
+
+    if (coerced)
+    {
+      return {verdict: "parsed", row: coerced, template_id: "json"};
+    }
+
     return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
   }
 
-  /** Stage: known learned record templates. Records have priority over rubbish; best-scoring
-   *  template (most present + non-empty fields) wins when several match. */
-  private classifyViaLearnedRecordTemplates(line: string): ClassifyResult | null {
+  /**
+   * Stage: known learned record templates. Records have priority over rubbish; best-scoring
+   * template (most present + non-empty fields) wins when several match.
+   *
+   * @param line - The raw line to test against every registered record template.
+   * @returns A `parsed`/`rubbish` verdict for the best-scoring matching template, or `null` if none match.
+   */
+
+  private classifyViaLearnedRecordTemplates(line: string): ClassifyResult | null
+  {
     let best: { row: Record<string, unknown>; template: RecordTemplate; score: number } | null = null;
-    for (const t of this.recordTemplates) {
-      if (t.length_hint !== undefined && line.length < t.length_hint) continue;
-      try {
-        const row = this.extractLine(line, t);
-        if (!row) continue;
-        const score = this.scoreExtractedRow(row);
-        if (!best || score > best.score) best = { row, template: t, score };
-      } catch {
+
+    for (const t of this.recordTemplates)
+    {
+      if (t.length_hint !== undefined && line.length < t.length_hint)
+      {
         continue;
       }
+
+      try
+      {
+        const row: Record<string, unknown> | null = this.extractLine(line, t);
+
+        if (!row)
+        {
+          continue;
+        }
+
+        const score: number = this.scoreExtractedRow(row);
+
+        if (!best || score > best.score)
+        {
+          best = {row, template: t, score};
+        }
+      }
+      catch
+      {
+
+      }
     }
-    if (!best) return null;
+
+    if (!best)
+    {
+      return null;
+    }
+
     return this.finalizeParsedOrReject(best.row, best.template.template_id, best.template.version);
   }
 
-  /** Scores an extracted row: more present fields, and especially non-empty ones, win. */
-  private scoreExtractedRow(row: Record<string, unknown>): number {
-    let meaningful = 0;
-    let present = 0;
-    for (const v of Object.values(row)) {
-      if (v !== undefined) {
+  /**
+   * Scores an extracted row: more present fields, and especially non-empty ones, win.
+   *
+   * @param row - The extracted field/value map to score.
+   * @returns A numeric score: one point per non-empty field plus 0.1 per merely-present field.
+   */
+
+  private scoreExtractedRow(row: Record<string, unknown>): number
+  {
+    let meaningful: number = 0;
+    let present: number = 0;
+    for (const v of Object.values(row))
+    {
+      if (v !== undefined)
+      {
         present++;
-        if (v !== null && v !== "") meaningful++;
+
+        if (v !== null && v !== "")
+        {
+          meaningful++;
+        }
       }
     }
+
     return meaningful + present * 0.1;
   }
 
-  /** Stage: AI-cached record template learned earlier in this job. */
-  private classifyViaCachedRecordTemplate(
-      line: string,
-      cached: RecordTemplate | RubbishTemplate | undefined
-  ): ClassifyResult | null {
-    if (!cached || !("field_map" in cached)) return null;
-    const row = this.extractLine(line, cached);
-    if (!row) return null;
+  /**
+   * Stage: AI-cached record template learned earlier in this job.
+   *
+   * @param line - The raw line to extract using the cached template, if it is a record template.
+   * @param cached - The template previously cached for this line's fingerprint, if any.
+   * @returns A `parsed`/`rubbish` verdict if `cached` is a record template that extracts successfully; otherwise `null`.
+   */
+
+  private classifyViaCachedRecordTemplate(line: string, cached: RecordTemplate | RubbishTemplate | undefined): ClassifyResult | null
+  {
+    if (!cached || !("field_map" in cached))
+    {
+      return null;
+    }
+
+    const row: Record<string, unknown> | null = this.extractLine(line, cached);
+
+    if (!row)
+    {
+      return null;
+    }
+
     return this.finalizeParsedOrReject(row, cached.template_id, cached.version);
   }
 
-  /** Stage: known high-confidence rubbish templates, then AI-cached rubbish. */
-  private classifyViaRubbishTemplates(
-      line: string,
-      cached: RecordTemplate | RubbishTemplate | undefined
-  ): ClassifyResult | null {
-    for (const t of this.rubbishTemplates) {
-      if ((t.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(t.signature, line)) {
+  /**
+   * Stage: known high-confidence rubbish templates, then AI-cached rubbish.
+   *
+   * @param line - The raw line to test against rubbish signatures.
+   * @param cached - The template previously cached for this line's fingerprint, if any.
+   * @returns A `rubbish` verdict if a high-confidence signature (local or cached) matches; otherwise `null`.
+   */
+
+  private classifyViaRubbishTemplates(line: string, cached: RecordTemplate | RubbishTemplate | undefined): ClassifyResult | null
+  {
+    for (const t of this.rubbishTemplates)
+    {
+      if ((t.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(t.signature, line))
+      {
         return { verdict: "rubbish", template_id: t.template_id };
       }
     }
-    if (
-        cached &&
-        "signature" in cached &&
-        (cached.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN &&
-        safeRegexTest(cached.signature, line)
-    ) {
+
+    if (cached && "signature" in cached && (cached.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(cached.signature, line))
+    {
       return { verdict: "rubbish", template_id: cached.template_id };
     }
+
     return null;
   }
 
-  /** Coerces a row and turns it into a `parsed` result, or a `rubbish`/binary-field result
-   *  if coercion rejects it (field-level binary content). Centralizes the
-   *  coerce-then-branch pattern repeated across every "found a match" stage above. */
-  private finalizeParsedOrReject(
-      row: Record<string, unknown>,
-      templateId: string,
-      templateVersion?: number
-  ): ClassifyResult {
-    const coerced = this.coerce(row);
-    if (!coerced) return { verdict: "rubbish", template_id: "binary-field" };
+  /**
+   * Coerces a row and turns it into a `parsed` result, or a `rubbish`/binary-field result
+   * if coercion rejects it (field-level binary content). Centralizes the
+   * coerce-then-branch pattern repeated across every "found a match" stage above.
+   *
+   * @param row - The raw extracted field/value map to coerce and finalize.
+   * @param templateId - The template identifier to attach to the resulting verdict.
+   * @param templateVersion - Optional template version to attach to the resulting verdict.
+   * @returns A `parsed` verdict with the coerced row, or a `rubbish` "binary-field" verdict if coercion rejected the row.
+   */
+
+  private finalizeParsedOrReject(row: Record<string, unknown>, templateId: string, templateVersion?: number): ClassifyResult
+  {
+    const coerced: Record<string, unknown> = this.coerce(row);
+
+    if (!coerced)
+    {
+      return {verdict: "rubbish", template_id: "binary-field"};
+    }
+
     return templateVersion !== undefined
         ? { verdict: "parsed", row: coerced, template_id: templateId, template_version: templateVersion }
         : { verdict: "parsed", row: coerced, template_id: templateId };
   }
 
-  // ===========================================================================================
-  // AI escalation
-  // ===========================================================================================
+  /**
+   * Classifies a line using AI, consulting and updating the per-job AI template cache.
+   *
+   * @param line - The raw line to classify via the AI classifier service.
+   * @param contextLines - Nearby lines supplied to the AI service as classification context.
+   * @param remainingBudget - Optional remaining AI-call budget; if `<= 0`, classification short-circuits to `uncertain` without calling the AI service.
+   * @returns A Promise resolving to the classification verdict, annotated with `ai_calls_used`.
+   * @throws Propagates any error thrown by `aiClassifierService.classifyAi`, `aiClassifierService.parseJsonLine`, or the configured `aiRateLimiter.acquire()`.
+   */
 
-  async classifyWithAI(line: string, contextLines: string[], remainingBudget?: number): Promise<ClassifyResult> {
-    const fp = LineClassifier.quickFingerprint(line);
-    const cached = this.aiCache.get(fp);
-    if (cached) {
+  public async classifyWithAI(line: string, contextLines: string[], remainingBudget?: number): Promise<ClassifyResult>
+  {
+    const fp: string = LineClassifier.quickFingerprint(line);
+    const cached: RecordTemplate | RubbishTemplate | undefined = this.aiCache.get(fp);
+
+    if (cached)
+    {
       this.logger.info("ai_cache_hit", { fingerprint: fp, template_id: cached.template_id });
       return { ...this.toResult(line, cached), ai_calls_used: 0 };
     }
+
     this.logger.info("ai_cache_miss", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length });
 
-    if (remainingBudget !== undefined && remainingBudget <= 0) {
+    if (remainingBudget !== undefined && remainingBudget <= 0)
+    {
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN, ai_calls_used: 0 };
     }
 
@@ -338,42 +505,57 @@ export class LineClassifier implements IClassifier {
       job_id: this.jobId,
     };
 
-    const { aiClassifierService } = await import("@service/ai_classifier/AiClassifierServiceHandler.js");
-    const trimmed = line.trim();
-    const isJsonLine = trimmed[0] === "{" || trimmed[0] === "[";
+    const trimmed: string = line.trim();
+    const isJsonLine:boolean = trimmed[0] === "{" || trimmed[0] === "[";
 
-    // JSON-shaped lines should not be parsed by generic regex/delimited record templates.
-    // Ask the model to parse the JSON directly into the target field_spec + meta.
-    if (isJsonLine) {
+    if (isJsonLine)
+    {
       this.logger.info("ai_call_initiated", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length, reason: "json_parse" });
       const { result, ai_calls_used } = await this.tryDiscoverJsonFields(line, aiClassifierService.parseJsonLine);
-      if (result) return { ...result, ai_calls_used };
+
+      if (result)
+      {
+        return {...result, ai_calls_used};
+      }
+
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN, ai_calls_used };
     }
 
     this.logger.info("ai_call_initiated", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length });
-    if (this.aiRateLimiter) await this.aiRateLimiter.acquire();
-    const resp = await aiClassifierService.classifyAi(req);
+
+    if (this.aiRateLimiter)
+    {
+      await this.aiRateLimiter.acquire();
+    }
+
+    const resp: ClassifyResponse = await aiClassifierService.classifyAi(req);
     const ai_calls_used = 1;
-    if (resp.kind === AIVerdict.UNCERTAIN || !resp.template) {
+
+    if (resp.kind === AIVerdict.UNCERTAIN || !resp.template)
+    {
       this.logger.info("ai_call_uncertain", { fingerprint: fp, kind: resp.kind });
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN, ai_calls_used };
     }
 
     this.aiCache.set(fp, resp.template);
+
     this.logger.info("ai_cache_saved", { fingerprint: fp, template_id: resp.template.template_id });
-    // Learn the template into the local stores so the NEXT matching line is recognized with
-    // no AI call. aiCache handles identical lines; these lists generalize across differently
-    // fingerprinted lines of the same pattern.
+
     const t: RecordTemplate | RubbishTemplate = resp.template;
-    if ("field_map" in t && !this.recordTemplates.some((r) => r.template_id === t.template_id)) {
+
+    if ("field_map" in t && !this.recordTemplates.some((r) => r.template_id === t.template_id))
+    {
       this.recordTemplates.push(t as RecordTemplate);
       this.logger.info("ai_template_learned", { template_id: t.template_id, kind: "record", source: "ai_call" });
-    } else if ("signature" in t && !this.rubbishTemplates.some((r) => r.template_id === t.template_id)) {
+    }
+    else if ("signature" in t && !this.rubbishTemplates.some((r) => r.template_id === t.template_id))
+    {
       this.rubbishTemplates.push(t as RubbishTemplate);
       this.logger.info("ai_template_learned", { template_id: t.template_id, kind: "rubbish", source: "ai_call" });
     }
+
     this.logger.info("ai_call_completed", { fingerprint: fp, template_id: t.template_id, verdict: "field_map" in t ? "parsed" : "rubbish" });
+
     return { ...this.toResult(line, t), ai_calls_used };
   }
 
@@ -381,64 +563,108 @@ export class LineClassifier implements IClassifier {
    * AI fallback for structurally-valid JSON that local parsing could not map.
    * Asks the model to parse the JSON record directly into target columns + meta.
    * If the model fails, falls back to a flat local extraction so no data is lost.
+   *
+   * @param line - The raw JSON (or quoted-JSON-string) line to discover fields from.
+   * @param parseJsonLine - The AI service function used to parse the line into target fields.
+   * @returns A Promise resolving to the parsed result (or `null` if nothing could be extracted) together with the number of AI calls used.
+   * @throws Does not throw: internal AI/parse failures are caught and logged, falling back to local extraction.
    */
-  private async tryDiscoverJsonFields(
-      line: string,
-      parseJsonLine: (jsonLine: string, targets: string[]) => Promise<Record<string, unknown> | null>
-  ): Promise<{ result: ClassifyResult | null; ai_calls_used: number }> {
-    const t = line.trim();
-    if (t[0] !== "{" && t[0] !== "[" && !(t.length >= 2 && t[0] === "\"" && t[t.length - 1] === "\"")) {
+
+  private async tryDiscoverJsonFields(line: string, parseJsonLine: (jsonLine: string, targets: string[]) => Promise<Record<string, unknown> | null>): Promise<{ result: ClassifyResult | null; ai_calls_used: number }>
+  {
+    const template: string = line.trim();
+
+    if (template[0] !== "{" && template[0] !== "[" && !(template.length >= 2 && template[0] === "\"" && template[template.length - 1] === "\""))
+    {
       return { result: null, ai_calls_used: 0 };
     }
+
     let parsed: unknown;
-    try {
-      parsed = JSON.parse(t);
-    } catch {
+
+    try
+    {
+      parsed = JSON.parse(template);
+    }
+    catch
+    {
       return { result: null, ai_calls_used: 0 };
     }
-    if (!parsed || typeof parsed !== "object") return { result: null, ai_calls_used: 0 };
-    let obj = parsed as Record<string, unknown>;
-    if (Array.isArray(parsed)) {
-      const first = parsed.find((x) => x && typeof x === "object" && !Array.isArray(x)) as
-          | Record<string, unknown>
-          | undefined;
-      if (!first) return { result: null, ai_calls_used: 0 };
+
+    if (!parsed || typeof parsed !== "object")
+    {
+      return {result: null, ai_calls_used: 0};
+    }
+
+    let obj: Record<string, unknown> = parsed as Record<string, unknown>;
+
+    if (Array.isArray(parsed))
+    {
+      const first = parsed.find((x) => x && typeof x === "object" && !Array.isArray(x)) as | Record<string, unknown> | undefined;
+
+      if (!first)
+      {
+        return {result: null, ai_calls_used: 0};
+      }
+
       obj = first;
     }
-    // JSON-in-JSON string
-    if (typeof obj === "string") {
-      return this.tryDiscoverJsonFields(obj, parseJsonLine);
-    }
-    try {
-      if (this.aiRateLimiter) await this.aiRateLimiter.acquire();
-      const aiRow = await parseJsonLine(line, this.fieldSpec);
-      if (aiRow && typeof aiRow === "object" && !Array.isArray(aiRow)) {
-        const coerced = this.coerce(aiRow);
-        if (coerced) {
+
+    try
+    {
+      if (this.aiRateLimiter)
+      {
+        await this.aiRateLimiter.acquire();
+      }
+
+      const aiRow: Record<string, unknown> | null = await parseJsonLine(line, this.fieldSpec);
+
+      if (aiRow && typeof aiRow === "object" && !Array.isArray(aiRow))
+      {
+        const coerced: Record<string, unknown> = this.coerce(aiRow);
+
+        if (coerced)
+        {
           this.logger.info("ai_json_parse_succeeded", { fingerprint: LineClassifier.quickFingerprint(line), keys: Object.keys(coerced).length });
+
           return { result: { verdict: "parsed", row: coerced, template_id: "ai-json" }, ai_calls_used: 1 };
         }
       }
-    } catch (err) {
+    }
+    catch (err)
+    {
       this.logger.warn("ai_json_parse_failed", { error: String(err) });
     }
-    // Local flatten fallback: always preserve the full JSON in meta.
-    const extracted = this.extractFromObject(obj, "json", this.fieldSpec, true);
-    if (extracted) {
-      const coerced = this.coerce(extracted.row);
-      if (coerced) return { result: { verdict: "parsed", row: coerced, template_id: "json" }, ai_calls_used: 1 };
+
+    const extracted = this.extractFromObject(obj, "json", undefined, true);
+
+    if (extracted)
+    {
+      const coerced: Record<string, unknown> = this.coerce(extracted.row);
+
+      if (coerced)
+      {
+        return {result: {verdict: "parsed", row: coerced, template_id: "json"}, ai_calls_used: 1};
+      }
     }
+
     return { result: null, ai_calls_used: 1 };
   }
 
-  /** Runs classification with a safety timeout so pathological lines can't hang the pipeline. */
-  async classifyWithTimeout(
-      line: string,
-      contextLines: string[],
-      timeoutMs: number,
-      remainingBudget?: number
-  ): Promise<ClassifyResult> {
+  /**
+   * Runs classification with a safety timeout so pathological lines can't hang the pipeline.
+   *
+   * @param line - The raw line to classify.
+   * @param contextLines - Nearby lines supplied to the AI service as classification context.
+   * @param timeoutMs - Maximum time, in milliseconds, to wait before falling back to `uncertain`.
+   * @param remainingBudget - Optional remaining AI-call budget passed through to `classifyWithAI`.
+   * @returns A Promise resolving to the classification verdict, or an `uncertain` verdict if `timeoutMs` elapses first.
+   * @throws Propagates any error thrown by the underlying `classifyWithAI` call.
+   */
+
+  public async classifyWithTimeout(line: string, contextLines: string[], timeoutMs: number, remainingBudget?: number): Promise<ClassifyResult>
+  {
     this.logger.info("ai_call_timeout_scheduled", { line_length: line.length, timeout_ms: timeoutMs });
+
     return Promise.race([
       this.classifyWithAI(line, contextLines, remainingBudget),
       new Promise<ClassifyResult>((resolve) =>
@@ -455,241 +681,466 @@ export class LineClassifier implements IClassifier {
    * validate — the fingerprint of a junk row produced by a mismapped learned/AI template.
    * Called at the emit point so no path (local template, AI, column map) can leak junk into
    * email/phone.
+   *
+   * @param row - The finalized row to check before it is emitted.
+   * @returns `true` if every populated email/phone field validates (or none are populated); `false` otherwise.
    */
-  rowStrongFieldsOk(row: Record<string, unknown>): boolean {
-    for (let i = 0; i < this.fieldSpec.length; i++) {
-      const field = this.fieldSpec[i];
-      const nf = this.normalizedFieldSpec[i];
-      if (nf !== "email" && nf !== "phone") continue;
-      const v = row[field];
-      if (v !== undefined && v !== null && String(v).trim() !== "" && !this.validateField(field, v)) return false;
+
+  public rowStrongFieldsOk(row: Record<string, unknown>): boolean
+  {
+    for (let i = 0; i < this.fieldSpec.length; i++)
+    {
+      const field: string = this.fieldSpec[i];
+      const normalizedFields: string = this.normalizedFieldSpec[i];
+
+      if (normalizedFields !== "email" && normalizedFields !== "phone")
+      {
+        continue;
+      }
+
+      const v: unknown = row[field];
+
+      if (v !== undefined && v !== null && String(v).trim() !== "" && !this.validateField(field, v))
+      {
+        return false;
+      }
     }
+
     return true;
   }
 
-  /** Resolves a learned/AI template (record or rubbish) against a line, used by the AI-cache
-   *  hit path in `classifyWithAI`. */
-  private toResult(line: string, tmpl: RecordTemplate | RubbishTemplate): ClassifyResult {
-    if ("signature" in tmpl) {
-      if ((tmpl.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(tmpl.signature, line)) {
+  /**
+   * Resolves a learned/AI template (record or rubbish) against a line, used by the AI-cache
+   * hit path in `classifyWithAI`.
+   *
+   * @param line - The raw line to resolve against the given template.
+   * @param tmpl - The record or rubbish template to apply.
+   * @returns A `parsed`/`rubbish` verdict if the template applies and (for rubbish) meets the confidence threshold; otherwise `uncertain`.
+   */
+
+  private toResult(line: string, tmpl: RecordTemplate | RubbishTemplate): ClassifyResult
+  {
+    if ("signature" in tmpl)
+    {
+      if ((tmpl.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(tmpl.signature, line))
+      {
         return { verdict: "rubbish", template_id: tmpl.template_id };
       }
+
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
     }
-    const row = this.extractLine(line, tmpl);
-    if (!row) return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
+
+    const row: Record<string, unknown> | null = this.extractLine(line, tmpl);
+
+    if (!row)
+    {
+      return {verdict: "uncertain", failure_class: FailureClass.UNCERTAIN};
+    }
+
     return this.finalizeParsedOrReject(row, tmpl.template_id, tmpl.version);
   }
 
-  // ===========================================================================================
-  // Record-template extraction
-  // ===========================================================================================
+  /**
+   * Extracts a field/value row from a line using a record template's structure and field_map.
+   *
+   * @param line - The raw line to extract from.
+   * @param rec - The record template describing how to parse the line and locate each field.
+   * @returns The extracted row, or `null` if the line's structure doesn't parse, no field was present, or a strongly-typed field is present but invalid.
+   */
 
-  private extractLine(line: string, rec: RecordTemplate): Record<string, unknown> | null {
-    const parsed = this.parseStructure(line, rec);
-    if (!parsed) return null;
+  private extractLine(line: string, rec: RecordTemplate): Record<string, unknown> | null
+  {
+    const parsed: string | unknown[] | Record<string, unknown> | null = this.parseStructure(line, rec);
+
+    if (!parsed)
+    {
+      return null;
+    }
 
     const row: Record<string, unknown> = {};
-    let presentCount = 0;
-    let strongPresent = 0; // strongly-typed fields (email/phone) that got a value
-    let strongValid = 0; // ...of those, how many actually validate
-    for (let i = 0; i < this.fieldSpec.length; i++) {
-      const field = this.fieldSpec[i];
-      const loc = rec.field_map[field];
-      if (!loc) {
+    let presentCount: number = 0;
+    let strongPresent: number = 0;
+    let strongValid: number = 0;
+
+    for (let i = 0; i < this.fieldSpec.length; i++)
+    {
+      const field: string = this.fieldSpec[i];
+
+      const loc: { locator: string; type: string } = rec.field_map[field];
+
+      if (!loc)
+      {
         row[field] = undefined;
         continue;
       }
-      const locator = this.resolveLocatorString(loc);
-      const value = locator ? this.applyLocator(line, parsed, locator) : undefined;
-      if (value !== undefined) presentCount++;
-      const nf = this.normalizedFieldSpec[i];
-      if ((nf === "email" || nf === "phone") && value !== undefined && value !== null && String(value).trim() !== "") {
-        strongPresent++;
-        if (this.validateField(field, value)) strongValid++;
+
+      const locator: string | undefined = this.resolveLocatorString(loc);
+      const value: unknown = locator ? this.applyLocator(line, parsed, locator) : undefined;
+
+      if (value !== undefined)
+      {
+        presentCount++;
       }
+
+      const normalizedFields: string = this.normalizedFieldSpec[i];
+
+      if ((normalizedFields === "email" || normalizedFields === "phone") && value !== undefined && value !== null && String(value).trim() !== "")
+      {
+        strongPresent++;
+
+        if (this.validateField(field, value))
+        {
+          strongValid++;
+        }
+      }
+
       row[field] = value;
     }
-    if (presentCount === 0) return null;
-    // Reject a template whose strongly-typed field(s) were populated but none validate — the
-    // signature of a positional/mismapped template applied to the wrong line (e.g. a CSV
-    // template reused across files that puts a bare id or a whole "Label: value" line into
-    // email). Decline so the line falls through to the structural/content recognizers instead
-    // of being force-parsed into garbage.
-    if (strongPresent > 0 && strongValid === 0) return null;
+
+    if (presentCount === 0)
+    {
+      return null;
+    }
+
+    if (strongPresent > 0 && strongValid === 0)
+    {
+      return null;
+    }
+
     return row;
   }
 
-  /** Normalizes a field_map locator entry to its canonical `"kind:value"` string form.
-   *  Accepts the current `{ locator: string }` shape, a legacy raw locator string, or
-   *  older `{ index | key | regex }` objects that may still exist in cache/DB. */
-  private resolveLocatorString(loc: unknown): string | undefined {
-    if (typeof loc === "string") return loc;
+  /**
+   * Normalizes a field_map locator entry to its canonical `"kind:value"` string form.
+   * Accepts the current `{ locator: string }` shape, a legacy raw locator string, or
+   * older `{ index | key | regex }` objects that may still exist in cache/DB.
+   *
+   * @param loc - The raw locator value from a template's field_map (string or legacy object shape).
+   * @returns The canonical `"kind:value"` locator string, or `undefined` if `loc` doesn't match any known shape.
+   */
+
+  private resolveLocatorString(loc: unknown): string | undefined
+  {
+    if (typeof loc === "string")
+    {
+      return loc;
+    }
+
     const rawLoc = loc as Record<string, unknown>;
-    if (typeof rawLoc.locator === "string") return rawLoc.locator;
-    if (typeof rawLoc.index === "number") return `index:${rawLoc.index}`;
-    if (typeof rawLoc.key === "string") return `key:${rawLoc.key}`;
-    if (typeof rawLoc.regex === "string") return `regex:${rawLoc.regex}`;
+
+    if (typeof rawLoc.locator === "string")
+    {
+      return rawLoc.locator;
+    }
+
+    if (typeof rawLoc.index === "number")
+    {
+      return `index:${rawLoc.index}`;
+    }
+
+    if (typeof rawLoc.key === "string")
+    {
+      return `key:${rawLoc.key}`;
+    }
+
+    if (typeof rawLoc.regex === "string")
+    {
+      return `regex:${rawLoc.regex}`;
+    }
+
     return undefined;
   }
 
-  private parseStructure(line: string, rec: RecordTemplate): string | unknown[] | Record<string, unknown> | null {
-    if (rec.structure === "json") {
+  /**
+   * Parses a line into the intermediate structure (object/array/string) a record
+   * template's locators can be applied to, according to the template's declared structure kind.
+   *
+   * @param line - The raw line to parse.
+   * @param rec - The record template whose `structure` (json/kv/csv/regex/fixed) determines the parse strategy.
+   * @returns The parsed structure appropriate to `rec.structure`, or `null` if parsing failed or produced nothing usable.
+   */
+
+  private parseStructure(line: string, rec: RecordTemplate): string | unknown[] | Record<string, unknown> | null
+  {
+    if (rec.structure === "json")
+    {
       if (line[0] !== "{" && line[0] !== "[") return null;
-      try {
+
+      try
+      {
         const obj = JSON.parse(line);
-        if (obj && typeof obj === "object" && !Array.isArray(obj)) return obj;
-      } catch {
+
+        if (obj && typeof obj === "object" && !Array.isArray(obj))
+        {
+          return obj;
+        }
+      }
+      catch
+      {
         return null;
       }
     }
-    if (rec.structure === "kv") {
+
+    if (rec.structure === "kv")
+    {
       const obj: Record<string, string> = {};
-      // Try different key-value separators: =, :, or -. Try different pair separators:
-      // ";" or " - ".
+
       let parts: string[] = [];
-      if (line.includes(" - ")) {
+
+      if (line.includes(" - "))
+      {
         parts = line.split(" - ");
-      } else if (line.includes(";")) {
+      }
+      else if (line.includes(";"))
+      {
         parts = line.split(";");
-      } else {
+      }
+      else
+      {
         parts = line.split(/\s+/);
       }
-      for (const part of parts) {
+
+      for (const part of parts)
+      {
         let k: string | undefined, v: string | undefined;
-        if (part.includes("=")) {
+
+        if (part.includes("="))
+        {
           [k, v] = part.split("=", 2);
-        } else if (part.includes(":")) {
+        }
+        else if (part.includes(":"))
+        {
           [k, v] = part.split(":", 2);
-        } else if (part.includes("-")) {
+        }
+        else if (part.includes("-"))
+        {
           [k, v] = part.split("-", 2);
         }
-        if (k && v !== undefined) obj[k.trim()] = v.trim();
+
+        if (k && v !== undefined)
+        {
+          obj[k.trim()] = v.trim();
+        }
       }
+
       return Object.keys(obj).length > 0 ? obj : null;
     }
-    if (rec.structure === "csv") {
-      // The delimiter is a property of the template, not something to reverse-engineer from a
-      // field locator (the old code did `"index:0".replace("index:","")` -> "0", which split
-      // every line on the digit 0). Use the template's stored delimiter, defaulting to comma.
+
+    if (rec.structure === "csv")
+    {
       const delim = rec.delimiter ?? ",";
       return LineClassifier.parseCsvLine(line, delim, "\"");
     }
-    if (rec.structure === "regex" || rec.structure === "fixed") {
+
+    if (rec.structure === "regex" || rec.structure === "fixed")
+    {
       return line;
     }
+
     return null;
   }
 
-  // ===========================================================================================
-  // Key/field matching helpers
-  // ===========================================================================================
+  /**
+   * Normalizes a field/column/key label for tolerant matching (lower-cased, non-alphanumerics
+   * stripped). Results are memoized in a bounded cache since the same small set of labels
+   * (field names, aliases, header cells) recurs across every line in a job.
+   *
+   * @param s - The raw label to normalize.
+   * @returns The normalized (lowercase, alphanumeric-only) form of `s`.
+   */
 
-  /** Normalizes a field/column/key label for tolerant matching. */
-  private normalizeKey(s: string): string {
-    return s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  private normalizeKey(s: string): string
+  {
+    const cached: string | undefined = this.normalizeKeyCache.get(s);
+
+    if (cached !== undefined)
+    {
+      return cached;
+    }
+
+    const out: string = s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+    if (this.normalizeKeyCache.size < LineClassifier.NORMALIZE_CACHE_MAX)
+    {
+      this.normalizeKeyCache.set(s, out);
+    }
+
+    return out;
   }
 
-  /** Does a source key/column label correspond to a requested field (exact or alias)? */
-  private keyMatchesField(key: string, field: string): boolean {
-    const nk = this.normalizeKey(key);
-    const nf = this.normalizeKey(field);
-    if (!nk) return false;
-    if (nk === nf) return true;
-    const aliases = LineClassifier.ALIASES[nf] || [nf];
-    return aliases.some((a) => this.normalizeKey(a) === nk);
+  /**
+   * Does a source key/column label correspond to a requested field (exact or alias)?
+   *
+   * @param key - The source key/column label (e.g. a CSV header cell or object key).
+   * @param field - The target field name from the field spec to compare against.
+   * @returns `true` if `key` normalizes to `field` directly or to one of its known aliases.
+   */
+
+  private keyMatchesField(key: string, field: string): boolean
+  {
+    const normalizedKey: string = this.normalizeKey(key);
+    const normalizedField: string = this.normalizeKey(field);
+
+    if (!normalizedKey)
+    {
+      return false;
+    }
+
+    if (normalizedKey === normalizedField)
+    {
+      return true;
+    }
+
+    const aliases: string[] = LineClassifier.ALIASES[normalizedField] || [normalizedField];
+
+    return aliases.some((a) => this.normalizeKey(a) === normalizedKey);
   }
 
-  /** Content validation, used to identify columns in a headerless CSV and to reject junk. */
-  private validateField(field: string, value: unknown): boolean {
-    if (value === null || value === undefined) return false;
-    const v = String(value).trim();
-    if (v === "") return false;
-    const nf = this.normalizeKey(field);
-    // Sane email chars only. The old `[^@\s]+@[^@\s]+\.[^@\s]+` accepted control/binary bytes,
-    // so a garbage line containing an '@' and a '.' validated as an email. The local part
-    // allows common RFC punctuation (incl. '=', e.g. nabilah==6172@…) but no control/space/high
-    // bytes.
-    if (nf === "email") return LineClassifier.EMAIL_RE.test(v);
-    if (nf === "phone") {
-      if (v.includes("@")) return false;
-      const digits = v.replace(/\D/g, "");
-      // 10-15 digits reads as a phone. Shorter numbers (ZIP+4, year ranges, short IDs) are
-      // too ambiguous to claim by content alone — those need a header or AI to map.
-      // NOTE: a 10-15 digit pure-numeric ID can still false-positive here; the header-mapped
-      // path (csv-mapped) is the reliable one, this content path is best-effort.
+  /**
+   * Content validation, used to identify columns in a headerless CSV and to reject junk.
+   *
+   * @param field - The target field name, used to determine which validation rule applies (email/phone/other).
+   * @param value - The candidate value to validate.
+   * @returns `true` if `value` is non-empty and (for email/phone) matches the expected format; `true` for any other non-empty field.
+   */
+
+  private validateField(field: string, value: unknown): boolean
+  {
+    if (value === null || value === undefined)
+    {
+      return false;
+    }
+
+    const v: string = String(value).trim();
+
+    if (v === "")
+    {
+      return false;
+    }
+
+    const normalizedField: string = this.normalizeKey(field);
+
+    if (normalizedField === "email")
+    {
+      return LineClassifier.EMAIL_RE.test(v);
+    }
+
+    if (normalizedField === "phone")
+    {
+      if (v.includes("@"))
+      {
+        return false;
+      }
+
+      const digits: string = v.replace(/\D/g, "");
       return digits.length >= 10 && digits.length <= 15;
     }
-    return true; // name/address/other: every non-empty value
-  }
 
-  // ===========================================================================================
-  // Object flattening / extraction (JSON, KV)
-  // ===========================================================================================
+    return true;
+  }
 
   /**
    * Recursively flattens a nested object into dot-notation keys. Arrays of objects are
    * flattened with numeric indexes (e.g. `messages[0].body`); scalar arrays are kept as
    * arrays so they are JSON-stringified in meta/output rather than mangled to
    * "[object Object]".
+   *
+   * @param obj - The (possibly nested) object to flatten.
+   * @param prefix - The dot-notation key prefix accumulated so far during recursion (used internally; omit when calling from outside).
+   * @returns A flat object whose keys are dot/bracket-notation paths into the original structure.
    */
-  private flattenObject(obj: Record<string, unknown>, prefix = ""): Record<string, unknown> {
+
+  private flattenObject(obj: Record<string, unknown>, prefix = ""): Record<string, unknown>
+  {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(obj)) {
-      const key = prefix ? `${prefix}.${k}` : k;
-      if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+
+    for (const [k, v] of Object.entries(obj))
+    {
+      const key: string = prefix ? `${prefix}.${k}` : k;
+
+      if (v !== null && typeof v === "object" && !Array.isArray(v))
+      {
         Object.assign(out, this.flattenObject(v as Record<string, unknown>, key));
         continue;
       }
-      if (Array.isArray(v)) {
-        const allObjects = v.length > 0 && v.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
-        if (allObjects) {
-          for (let i = 0; i < v.length; i++) {
+
+      if (Array.isArray(v))
+      {
+        const allObjects: boolean = v?.length > 0 && v?.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
+
+        if (allObjects)
+        {
+          for (let i = 0; i < v?.length; i++)
+          {
             Object.assign(out, this.flattenObject(v[i] as Record<string, unknown>, `${key}[${i}]`));
           }
-        } else {
+        }
+        else
+        {
           out[key] = v;
         }
         continue;
       }
+
       let sv: unknown = v;
-      // Double-encoded JSON strings: unwrap a JSON string that contains another JSON
-      // string/object/array.
-      if (typeof sv === "string") {
-        const t = sv.trim();
-        if (t.length >= 2 && t[0] === "\"" && t[t.length - 1] === "\"") {
-          try {
+
+      if (typeof sv === "string")
+      {
+        const t: string = sv.trim();
+
+        if (t.length >= 2 && t[0] === "\"" && t[t.length - 1] === "\"")
+        {
+          try
+          {
             const inner = JSON.parse(sv);
             if (typeof inner === "string") sv = inner;
-          } catch {
+          }
+          catch
+          {
             /* not a JSON string */
           }
         }
       }
-      if (typeof sv === "string" && (sv.trim().startsWith("{") || sv.trim().startsWith("["))) {
-        try {
+
+      if (typeof sv === "string" && (sv.trim().startsWith("{") || sv.trim().startsWith("[")))
+      {
+        try
+        {
           const parsed = JSON.parse(sv);
-          if (parsed && typeof parsed === "object") {
-            if (Array.isArray(parsed)) {
-              const allObjects = parsed.length > 0 && parsed.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
-              if (allObjects) {
-                for (let i = 0; i < parsed.length; i++) {
+
+          if (parsed && typeof parsed === "object")
+          {
+
+            if (Array.isArray(parsed))
+            {
+              const allObjects: boolean = parsed.length > 0 && parsed.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
+
+              if (allObjects)
+              {
+                for (let i = 0; i < parsed.length; i++)
+                {
                   Object.assign(out, this.flattenObject(parsed[i] as Record<string, unknown>, `${key}[${i}]`));
                 }
-              } else {
+              }
+              else
+              {
                 out[key] = parsed;
               }
+
               continue;
             }
             Object.assign(out, this.flattenObject(parsed as Record<string, unknown>, key));
             continue;
           }
-        } catch {
+        }
+        catch
+        {
           /* fall through to keep raw string */
         }
       }
       out[key] = sv;
     }
+
     return out;
   }
 
@@ -697,54 +1148,83 @@ export class LineClassifier implements IClassifier {
    * Extracts only the field_spec fields from a (possibly nested) object, matching by key
    * name/alias. Nested objects are flattened first so `contact.email` maps to the `email`
    * field_spec field.
+   *
+   * @param rawObj - The source object (JSON record or KV-parsed object) to extract fields from.
+   * @param templateId - The template identifier to attach to the result on success.
+   * @param fieldSpecOverride - Optional field list to use instead of the instance's `fieldSpec` (used by the AI-JSON discovery path).
+   * @param loose - If `true`, accepts the extraction even if the normal match-count/strong-field threshold isn't met.
+   * @returns The extracted row and template id, or `null` if extraction didn't meet the acceptance threshold and `loose` is `false`.
    */
-  private extractFromObject(
-      rawObj: Record<string, unknown>,
-      templateId: string,
-      fieldSpecOverride?: string[],
-      loose = false
-  ): { row: Record<string, unknown>; template_id: string } | null {
-    const obj = this.flattenObject(rawObj);
-    const spec = fieldSpecOverride ?? this.fieldSpec;
-    const normalizedSpec = fieldSpecOverride ? fieldSpecOverride.map((f) => this.normalizeKey(f)) : this.normalizedFieldSpec;
-    const row: Record<string, unknown> = {};
-    let matched = 0;
-    let strong = 0;
-    const normalizedObjKeys = new Map<string, unknown>();
-    const leafToFull = new Map<string, string>(); // leaf → full normalized key
-    const consumedKeys = new Set<string>(); // Track which raw keys got mapped
 
-    for (const [k, val] of Object.entries(obj)) {
-      const nk = this.normalizeKey(k);
-      if (!normalizedObjKeys.has(nk)) normalizedObjKeys.set(nk, val); // first wins
-      // Also map the leaf key so "contact.email" can match the "email" field_spec field.
-      if (k.includes(".")) {
-        const leaf = k.slice(k.lastIndexOf(".") + 1);
-        const nLeaf = this.normalizeKey(leaf);
-        if (!normalizedObjKeys.has(nLeaf)) {
+  private extractFromObject(rawObj: Record<string, unknown>, templateId: string, fieldSpecOverride?: string[], loose = false): { row: Record<string, unknown>; template_id: string } | null
+  {
+    const obj: Record<string, unknown> = this.flattenObject(rawObj);
+    const spec: string[] = fieldSpecOverride ?? this.fieldSpec;
+    const normalizedSpec: string[] = fieldSpecOverride ? fieldSpecOverride.map((f) => this.normalizeKey(f)) : this.normalizedFieldSpec;
+    const row: Record<string, unknown> = {};
+    let matched: number = 0;
+    let strong: number = 0;
+    const normalizedObjKeys = new Map<string, unknown>();
+    const leafToFull = new Map<string, string>();
+    const consumedKeys = new Set<string>();
+
+    for (const [k, val] of Object.entries(obj))
+    {
+      const nk: string = this.normalizeKey(k);
+
+      if (!normalizedObjKeys.has(nk))
+      {
+        normalizedObjKeys.set(nk, val);
+      }
+
+      if (k.includes("."))
+      {
+        const leaf: string = k.slice(k.lastIndexOf(".") + 1);
+        const nLeaf: string = this.normalizeKey(leaf);
+
+        if (!normalizedObjKeys.has(nLeaf))
+        {
           normalizedObjKeys.set(nLeaf, val);
           leafToFull.set(nLeaf, nk);
         }
       }
     }
 
-    for (let i = 0; i < spec.length; i++) {
-      const field = spec[i];
-      if (field === "meta") continue; // handled below
-      const nf = normalizedSpec[i];
-      let value = normalizedObjKeys.get(nf);
-      let matchedKey: string | undefined = nf;
-      if (value !== undefined) {
-        const vFull = leafToFull.get(nf);
-        if (consumedKeys.has(nf) || (vFull && consumedKeys.has(vFull))) value = undefined;
+    for (let i = 0; i < spec.length; i++)
+    {
+      const field: string = spec[i];
+
+      if (field === "meta")
+      {
+        continue;
       }
-      if (value === undefined) {
-        const aliases = this.aliasMap.get(nf);
-        if (aliases) {
-          for (const a of aliases) {
-            const av = normalizedObjKeys.get(a);
-            if (av !== undefined) {
-              const aFull = leafToFull.get(a);
+
+      const nf: string = normalizedSpec[i];
+      let value: unknown = normalizedObjKeys.get(nf);
+      let matchedKey: string | undefined = nf;
+
+      if (value !== undefined)
+      {
+        const vFull: string | undefined = leafToFull.get(nf);
+        if (consumedKeys.has(nf) || (vFull && consumedKeys.has(vFull)))
+        {
+          value = undefined;
+        }
+      }
+
+      if (value === undefined)
+      {
+        const aliases: Set<string> | undefined = this.aliasMap.get(nf);
+
+        if (aliases)
+        {
+          for (const a of aliases)
+          {
+            const av: unknown = normalizedObjKeys.get(a);
+
+            if (av !== undefined)
+            {
+              const aFull: string | undefined = leafToFull.get(a);
               if (consumedKeys.has(a) || (aFull && consumedKeys.has(aFull))) continue;
               value = av;
               matchedKey = a;
@@ -753,184 +1233,333 @@ export class LineClassifier implements IClassifier {
           }
         }
       }
-      // Nested path fallback: a field like "phone" can live under "contact_info.phone.raw"
-      // and "location" under "person.location.city". Also tolerate renamed/numbered keys
-      // such as "first name", "email_address", "mobile_2" via substring matching.
-      if (value === undefined) {
+
+      if (value === undefined)
+      {
         const found = this.locateNestedFieldValue(obj, field, nf, consumedKeys);
-        if (found) {
+
+        if (found)
+        {
           value = found.value;
           matchedKey = found.key;
         }
       }
 
-      // Semantic inference for name: if first and last exist, the full name should contain
-      // both. This overrides a fallback that accidentally landed on "first".
-      if (nf === "name") {
+      if (nf === "name")
+      {
         const inferred = this.inferFullNameFromParts(obj, normalizedObjKeys, value);
-        if (inferred) {
+
+        if (inferred)
+        {
           value = inferred.value;
           matchedKey = inferred.key;
         }
       }
 
-      if (value !== undefined && value !== null && String(value).trim() !== "") {
+      if (value !== undefined && value !== null && String(value).trim() !== "")
+      {
         row[field] = value;
         matched++;
         consumedKeys.add(matchedKey!);
         const fullKey = leafToFull.get(matchedKey!);
-        if (fullKey) consumedKeys.add(fullKey); // do not duplicate into meta
-        if ((nf === "email" || nf === "phone") && this.validateField(field, value)) strong++;
-      } else {
+
+        if (fullKey)
+        {
+          consumedKeys.add(fullKey);
+        }
+
+        if ((nf === "email" || nf === "phone") && this.validateField(field, value))
+        {
+          strong++;
+        }
+      }
+      else
+      {
         row[field] = null;
       }
     }
 
-    // Fold every unmapped source key into meta. This runs unconditionally — even when the
-    // caller's field_spec omits "meta" — because CsvOutputWriter always appends a meta column
-    // to the output CSV, so any extra source fields must land there or be lost.
     const metaObj: Record<string, string> = {};
-    for (const [k, v] of Object.entries(obj)) {
-      if (!consumedKeys.has(this.normalizeKey(k)) && v !== undefined && v !== null) {
-        const metaStr = typeof v === "object" ? JSON.stringify(v) : String(v).trim();
-        if (metaStr !== "") metaObj[k] = metaStr;
+
+    for (const [k, v] of Object.entries(obj))
+    {
+      if (!consumedKeys.has(this.normalizeKey(k)) && v !== undefined && v !== null)
+      {
+        const metaStr: string = typeof v === "object" ? JSON.stringify(v) : String(v).trim();
+
+        if (metaStr !== "")
+        {
+          metaObj[k] = metaStr;
+        }
       }
     }
     row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
 
-    const nonMetaSpec = spec.filter((f) => f !== "meta").length;
-    const minMatches = Math.max(1, Math.ceil(nonMetaSpec * 0.75));
-    const accept = strong >= 1 || matched >= minMatches;
+    const minMatches: number = fieldSpecOverride ? Math.max(1, Math.ceil(fieldSpecOverride.filter((f) => f !== "meta").length * 0.75)) : this.defaultMinMatches;
+
+    const accept: boolean = strong >= 1 || matched >= minMatches;
+
     return accept || loose ? { row, template_id: templateId } : null;
   }
 
-  /** Best-effort nested/renamed key match: segment match, prefix match, or (for non-name/
-   *  address fields) substring match against the field's accepted alias set. */
-  private locateNestedFieldValue(
-      obj: Record<string, unknown>,
-      field: string,
-      nf: string,
-      consumedKeys: Set<string>
-  ): { value: unknown; key: string } | null {
-    const accepted = Array.from(new Set([nf, ...(this.aliasMap.get(nf) || [])]));
-    const noSubstring = nf === "name" || nf === "address";
-    let bestScore = -1;
+  /**
+   * Best-effort nested/renamed key match: segment match, prefix match, or (for non-name/
+   * address fields) substring match against the field's accepted alias set.
+   *
+   * @param obj - The flattened source object to search.
+   * @param field - The target field name (used for value validation, e.g. email/phone format).
+   * @param nf - The normalized form of `field`, used to build the accepted-alias set.
+   * @param consumedKeys - Normalized keys already claimed by other fields, excluded from consideration.
+   * @returns The best-scoring matching value and its normalized key, or `null` if nothing matched.
+   */
+
+  private locateNestedFieldValue(obj: Record<string, unknown>, field: string, nf: string, consumedKeys: Set<string>): { value: unknown; key: string } | null
+  {
+    const accepted: string[] = Array.from(new Set([nf, ...(this.aliasMap.get(nf) || [])]));
+    const noSubstring: boolean = nf === "name" || nf === "address";
+    let bestScore: number = -1;
     let bestValue: unknown;
     let bestKey: string | undefined;
 
-    for (const [k, val] of Object.entries(obj)) {
-      if (val === null || val === undefined || val === "") continue;
-      const nk = this.normalizeKey(k);
-      if (consumedKeys.has(nk)) continue;
-      const segments = k.split(/[.[\]]+/).filter(Boolean).map((s) => this.normalizeKey(s));
-      const segmentMatch = segments.some((s) => accepted.includes(s));
-      const prefixMatch = accepted.some((a) => nk.startsWith(a));
-      // For "name" and "address" we do NOT use substring matching because "schoolname"
-      // would match name and "country_code" would match address.
-      const substringMatch = !noSubstring && accepted.some((a) => a.length >= 3 && nk.includes(a));
-      if (!segmentMatch && !prefixMatch && !substringMatch) continue;
+    for (const [k, val] of Object.entries(obj))
+    {
+      if (val === null || val === undefined || val === "")
+      {
+        continue;
+      }
 
-      const strVal = typeof val === "string" ? val : JSON.stringify(val);
-      if (strVal.trim() === "") continue;
-      const isString = typeof val === "string";
-      const isValid = this.validateField(field, val);
-      // First-match ordering wins over length so "first/current" entries are preferred.
-      const score = (isString ? 100000 : 0) + (isValid ? 10000 : 0);
-      if (score > bestScore) {
+      const nk: string = this.normalizeKey(k);
+
+      if (consumedKeys.has(nk))
+      {
+        continue;
+      }
+
+      const segments: string[] = k.split(/[.[\]]+/).filter(Boolean).map((s) => this.normalizeKey(s));
+      const segmentMatch: boolean = segments.some((s) => accepted.includes(s));
+      const prefixMatch: boolean = accepted.some((a) => nk.startsWith(a));
+      const substringMatch: boolean = !noSubstring && accepted.some((a) => a.length >= 3 && nk.includes(a));
+
+      if (!segmentMatch && !prefixMatch && !substringMatch)
+      {
+        continue;
+      }
+
+      const strVal: string = typeof val === "string" ? val : JSON.stringify(val);
+
+      if (strVal.trim() === "")
+      {
+        continue;
+      }
+
+      const isString: boolean = typeof val === "string";
+      const isValid: boolean = this.validateField(field, val);
+      const score: number = (isString ? 100000 : 0) + (isValid ? 10000 : 0);
+
+      if (score > bestScore)
+      {
         bestScore = score;
         bestValue = val;
         bestKey = nk;
       }
     }
+
     return bestValue !== undefined ? { value: bestValue, key: bestKey! } : null;
   }
 
-  /** If `first`/`last` keys exist and the current candidate for "name" doesn't already
-   *  contain both, look for a full-name-shaped value that does. */
-  private inferFullNameFromParts(
-      obj: Record<string, unknown>,
-      normalizedObjKeys: Map<string, unknown>,
-      currentValue: unknown
-  ): { value: string; key: string } | null {
-    const firstVal = normalizedObjKeys.get("first");
-    const lastVal = normalizedObjKeys.get("last");
-    if (!(typeof firstVal === "string" && typeof lastVal === "string" && firstVal.trim() && lastVal.trim())) {
+  /**
+   * If `first`/`last` keys exist and the current candidate for "name" doesn't already
+   * contain both, look for a full-name-shaped value that does.
+   *
+   * @param obj - The flattened source object to search for a combined full-name value.
+   * @param normalizedObjKeys - Map of normalized source keys to their values, used to look up `first`/`last`.
+   * @param currentValue - The value currently selected for the "name" field, if any.
+   * @returns The best-matching full-name value and its normalized key, or `null` if no better candidate was found.
+   */
+
+  private inferFullNameFromParts(obj: Record<string, unknown>, normalizedObjKeys: Map<string, unknown>, currentValue: unknown): { value: string; key: string } | null
+  {
+    const firstVal: unknown = normalizedObjKeys.get("first");
+    const lastVal: unknown = normalizedObjKeys.get("last");
+
+    if (!(typeof firstVal === "string" && typeof lastVal === "string" && firstVal.trim() && lastVal.trim()))
+    {
       return null;
     }
-    const fn = this.normalizeKey(firstVal);
-    const ln = this.normalizeKey(lastVal);
-    const current = typeof currentValue === "string" ? this.normalizeKey(currentValue) : "";
-    if (current && current.includes(fn) && current.includes(ln)) return null; // already correct
+
+    const fn: string = this.normalizeKey(firstVal);
+    const ln: string = this.normalizeKey(lastVal);
+    const current: string = typeof currentValue === "string" ? this.normalizeKey(currentValue) : "";
+
+    if (current && current.includes(fn) && current.includes(ln))
+    {
+      return null;
+    }
 
     let bestKey: string | undefined;
     let bestValue: string | undefined;
-    for (const [k, val] of Object.entries(obj)) {
-      if (typeof val !== "string") continue;
-      if (this.normalizeKey(k).includes("first") || this.normalizeKey(k).includes("last")) continue;
-      const nv = this.normalizeKey(val);
-      if (nv.includes(fn) && nv.includes(ln) && (!bestValue || val.length > bestValue.length)) {
+
+    for (const [k, val] of Object.entries(obj))
+    {
+      if (typeof val !== "string")
+      {
+        continue;
+      }
+
+      if (this.normalizeKey(k).includes("first") || this.normalizeKey(k).includes("last"))
+      {
+        continue;
+      }
+      const nv: string = this.normalizeKey(val);
+
+      if (nv.includes(fn) && nv.includes(ln) && (!bestValue || val.length > bestValue.length))
+      {
         bestValue = val;
         bestKey = k;
       }
     }
+
     return bestValue !== undefined ? { value: bestValue, key: this.normalizeKey(bestKey!) } : null;
   }
 
-  private parseJsonRecord(line: string): { row: Record<string, unknown>; template_id: string } | null {
-    const t = line.trim();
-    if (t[0] !== "{" && t[0] !== "[") {
-      // JSON-in-JSON: a cell that is itself a JSON-encoded string of a JSON object/array.
-      if (t.length >= 2 && t[0] === "\"" && t[t.length - 1] === "\"") {
-        try {
+  /**
+   * Attempts to parse a line as a JSON record and extract field_spec fields from it.
+   * Also handles a line that is itself a JSON-encoded string wrapping another JSON value.
+   *
+   * @param line - The raw line to attempt to parse as JSON.
+   * @returns The extracted row, template id, and parsed object; or `null` if the line isn't valid/extractable JSON.
+   */
+
+  private parseJsonRecord(line: string): { row: Record<string, unknown>; template_id: string; obj: Record<string, unknown> } | null
+  {
+    const t: string = line.trim();
+    const obj: Record<string, unknown> | null = this.tryParseJsonObject(t);
+
+    if (!obj)
+    {
+      if (t.length >= 2 && t[0] === "\"" && t[t.length - 1] === "\"")
+      {
+        try
+        {
           const inner = JSON.parse(t) as string;
-          if (typeof inner === "string") return this.parseJsonRecord(inner);
-        } catch {
+          return this.parseJsonRecord(inner);
+        }
+        catch
+        {
           /* fall through */
         }
       }
       return null;
     }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(t);
-    } catch {
-      return null;
-    }
-    if (!parsed || typeof parsed !== "object") return null;
-    let obj = parsed as Record<string, unknown>;
-    if (Array.isArray(parsed)) {
-      const first = parsed.find((x) => x && typeof x === "object" && !Array.isArray(x)) as
-          | Record<string, unknown>
-          | undefined;
-      if (!first) return null;
-      obj = first;
-    }
-    return this.extractFromObject(obj, "json");
+
+    const extracted = this.extractFromObject(obj, "json");
+
+    return extracted ? { ...extracted, obj } : null;
   }
 
-  private parseKvRecord(line: string): { row: Record<string, unknown>; template_id: string } | null {
-    // Only the "Label: value - Label: value" shape. The old "k=v" whitespace fallback split
-    // values on spaces (truncating multi-word values), so it was removed.
-    if (!line.includes(":")) return null;
+  /**
+   * Attempts to parse a line as `key: value` (or `key: value - key: value - ...`) segments
+   * and extract field_spec fields from the resulting object.
+   *
+   * @param line - The raw line to attempt to parse as key/value segments.
+   * @returns The extracted row and template id, or `null` if the line contains no `:` or no segments parsed.
+   */
+
+  private parseKvRecord(line: string): { row: Record<string, unknown>; template_id: string } | null
+  {
+    if (!line.includes(":"))
+    {
+      return null;
+    }
+
     const obj: Record<string, string> = {};
-    for (const seg of line.split(/\s+-\s+/)) {
-      const m = LineClassifier.KV_SEG_RE.exec(seg);
+
+    for (const seg of line.split(/\s+-\s+/))
+    {
+      const m: RegExpExecArray | null = LineClassifier.KV_SEG_RE.exec(seg);
       if (m) obj[m[1].trim()] = m[2].trim();
     }
-    if (Object.keys(obj).length === 0) return null;
+
+    if (Object.keys(obj).length === 0)
+    {
+      return null;
+    }
+
     return this.extractFromObject(obj, "kv");
   }
 
-  // ===========================================================================================
-  // Delimited/CSV parsing
-  // ===========================================================================================
+  /**
+   * Parses a trimmed line as JSON, unwrapping an array to its first object element.
+   *
+   * @param trimmed - The trimmed line, expected to start with `{` or `[`.
+   * @returns The parsed object (or first object element of a parsed array), or `null` if parsing fails or produces no usable object.
+   */
 
-  private splitBestDelimited(line: string): string[] | null {
+  private tryParseJsonObject(trimmed: string): Record<string, unknown> | null
+  {
+    if (trimmed[0] !== "{" && trimmed[0] !== "[")
+    {
+      return null;
+    }
+
+    let parsed: unknown;
+
+    try
+    {
+      parsed = JSON.parse(trimmed);
+    }
+    catch
+    {
+      return null;
+    }
+
+    if (Array.isArray(parsed))
+    {
+      const first = parsed.find((x) => x && typeof x === "object" && !Array.isArray(x)) as
+          | Record<string, unknown>
+          | undefined;
+
+      return first ?? null;
+    }
+
+    if (!parsed || typeof parsed !== "object")
+    {
+      return null;
+    }
+
+    return parsed as Record<string, unknown>;
+  }
+
+  /**
+   * Splits a line using each candidate delimiter and returns the split that yields the
+   * most columns (with at least 2), used to guess a delimited line's column separator.
+   *
+   * @param line - The raw line to split.
+   * @returns The best (widest, ≥2-column) split found across all delimiter candidates present in the line, or `null` if none produced ≥2 columns.
+   */
+
+  private splitBestDelimited(line: string): string[] | null
+  {
     let best: string[] | null = null;
-    for (const delim of LineClassifier.DELIMITER_CANDIDATES) {
-      const parts = LineClassifier.parseCsvLine(line, delim, "\"");
-      if (parts.length < 2) continue;
-      if (!best || parts.length > best.length) best = parts;
+
+    for (const delim of LineClassifier.DELIMITER_CANDIDATES)
+    {
+      if (!line.includes(delim))
+      {
+        continue;
+      }
+
+      const parts: string[] = LineClassifier.parseCsvLine(line, delim, "\"");
+
+      if (parts.length < 2)
+      {
+        continue;
+      }
+
+      if (!best || parts.length > best.length)
+      {
+        best = parts;
+      }
     }
     return best;
   }
@@ -941,37 +1570,63 @@ export class LineClassifier implements IClassifier {
    * (≥ half, and ≥2) of the requested fields. This prevents a plain words-only first DATA row
    * (e.g. "Cell,Berlin") from being misread as a header — which would both drop that record
    * and install a wrong column map that corrupts every following row.
+   *
+   * @param line - The candidate header line.
+   * @returns A map of field name to column index if the line qualifies as a header; otherwise `null`.
    */
-  private detectHeader(line: string): Record<string, number> | null {
-    const parts = this.splitBestDelimited(line);
-    if (!parts || parts.length < 2) return null;
-    for (const c of parts) {
-      const v = c.trim();
-      if (v === "" || v.includes("@") || v.replace(/\D/g, "").length >= 7) return null; // data content, not a header
-      if (!LineClassifier.HEADER_LABEL_RE.test(v)) return null;
+
+  private detectHeader(line: string): Record<string, number> | null
+  {
+    const parts: string[] | null = this.splitBestDelimited(line);
+
+    if (!parts || parts.length < 2)
+    {
+      return null;
     }
+
+    for (const c of parts)
+    {
+      const v: string = c.trim();
+
+      if (v === "" || v.includes("@") || v.replace(/\D/g, "").length >= 7)
+      {
+        return null;
+      }
+
+      if (!LineClassifier.HEADER_LABEL_RE.test(v))
+      {
+        return null;
+      }
+    }
+
     const map: Record<string, number> = {};
-    let matched = 0;
-    for (const field of this.fieldSpec) {
-      if (field === "meta") continue;
-      for (let i = 0; i < parts.length; i++) {
-        if (this.keyMatchesField(parts[i].trim(), field)) {
+    let matched: number = 0;
+    for (const field of this.fieldSpec)
+    {
+      if (field === "meta")
+      {
+        continue;
+      }
+
+      for (let i = 0; i < parts.length; i++)
+      {
+        if (this.keyMatchesField(parts[i].trim(), field))
+        {
           map[field] = i;
           matched++;
           break;
         }
       }
     }
-    const nonMetaFields = this.fieldSpec.filter((f) => f !== "meta");
-    // When the source header has MORE columns than fieldSpec (extra columns go to meta),
-    // require only 1 match — the label-only check is already strict enough to avoid false
-    // positives. When fieldSpec is the same size as (or larger than) the source, keep the
-    // stricter majority rule.
-    const need =
-        parts.length > nonMetaFields.length
-            ? Math.max(1, Math.ceil(nonMetaFields.length / 4))
-            : Math.max(2, Math.ceil(nonMetaFields.length / 2));
-    if (matched < need) return null;
+
+    const nonMetaFields: string[] = this.fieldSpec.filter((f) => f !== "meta");
+    const need: number = parts.length > nonMetaFields.length ? Math.max(1, Math.ceil(nonMetaFields.length / 4)) : Math.max(2, Math.ceil(nonMetaFields.length / 2));
+
+    if (matched < need)
+    {
+      return null;
+    }
+
     this.headerParts = parts.map((p) => p.trim());
     return map;
   }
@@ -983,56 +1638,105 @@ export class LineClassifier implements IClassifier {
    * (email/phone) is present AND validates — so this authoritative path fires on the intended
    * fixed-column rows and declines everything else (kv/JSON/binary), which then falls through
    * to the normal flow.
+   *
+   * @param line - The raw delimited line to map via `this.columnMap`.
+   * @returns The extracted row if at least one mapped strongly-typed field validates; otherwise `null`.
    */
-  private applyColumnMap(line: string): Record<string, unknown> | null {
-    const map = this.columnMap!;
-    const parts = this.splitBestDelimited(line);
-    if (!parts) return null;
+
+  private applyColumnMap(line: string): Record<string, unknown> | null
+  {
+    const map: ColumnMap = this.columnMap!;
+    const parts: string[] | null = this.splitBestDelimited(line);
+
+    if (!parts)
+    {
+      return null;
+    }
 
     const row: Record<string, unknown> = {};
-    let present = 0;
-    let strongPresent = 0;
-    let strongValid = 0;
-    for (let i = 0; i < this.fieldSpec.length; i++) {
-      const field = this.fieldSpec[i];
-      const nf = this.normalizedFieldSpec[i];
-      const spec = map[field];
+    let present: number = 0;
+    let strongPresent: number = 0;
+    let strongValid: number = 0;
+
+    for (let i = 0; i < this.fieldSpec.length; i++)
+    {
+      const field: string = this.fieldSpec[i];
+      const nf: string = this.normalizedFieldSpec[i];
+      const spec: number | number[] = map[field];
       let value: unknown = null;
-      if (typeof spec === "number") {
+
+      if (typeof spec === "number")
+      {
         value = spec < parts.length ? parts[spec] : null;
-      } else if (Array.isArray(spec)) {
-        const cells = spec.map((i) => (i < parts.length ? String(parts[i] ?? "").trim() : "")).filter((c) => c !== "");
+      }
+      else if (Array.isArray(spec))
+      {
+        const cells: string[] = spec.map((i) => (i < parts.length ? String(parts[i] ?? "").trim() : "")).filter((c) => c !== "");
         value = cells.length ? cells.join(", ") : null;
       }
-      if (value !== null && String(value).trim() !== "") {
+
+      if (value !== null && String(value).trim() !== "")
+      {
         row[field] = value;
         present++;
-        if (nf === "email" || nf === "phone") {
+        if (nf === "email" || nf === "phone")
+        {
           strongPresent++;
-          if (this.validateField(field, value)) strongValid++;
+
+          if (this.validateField(field, value))
+          {
+            strongValid++;
+          }
         }
-      } else {
+      }
+      else
+      {
         row[field] = null;
       }
     }
-    // Require a mapped email/phone column to be present and valid — the signal that this
-    // line really is one of the fixed-column rows the map was written for.
-    if (present === 0 || strongPresent === 0 || strongValid === 0) return null;
+
+    if (present === 0 || strongPresent === 0 || strongValid === 0)
+    {
+      return null;
+    }
+
     return row;
   }
 
-  private parseDelimitedRecord(line: string): { row: Record<string, unknown>; usedHeader: boolean } | null {
-    if (this.fieldSpec.length === 0) return null;
-    const t = line.trim();
-    if (t[0] === "{" || t[0] === "[") return null;
-    const parts = this.splitBestDelimited(line);
+  /**
+   * Attempts to extract a delimited-line record, first via any established header map,
+   * then falling back to content-based (headerless) extraction.
+   *
+   * @param line - The raw line to parse as a delimited record.
+   * @returns The extracted row and whether a header map was used, or `null` if no delimited record could be extracted.
+   */
+  private parseDelimitedRecord(line: string): { row: Record<string, unknown>; usedHeader: boolean } | null
+  {
+    if (this.fieldSpec.length === 0)
+    {
+      return null;
+    }
+
+    const t: string = line.trim();
+
+    if (t[0] === "{" || t[0] === "[")
+    {
+      return null;
+    }
+
+    const parts: string[] | null = this.splitBestDelimited(line);
     if (!parts) return null;
 
-    if (this.headerMap) {
+    if (this.headerMap)
+    {
       const viaHeader = this.applyHeaderMap(line, parts);
-      if (viaHeader !== undefined) return viaHeader;
-      // fall through to content-based extraction below
+
+      if (viaHeader !== undefined)
+      {
+        return viaHeader;
+      }
     }
+
     return this.parseDelimitedByContent(parts);
   }
 
@@ -1040,98 +1744,134 @@ export class LineClassifier implements IClassifier {
    * Applies `this.headerMap` to an already-split line. Returns `undefined` (not `null`) to
    * mean "no header verdict — fall through to content-based extraction", reserving `null`
    * for "this line replaced the header and produced no data row".
+   *
+   * @param line - The raw line (used to re-check for a possible new header if the current map no longer fits).
+   * @param parts - The line already split into delimited cells.
+   * @returns The extracted row (with `usedHeader: true`) if the header map applies; `null` if the line replaced the header; or `undefined` to fall through to content-based extraction.
    */
-  private applyHeaderMap(
-      line: string,
-      parts: string[]
-  ): { row: Record<string, unknown>; usedHeader: boolean } | null | undefined {
-    // Only trust the header if the line shape matches (column count close enough) or if
-    // header-mapped strong fields validate. This prevents data corruption when complex CSV
-    // rows with many columns hit a simple header's offsets.
-    const headerColCount = this.headerParts?.length ?? 0;
-    const columnCountDiff = Math.abs(headerColCount - parts.length);
-    // Threshold of 2 allows minor variations (trailing commas/empty trailing columns) while
-    // still catching major shape mismatches (e.g. a 5-column header vs a 30-column data row).
-    let useHeaderMap = columnCountDiff <= 2;
 
-    if (!useHeaderMap) {
-      const strongFields = ["email", "phone", "zip", "date", "url"];
+  private applyHeaderMap(line: string, parts: string[]): { row: Record<string, unknown>; usedHeader: boolean } | null | undefined
+  {
+    const headerColCount: number = this.headerParts?.length ?? 0;
+    const columnCountDiff: number = Math.abs(headerColCount - parts.length);
+    let useHeaderMap: boolean = columnCountDiff <= 2;
+
+    if (!useHeaderMap)
+    {
+      const strongFields: string[] = ["email", "phone", "zip", "date", "url"];
       useHeaderMap = strongFields.some((field) => {
-        const idx = this.headerMap![field];
+        const idx: number = this.headerMap![field];
         return idx !== undefined && idx < parts.length && parts[idx] && this.validateField(field, parts[idx]);
       });
     }
 
-    if (useHeaderMap) {
+    if (useHeaderMap)
+    {
       const row: Record<string, unknown> = {};
-      let matched = 0;
+      let matched: number = 0;
       const mappedIndices = new Set<number>(Object.values(this.headerMap!));
-      for (let i = 0; i < this.fieldSpec.length; i++) {
-        const field = this.fieldSpec[i];
-        if (field === "meta") continue; // handled unconditionally below
-        const idx = this.headerMap![field];
-        const value = idx !== undefined && idx < parts.length ? parts[idx] : "";
+
+      for (let i = 0; i < this.fieldSpec.length; i++)
+      {
+        const field: string = this.fieldSpec[i];
+
+        if (field === "meta")
+        {
+          continue;
+        }
+
+        const idx: number = this.headerMap![field];
+        const value: string = idx !== undefined && idx < parts.length ? parts[idx] : "";
         row[field] = value === "" || value === undefined ? null : value;
-        if (row[field] !== null) matched++;
+
+        if (row[field] !== null)
+        {
+          matched++;
+        }
       }
-      // Always collect ALL unmapped source columns into meta when the header is known,
-      // regardless of whether "meta" is present in fieldSpec. This surfaces extra columns
-      // (birthday, snils, passport_numbers, etc.) without requiring the caller to enumerate
-      // every source column in field_spec.
-      if (this.headerParts) {
+
+      if (this.headerParts)
+      {
         const metaObj: Record<string, string> = {};
-        for (let j = 0; j < this.headerParts.length; j++) {
-          if (!mappedIndices.has(j)) {
-            const v = j < parts.length ? String(parts[j] ?? "").trim() : "";
-            if (v !== "") metaObj[this.headerParts[j]] = v;
+        for (let j = 0; j < this.headerParts.length; j++)
+        {
+          if (!mappedIndices.has(j))
+          {
+            const v: string = j < parts.length ? String(parts[j] ?? "").trim() : "";
+
+            if (v !== "")
+            {
+              metaObj[this.headerParts[j]] = v;
+            }
           }
         }
+
         row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
-        if (row["meta"] !== null) matched++;
+
+        if (row["meta"] !== null)
+        {
+          matched++;
+        }
       }
+
       return matched > 0 ? { row, usedHeader: true } : null;
     }
 
-    // Header shape mismatch and strong fields don't validate. The current line may itself be
-    // a header for a later CSV section (mixed-format files often contain multiple delimited
-    // sections). Try to detect a new header; if it works, install it and drop the line as a
-    // header row. The following rows will use the new map.
-    const newHeader = this.detectHeader(line);
-    if (newHeader) {
+    const newHeader: Record<string, number> | null = this.detectHeader(line);
+
+    if (newHeader)
+    {
       this.headerMap = newHeader;
       this.headerParts = parts.map((p) => p.trim());
       return null;
     }
-    return undefined; // fall through to content-based extraction
+
+    return undefined;
   }
 
   /**
    * No header available: identify columns by CONTENT for strongly-validatable fields
    * (email/phone), then best-effort group remaining text columns into weak fields
    * (name/address/location), preserving everything unclaimed in meta.
+   *
+   * @param parts - The line already split into delimited cells.
+   * @returns The extracted row and `usedHeader: false`, or `null` if no strong field matched and there weren't enough columns/matches to accept a headerless guess.
    */
-  private parseDelimitedByContent(parts: string[]): { row: Record<string, unknown>; usedHeader: boolean } | null {
-    const row: Record<string, unknown> = {};
-    let matched = 0;
-    const claimed = new Set<number>();
-    let strongMatched = 0;
 
-    for (let i = 0; i < this.fieldSpec.length; i++) {
-      const field = this.fieldSpec[i];
-      const nf = this.normalizedFieldSpec[i];
+  private parseDelimitedByContent(parts: string[]): { row: Record<string, unknown>; usedHeader: boolean } | null
+  {
+    const row: Record<string, unknown> = {};
+    let matched: number = 0;
+    const claimed = new Set<number>();
+    let strongMatched: number = 0;
+
+    for (let i = 0; i < this.fieldSpec.length; i++)
+    {
+      const field: string = this.fieldSpec[i];
+      const nf: string = this.normalizedFieldSpec[i];
       let value: unknown = null;
-      if (nf === "email" || nf === "phone") {
-        for (let j = 0; j < parts.length; j++) {
-          if (claimed.has(j)) continue;
-          if (this.validateField(field, parts[j])) {
+      if (nf === "email" || nf === "phone")
+      {
+        for (let j = 0; j < parts.length; j++)
+        {
+          if (claimed.has(j))
+          {
+            continue;
+          }
+
+          if (this.validateField(field, parts[j]))
+          {
             value = parts[j];
             claimed.add(j);
             break;
           }
         }
       }
+
       row[field] = value;
-      if (value !== null) {
+
+      if (value !== null)
+      {
         matched++;
         strongMatched++;
       }
@@ -1139,21 +1879,30 @@ export class LineClassifier implements IClassifier {
 
     matched += this.groupWeakFieldsByContent(parts, row, claimed);
 
-    // Preserve all remaining unclaimed source columns in meta so no data is lost, including
-    // numeric IDs, OD codes, and salutations. The caller controls which columns are lifted
-    // into named fields via field_spec; everything else lives in meta.
     const metaObj: Record<string, string> = {};
-    for (let j = 0; j < parts.length; j++) {
-      if (claimed.has(j)) continue;
-      const v = String(parts[j] ?? "").trim();
-      if (v !== "") metaObj[`col_${j}`] = v;
-    }
-    row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
-    if (row["meta"] !== null) matched++;
 
-    // Accept rows with at least one strong (validatable) field, OR multi-column rows that
-    // contain usable text we could map to a weak field. This prevents throwing away
-    // address-only CSV lines that have no email/phone but are still structured data.
+    for (let j = 0; j < parts.length; j++)
+    {
+      if (claimed.has(j))
+      {
+        continue;
+      }
+
+      const v: string = String(parts[j] ?? "").trim();
+
+      if (v !== "")
+      {
+        metaObj[`col_${j}`] = v;
+      }
+    }
+
+    row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
+
+    if (row["meta"] !== null)
+    {
+      matched++;
+    }
+
     return strongMatched > 0 || (parts.length > 4 && matched > 0) ? { row, usedHeader: false } : null;
   }
 
@@ -1164,76 +1913,121 @@ export class LineClassifier implements IClassifier {
    * columns into one weak field so address gets the street block and location gets the
    * city/state/zip/country block, instead of interleaving columns across fields. Mutates
    * `row` and `claimed` in place; returns how many additional fields were matched.
+   *
+   * @param parts - The line already split into delimited cells.
+   * @param row - The row being built; mutated in place with any weak fields assigned.
+   * @param claimed - The set of column indices already claimed by strong fields; mutated in place as weak fields claim columns.
+   * @returns The number of additional weak fields that were assigned a value.
    */
-  private groupWeakFieldsByContent(parts: string[], row: Record<string, unknown>, claimed: Set<number>): number {
-    // Reject only obvious numeric IDs (7+ digits) and OD codes. Short numeric strings
-    // (4-6 digits) are typically ZIP/postal codes and belong in the location grouping.
+
+  private groupWeakFieldsByContent(parts: string[], row: Record<string, unknown>, claimed: Set<number>): number
+  {
     const weakCandidates: number[] = [];
-    for (let j = 0; j < parts.length; j++) {
-      if (claimed.has(j)) continue;
-      const v = String(parts[j] ?? "").trim();
-      if (
-          !v ||
-          LineClassifier.DELIMITER_ONLY_RE.test(v) ||
-          LineClassifier.ID_LIKE_RE.test(v) ||
-          LineClassifier.SALUTATION_RE.test(v)
-      ) {
+
+    for (let j = 0; j < parts.length; j++)
+    {
+      if (claimed.has(j))
+      {
         continue;
       }
+
+      const v: string = String(parts[j] ?? "").trim();
+
+      if (!v || LineClassifier.DELIMITER_ONLY_RE.test(v) || LineClassifier.ID_LIKE_RE.test(v) || LineClassifier.SALUTATION_RE.test(v))
+      {
+        continue;
+      }
+
       weakCandidates.push(j);
     }
 
     const weakFieldIndices: number[] = [];
-    for (let i = 0; i < this.fieldSpec.length; i++) {
-      const nf = this.normalizedFieldSpec[i];
-      if (nf === "email" || nf === "phone" || nf === "zip" || nf === "date" || nf === "url" || nf === "meta") continue;
-      if (row[this.fieldSpec[i]] !== null) continue;
+
+    for (let i = 0; i < this.fieldSpec.length; i++)
+    {
+      const nf: string = this.normalizedFieldSpec[i];
+
+      if (nf === "email" || nf === "phone" || nf === "zip" || nf === "date" || nf === "url" || nf === "meta")
+      {
+        continue;
+      }
+
+      if (row[this.fieldSpec[i]] !== null)
+      {
+        continue;
+      }
+
       weakFieldIndices.push(i);
     }
-    if (weakFieldIndices.length === 0 || weakCandidates.length === 0) return 0;
 
-    // Split candidates into contiguous runs (empty columns break a run). For OD-style rows
-    // the street block is the first run; city/state/zip/country may be one or more later runs.
+    if (weakFieldIndices.length === 0 || weakCandidates.length === 0)
+    {
+      return 0;
+    }
+
     const runs: number[][] = [];
     let current: number[] = [];
-    for (let k = 0; k < weakCandidates.length; k++) {
-      const idx = weakCandidates[k];
-      if (current.length === 0 || idx === weakCandidates[k - 1] + 1) {
+
+    for (let k = 0; k < weakCandidates.length; k++)
+    {
+      const idx: number = weakCandidates[k];
+
+      if (current.length === 0 || idx === weakCandidates[k - 1] + 1)
+      {
         current.push(idx);
-      } else {
+      }
+      else
+      {
         runs.push(current);
         current = [idx];
       }
     }
-    if (current.length) runs.push(current);
 
-    // Pre-split a single long run at the first postal code to separate address/location.
-    if (runs.length === 1 && weakFieldIndices.length > 1) {
-      const run = runs[0];
-      const zipPos = run.findIndex((idx) => LineClassifier.ZIP_RE.test(String(parts[idx] ?? "").trim()));
-      if (zipPos > 0) {
+    if (current.length)
+    {
+      runs.push(current);
+    }
+
+    if (runs.length === 1 && weakFieldIndices.length > 1)
+    {
+      const run: number[] = runs[0];
+      const zipPos: number = run.findIndex((idx) => LineClassifier.ZIP_RE.test(String(parts[idx] ?? "").trim()));
+
+      if (zipPos > 0)
+      {
         runs.splice(0, 1, run.slice(0, zipPos), run.slice(zipPos));
       }
     }
 
-    let matched = 0;
-    for (let wi = 0; wi < weakFieldIndices.length; wi++) {
-      const field = this.fieldSpec[weakFieldIndices[wi]];
-      const isLast = wi === weakFieldIndices.length - 1;
+    let matched: number = 0;
+
+    for (let wi = 0; wi < weakFieldIndices.length; wi++)
+    {
+      const field: string = this.fieldSpec[weakFieldIndices[wi]];
+      const isLast: boolean = wi === weakFieldIndices.length - 1;
       const chunks: number[][] = [];
-      if (wi < runs.length) chunks.push(runs[wi]);
-      // Merge all remaining runs into the last weak field (e.g. city/state/zip/country stay
-      // together in location).
-      if (isLast) {
+
+      if (wi < runs.length)
+      {
+        chunks.push(runs[wi]);
+      }
+
+      if (isLast)
+      {
         for (let r = wi + 1; r < runs.length; r++) chunks.push(runs[r]);
       }
-      if (chunks.length === 0) continue;
 
-      const values = chunks
-          .flat()
-          .map((idx) => String(parts[idx] ?? "").trim())
-          .filter((v) => v !== "");
-      if (values.length === 0) continue;
+      if (chunks.length === 0)
+      {
+        continue;
+      }
+
+      const values: string[] = chunks.flat().map((idx) => String(parts[idx] ?? "").trim()).filter((v) => v !== "");
+
+      if (values.length === 0)
+      {
+        continue;
+      }
 
       for (const chunk of chunks) for (const idx of chunk) claimed.add(idx);
       row[field] = values.join(", ");
@@ -1242,128 +2036,226 @@ export class LineClassifier implements IClassifier {
     return matched;
   }
 
-  // ===========================================================================================
-  // Locator resolution / coercion
-  // ===========================================================================================
+  /**
+   * Applies a resolved locator string (`index:`, `key:`, or `regex:`) to a parsed line
+   * structure to extract a single field's raw value.
+   *
+   * @param line - The original raw line, used as the regex target for `regex:` locators when the parsed structure is not itself a string.
+   * @param parsed - The line's parsed structure (array, object, or string) that the locator addresses.
+   * @param loc - The canonical `"kind:value"` locator string.
+   * @returns The located value, or `undefined` if the locator kind is unrecognized, out of range, or produces no match.
+   */
 
-  private applyLocator(line: string, parsed: string | unknown[] | Record<string, unknown>, loc: string): unknown {
-    if (typeof loc !== "string" || !loc) return undefined;
-    if (loc.startsWith("index:")) {
-      const index = parseInt(loc.replace("index:", ""));
-      if (Array.isArray(parsed) && index < parsed.length) return parsed[index];
+  private applyLocator(line: string, parsed: string | unknown[] | Record<string, unknown>, loc: string): unknown
+  {
+    if (typeof loc !== "string" || !loc)
+    {
       return undefined;
     }
-    if (loc.startsWith("key:")) {
-      const key = loc.replace("key:", "");
-      if (parsed && !Array.isArray(parsed) && typeof parsed === "object") return (parsed as Record<string, unknown>)[key];
+
+    if (loc.startsWith("index:"))
+    {
+      const index: number = parseInt(loc.replace("index:", ""));
+
+      if (Array.isArray(parsed) && index < parsed.length)
+      {
+        return parsed[index];
+      }
+
       return undefined;
     }
-    if (loc.startsWith("regex:")) {
-      const regexStr = loc.replace("regex:", "");
-      const re = safeRegex(regexStr);
-      if (!re) return undefined;
-      const target = typeof parsed === "string" ? parsed : line;
-      const match = re.exec(target);
-      if (match) return match[1] ?? match[0];
+
+    if (loc.startsWith("key:"))
+    {
+      const key: string = loc.replace("key:", "");
+
+      if (parsed && !Array.isArray(parsed) && typeof parsed === "object")
+      {
+        return (parsed as Record<string, unknown>)[key];
+      }
+
       return undefined;
     }
+
+    if (loc.startsWith("regex:"))
+    {
+      const regexStr: string = loc.replace("regex:", "");
+      const re: RegExp | null = safeRegex(regexStr);
+
+      if (!re)
+      {
+        return undefined;
+      }
+
+      const target: string = typeof parsed === "string" ? parsed : line;
+      const match: RegExpExecArray | null = re.exec(target);
+
+      if (match)
+      {
+        return match[1] ?? match[0];
+      }
+
+      return undefined;
+    }
+
     return undefined;
   }
 
-  /** Normalizes a raw extracted row into output-ready string/number/boolean/null values.
-   *  Returns `null` (rejecting the whole row) if any field's text content is
-   *  binary-corrupted beyond the accepted threshold. */
-  private coerce(row: Record<string, unknown>): Record<string, unknown> {
+  /**
+   * Normalizes a raw extracted row into output-ready string/number/boolean/null values.
+   * Returns `null` (rejecting the whole row) if any field's text content is
+   * binary-corrupted beyond the accepted threshold.
+   *
+   * @param row - The raw extracted field/value map to coerce.
+   * @returns The coerced row with normalized values, or `null` if any field is rejected for binary corruption.
+   */
+
+  private coerce(row: Record<string, unknown>): Record<string, unknown>
+  {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(row)) {
-      if (v === null || v === undefined || v === "") {
+
+    for (const [k, v] of Object.entries(row))
+    {
+      if (v === null || v === undefined || v === "")
+      {
         out[k] = null;
-      } else if (typeof v === "boolean" || typeof v === "number") {
+      }
+      else if (typeof v === "boolean" || typeof v === "number")
+      {
         out[k] = v;
-      } else if (Array.isArray(v)) {
-        const nf = this.normalizeKey(k);
-        if (nf === "email" || nf === "phone" || nf === "url") {
+      }
+      else if (Array.isArray(v))
+      {
+        const nf: string = this.normalizeKey(k);
+
+        if (nf === "email" || nf === "phone" || nf === "url")
+        {
           const first = v.find((x) => x !== null && x !== undefined && this.validateField(k, x));
-          if (first !== undefined) {
+
+          if (first !== undefined)
+          {
             out[k] = String(first).trim();
             continue;
           }
         }
         out[k] = JSON.stringify(v);
-      } else if (typeof v === "object") {
+      }
+      else if (typeof v === "object")
+      {
         out[k] = JSON.stringify(v);
-      } else {
-        const s = String(v).trim();
-        // Field-level binary detection: reject rows with binary content in any field. Tabs,
-        // newlines and CR are legitimate whitespace, not binary garbage.
-        const binaryChars = s.match(LineClassifier.BINARY_RE) || [];
-        const binaryCount = binaryChars.filter((c) => c !== "\t" && c !== "\n" && c !== "\r").length;
-        if (s.length > 0 && binaryCount / s.length > LineClassifier.BINARY_RATIO_MAX) {
-          // If any field has >5% binary content, reject the entire row.
+      }
+      else
+      {
+        const s: string = String(v).trim();
+        const binaryChars: any[] = s.match(LineClassifier.BINARY_RE) || [];
+        const binaryCount: number = binaryChars.filter((c) => c !== "\t" && c !== "\n" && c !== "\r").length;
+
+        if (s.length > 0 && binaryCount / s.length > LineClassifier.BINARY_RATIO_MAX)
+        {
           return null as unknown as Record<string, unknown>;
         }
         out[k] = s;
       }
     }
+
     return out;
   }
 
-  // ===========================================================================================
-  // Stateless static helpers (CSV splitting, fingerprinting). Kept as static methods rather
-  // than module-level functions so the whole classifier lives in one class, per-instance
-  // state stays clearly separated from what's genuinely stateless, and callers read
-  // `LineClassifier.parseCsvLine(...)` instead of an unqualified free function.
-  // ===========================================================================================
+  /**
+   * Splits a single delimited line into cells, honoring a quote character for embedded
+   * delimiters/newlines and doubled-quote escaping.
+   *
+   * @param line - The raw line to split.
+   * @param delim - The delimiter character to split on.
+   * @param quoteChar - The quote character used to protect embedded delimiters (defaults to `"`); pass an empty string to disable quote handling.
+   * @returns The line split into trimmed cell strings.
+   */
 
-  /** Splits a single delimited line into cells, honoring a quote character for embedded
-   *  delimiters/newlines and doubled-quote escaping. */
-  private static parseCsvLine(line: string, delim: string, quoteChar: string = "\""): string[] {
-    const quote = quoteChar || null;
+  private static parseCsvLine(line: string, delim: string, quoteChar: string = "\""): string[]
+  {
+    const quote: string | null = quoteChar || null;
     const parts: string[] = [];
-    let current = "";
-    let inQuote = false;
+    let current: string = "";
+    let inQuote: boolean = false;
 
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      const next = line[i + 1];
-      if (quote && c === quote) {
-        if (inQuote && next === quote) {
+    for (let i = 0; i < line.length; i++)
+    {
+      const c: string = line[i];
+      const next: string = line[i + 1];
+
+      if (quote && c === quote)
+      {
+        if (inQuote && next === quote)
+        {
           current += quote;
-          i++; // skip escaped quote
-        } else {
+          i++;
+        }
+        else
+        {
           inQuote = !inQuote;
         }
-      } else if (c === delim && !inQuote) {
+      }
+      else if (c === delim && !inQuote)
+      {
         parts.push(current.trim());
         current = "";
-      } else {
+      }
+      else
+      {
         current += c;
       }
     }
+
     parts.push(current.trim());
+
     return parts;
   }
 
-  /** Cheap shape fingerprint used to key the per-job AI template cache: JSON lines fingerprint
-   *  by sorted key set, delimited lines by delimiter + column count, everything else by
-   *  length. */
-  private static quickFingerprint(line: string): string {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) return "empty";
-    if (trimmed[0] === "{" || trimmed[0] === "[") {
-      try {
+  /**
+   * Cheap shape fingerprint used to key the per-job AI template cache: JSON lines fingerprint
+   * by sorted key set, delimited lines by delimiter + column count, everything else by
+   * length.
+   *
+   * @param line - The raw line to fingerprint.
+   * @returns A short string identifying the line's shape, suitable as an AI-cache key.
+   */
+
+  private static quickFingerprint(line: string): string
+  {
+    const trimmed: string = line.trim();
+
+    if (trimmed.length === 0)
+    {
+      return "empty";
+    }
+
+    if (trimmed[0] === "{" || trimmed[0] === "[")
+    {
+      try
+      {
         const parsed = JSON.parse(line);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+        {
           return `json|${Object.keys(parsed).sort().join(",")}`;
         }
-      } catch {
+      }
+      catch
+      {
         /* ignore */
       }
     }
-    for (const delim of LineClassifier.DELIMITER_CANDIDATES) {
-      const parts = LineClassifier.parseCsvLine(line, delim, "\"");
-      if (parts.length >= 3) return `csv|${delim}|${parts.length}`;
+
+    for (const delim of LineClassifier.DELIMITER_CANDIDATES)
+    {
+      const parts: string[] = LineClassifier.parseCsvLine(line, delim, "\"");
+
+      if (parts.length >= 3)
+      {
+        return `csv|${delim}|${parts.length}`;
+      }
     }
+
     return `text|${trimmed.length}`;
   }
 }
