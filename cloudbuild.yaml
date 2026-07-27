@@ -48,7 +48,21 @@ steps:
         npm install
         npm run build
 
-  # Step 3: Build and push Docker images
+  # Step 3: Ensure Pub/Sub topics/subscriptions exist for the pipeline queues
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        for topic in fpp-ingest fpp-classify fpp-parse fpp-line-dlq fpp-load fpp-report fpp-job-events fpp-archive-entry; do
+          gcloud pubsub topics create $topic --project=data-etl-499916 || true
+          gcloud pubsub subscriptions create ${topic}-sub \
+            --topic=$topic \
+            --ack-deadline-seconds=60 \
+            --project=data-etl-499916 || true
+        done
+
+  # Step 4: Build and push Docker images
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-f', 'Dockerfile.job', '-t', '$_JOB_IMAGE', '.']
 
