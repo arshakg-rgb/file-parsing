@@ -108,13 +108,14 @@ export class PostgreSqlManager extends ServiceManager
   private buildSequelize(): Sequelize
   {
       const config: IDatabaseConfig = Config.getInstance().databaseConfig;
+      const databaseUrl = process.env.FILE_DATABASE_URL || config.url;
 
-      return new Sequelize(config.url, {
+      return new Sequelize(databaseUrl, {
         dialect: "postgres",
         logging: false,
         timezone: "+02:00",
         pool: { max: config.poolSize, min: 0, acquire: 30000, idle: 1200000 },
-        dialectOptions: this.buildSslOptions(config.url),
+        dialectOptions: this.buildSslOptions(databaseUrl),
       });
   }
 
@@ -237,8 +238,9 @@ export class PostgreSqlManager extends ServiceManager
       if (!this._pool)
       {
         const config: IDatabaseConfig = Config.getInstance().databaseConfig;
+        const databaseUrl = process.env.FILE_DATABASE_URL || config.url;
         this._pool = new Pool({
-          connectionString: config.url,
+          connectionString: databaseUrl,
           max: config.poolSize,
           idleTimeoutMillis: 1200000,
           connectionTimeoutMillis: 30000,

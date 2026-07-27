@@ -1,19 +1,4 @@
 {
-  "host": "localhost",
-  "port": 5432,
-  "username": "postgres",
-  "password": "postgres",
-  "database": "parsing_pipeline",
-  "dialect": "postgres",
-  "logging": false,
-  "pool": {
-    "max": 10,
-    "min": 0,
-    "acquire": 30000,
-    "idle": 10000
-  },
-  "retry": {
-    "max_retry": 3,
-    "match_options": []
-  }
+  "url": "postgresql://postgres:postgres@localhost:5432/parsing_pipeline",
+  "poolSize": 10
 }

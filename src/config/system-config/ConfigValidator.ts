@@ -33,23 +33,8 @@ const appConfigSchema: ObjectSchema = joi.object().keys({
  */
 
 const mysqlConfigSchema: ObjectSchema = joi.object().keys({
-  host: joi.string().max(Constants.MAX_STRING_LENGTH).hostname().required(),
-  port: joi.number().integer().min(1).max(65535).required(),
-  username: joi.string().max(Constants.MAX_STRING_LENGTH).min(1).required(),
-  password: joi.string().max(Constants.MAX_STRING_LENGTH).min(1).required(),
-  database: joi.string().max(Constants.MAX_STRING_LENGTH).min(1).required(),
-  dialect: joi.string().max(Constants.MAX_STRING_LENGTH).required(),
-  logging: joi.boolean().required(),
-  pool: joi.object().keys({
-    max: joi.number().integer().min(1).required(),
-    min: joi.number().integer().min(0).required(),
-    acquire: joi.number().integer().min(1).required(),
-    idle: joi.number().integer().min(1).required()
-  }).required(),
-  retry: joi.object().keys({
-    max_retry: joi.number().integer().min(1).required(),
-    match_options: joi.array().items(joi.string().max(Constants.MAX_STRING_LENGTH)).required()
-  }).required()
+  url: joi.string().required(),
+  poolSize: joi.number().integer().min(1).required()
 });
 
 const authConfigSchema: ObjectSchema = joi.object().keys({
