@@ -1,0 +1,4 @@
+{
+  "url": "postgresql://postgres:postgres@localhost:5432/parsing_pipeline",
+  "poolSize": 10
+}
