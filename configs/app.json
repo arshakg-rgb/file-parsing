@@ -2,9 +2,21 @@
   "name": "file-parsing-pipeline",
   "version": "1.0.0",
   "environment": "development",
-  "port": 3000,
+  "port": 8080,
+  "debug": false,
+  "start_delay": 0,
   "origins": {
     "enabled": true,
     "domains": ["*"]
+  },
+  "k8s": {
+    "readiness": {
+      "period": 10,
+      "threshold": 3
+    },
+    "liveness": {
+      "period": 10,
+      "threshold": 3
+    }
   }
 }
