@@ -26,6 +26,7 @@ RUN npm install --omit=dev
 
 # Copy built files
 COPY --from=build /app/dist/ ./dist/
+COPY configs/ ./configs/
 
 # Copy package.json for runtime
 COPY package.json ./

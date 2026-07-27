@@ -170,11 +170,17 @@ export default class Config
 
     private readConfigFile = <T>(fileName: string, validate: (data: {}) => ValidationResult<T>): T =>
     {
-        const fileFullName: string = path.join(__dirname, "..", "..", "configs", fileName);
+        const candidates: string[] = [
+            path.resolve(process.cwd(), "configs", fileName),
+            path.resolve(__dirname, "..", "..", "..", "configs", fileName),
+            path.resolve(__dirname, "..", "..", "configs", fileName)
+        ];
 
-        if (!fs.existsSync(fileFullName))
+        const fileFullName = candidates.find((candidate) => fs.existsSync(candidate));
+
+        if (!fileFullName)
         {
-            throw new Error(`Config file '${fileName}' not found`);
+            throw new Error(`Config file '${fileName}' not found. Searched: ${candidates.join(", ")}`);
         }
 
         const rawData: string = fs.readFileSync(fileFullName, "utf-8");
