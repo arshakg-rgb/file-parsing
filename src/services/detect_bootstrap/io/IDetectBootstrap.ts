@@ -55,15 +55,15 @@ export interface HeaderStripResult {
  */
 
 export const HEADER_PATTERNS: RegExp[] = [
-  /^[a-zA-Z_][a-zA-Z0-9_]*(,[a-zA-Z_][a-zA-Z0-9_]*)+$/,
-  /^[a-zA-Z_][a-zA-Z0-9_]*(;[a-zA-Z_][a-zA-Z0-9_]*)+$/,
-  /^[a-zA-Z_][a-zA-Z_0-9_]*(\t[a-zA-Z_][a-zA-Z0-9_]*)+$/,
+  /^[a-zA-Z_][a-zA-Z0-9_]*(,[a-zA-Z_][a-zA-Z0-9_]*)+$/, // comma-delimited
+  /^[a-zA-Z_][a-zA-Z0-9_]*(;[a-zA-Z_][a-zA-Z0-9_]*)+$/, // semicolon-delimited
+  /^[a-zA-Z_][a-zA-Z0-9_]*(\t[a-zA-Z_][a-zA-Z0-9_]*)+$/, // tab-delimited
 ];
 
 /**
  * Delimiters checked, in priority order, when fingerprinting a probe window
 */
-export const CSV_DELIMITERS = [",", ";", "\t", "|"];
+export const CSV_DELIMITERS: string[] = [",", ";", "\t", "|"];
 
 
 /**
