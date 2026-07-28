@@ -18,6 +18,7 @@ import { startHealthCheckServer } from "@utils/response/health.js";
 import { waitForDb } from "@shared/DatabaseManager.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import jschardet from "jschardet";
+import JSONbig from "json-bigint";
 import crypto from "crypto";
 import { normalizeEncoding, isLikelyUtf8 } from "@utils/normalizers/encoding.js";
 
@@ -25,10 +26,12 @@ import { normalizeEncoding, isLikelyUtf8 } from "@utils/normalizers/encoding.js"
  * Extract JSON records from a parsed JSON value for processing as individual classifier inputs.
  * Arrays become one record per element. Objects become one record per top-level value.
  */
+const JSON_SAFE = JSONbig({ storeAsString: true });
+
 function extractJsonRecords(data: unknown): string[] {
   const records: string[] = [];
   function pushRecord(value: unknown) {
-    if (value === null || value === undefined) return;
+    if (value === undefined) return;
     records.push(JSON.stringify(value));
   }
   if (Array.isArray(data)) {
@@ -600,7 +603,7 @@ export class StreamParserService {
       try {
         const buf = await readFull(bucket, key);
         const text = buf.toString(detectedEncoding as BufferEncoding).replace(/\0/g, "");
-        jsonRecords = extractJsonRecords(JSON.parse(text));
+        jsonRecords = extractJsonRecords(JSON_SAFE.parse(text));
       } catch (err) {
         this.logger.warn("json_parse_failed", { job_id: jobId, s3_url: msg.s3_url, error: String(err) });
       }

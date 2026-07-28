@@ -1,3 +1,4 @@
+import JSONbig from "json-bigint";
 import { settings } from "@shared/Settings.js";
 import { createLogger, Logger } from "@utils/logger/logger.js";
 import { FailureClass, ColumnMap } from "@shared/models/job.js";
@@ -63,6 +64,12 @@ export class LineClassifier implements IClassifier
    */
 
   private static readonly DELIMITER_CANDIDATES = [",", ";", "\t", "|"] as const;
+
+  /** Precision-safe JSON parser: numbers that exceed Number's safe integer range are
+   *  stored as strings instead of silently losing precision (e.g. int64 IDs).
+   */
+
+  private static readonly JSON_SAFE = JSONbig({ storeAsString: true });
   private normalizeKeyCache: Map<string, string> = new Map<string, string>();
 
   /**
@@ -583,7 +590,7 @@ export class LineClassifier implements IClassifier
 
     try
     {
-      parsed = JSON.parse(template);
+      parsed = LineClassifier.JSON_SAFE.parse(template);
     }
     catch
     {
@@ -868,7 +875,7 @@ export class LineClassifier implements IClassifier
 
       try
       {
-        const obj = JSON.parse(line);
+        const obj = LineClassifier.JSON_SAFE.parse(line);
 
         if (obj && typeof obj === "object" && !Array.isArray(obj))
         {
@@ -1060,7 +1067,16 @@ export class LineClassifier implements IClassifier
 
       if (v !== null && typeof v === "object" && !Array.isArray(v))
       {
-        Object.assign(out, this.flattenObject(v as Record<string, unknown>, key));
+        const nested: Record<string, unknown> = this.flattenObject(v as Record<string, unknown>, key);
+
+        if (Object.keys(nested).length === 0)
+        {
+          out[key] = "{}";
+        }
+        else
+        {
+          Object.assign(out, nested);
+        }
         continue;
       }
 
@@ -1092,7 +1108,7 @@ export class LineClassifier implements IClassifier
         {
           try
           {
-            const inner = JSON.parse(sv);
+            const inner = LineClassifier.JSON_SAFE.parse(sv);
             if (typeof inner === "string") sv = inner;
           }
           catch
@@ -1106,7 +1122,7 @@ export class LineClassifier implements IClassifier
       {
         try
         {
-          const parsed = JSON.parse(sv);
+          const parsed = LineClassifier.JSON_SAFE.parse(sv);
 
           if (parsed && typeof parsed === "object")
           {
@@ -1129,7 +1145,16 @@ export class LineClassifier implements IClassifier
 
               continue;
             }
-            Object.assign(out, this.flattenObject(parsed as Record<string, unknown>, key));
+            const nestedParsed: Record<string, unknown> = this.flattenObject(parsed as Record<string, unknown>, key);
+
+            if (Object.keys(nestedParsed).length === 0)
+            {
+              out[key] = "{}";
+            }
+            else
+            {
+              Object.assign(out, nestedParsed);
+            }
             continue;
           }
         }
@@ -1167,6 +1192,7 @@ export class LineClassifier implements IClassifier
     const normalizedObjKeys = new Map<string, unknown>();
     const leafToFull = new Map<string, string>();
     const consumedKeys = new Set<string>();
+    const extraMeta: Record<string, string> = {};
 
     for (const [k, val] of Object.entries(obj))
     {
@@ -1260,6 +1286,17 @@ export class LineClassifier implements IClassifier
       {
         row[field] = value;
         matched++;
+
+        if (Array.isArray(value))
+        {
+          const meaningful: unknown[] = value.filter((x) => x !== null && x !== undefined && String(x).trim() !== "");
+
+          if (meaningful.length > 1)
+          {
+            extraMeta[`${field}_all`] = JSON.stringify(meaningful);
+          }
+        }
+
         consumedKeys.add(matchedKey!);
         const fullKey = leafToFull.get(matchedKey!);
 
@@ -1283,16 +1320,13 @@ export class LineClassifier implements IClassifier
 
     for (const [k, v] of Object.entries(obj))
     {
-      if (!consumedKeys.has(this.normalizeKey(k)) && v !== undefined && v !== null)
+      if (!consumedKeys.has(this.normalizeKey(k)) && v !== undefined)
       {
-        const metaStr: string = typeof v === "object" ? JSON.stringify(v) : String(v).trim();
-
-        if (metaStr !== "")
-        {
-          metaObj[k] = metaStr;
-        }
+        metaObj[k] = v === null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v).trim();
       }
     }
+
+    Object.assign(metaObj, extraMeta);
     row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
 
     const minMatches: number = fieldSpecOverride ? Math.max(1, Math.ceil(fieldSpecOverride.filter((f) => f !== "meta").length * 0.75)) : this.defaultMinMatches;
@@ -1441,7 +1475,7 @@ export class LineClassifier implements IClassifier
       {
         try
         {
-          const inner = JSON.parse(t) as string;
+          const inner = LineClassifier.JSON_SAFE.parse(t) as string;
           return this.parseJsonRecord(inner);
         }
         catch
@@ -1506,7 +1540,7 @@ export class LineClassifier implements IClassifier
 
     try
     {
-      parsed = JSON.parse(trimmed);
+      parsed = LineClassifier.JSON_SAFE.parse(trimmed);
     }
     catch
     {
