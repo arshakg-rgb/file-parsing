@@ -17,6 +17,7 @@ import {
   PASSWORD_ERROR_KEYWORDS,
   UPLOAD_LIKE_SOURCE_TYPES
 } from "@service/ingest/io/IIngest";
+import {IParseJob} from "@config/db/models";
 
 
 export class IngestService
@@ -77,17 +78,23 @@ export class IngestService
   /**
    * Private constructor for singleton pattern
    */
-  private constructor() {
+
+  private constructor()
+  {
     this.startHealthCheckServers();
   }
 
   /**
    * Get singleton instance
    */
-  static getInstance(): IngestService {
-    if (!IngestService.instance) {
+
+  static getInstance(): IngestService
+  {
+    if (!IngestService.instance)
+    {
       IngestService.instance = new IngestService();
     }
+
     return IngestService.instance;
   }
 
@@ -96,20 +103,26 @@ export class IngestService
    * additionally on HEALTH_CHECK_PORT if configured and different.
    * @private
    */
-  private startHealthCheckServers(): void {
-    // Cloud Run injects PORT; always listen on it (or 8080) so startup succeeds.
-    // Also honor HEALTH_CHECK_PORT if set and different.
+
+  private startHealthCheckServers(): void
+  {
     const ports = new Set<number>();
-    const cloudRunPort = process.env.PORT ? parseInt(process.env.PORT, 10) : 8080;
+    const cloudRunPort: number = process.env.PORT ? parseInt(process.env.PORT, 10) : 8080;
     ports.add(cloudRunPort);
-    if (process.env.HEALTH_CHECK_PORT) {
-      const p = parseInt(process.env.HEALTH_CHECK_PORT, 10);
+
+    if (process.env.HEALTH_CHECK_PORT)
+    {
+      const p: number = parseInt(process.env.HEALTH_CHECK_PORT, 10);
       if (!isNaN(p) && p !== cloudRunPort) ports.add(p);
     }
-    for (const port of ports) {
-      try {
+    for (const port of ports)
+    {
+      try
+      {
         startHealthCheckServer(port);
-      } catch (err) {
+      }
+      catch (err)
+      {
         this.logger.error("health_server_start_failed", { port, error: err instanceof Error ? err.message : String(err) });
       }
     }
@@ -118,7 +131,9 @@ export class IngestService
   /**
    * Initialize the service
    */
-  async initialize(): Promise<void> {
+
+  async initialize(): Promise<void>
+  {
     await waitForDb();
     this.logger.info("ingest_initialized");
   }
@@ -126,8 +141,11 @@ export class IngestService
   /**
    * Start the consumer loop
    */
-  async start(): Promise<void> {
-    if (this.running) {
+
+  async start(): Promise<void>
+  {
+    if (this.running)
+    {
       this.logger.warn("ingest_already_running");
       return;
     }
@@ -147,11 +165,11 @@ export class IngestService
    * @param label - Label for error message
    * @returns Promise that rejects if timeout expires
    */
-  private withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+
+  private withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T>
+  {
     let timer: NodeJS.Timeout;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-    });
+    const timeout = new Promise<never>((_, reject) => {timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);});
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
   }
 
@@ -162,7 +180,9 @@ export class IngestService
    * @param eventType - Type of event to emit
    * @param data - Event payload data
    */
-  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>): void {
+
+  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>): void
+  {
     publishEvent(makeJobEvent(eventType, jobId, "ingest", data));
   }
 
@@ -173,7 +193,9 @@ export class IngestService
    * @param newStatus - New job status
    * @param error - Optional error message
    */
-  private transition(jobId: string, newStatus: JobStatus, error?: string): void {
+
+  private transition(jobId: string, newStatus: JobStatus, error?: string): void
+  {
     this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: newStatus, ...(error ? { error } : {}) });
   }
 
@@ -186,8 +208,11 @@ export class IngestService
    * @param description - Human-readable description of the expected scheme, for the error message
    * @private
    */
-  private assertUrlScheme(url: string, pattern: RegExp, description: string): void {
-    if (!pattern.test(url)) {
+
+  private assertUrlScheme(url: string, pattern: RegExp, description: string): void
+  {
+    if (!pattern.test(url))
+    {
       throw new Error(`source_ref must be ${description}: ${url}`);
     }
   }
@@ -205,21 +230,24 @@ export class IngestService
    * @param msg - Ingest message containing job details
    * @throws Error if ingestion fails
    */
-  async handleIngest(msg: IngestMessage): Promise<void> {
-    const ingestStartTime = Date.now();
+
+  async handleIngest(msg: IngestMessage): Promise<void>
+  {
+    const ingestStartTime: number = Date.now();
     this.totalIngests++;
 
-    const jobId = msg.job_id;
+    const jobId: string = msg.job_id;
 
-    // Check current status before transitioning to avoid duplicate events
-    const currentStatus = await repositories.jobs.getStatus(jobId);
+    const currentStatus: string = await repositories.jobs.getStatus(jobId);
 
-    if (currentStatus === JobStatus.INGESTING) {
+    if (currentStatus === JobStatus.INGESTING)
+    {
       this.logger.info("ingest_already_ingesting", { job_id: jobId });
       return;
     }
 
-    if (currentStatus === JobStatus.FAILED) {
+    if (currentStatus === JobStatus.FAILED)
+    {
       this.logger.info("ingest_job_failed", { job_id: jobId });
       return;
     }
@@ -228,44 +256,59 @@ export class IngestService
     this.logger.info("ingest_start", { job_id: jobId, source_type: msg.source_type });
     metrics.increment("ingest.start", 1, { source_type: msg.source_type });
 
-    try {
-      const resolved = await this.resolveSource(msg);
-      if (!resolved) {
-        if (msg.source_type === SourceType.S3 && msg.source_ref.endsWith("/")) {
+    try
+    {
+      const resolved: { s3Url: string; size: number } = await this.resolveSource(msg);
+
+      if (!resolved)
+      {
+        if (msg.source_type === SourceType.S3 && msg.source_ref.endsWith("/"))
+        {
           this.transition(jobId, JobStatus.DONE);
         }
         return;
       }
+
       const { s3Url, size } = resolved;
 
-      try {
+      try
+      {
         await repositories.jobs.updateS3Url(jobId, s3Url, size);
-      } catch (e) {
+      }
+      catch (e)
+      {
         this.logger.warn("ingest_s3_url_update_failed", { job_id: jobId, error: String(e) });
       }
 
       const [bucket, key] = parseGcsUrl(s3Url);
-      const header = await readRange(bucket, key, 0, 511);
-      const archiveType = detectArchiveType(header);
+      const header: Buffer = await readRange(bucket, key, 0, 511);
+      const archiveType: string = detectArchiveType(header);
 
-      if (archiveType) {
+      if (archiveType)
+      {
         await this.handleArchive(jobId, s3Url, archiveType, msg);
         return;
       }
 
-      await sendRaw(settings.CLASSIFY_QUEUE_URL, {
+      await sendRaw(settings.CLASSIFY_QUEUE_URL,
+      {
         job_id: jobId,
         s3_url: s3Url,
         size,
         field_spec: msg.field_spec,
         column_map: msg.column_map,
       });
+
       this.logger.info("ingest_forwarded_to_classify", { job_id: jobId, s3_url: s3Url });
       metrics.increment("ingest.forwarded", 1, { target: "classify" });
-    } catch (exc) {
+    }
+    catch (exc)
+    {
       this.handleIngestError(exc, jobId);
-    } finally {
-      const ingestDuration = Date.now() - ingestStartTime;
+    }
+    finally
+    {
+      const ingestDuration: number = Date.now() - ingestStartTime;
       metrics.set("ingest.duration_ms", ingestDuration);
     }
   }
@@ -279,8 +322,11 @@ export class IngestService
    * @param jobId - Job identifier
    * @private
    */
-  private handleIngestError(exc: unknown, jobId: string): void {
-    if (exc instanceof SSRFError) {
+
+  private handleIngestError(exc: unknown, jobId: string): void
+  {
+    if (exc instanceof SSRFError)
+    {
       this.logger.error("ssrf_blocked", { job_id: jobId }, exc);
       this.stats.ssrfBlocks++;
       metrics.increment("ingest.ssrf_blocked", 1);
@@ -288,18 +334,24 @@ export class IngestService
       return;
     }
 
-    if (exc instanceof PasswordError) {
+    if (exc instanceof PasswordError)
+    {
       this.stats.passwordErrors++;
-      const attempts = this.passwordAttempts.get(jobId) || 0;
-      if (attempts >= settings.ARCHIVE_PASSWORD_MAX_ATTEMPTS) {
+      const attempts: number = this.passwordAttempts.get(jobId) || 0;
+
+      if (attempts >= settings.ARCHIVE_PASSWORD_MAX_ATTEMPTS)
+      {
         this.logger.error("archive_password_exhausted", { job_id: jobId, attempts });
         metrics.increment("ingest.password_exhausted", 1);
         this.transition(jobId, JobStatus.FAILED, `password_unavailable: ${exc}`);
-      } else {
+      }
+      else
+      {
         this.passwordAttempts.set(jobId, attempts + 1);
         this.logger.info("archive_password_required", { job_id: jobId, attempts: attempts + 1 });
         this.transition(jobId, JobStatus.AWAITING_PASSWORD);
       }
+
       return;
     }
 
@@ -320,16 +372,24 @@ export class IngestService
    * @returns S3 URL and size, or null for prefix fanout
    * @throws Error if source type is unknown or resolution fails
    */
-  private async resolveSource(msg: IngestMessage): Promise<{ s3Url: string; size: number } | null> {
-    if (msg.source_type === SourceType.S3) {
+
+  private async resolveSource(msg: IngestMessage): Promise<{ s3Url: string; size: number } | null>
+  {
+    if (msg.source_type === SourceType.S3)
+    {
       return this.resolveS3Source(msg);
     }
-    if (msg.source_type === SourceType.URL) {
+
+    if (msg.source_type === SourceType.URL)
+    {
       return this.resolveUrlSource(msg);
     }
-    if (UPLOAD_LIKE_SOURCE_TYPES.includes(msg.source_type)) {
+
+    if (UPLOAD_LIKE_SOURCE_TYPES.includes(msg.source_type))
+    {
       return this.resolveUploadSource(msg);
     }
+
     throw new Error(`Unknown source_type: ${msg.source_type}`);
   }
 
@@ -341,14 +401,19 @@ export class IngestService
    * @param msg - Ingest message
    * @private
    */
-  private async resolveS3Source(msg: IngestMessage): Promise<{ s3Url: string; size: number } | null> {
-    const url = msg.source_ref;
+
+  private async resolveS3Source(msg: IngestMessage): Promise<{ s3Url: string; size: number } | null>
+  {
+    const url: string = msg.source_ref;
     this.assertUrlScheme(url, GCS_OR_S3_URL_PATTERN, "a gs:// or s3:// URL");
 
-    if (url.endsWith("/")) {
+    if (url.endsWith("/"))
+    {
       this.stats.s3PrefixFanouts++;
-      const objects = await listS3Prefix(url);
-      for (const [objUrl, objSize] of objects) {
+      const objects: [string, number][] = await listS3Prefix(url);
+
+      for (const [objUrl, objSize] of objects)
+      {
         await publishEvent(
             makeJobEvent(EventType.ENTRY_DISCOVERED, msg.job_id, "ingest", {
               parent_job_id: msg.job_id,
@@ -367,7 +432,7 @@ export class IngestService
     }
 
     const [bucket, key] = parseGcsUrl(url);
-    const size = await objectSize(bucket, key);
+    const size: number = await objectSize(bucket, key);
     return { s3Url: url, size };
   }
 
@@ -377,10 +442,13 @@ export class IngestService
    * @param msg - Ingest message
    * @private
    */
-  private async resolveUrlSource(msg: IngestMessage): Promise<{ s3Url: string; size: number }> {
+
+  private async resolveUrlSource(msg: IngestMessage): Promise<{ s3Url: string; size: number }>
+  {
     this.stats.urlFetches++;
     this.assertUrlScheme(msg.source_ref, HTTP_URL_PATTERN, "an http(s) URL for url sources");
     const [s3Url, size] = await fetchUrlToS3(msg.job_id, msg.source_ref);
+
     return { s3Url, size };
   }
 
@@ -392,15 +460,17 @@ export class IngestService
    * @param msg - Ingest message
    * @private
    */
-  private async resolveUploadSource(msg: IngestMessage): Promise<{ s3Url: string; size: number }> {
+
+  private async resolveUploadSource(msg: IngestMessage): Promise<{ s3Url: string; size: number }>
+  {
     this.assertUrlScheme(msg.source_ref, GCS_OR_S3_URL_PATTERN, "a gs:// or s3:// URL");
     const [bucket, key] = parseGcsUrl(msg.source_ref);
     this.logger.debug("upload_source_debug", { job_id: msg.job_id, bucket, key, source_ref: msg.source_ref });
 
-    const size = await this.retryObjectSize(bucket, key, msg.job_id);
+    const size: number = await this.retryObjectSize(bucket, key, msg.job_id);
 
-    // Copy from uploads to ingested bucket for upload jobs
-    if (msg.source_type === SourceType.UPLOAD && bucket === settings.DATA_BUCKET && key.startsWith("uploads/")) {
+    if (msg.source_type === SourceType.UPLOAD && bucket === settings.DATA_BUCKET && key.startsWith("uploads/"))
+    {
       return this.copyUploadToIngested(msg, bucket, key, size);
     }
 
@@ -418,14 +488,26 @@ export class IngestService
    * @throws The last error if all attempts are exhausted
    * @private
    */
-  private async retryObjectSize(bucket: string, key: string, jobId: string): Promise<number> {
-    let attempts = 0;
-    while (true) {
-      try {
+
+  private async retryObjectSize(bucket: string, key: string, jobId: string): Promise<number>
+  {
+    let attempts: number = 0;
+
+    while (true)
+    {
+      try
+      {
         return await objectSize(bucket, key);
-      } catch (err) {
+      }
+      catch (err)
+      {
         attempts++;
-        if (attempts >= OBJECT_SIZE_MAX_ATTEMPTS) throw err;
+
+        if (attempts >= OBJECT_SIZE_MAX_ATTEMPTS)
+        {
+          throw err;
+        }
+
         this.logger.warn("upload_size_check_retry", { job_id: jobId, attempt: attempts, error: String(err) });
         await new Promise((r) => setTimeout(r, OBJECT_SIZE_RETRY_DELAY_MS));
       }
@@ -441,22 +523,29 @@ export class IngestService
    * @param size - Object size, passed through on success
    * @private
    */
-  private async copyUploadToIngested(msg: IngestMessage, bucket: string, key: string, size: number): Promise<{ s3Url: string; size: number }> {
-    this.stats.uploadCopies++;
-    const dstKey = key.replace("uploads/", "ingested/");
 
-    try {
+  private async copyUploadToIngested(msg: IngestMessage, bucket: string, key: string, size: number): Promise<{ s3Url: string; size: number }>
+  {
+    this.stats.uploadCopies++;
+    const dstKey: string = key.replace("uploads/", "ingested/");
+
+    try
+    {
       await copyObject(bucket, key, bucket, dstKey);
       const ingestedUrl = `gs://${bucket}/${dstKey}`;
       this.logger.info("upload_copied_to_ingested", { job_id: msg.job_id, source_ref: msg.source_ref, ingested_url: ingestedUrl });
       return { s3Url: ingestedUrl, size };
-    } catch (copyError) {
+    }
+    catch (copyError)
+    {
       this.logger.error(
           "upload_copy_failed",
           { job_id: msg.job_id, source_ref: msg.source_ref, error: String(copyError) },
           copyError instanceof Error ? copyError : new Error(String(copyError))
       );
+
       metrics.increment("ingest.copy_failed", 1);
+
       throw new Error(`Failed to copy file from uploads to ingested: ${String(copyError)}`);
     }
   }
@@ -474,46 +563,53 @@ export class IngestService
    * @throws PasswordError if password is required and not available
    * @throws Error if extraction fails
    */
-  private async handleArchive(
-      jobId: string,
-      s3Url: string,
-      archiveType: string,
-      msg: IngestMessage,
-  ): Promise<void> {
+
+  private async handleArchive(jobId: string, s3Url: string, archiveType: string, msg: IngestMessage,): Promise<void>
+  {
     this.totalArchivesExtracted++;
     this.stats.archiveExtractions++;
 
-    const password = msg.password ?? this.passwordCache.get(jobId)?.toString();
-    try {
-      const entries = await this.withTimeout(
+    const password: string = msg.password ?? this.passwordCache.get(jobId)?.toString();
+    try
+    {
+      const entries: Record<string, unknown>[] = await this.withTimeout(
           extractArchiveToS3(jobId, s3Url, archiveType, msg.field_spec, msg.batch_id || jobId, password),
           this.EXTRACTION_TIMEOUT_MS,
           `extractArchiveToS3(${jobId})`
       );
-      if (!entries.length) {
+
+      if (!entries.length)
+      {
         this.logger.warn("archive_empty", { job_id: jobId, s3_url: s3Url });
         metrics.increment("ingest.archive_empty", 1);
         this.transition(jobId, JobStatus.FAILED, "Archive contained no extractable files");
         return;
       }
 
-      let hasPending = false;
-      for (const entry of entries) {
-        if (await this.processArchiveEntry(jobId, entry)) hasPending = true;
+      let hasPending: boolean = false;
+
+      for (const entry of entries)
+      {
+        if (await this.processArchiveEntry(jobId, entry))
+        {
+          hasPending = true;
+        }
       }
 
       this.logger.info("archive_extracted", { job_id: jobId, entries: entries.length, pending: hasPending });
       metrics.increment("ingest.archive_extracted", entries.length);
 
-      // If there are pending entries, transition to INGESTING (stays there until async entries complete)
-      // If no pending entries, transition to DONE
-      if (hasPending) {
+      if (hasPending)
+      {
         this.logger.info("archive_has_pending_entries", { job_id: jobId });
-        // Keep in INGESTING status - already set at start of handleIngest
-      } else {
+      }
+      else
+      {
         this.transition(jobId, JobStatus.DONE);
       }
-    } catch (exc) {
+    }
+    catch (exc)
+    {
       this.handleArchiveError(exc, jobId);
     }
   }
@@ -527,12 +623,15 @@ export class IngestService
    * @returns true if the entry is pending (async), false if it was published immediately
    * @private
    */
-  private async processArchiveEntry(jobId: string, entry: Record<string, unknown>): Promise<boolean> {
+
+  private async processArchiveEntry(jobId: string, entry: Record<string, unknown>): Promise<boolean>
+  {
     const entryName = entry.entry_name as string;
     const entrySize = entry.entry_size as number;
     const isPending = entry.pending as boolean;
 
-    if (isPending) {
+    if (isPending)
+    {
       this.logger.info("archive_entry_pending", { job_id: jobId, entry_name: entryName, entry_size: entrySize });
       metrics.increment("ingest.entry_pending", 1);
       await createPendingArchiveEntry(jobId, entryName, entrySize);
@@ -553,18 +652,25 @@ export class IngestService
    * @throws PasswordError if the failure looks password/encryption related
    * @private
    */
-  private handleArchiveError(exc: unknown, jobId: string): void {
-    const errStr = String(exc).toLowerCase();
-    if (PASSWORD_ERROR_KEYWORDS.some((keyword) => errStr.includes(keyword))) {
+
+  private handleArchiveError(exc: unknown, jobId: string): void
+  {
+    const errStr: string = String(exc).toLowerCase();
+
+    if (PASSWORD_ERROR_KEYWORDS.some((keyword) => errStr.includes(keyword)))
+    {
       throw new PasswordError(String(exc));
     }
-    if (exc instanceof BombError) {
+
+    if (exc instanceof BombError)
+    {
       this.stats.archiveBombs++;
       this.logger.error("archive_bomb_detected", { job_id: jobId }, exc);
       metrics.increment("ingest.archive_bomb", 1);
       this.transition(jobId, JobStatus.FAILED, `Archive bomb: ${exc}`);
       return;
     }
+
     this.logger.error("archive_extraction_failed", { job_id: jobId }, exc instanceof Error ? exc : new Error(String(exc)));
     metrics.increment("ingest.archive_error", 1);
     this.transition(jobId, JobStatus.FAILED, String(exc));
@@ -578,13 +684,17 @@ export class IngestService
    * @param jobId - Job identifier
    * @param password - Password for the archive
    */
-  async handlePassword(jobId: string, password: string): Promise<void> {
+
+  async handlePassword(jobId: string, password: string): Promise<void>
+  {
     this.totalPasswordsProvided++;
     this.passwordCache.set(jobId, Buffer.from(password));
     this.logger.info("password_received", { job_id: jobId });
 
-    const row = await getJob(jobId);
-    if (!row) {
+    const row: IParseJob = await getJob(jobId);
+
+    if (!row)
+    {
       this.logger.error("password_job_not_found", { job_id: jobId });
       return;
     }
@@ -609,23 +719,35 @@ export class IngestService
    * @param receiptHandle - Queue receipt handle, for deletion
    * @private
    */
-  private async handleQueueMessage(payload: IngestMessage, receiptHandle: string): Promise<void> {
-    try {
+
+  private async handleQueueMessage(payload: IngestMessage, receiptHandle: string): Promise<void>
+  {
+    try
+    {
       const payloadRecord = payload as unknown as Record<string, unknown>;
-      if (payloadRecord.action === "provide_password") {
+
+      if (payloadRecord.action === "provide_password")
+      {
         await this.handlePassword(payload.job_id, payloadRecord.password as string);
-      } else {
+      }
+      else
+      {
         await this.handleIngest(payload);
       }
       await deleteMessage(settings.INGEST_QUEUE_URL, receiptHandle);
-    } catch (exc) {
-      const errorStr = String(exc);
-      // Ack bad messages to prevent infinite retry loop
-      if ((errorStr.includes("Job") && errorStr.includes("not found")) || errorStr.includes("cannot transition")) {
+    }
+    catch (exc)
+    {
+      const errorStr: string = String(exc);
+
+      if ((errorStr.includes("Job") && errorStr.includes("not found")) || errorStr.includes("cannot transition"))
+      {
         this.logger.error("ingest_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
         metrics.increment("ingest.message_error_ack", 1);
         await deleteMessage(settings.INGEST_QUEUE_URL, receiptHandle);
-      } else {
+      }
+      else
+      {
         this.logger.error("ingest_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
         metrics.increment("ingest.message_error", 1);
       }
@@ -640,31 +762,38 @@ export class IngestService
    *
    * @throws Error if database connection fails
    */
-  private async consumerLoop(): Promise<void> {
-    while (this.running) {
-      try {
+
+  private async consumerLoop(): Promise<void>
+  {
+    while (this.running)
+    {
+      try
+      {
         await waitForDb();
         this.logger.info("ingest_consumer_started", { queue_url: settings.INGEST_QUEUE_URL, queue_backend: settings.QUEUE_BACKEND });
 
-        while (this.running) {
+        while (this.running)
+        {
           this.logger.info("ingest_waiting_for_messages");
           const messages = await receiveMessages<IngestMessage>(
               settings.INGEST_QUEUE_URL,
               (body) => JSON.parse(body) as IngestMessage,
               5
           );
+
           this.logger.info("ingest_messages_received", { count: messages.length });
 
-          for (const { payload, receiptHandle } of messages) {
+          for (const { payload, receiptHandle } of messages)
+          {
             await this.handleQueueMessage(payload, receiptHandle);
           }
         }
-      } catch (dbError) {
+      }
+      catch (dbError)
+      {
         this.logger.error("database_connection_lost", { error: String(dbError) }, dbError instanceof Error ? dbError : new Error(String(dbError)));
         metrics.increment("ingest.db_connection_lost", 1);
-        // Wait for database to be available again before retrying
         await waitForDb();
-        // Additional wait to avoid tight loop
         await new Promise((r) => setTimeout(r, 5000));
       }
     }
