@@ -1,8 +1,8 @@
 import crypto from "crypto";
-import jschardet from "jschardet";
+import jschardet, {IDetectedMap} from "jschardet";
 import { settings } from "@shared/Settings.js";
-import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
-import { JobStatus, ClassifyMessage, ParseMessage, SourceType } from "@shared/models/job.js";
+import { EventType, makeJobEvent } from "@shared/models/events.js";
+import { JobStatus, ClassifyMessage, ParseMessage } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "@shared/QueueService.js";
 import { parseGcsUrl, objectSize, readRange } from "@shared/GcsUtils.js";
 import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "@utils/normalizers/encoding.js";
@@ -11,66 +11,43 @@ import { createLogger } from "@utils/logger/logger.js";
 import { metrics } from "@utils/response/metrics.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import { waitForDb } from "@shared/DatabaseManager.js";
-import {aiClassifierService} from "@service/ai_classifier/AiClassifierServiceHandler.js";
+import { aiClassifierService } from "@service/ai_classifier/AiClassifierServiceHandler.js";
+import {
+  ClassifyKind,
+  ClassifyRequest, ClassifyResponse, CSV_DELIMITERS, HEADER_PATTERNS,
+  HeaderStripResult,
+  ProbeResult
+} from "@service/detect_bootstrap/io/IDetectBootstrap";
 
-/**
- * Classification request interface
- */
-interface ClassifyRequest {
-  unknown_line: string;
-  field_spec: string[];
-  context_lines?: string[];
-  job_id?: string;
-}
 
-/**
- * Classification response interface
- */
-interface ClassifyResponse {
-  kind: "record-template" | "rubbish-signature" | "uncertain";
-  template?: RecordTemplate | RubbishTemplate;
-}
-
-/**
- * Detect Bootstrap Service - Senior Level ORM-Style Implementation
- *
- * This service handles file property detection and job bootstrapping.
- * It uses adaptive probing to detect file structure, encoding, and row characteristics.
- * Follows ORM-style patterns with:
- * - Class-based architecture with instance state
- * - Dependency injection for services
- * - Lifecycle management (initialize, start, stop)
- * - Repository-style methods for data operations
- * - Clean separation of concerns
- *
- * @class DetectBootstrapService
- */
-export class DetectBootstrapService {
-    /**
+export class DetectBootstrapService
+{
+  /**
    * Singleton instance
    * @private
    */
+
   private static instance: DetectBootstrapService;
 
-  // Instance state
   private running: boolean = false;
-    /**
-   * Total Bootstraps
-   * @private
+
+  /**
+   *  Total Bootstraps @private
    */
+
   private totalBootstraps: number = 0;
-    /**
-   * Total Probes
-   * @private
+
+  /**
+   *  Total Probes @private
    */
+
   private totalProbes: number = 0;
-    /**
-   * Total Templates Created
-   * @private
+  /**
+   * Total Templates Created @private
    */
+
   private totalTemplatesCreated: number = 0;
 
-  // Statistics
   private stats = {
     csvDetected: 0,
     jsonDetected: 0,
@@ -79,61 +56,71 @@ export class DetectBootstrapService {
     headerSkips: 0,
     aiTimeouts: 0,
     cacheHits: 0,
-    cacheMisses: 0
+    cacheMisses: 0,
   };
 
-  // Dependencies (injected)
   private logger = createLogger("detect_bootstrap");
 
-  // Lazy loaded classifier
   private classify: ((req: ClassifyRequest) => Promise<ClassifyResponse>) | null = null;
 
   /**
    * Private constructor for singleton pattern
    */
-  private constructor() {
-    // Initialize health check server if port is configured
-    if (process.env.HEALTH_CHECK_PORT) {
+  private constructor()
+  {
+    if (process.env.HEALTH_CHECK_PORT)
+    {
       startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
 
-    // Initialize classifier lazily
     this.initializeClassifier();
   }
 
   /**
    * Get singleton instance
    */
-  static getInstance(): DetectBootstrapService {
-    if (!DetectBootstrapService.instance) {
+
+  static getInstance(): DetectBootstrapService
+  {
+    if (!DetectBootstrapService.instance)
+    {
       DetectBootstrapService.instance = new DetectBootstrapService();
     }
+
     return DetectBootstrapService.instance;
   }
 
   /**
    * Initialize the classifier based on configuration
    */
-  private async initializeClassifier(): Promise<void> {
-    if (this.classify) return;
+  private async initializeClassifier(): Promise<void>
+  {
+    if (this.classify)
+    {
+      return;
+    }
 
-    if (settings.BEDROCK_MODEL_ID === "mock") {
+    if (settings.BEDROCK_MODEL_ID === "mock")
+    {
       const { mockClassify } = await import("@service/ai_classifier/mock.js");
       this.classify = async (req: ClassifyRequest) => {
         const resp = await mockClassify(req);
         return resp.template ? { kind: resp.kind, template: resp.template } : { kind: "uncertain" };
       };
-    } else {
+    }
+    else
+    {
       this.classify = async (req: ClassifyRequest) => {
-        // Convert to the expected format for the AI classifier
         const aiReq = {
           ...req,
-          context_lines: req.context_lines || []
+          context_lines: req.context_lines || [],
         };
-        const aiResp = await aiClassifierService.classifyAi(aiReq);
+
+        const aiResp: ClassifyResponse = await aiClassifierService.classifyAi(aiReq);
+
         return aiResp.template
-          ? { kind: aiResp.kind as ClassifyResponse["kind"], template: aiResp.template }
-          : { kind: "uncertain" };
+            ? { kind: aiResp.kind as ClassifyKind, template: aiResp.template }
+            : { kind: "uncertain" };
       };
     }
   }
@@ -141,7 +128,9 @@ export class DetectBootstrapService {
   /**
    * Initialize the service
    */
-  async initialize(): Promise<void> {
+
+  async initialize(): Promise<void>
+  {
     await waitForDb();
     await templateRegistry.loadFromDatabase();
     await this.initializeClassifier();
@@ -151,9 +140,13 @@ export class DetectBootstrapService {
   /**
    * Start the consumer loop
    */
-  async start(): Promise<void> {
+
+  async start(): Promise<void>
+  {
     this.logger.info("detect_bootstrap_build_marker", { marker: "v2-json-mode" });
-    if (this.running) {
+
+    if (this.running)
+    {
       this.logger.warn("detect_bootstrap_already_running");
       return;
     }
@@ -166,33 +159,15 @@ export class DetectBootstrapService {
   }
 
   /**
-   * Stop the service gracefully
-   */
-  async stop(): Promise<void> {
-    this.running = false;
-    this.logger.info("detect_bootstrap_stopping");
-  }
-
-  /**
-   * Get service statistics
-   */
-  getStats() {
-    return {
-      ...this.stats,
-      totalBootstraps: this.totalBootstraps,
-      totalProbes: this.totalProbes,
-      totalTemplatesCreated: this.totalTemplatesCreated
-    };
-  }
-
-  /**
    * Emit a job event to the event system
    *
    * @param jobId - Job identifier
    * @param eventType - Type of event to emit
    * @param data - Event payload data
    */
-  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>): void {
+
+  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>): void
+  {
     publishEvent(makeJobEvent(eventType, jobId, "detect_bootstrap", data));
   }
 
@@ -203,11 +178,10 @@ export class DetectBootstrapService {
    * @param maxRowBytes - Maximum row size in bytes
    * @returns Optimal window size in bytes
    */
-  private computeWindowSize(avgRowBytes: number, maxRowBytes: number): number {
-    return Math.min(
-      settings.PROBE_WINDOW_MAX_BYTES,
-      Math.max(settings.PROBE_WINDOW_MIN_BYTES, settings.PROBE_TARGET_LINES * avgRowBytes, 4 * maxRowBytes)
-    );
+
+  private computeWindowSize(avgRowBytes: number, maxRowBytes: number): number
+  {
+    return Math.min(settings.PROBE_WINDOW_MAX_BYTES, Math.max(settings.PROBE_WINDOW_MIN_BYTES, settings.PROBE_TARGET_LINES * avgRowBytes, 4 * maxRowBytes));
   }
 
   /**
@@ -217,10 +191,17 @@ export class DetectBootstrapService {
    * @param windowSize - Size of each probe window
    * @returns Array of byte offsets to probe
    */
-  private computeProbeOffsets(fileSize: number, windowSize: number): number[] {
-    const count = Math.max(settings.PROBE_COUNT_MIN, Math.min(settings.PROBE_COUNT_MAX, Math.floor(fileSize / settings.PROBE_SIZE_PER_COUNT)));
-    if (fileSize <= windowSize) return [0];
-    const offsets = Array.from({ length: count }, (_, i) => Math.floor(i * ((fileSize - windowSize) / (count - 1))));
+
+  private computeProbeOffsets(fileSize: number, windowSize: number): number[]
+  {
+    const count: number = Math.max(settings.PROBE_COUNT_MIN, Math.min(settings.PROBE_COUNT_MAX, Math.floor(fileSize / settings.PROBE_SIZE_PER_COUNT)));
+
+    if (fileSize <= windowSize)
+    {
+      return [0];
+    }
+
+    const offsets: number[] = Array.from({ length: count }, (_, i) => Math.floor(i * ((fileSize - windowSize) / (count - 1))));
     offsets[0] = 0;
     offsets[offsets.length - 1] = Math.max(0, fileSize - windowSize);
     return [...new Set(offsets)].sort((a, b) => a - b);
@@ -234,18 +215,17 @@ export class DetectBootstrapService {
    * @param raw - Raw file bytes
    * @returns Detected encoding label
    */
-  private detectEncoding(raw: Buffer): string {
+
+  private detectEncoding(raw: Buffer): string
+  {
     this.stats.encodingDetections++;
 
-    // Prefer UTF-8 when the bytes actually validate as UTF-8: jschardet frequently
-    // misdetects UTF-8 with a few multibyte chars as ISO-8859-x at low confidence
-    // (e.g. a UTF-8 file guessed as ISO-8859-2 @0.54 → mojibake). Valid UTF-8 with
-    // high-bit bytes is a near-zero false positive.
-    if (isLikelyUtf8(raw.subarray(0, 65536))) return "utf-8";
-    const result = jschardet.detect(raw.slice(0, 65536));
-    // Normalize to a label decode()/Buffer can actually handle. jschardet returns
-    // names like "ISO-8859-1"/"windows-1252"/"latin-1" that Buffer.toString rejects;
-    // decode() handles the rest via TextDecoder, so we keep the label as-is here.
+    if (isLikelyUtf8(raw.subarray(0, 65536)))
+    {
+      return "utf-8";
+    }
+
+    const result: IDetectedMap = jschardet.detect(raw.slice(0, 65536));
     return normalizeEncoding(result.encoding);
   }
 
@@ -256,12 +236,19 @@ export class DetectBootstrapService {
    * @param encoding - File encoding
    * @returns Tuple of [average row bytes, maximum row bytes]
    */
-  private measureRowWidth(raw: Buffer, encoding: string): [number, number] {
-    const text = decode(raw, encoding);
-    const lines = text.split(/\r?\n/).filter((l) => l.trim());
-    if (!lines.length) return [256, 512];
-    const sizes = lines.map((l) => Buffer.byteLength(l, bufferEncodingFor(encoding)));
-    const avg = sizes.reduce((a, b) => a + b, 0) / sizes.length;
+  private measureRowWidth(raw: Buffer, encoding: string): [number, number]
+  {
+    const text: string = decode(raw, encoding);
+    const lines: string[] = text.split(/\r?\n/).filter((l) => l.trim());
+
+    if (!lines.length)
+    {
+      return [256, 512];
+    }
+
+    const sizes: number[] = lines.map((l) => Buffer.byteLength(l, bufferEncodingFor(encoding)));
+    const avg: number = sizes.reduce((a, b) => a + b, 0) / sizes.length;
+
     return [avg, Math.max(...sizes)];
   }
 
@@ -272,28 +259,55 @@ export class DetectBootstrapService {
    * @param encoding - File encoding
    * @returns SHA256 hash truncated to 24 characters
    */
-  private fingerprintProbe(raw: Buffer, encoding: string): string {
-    const text = decode(raw, encoding);
-    const lines = text.split(/\r?\n/).filter((l) => l.trim());
-    if (!lines.length) return crypto.createHash("sha256").update("empty").digest("hex").slice(0, 24);
-    const first = lines[0];
-    for (const delim of [",", ";", "\t", "|"]) {
-      const parts = first.split(delim);
-      if (parts.length > 1) {
+
+  private fingerprintProbe(raw: Buffer, encoding: string): string
+  {
+    const text: string = decode(raw, encoding);
+    const lines: string[] = text.split(/\r?\n/).filter((l) => l.trim());
+
+    if (!lines.length)
+    {
+      return this.hash("empty");
+    }
+
+    const first: string = lines[0];
+    for (const delim of CSV_DELIMITERS)
+    {
+      const parts: string[] = first.split(delim);
+
+      if (parts.length > 1)
+      {
         this.stats.csvDetected++;
-        return crypto.createHash("sha256").update(`csv|${delim}|${parts.length}|${encoding}`).digest("hex").slice(0, 24);
+        return this.hash(`csv|${delim}|${parts.length}|${encoding}`);
       }
     }
+
     try {
       const parsed = JSON.parse(first);
-      if (typeof parsed === "object" && parsed !== null) {
+
+      if (typeof parsed === "object" && parsed !== null)
+      {
         this.stats.jsonDetected++;
-        const keys = Object.keys(parsed).sort().join(",");
-        return crypto.createHash("sha256").update(`json|${keys}`).digest("hex").slice(0, 24);
+        const keys: string = Object.keys(parsed).sort().join(",");
+
+        return this.hash(`json|${keys}`);
       }
-    } catch {}
+    } catch {
+      // not JSON, fall through to plain text fingerprint
+    }
+
     this.stats.textDetected++;
-    return crypto.createHash("sha256").update(`text|${first.length}|${encoding}`).digest("hex").slice(0, 24);
+
+    return this.hash(`text|${first.length}|${encoding}`);
+  }
+
+  /**
+   * SHA256 hash a fingerprint seed string, truncated to 24 characters
+   */
+
+  private hash(seed: string): string
+  {
+    return crypto.createHash("sha256").update(seed).digest("hex").slice(0, 24);
   }
 
   /**
@@ -302,11 +316,278 @@ export class DetectBootstrapService {
    * @param raw - Raw file bytes
    * @param encoding - File encoding
    * @param n - Maximum number of lines to extract
-   @returns Array of non-empty lines
+   * @returns Array of non-empty lines
    */
-  private extractSampleLines(raw: Buffer, encoding: string, n: number): string[] {
-    const text = decode(raw, encoding);
+
+  private extractSampleLines(raw: Buffer, encoding: string, n: number): string[]
+  {
+    const text: string = decode(raw, encoding);
     return text.split(/\r?\n/).filter((l) => l.trim()).slice(0, n);
+  }
+
+  /**
+   * Detect and strip a delimited header line from sample lines, so classification
+   * runs against actual data rather than column names.
+   *
+   * @param sampleLines - Lines extracted from a probe window
+   * @param jobId - Job identifier, for logging
+   * @returns The data lines to classify, and whether a header was found
+   */
+
+  private stripHeaderLine(sampleLines: string[], jobId: string): HeaderStripResult
+  {
+    const firstLine: string = sampleLines[0];
+    const hadHeader: boolean = HEADER_PATTERNS.some((pattern) => pattern.test(firstLine));
+
+    this.logger.info("detect_header_check", {
+      job_id: jobId,
+      firstLine,
+      hasHeader: hadHeader,
+      sampleLinesCount: sampleLines.length,
+    });
+
+    if (!hadHeader || sampleLines.length <= 1)
+    {
+      return { dataLines: sampleLines, hadHeader: false };
+    }
+
+    this.stats.headerSkips++;
+    const dataLines: string[] = sampleLines.slice(1);
+    this.logger.info("detect_header_skipped", { job_id: jobId, dataLinesCount: dataLines.length });
+    return { dataLines, hadHeader: true };
+  }
+
+  /**
+   * Normalize a message's field_spec into a string array, tolerating a
+   * JSON-encoded string form of the field spec.
+   *
+   * @param fieldSpec - Raw field_spec from the incoming message
+   * @returns Parsed field spec array (empty array if parsing fails)
+   */
+
+  private parseFieldSpec(fieldSpec: string | string[]): string[]
+  {
+    if (typeof fieldSpec !== "string")
+    {
+      return fieldSpec;
+    }
+
+    try
+    {
+      return JSON.parse(fieldSpec);
+    }
+    catch
+    {
+      return [];
+    }
+  }
+
+  /**
+   * Classify an unknown line via the AI classifier, racing against a timeout.
+   * Handles all timeout logging/metrics; returns null if the call timed out.
+   *
+   * @param req - Classification request
+   * @param jobId - Job identifier, for logging
+   * @param fingerprint - Fingerprint of the probe window, for logging
+   * @returns Classification response, or null on timeout
+   */
+
+  private async classifyWithTimeout(req: ClassifyRequest, jobId: string, fingerprint: string): Promise<ClassifyResponse | null>
+  {
+    this.logger.info("ai_call_initiated", {
+      job_id: jobId,
+      source: "detect_bootstrap",
+      unknown_line_length: req.unknown_line.length,
+      context_lines: (req.context_lines || []).length,
+      fingerprint,
+    });
+
+    try
+    {
+      const aiTimeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("ai_classify_timeout")), settings.AI_CLASSIFY_TIMEOUT_MS));
+      const resp: ClassifyResponse = await Promise.race([this.classify!(req), aiTimeout]);
+
+      this.logger.info("ai_call_completed", {
+        job_id: jobId,
+        source: "detect_bootstrap",
+        verdict: resp.kind,
+        has_template: !!resp.template,
+        fingerprint,
+      });
+
+      return resp;
+    }
+    catch (aiErr)
+    {
+      this.stats.aiTimeouts++;
+
+      this.logger.warn("ai_call_timeout", {
+        job_id: jobId,
+        source: "detect_bootstrap",
+        fingerprint,
+        error: String(aiErr),
+      });
+      metrics.increment("detect.ai_timeout", 1);
+
+      return null;
+    }
+  }
+
+  /**
+   * Process a single probe window: read it, fingerprint it, resolve against an
+   * existing template if one already matches, or classify it to seed a new one.
+   * Returns null if this fingerprint was already seen in an earlier window
+   * (a pure cache hit — no template resolution needed).
+   *
+   * @param bucket - GCS bucket
+   * @param key - GCS object key
+   * @param offset - Byte offset of the probe window
+   * @param windowSize - Size of the probe window
+   * @param fileSize - Total file size, to clamp the window's end
+   * @param encoding - File encoding
+   * @param fieldSpecArray - Parsed field spec for the job
+   * @param jobId - Job identifier
+   * @param seen - Fingerprints already seen in this job's probes
+   * @returns The probe's fingerprint and resolved template id (if any)
+   */
+
+  private async processProbeWindow(bucket: string, key: string, offset: number, windowSize: number, fileSize: number, encoding: string, fieldSpecArray: string[], jobId: string, seen: Set<string>): Promise<ProbeResult | null>
+  {
+    const end: number = Math.min(offset + windowSize - 1, fileSize - 1);
+    const probeRaw: Buffer = await readRange(bucket, key, offset, end);
+    const fingerprint: string = this.fingerprintProbe(probeRaw, encoding);
+
+    if (seen.has(fingerprint))
+    {
+      this.stats.cacheHits++;
+      return null;
+    }
+
+    seen.add(fingerprint);
+    this.stats.cacheMisses++;
+
+    const existing: RecordTemplate | RubbishTemplate = templateRegistry.getByFingerprint(fingerprint);
+
+    if (existing)
+    {
+      return { fingerprint, templateId: existing.template_id };
+    }
+
+    const sampleLines: string[] = this.extractSampleLines(probeRaw, encoding, 10);
+
+    if (!sampleLines.length)
+    {
+      return {fingerprint, templateId: null};
+    }
+
+    const { dataLines } = this.stripHeaderLine(sampleLines, jobId);
+
+    if (!dataLines.length)
+    {
+      return {fingerprint, templateId: null};
+    }
+
+    const req: ClassifyRequest = {
+      unknown_line: dataLines[0],
+      field_spec: fieldSpecArray,
+      context_lines: dataLines.slice(1),
+      job_id: jobId,
+    };
+
+    const resp: ClassifyResponse = await this.classifyWithTimeout(req, jobId, fingerprint);
+    if (!resp) return { fingerprint, templateId: null };
+
+    if (resp.template)
+    {
+      this.totalTemplatesCreated++;
+
+      this.logger.info("ai_template_saved", {
+        job_id: jobId,
+        source: "detect_bootstrap",
+        kind: resp.kind,
+        template_id: resp.template.template_id,
+        fingerprint,
+        saved_to_registry: true,
+      });
+
+      this.logger.info("seed_template_created", {
+        job_id: jobId,
+        kind: resp.kind,
+        template_id: resp.template.template_id,
+        fingerprint,
+      });
+
+      metrics.increment("detect.template_created", 1, { kind: resp.kind });
+
+      return { fingerprint, templateId: resp.template.template_id };
+    }
+
+    this.logger.info("ai_no_template_returned", {
+      job_id: jobId,
+      source: "detect_bootstrap",
+      verdict: resp.kind,
+      fingerprint,
+    });
+
+    return { fingerprint, templateId: null };
+  }
+
+  /**
+   * Detect encoding and probe window sizing from the head of the file.
+   *
+   * @param bucket - GCS bucket
+   * @param key - GCS object key
+   * @param fileSize - Total file size in bytes
+   * @returns Detected encoding and computed probe window size
+   */
+
+  private async detectFileProperties(bucket: string, key: string, fileSize: number): Promise<{ encoding: string; windowSize: number }>
+  {
+    const headEnd: number = Math.min(settings.PROBE_WINDOW_MIN_BYTES - 1, fileSize - 1);
+    const headRaw: Buffer = await readRange(bucket, key, 0, headEnd);
+    const encoding: string = this.detectEncoding(headRaw);
+    const [avgRow, maxRow] = this.measureRowWidth(headRaw, encoding);
+    const windowSize: number = this.computeWindowSize(avgRow, maxRow);
+
+    return { encoding, windowSize };
+  }
+
+  /**
+   * Forward the job to the parse queue with resolved seed template ids.
+   *
+   * @param msg - Original classify message
+   * @param jobId - Job identifier
+   * @param fileSize - Resolved file size
+   * @param seedTemplateIds - Template ids seeded/resolved during probing
+   */
+  private async forwardToParse(msg: ClassifyMessage, jobId: string, fileSize: number, seedTemplateIds: string[]): Promise<void>
+  {
+    const parseMsg: ParseMessage = {
+      job_id: jobId,
+      s3_url: msg.s3_url,
+      size: fileSize,
+      field_spec: msg.field_spec,
+      column_map: msg.column_map,
+      seed_template_ids: seedTemplateIds,
+    };
+
+    this.logger.info("detect_sending_to_parse", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL });
+
+    try
+    {
+      await sendRaw(settings.PARSE_QUEUE_URL, parseMsg as unknown as Record<string, unknown>);
+      this.logger.info("detect_parse_message_sent", { job_id: jobId });
+    }
+    catch (sendErr)
+    {
+      this.logger.error(
+          "detect_send_to_parse_failed",
+          { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL },
+          sendErr instanceof Error ? sendErr : new Error(String(sendErr))
+      );
+
+      throw sendErr;
+    }
   }
 
   /**
@@ -323,139 +604,67 @@ export class DetectBootstrapService {
    * @param msg - Classify message containing job details
    * @throws Error if bootstrapping fails
    */
-  async bootstrapJob(msg: ClassifyMessage): Promise<void> {
-    const bootstrapStartTime = Date.now();
+
+  async bootstrapJob(msg: ClassifyMessage): Promise<void>
+  {
+    const bootstrapStartTime: number = Date.now();
     this.totalBootstraps++;
 
     await templateRegistry.loadFromDatabase();
 
-    const jobId = msg.job_id;
+    const jobId: string = msg.job_id;
     this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.DETECTING });
-    console.log("detect_start", { jobId, s3_url: msg.s3_url, size: msg.size });
+
+    this.logger.info("detect_start", { jobId, s3_url: msg.s3_url, size: msg.size });
 
     const [bucket, key] = parseGcsUrl(msg.s3_url);
-    const fileSize = msg.size || (await objectSize(bucket, key));
+    const fileSize: number = msg.size || (await objectSize(bucket, key));
 
-    const headEnd = Math.min(settings.PROBE_WINDOW_MIN_BYTES - 1, fileSize - 1);
-    const headRaw = await readRange(bucket, key, 0, headEnd);
-    const encoding = this.detectEncoding(headRaw);
-    const [avgRow, maxRow] = this.measureRowWidth(headRaw, encoding);
-    const windowSize = this.computeWindowSize(avgRow, maxRow);
+    const { encoding, windowSize } = await this.detectFileProperties(bucket, key, fileSize);
 
-    const offsets = this.computeProbeOffsets(fileSize, windowSize);
+    const offsets: number[] = this.computeProbeOffsets(fileSize, windowSize);
     this.totalProbes += offsets.length;
     this.logger.info("probing", { job_id: jobId, probe_count: offsets.length, file_size: fileSize });
     metrics.increment("detect.probe_start", 1, { probe_count: String(offsets.length) });
 
+    const fieldSpecArray: string[] = this.parseFieldSpec(msg.field_spec);
+
     const seen = new Set<string>();
     const seedTemplateIds: string[] = [];
 
-    for (const offset of offsets) {
-      const end = Math.min(offset + windowSize - 1, fileSize - 1);
-      const probeRaw = await readRange(bucket, key, offset, end);
-      const fp = this.fingerprintProbe(probeRaw, encoding);
-      if (seen.has(fp)) {
-        this.stats.cacheHits++;
-        continue;
-      }
-      seen.add(fp);
-      this.stats.cacheMisses++;
+    for (const offset of offsets)
+    {
+      const result: ProbeResult = await this.processProbeWindow(
+          bucket,
+          key,
+          offset,
+          windowSize,
+          fileSize,
+          encoding,
+          fieldSpecArray,
+          jobId,
+          seen
+      );
 
-      const existing = templateRegistry.getByFingerprint(fp);
-      if (existing) {
-        seedTemplateIds.push(existing.template_id);
-        continue;
-      }
-
-      const sampleLines = this.extractSampleLines(probeRaw, encoding, 10);
-      if (!sampleLines.length) continue;
-
-      // Skip header lines for CSV files - use actual data lines for classification
-      let dataLines = sampleLines;
-      const firstLine = sampleLines[0];
-      const hasHeader = /^[a-zA-Z_][a-zA-Z0-9_]*(,[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine) ||
-                       /^[a-zA-Z_][a-zA-Z0-9_]*(;[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine) ||
-                       /^[a-zA-Z_][a-zA-Z_0-9_]*(\t[a-zA-Z_][a-zA-Z0-9_]*)+$/.test(firstLine);
-
-      console.log("detect_header_check", { job_id: jobId, firstLine, hasHeader, sampleLinesCount: sampleLines.length });
-
-      if (hasHeader && sampleLines.length > 1) {
-        this.stats.headerSkips++;
-        dataLines = sampleLines.slice(1);
-        console.log("detect_header_skipped", { job_id: jobId, dataLinesCount: dataLines.length });
-      }
-
-      if (!dataLines.length) continue;
-
-      // Parse field_spec if it's a JSON string
-      let fieldSpecArray: string[] = [];
-      if (typeof msg.field_spec === "string") {
-        try {
-          fieldSpecArray = JSON.parse(msg.field_spec);
-        } catch {
-          fieldSpecArray = [];
-        }
-      } else {
-        fieldSpecArray = msg.field_spec;
-      }
-
-      const req: ClassifyRequest = {
-        unknown_line: dataLines[0],
-        field_spec: fieldSpecArray,
-        context_lines: dataLines.slice(1) || [],
-        job_id: jobId,
-      };
-      this.logger.info("ai_call_initiated", { job_id: jobId, source: "detect_bootstrap", unknown_line_length: dataLines[0].length, context_lines: (dataLines.slice(1) || []).length, fingerprint: fp });
-      let resp: ClassifyResponse;
-      try {
-        const aiTimeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("ai_classify_timeout")), settings.AI_CLASSIFY_TIMEOUT_MS)
-        );
-        resp = await Promise.race([this.classify!(req), aiTimeout]);
-        this.logger.info("ai_call_completed", { job_id: jobId, source: "detect_bootstrap", verdict: resp.kind, has_template: !!resp.template, fingerprint: fp });
-      } catch (aiErr) {
-        this.stats.aiTimeouts++;
-        this.logger.warn("ai_call_timeout", { job_id: jobId, source: "detect_bootstrap", fingerprint: fp, error: String(aiErr) });
-        metrics.increment("detect.ai_timeout", 1);
-        continue;
-      }
-      if (resp.template) {
-        this.totalTemplatesCreated++;
-        seedTemplateIds.push(resp.template.template_id);
-        this.logger.info("ai_template_saved", { job_id: jobId, source: "detect_bootstrap", kind: resp.kind, template_id: resp.template.template_id, fingerprint: fp, saved_to_registry: true });
-        this.logger.info("seed_template_created", { job_id: jobId, kind: resp.kind, template_id: resp.template.template_id, fingerprint: fp });
-        metrics.increment("detect.template_created", 1, { kind: resp.kind });
-      } else {
-        this.logger.info("ai_no_template_returned", { job_id: jobId, source: "detect_bootstrap", verdict: resp.kind, fingerprint: fp });
+      if (result?.templateId)
+      {
+        seedTemplateIds.push(result.templateId);
       }
     }
 
-    const bootstrapDuration = Date.now() - bootstrapStartTime;
+    const bootstrapDuration: number = Date.now() - bootstrapStartTime;
+
     this.logger.info("detect_complete", {
       job_id: jobId,
       seeds: seedTemplateIds.length,
       probes: offsets.length,
-      duration_ms: bootstrapDuration
+      duration_ms: bootstrapDuration,
     });
+
     metrics.increment("detect.complete", 1, { seeds: String(seedTemplateIds.length) });
     metrics.set("detect.duration_ms", bootstrapDuration);
 
-    const parseMsg: ParseMessage = {
-      job_id: jobId,
-      s3_url: msg.s3_url,
-      size: fileSize,
-      field_spec: msg.field_spec,
-      column_map: msg.column_map,
-      seed_template_ids: seedTemplateIds,
-    };
-    console.log("detect_sending_to_parse", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL });
-    try {
-      await sendRaw(settings.PARSE_QUEUE_URL, parseMsg as unknown as Record<string, unknown>);
-      console.log("detect_parse_message_sent", { job_id: jobId });
-    } catch (sendErr) {
-      this.logger.error("detect_send_to_parse_failed", { job_id: jobId, queue_url: settings.PARSE_QUEUE_URL }, sendErr instanceof Error ? sendErr : new Error(String(sendErr)));
-      throw sendErr;
-    }
+    await this.forwardToParse(msg, jobId, fileSize, seedTemplateIds);
   }
 
   /**
@@ -466,24 +675,31 @@ export class DetectBootstrapService {
    *
    * @throws Error if database connection fails
    */
-  private async consumerLoop(): Promise<void> {
+
+  private async consumerLoop(): Promise<void>
+  {
     await waitForDb();
     await templateRegistry.loadFromDatabase();
     this.logger.info("detect_bootstrap_consumer_started");
 
-    while (this.running) {
+    while (this.running)
+    {
       const messages = await receiveMessages<ClassifyMessage>(
-        settings.CLASSIFY_QUEUE_URL,
-        (body) => JSON.parse(body) as ClassifyMessage,
-        1
+          settings.CLASSIFY_QUEUE_URL,
+          (body) => JSON.parse(body) as ClassifyMessage,
+          1
       );
 
-      for (const { payload, receiptHandle } of messages) {
-        try {
+      for (const { payload, receiptHandle } of messages)
+      {
+        try
+        {
           await this.bootstrapJob(payload);
           await deleteMessage(settings.CLASSIFY_QUEUE_URL, receiptHandle);
-        } catch (exc) {
-          const errMsg = String(exc);
+        }
+        catch (exc)
+        {
+          const errMsg: string = String(exc);
           this.logger.error("detect_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
           metrics.increment("detect.error", 1);
           this.emit(payload.job_id, EventType.ERROR_OCCURRED, { error: errMsg });
@@ -496,16 +712,9 @@ export class DetectBootstrapService {
   }
 }
 
-// Backward compatibility: export singleton instance and function wrappers
-const detectBootstrapService = DetectBootstrapService.getInstance();
-
-// Backward compatibility wrappers
-export async function bootstrapJob(msg: ClassifyMessage): Promise<void> {
-  return detectBootstrapService.bootstrapJob(msg);
-}
-
-// Auto-start the service when module is loaded
-detectBootstrapService.start().catch(err => {
-  console.error("detect_bootstrap_start_failed", { error: String(err) });
-  process.exit(1);
-});
+DetectBootstrapService.getInstance()
+    .start()
+    .catch((err) => {
+      console.error("detect_bootstrap_start_failed", { error: String(err) });
+      process.exit(1);
+    });

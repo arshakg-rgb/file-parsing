@@ -209,7 +209,8 @@ export class ArchiveEntryConsumer
      * @returns Resolves once processing (and, on success, deletion) completes
      */
 
-    private async processMessage(payload: ArchiveEntryRequest, receiptHandle: string): Promise<void> {
+    private async processMessage(payload: ArchiveEntryRequest, receiptHandle: string): Promise<void>
+    {
       try
       {
         await this.service.processEntry(payload);
