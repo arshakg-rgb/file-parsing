@@ -1,4 +1,4 @@
-import JobServiceImpl from './impl/JobServiceImpl.js';
+const JobServiceImpl = require('./impl/JobServiceImpl.js').default;
 
 const jobService = JobServiceImpl.getInstance();
 jobService.start();
