@@ -30,7 +30,8 @@ export class LineClassifier implements IClassifier
     email: ["email", "mail", "emailaddress", "e_mail", "emails"],
     name: ["name", "fullname", "full_name"],
     phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones"],
-    address: ["address", "addr", "streetaddress", "addresses", "city", "country", "street"],
+    address: ["address", "addr", "streetaddress", "addresses", "street"],
+    location: ["location", "city", "country", "state", "province", "region", "town", "geo", "locality"],
   };
 
   private static readonly EMAIL_RE: RegExp = /^[A-Za-z0-9._%+=\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
@@ -1071,7 +1072,7 @@ export class LineClassifier implements IClassifier
 
         if (Object.keys(nested).length === 0)
         {
-          out[key] = "{}";
+          out[key] = {};
         }
         else
         {
@@ -1149,7 +1150,7 @@ export class LineClassifier implements IClassifier
 
             if (Object.keys(nestedParsed).length === 0)
             {
-              out[key] = "{}";
+              out[key] = {};
             }
             else
             {
@@ -1192,7 +1193,7 @@ export class LineClassifier implements IClassifier
     const normalizedObjKeys = new Map<string, unknown>();
     const leafToFull = new Map<string, string>();
     const consumedKeys = new Set<string>();
-    const extraMeta: Record<string, string> = {};
+    const extraMeta: Record<string, unknown> = {};
 
     for (const [k, val] of Object.entries(obj))
     {
@@ -1293,7 +1294,7 @@ export class LineClassifier implements IClassifier
 
           if (meaningful.length > 1)
           {
-            extraMeta[`${field}_all`] = JSON.stringify(meaningful);
+            extraMeta[`${field}_all`] = meaningful;
           }
         }
 
@@ -1316,13 +1317,13 @@ export class LineClassifier implements IClassifier
       }
     }
 
-    const metaObj: Record<string, string> = {};
+    const metaObj: Record<string, unknown> = {};
 
     for (const [k, v] of Object.entries(obj))
     {
       if (!consumedKeys.has(this.normalizeKey(k)) && v !== undefined)
       {
-        metaObj[k] = v === null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v).trim();
+        metaObj[k] = typeof v === "string" ? v.trim() : v;
       }
     }
 
@@ -1350,7 +1351,7 @@ export class LineClassifier implements IClassifier
   private locateNestedFieldValue(obj: Record<string, unknown>, field: string, nf: string, consumedKeys: Set<string>): { value: unknown; key: string } | null
   {
     const accepted: string[] = Array.from(new Set([nf, ...(this.aliasMap.get(nf) || [])]));
-    const noSubstring: boolean = nf === "name" || nf === "address";
+    const noSubstring: boolean = nf === "name" || nf === "address" || nf === "location";
     let bestScore: number = -1;
     let bestValue: unknown;
     let bestKey: string | undefined;
