@@ -11,17 +11,15 @@ export class OutputManager {
   private buffers = new Map<string, OutputBuffer>();
 
     /**
-   * Gets buffer
+   * Gets or creates the single output buffer for a job.
    * @param jobId - The job identifier
-   * @param templateId - The template id
    * @returns The output buffer result
    */
-  getBuffer(jobId: string, templateId: string): OutputBuffer {
-    const key = `${jobId}-${templateId}`;
-    if (!this.buffers.has(key)) {
-      this.buffers.set(key, new OutputBuffer(jobId, templateId));
+  getBuffer(jobId: string, _templateId?: string): OutputBuffer {
+    if (!this.buffers.has(jobId)) {
+      this.buffers.set(jobId, new OutputBuffer(jobId));
     }
-    return this.buffers.get(key)!;
+    return this.buffers.get(jobId)!;
   }
 
     /**
@@ -50,12 +48,11 @@ export class OutputManager {
    * @param templateId - The template id
    * @returns A promise that resolves to the result
    */
-  async flushTemplate(jobId: string, templateId: string): Promise<string | null> {
-    const key = `${jobId}-${templateId}`;
-    const buffer = this.buffers.get(key);
+  async flushBuffer(jobId: string): Promise<string | null> {
+    const buffer = this.buffers.get(jobId);
     if (buffer) {
       const path = await buffer.flush();
-      this.buffers.delete(key);
+      this.buffers.delete(jobId);
       return path;
     }
     return null;

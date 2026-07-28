@@ -85,11 +85,6 @@ export class OutputBuffer {
    */
   private rows: OutputRow[] = [];
     /**
-   * Template Id
-   * @private
-   */
-  private templateId: string;
-    /**
    * Part Id
    * @private
    */
@@ -118,12 +113,10 @@ export class OutputBuffer {
     /**
    * Constructs a new OutputBuffer instance.
    * @param jobId - The job identifier
-   * @param templateId - The template id
    */
-  constructor(jobId: string, templateId: string) {
+  constructor(jobId: string) {
     this.jobId = jobId;
-    this.templateId = templateId;
-    this.partId = `${jobId}-${templateId}-${Date.now()}`;
+    this.partId = jobId;
   }
 
     /**
@@ -132,12 +125,6 @@ export class OutputBuffer {
    */
   addRow(row: OutputRow): void {
     this.rows.push(row);
-
-    if (this.rows.length >= parquetOutputService.getFlushLineThreshold() && !this.flushPromise) {
-      this.flushPromise = this.flush().finally(() => {
-        this.flushPromise = null;
-      });
-    }
   }
 
     /**
@@ -152,12 +139,12 @@ export class OutputBuffer {
     const rowsToFlush = this.rows;
     this.rows = [];
 
-    const flushPartId = `${this.partId}-${this.flushCounter++}`;
+    const flushPartId = this.flushCounter === 0 ? this.partId : `${this.partId}-${this.flushCounter}`;
+    this.flushCounter++;
 
     parquetOutputService.getLogger().info("parquet_flush", {
       part_id: flushPartId,
       row_count: rowsToFlush.length,
-      template_id: this.templateId,
     });
 
     try {
