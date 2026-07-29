@@ -1,3 +1,4 @@
+import pino from "pino";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
@@ -7,7 +8,7 @@ import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, LoadMessage } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, publishEvent } from "@shared/QueueService.js";
 import { ParquetReader } from "@dsnp/parquetjs";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { metrics } from "@utils/response/metrics.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import { LoadService } from "@service/load/LoadService.js";
@@ -26,7 +27,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
    * Logger instance
    * @private
    */
-  private logger: Logger;
+  private logger: pino.Logger;
     /**
    * Gcs Utils
    * @private
@@ -71,7 +72,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     this.PARAMS_PER_ROW = this.SYSTEM_COLS.length + 1;
     this.UPSERT_BATCH = Math.floor(60000 / this.PARAMS_PER_ROW);
 
-    this.logger = createLogger("load");
+    this.logger = createLogger(module);
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.dbManager = PostgreSqlManager.getInstance();
 
@@ -95,7 +96,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
    * Gets logger
    * @returns The logger result
    */
-  public getLogger(): Logger {
+  public getLogger(): pino.Logger {
     return this.logger;
   }
 

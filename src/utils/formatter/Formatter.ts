@@ -1,9 +1,10 @@
+import pino from "pino";
 import { createLogger } from "@utils/logger/Log.js";
 
 /**
  * Logger instance for the module
  */
-const logger = createLogger("format_detector");
+const logger = createLogger(module);
 
 export enum LineFormat {
   CSV = "csv",

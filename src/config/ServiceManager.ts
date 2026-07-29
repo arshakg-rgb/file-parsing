@@ -1,8 +1,9 @@
+import pino from "pino";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import Config from "@config/system-config/Config.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 
-const logger: Logger = createLogger("ServiceManager");
+const logger: pino.Logger = createLogger(module);
 
 /**
  * ServiceManager is the base lifecycle manager for long-lived connections and services.

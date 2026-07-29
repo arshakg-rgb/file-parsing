@@ -1,8 +1,9 @@
+import pino from "pino";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import jschardet from "jschardet";
 
 export interface ProbeResult {
@@ -28,7 +29,7 @@ export class AdaptiveProbing extends ServiceManager {
    * Logger instance
    * @private
    */
-  private logger: Logger;
+  private logger: pino.Logger;
     /**
    * Gcs Utils
    * @private
@@ -77,7 +78,7 @@ export class AdaptiveProbing extends ServiceManager {
     }
     super(enforce);
 
-    this.logger = createLogger("probing");
+    this.logger = createLogger(module);
     this.gcsUtils = FirestoreCacheUtils.getInstance();
   }
 

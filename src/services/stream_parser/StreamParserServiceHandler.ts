@@ -1,3 +1,4 @@
+import pino from "pino";
 import { Template } from "@shared/models/template.js";
 import { settings } from "@shared/Settings.js";
 import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
@@ -12,7 +13,7 @@ import { DLQManager } from "@shared/DLQManager.js";
 import { TraceSystem } from "@shared/TraceSystem.js";
 import { QualityGate } from "@shared/QualityGate.js";
 import { AdaptiveProbing } from "@shared/AdaptiveProbing.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { metrics } from "@utils/response/metrics.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import { waitForDb } from "@shared/DatabaseManager.js";
@@ -75,7 +76,7 @@ class AIRateLimiter {
    * Logger instance
    * @private
    */
-  private logger: Logger;
+  private logger: pino.Logger;
 
     /**
    * Constructs a new AIRateLimiter instance.
@@ -83,7 +84,7 @@ class AIRateLimiter {
    * @param burst - The burst
    * @param logger - The logger
    */
-  constructor(rpm: number, burst: number, logger: Logger) {
+  constructor(rpm: number, burst: number, logger: pino.Logger) {
     this.rpm = rpm;
     this.burst = burst;
     this.logger = logger;
@@ -219,7 +220,7 @@ export class StreamParserService {
   };
 
   // Dependencies (injected)
-  private logger = createLogger("stream_parser");
+  private logger = createLogger(module);
 
   /**
    * Private constructor for singleton pattern

@@ -1,13 +1,14 @@
+import pino from "pino";
 import express, { Request, Response, NextFunction } from "express";
 import { settings } from "@shared/Settings.js";
 import FirestoreManager from "@config/firestore/FirestoreManager.js";
 import { ClassifyRequest, TemplateKind } from "@shared/models/template.js";
 import { mockClassify } from "./mock.js";
 import { TemplateRegistryFacade } from "./templateRegistry.js";
-import { createLogger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import {aiClassifierService} from "@service/ai_classifier/AiClassifierServiceHandler.js";
 
-const logger = createLogger("AiClassifierServer");
+const logger = createLogger(module);
 
 /**
  * The app

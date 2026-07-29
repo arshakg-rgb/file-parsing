@@ -1,6 +1,7 @@
+import pino from "pino";
 import JSONbig from "json-bigint";
 import { settings } from "@shared/Settings.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { FailureClass, ColumnMap } from "@shared/models/job.js";
 import { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { safeRegex, safeRegexTest } from "@utils/validator/safeRegex.js";
@@ -21,7 +22,7 @@ export class LineClassifier implements IClassifier
   private headerParts: string[] | null = null;
   private columnMap: ColumnMap | null = null;
   private firstLine: boolean = true;
-  private logger: Logger;
+  private logger: pino.Logger;
   private normalizedFieldSpec: string[];
   private aliasMap: Map<string, Set<string>>;
   private aiRateLimiter?: { acquire(): Promise<void> };
@@ -92,7 +93,7 @@ export class LineClassifier implements IClassifier
     this.columnMap = columnMap && Object.keys(columnMap).length > 0 ? columnMap : null;
     this.aiRateLimiter = aiRateLimiter ?? undefined;
     this.aiCache = new Map();
-    this.logger = createLogger(`LineClassifier:${this.jobId}`);
+    this.logger = createLogger(module);
     this.normalizedFieldSpec = fieldSpec.map((f) => this.normalizeKey(f));
     this.aliasMap = new Map<string, Set<string>>();
 

@@ -1,7 +1,8 @@
+import pino from "pino";
 import crypto from "crypto";
 import {GenerateContentResponse, GoogleGenAI} from "@google/genai";
 import { settings } from "@shared/Settings.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { ClassifyRequest, ClassifyResponse, CSVParseResult, AIVerdict } from "@service/ai_classifier/io/IAiClassifier.js";
 import {IClassifierStats, PersistKind} from "@service/ai_classifier/io/IClassifierStats.js";
@@ -35,7 +36,7 @@ export class AiClassifierService
    * @public
    */
 
-  public readonly logger: Logger;
+  public readonly logger: pino.Logger;
 
   /**
    * Running counters surfaced via {@link getStats}.
@@ -58,7 +59,7 @@ export class AiClassifierService
 
   private constructor()
   {
-    this.logger = createLogger("AiClassifierServiceHandler");
+    this.logger = createLogger(module);
   }
 
   /**

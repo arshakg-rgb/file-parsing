@@ -1,5 +1,6 @@
+import pino from "pino";
 import { settings } from "@shared/Settings.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { FailureClass } from "@shared/models/job.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { safeRegex, safeRegexTest } from "@utils/validator/safeRegex.js";
@@ -62,7 +63,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
    * @private
    */
   private firstLine = true;
-  private logger: Logger;
+  private logger: pino.Logger;
 
     /**
    * Constructs a new ClassifierServiceImpl instance.
@@ -74,7 +75,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
       throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate ClassifierServiceImpl directly. Use getInstance()");
     }
     super(enforce);
-    this.logger = createLogger("ClassifierServiceImpl");
+    this.logger = createLogger(module);
     this.jobId = "";
     this.fieldSpec = [];
     this.recordTemplates = [];
@@ -111,7 +112,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     this.headerMap = null;
     this.headerParts = null;
     this.firstLine = true;
-    this.logger = createLogger(`ClassifierServiceImpl:${jobId}`);
+    this.logger = createLogger(module);
   }
 
     /**

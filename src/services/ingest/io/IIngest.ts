@@ -30,3 +30,23 @@ export const PASSWORD_ERROR_KEYWORDS = ["password", "encrypted", "bad password"]
 
 export const OBJECT_SIZE_MAX_ATTEMPTS = 5;
 export const OBJECT_SIZE_RETRY_DELAY_MS = 1000;
+
+/** Archive magic-byte signatures used by ArchiveTypeDetector. */
+export const MAGIC_ZIP = Buffer.from("PK\x03\x04");
+export const MAGIC_GZ = Buffer.from("\x1f\x8b");
+export const MAGIC_7Z = Buffer.from("7z\xbc\xaf\x27\x1c");
+export const MAGIC_RAR = Buffer.from("Rar!");
+
+/**
+ * RAR extraction runs full-file CLI-based extraction (see RarExtractor for
+ * rationale), so its memory-safety limits are enforced directly there rather
+ * than via the compression-ratio check used by the other formats.
+ */
+export const RAR_MAX_ARCHIVE_SIZE = 2.5 * 1024 * 1024 * 1024; // 2.5GB limit for RAR with 4Gi memory + GCS FUSE
+export const RAR_MAX_INLINE_FILE_SIZE = 2 * 1024 * 1024 * 1024;
+export const RAR_MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024;
+
+export interface RarFileEntry {
+    name: string;
+    size: number;
+}

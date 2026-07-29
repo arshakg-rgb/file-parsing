@@ -1,9 +1,10 @@
+import pino from "pino";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import crypto from "crypto";
 
 export interface DeadLetterEntry {
@@ -42,7 +43,7 @@ export class DLQManager extends ServiceManager {
    * Logger instance
    * @private
    */
-  private logger: Logger;
+  private logger: pino.Logger;
     /**
    * Db Manager
    * @private
@@ -70,7 +71,7 @@ export class DLQManager extends ServiceManager {
     }
     super(enforce);
 
-    this.logger = createLogger("dlq-manager");
+    this.logger = createLogger(module);
     this.dbManager = PostgreSqlManager.getInstance();
     this.gcsUtils = FirestoreCacheUtils.getInstance();
   }

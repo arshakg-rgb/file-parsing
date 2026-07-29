@@ -1,3 +1,4 @@
+import pino from "pino";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
@@ -9,7 +10,7 @@ import type { ParseJobAttributes } from "@config/db/models/ParseJob.js";
 import type { OutputPartAttributes } from "@config/db/models/OutputPart.js";
 import { receiveMessages, deleteMessage, publishEvent } from "@shared/QueueService.js";
 import { QualityGate } from "@shared/QualityGate.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { metrics } from "@utils/response/metrics.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import { ReportService } from "@service/report/ReportService.js";
@@ -28,7 +29,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
    * Logger instance
    * @private
    */
-  private logger: Logger;
+  private logger: pino.Logger;
     /**
    * Gcs Utils
    * @private
@@ -51,7 +52,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
     }
     super(enforce);
 
-    this.logger = createLogger("report");
+    this.logger = createLogger(module);
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.dbManager = PostgreSqlManager.getInstance();
 
@@ -75,7 +76,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
    * Gets logger
    * @returns The logger result
    */
-  public getLogger(): Logger {
+  public getLogger(): pino.Logger {
     return this.logger;
   }
 

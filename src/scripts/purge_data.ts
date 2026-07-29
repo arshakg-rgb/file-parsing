@@ -1,10 +1,11 @@
+import pino from "pino";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
-import { createLogger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 
 /**
  * Logger instance for the module
  */
-const logger = createLogger("purge-data");
+const logger = createLogger(module);
 
 /**
  * Performs the purge database operation.

@@ -1,3 +1,4 @@
+import pino from "pino";
 import { randomUUID } from "crypto";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
@@ -5,7 +6,7 @@ import { Template, TemplateKind } from "@shared/models/template.js";
 import { ITemplateRegistry } from "@service/ai_classifier/io/ITemplateRegistry.js";
 import { TemplateCache } from "./TemplateCache.js";
 import { FirestoreTemplateRepository } from "./FirestoreTemplateRepository.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 
 /**
  * TemplateRegistryService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -39,7 +40,7 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
    */
 
   private warming: Promise<void> | null = null;
-  private logger: Logger;
+  private logger: pino.Logger;
 
     /**
    * Constructs a new TemplateRegistryService instance.
@@ -57,7 +58,7 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
     }
 
     super(enforce);
-    this.logger = createLogger("TemplateRegistryService");
+    this.logger = createLogger(module);
     this.cache = cache ?? new TemplateCache();
     this.repository = repository ?? new FirestoreTemplateRepository();
   }

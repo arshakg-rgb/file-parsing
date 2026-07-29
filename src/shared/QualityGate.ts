@@ -1,8 +1,9 @@
+import pino from "pino";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { totalFailed } from "@shared/models/job.js";
 
 export interface QualityMetrics {
@@ -26,7 +27,7 @@ export class QualityGate extends ServiceManager {
    * Logger instance
    * @private
    */
-  private logger: Logger;
+  private logger: pino.Logger;
     /**
    * Db Manager
    * @private
@@ -49,7 +50,7 @@ export class QualityGate extends ServiceManager {
     }
     super(enforce);
 
-    this.logger = createLogger("quality-gate");
+    this.logger = createLogger(module);
     this.dbManager = PostgreSqlManager.getInstance();
     this.FAILED_LINE_RATIO_THRESHOLD = 0.1;
   }

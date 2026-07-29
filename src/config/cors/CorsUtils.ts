@@ -1,14 +1,14 @@
+import pino from "pino";
 import Config from "@config/system-config/Config.js";
 import { IAppConfig } from "@config/system-config/io/IAppConfig.js";
 import { ServerError } from "@errors/ServerError.js";
 import { createLogger } from "@utils/logger/Log.js";
 import cors, { CorsOptions, type CorsOptionsDelegate, CorsRequest } from "cors";
 import dotenv from "dotenv";
-import {Logger} from "pino";
 
 dotenv.config();
 
-const logger: Logger = createLogger("CorsUtils");
+const logger: pino.Logger = createLogger(module);
 
 /**
  * Utility class for setting up CORS for the application.

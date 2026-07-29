@@ -1,3 +1,4 @@
+import pino from "pino";
 import crypto from "crypto";
 import jschardet, {IDetectedMap} from "jschardet";
 import { settings } from "@shared/Settings.js";
@@ -7,7 +8,7 @@ import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "@shared/Q
 import { parseGcsUrl, objectSize, readRange } from "@shared/GcsUtils.js";
 import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "@utils/normalizers/encoding.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
-import { createLogger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { metrics } from "@utils/response/metrics.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import { waitForDb } from "@shared/DatabaseManager.js";
@@ -59,7 +60,7 @@ export class DetectBootstrapService
     cacheMisses: 0,
   };
 
-  private logger = createLogger("detect_bootstrap");
+  private logger = createLogger(module);
 
   private classify: ((req: ClassifyRequest) => Promise<ClassifyResponse>) | null = null;
 

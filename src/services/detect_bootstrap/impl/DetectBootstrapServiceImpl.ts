@@ -1,3 +1,4 @@
+import pino from "pino";
 import crypto from "crypto";
 import jschardet from "jschardet";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
@@ -8,7 +9,7 @@ import { JobStatus, ClassifyMessage, ParseMessage } from "@shared/models/job.js"
 import { sendRaw, publishEvent } from "@shared/QueueService.js";
 import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "@utils/normalizers/encoding.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { metrics } from "@utils/response/metrics.js";
 import { AiClassifierService } from "@service/ai_classifier/AiClassifierServiceHandler.js";
 import { mockClassify } from "@service/ai_classifier/mock.js";
@@ -37,7 +38,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
    * @private
    */
 
-  private logger: Logger;
+  private logger: pino.Logger;
 
   /**
    * Gcs Utils
@@ -67,7 +68,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     }
     super(enforce);
 
-    this.logger = createLogger("detect_bootstrap");
+    this.logger = createLogger(module);
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.classify = this.buildClassifier();
   }
@@ -114,7 +115,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
    * Gets logger
    * @returns The logger result
    */
-  public getLogger(): Logger {
+  public getLogger(): pino.Logger {
     return this.logger;
   }
 

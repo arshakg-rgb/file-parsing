@@ -1,12 +1,12 @@
+import pino from "pino";
 import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, SourceType, IngestMessage } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "@shared/QueueService.js";
 import { parseGcsUrl, objectSize, readRange, copyObject } from "@shared/GcsUtils.js";
 import { getJob, repositories, waitForDb, createPendingArchiveEntry } from "@shared/DatabaseManager.js";
-import { detectArchiveType, extractArchiveToS3, fetchUrlToS3, listS3Prefix, BombError } from "./normalizer.js";
-import { SSRFError } from "./ssrf_guard.js";
-import {createLogger, Logger} from "@utils/logger/logger.js";
+import { BombError } from "@errors/BombError.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { metrics } from "@utils/response/metrics.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import {PasswordError} from "@errors/PasswordError";
@@ -18,6 +18,9 @@ import {
   UPLOAD_LIKE_SOURCE_TYPES
 } from "@service/ingest/io/IIngest";
 import {IParseJob} from "@config/db/models";
+import {IngestServiceImpl} from "@service/ingest/IngestServiceImpl";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import {SSRFError} from "@errors/SSRFError";
 
 
 export class IngestService
@@ -28,6 +31,8 @@ export class IngestService
    */
 
   private static instance: IngestService;
+
+  private ingestServiceImpl: IngestServiceImpl;
 
   private running: boolean = false;
 
@@ -71,28 +76,40 @@ export class IngestService
     archiveBombs: 0,
   };
 
-  private logger: Logger = createLogger("ingest");
+  private logger: pino.Logger = createLogger(module);
 
-  private readonly EXTRACTION_TIMEOUT_MS = 50 * 60 * 1000; // 50 minutes under 3600s Cloud Run ceiling
+  private readonly EXTRACTION_TIMEOUT_MS = 50 * 60 * 1000;
 
   /**
-   * Private constructor for singleton pattern
+   * Private constructor to enforce a Singleton pattern.
+   *
+   * @param enforce - Function to enforce a Singleton pattern.
+   * @param ingestServiceImpl - The ingest service instance.
+   * @throws Error if instantiation is attempted directly.
    */
 
-  private constructor()
+  private constructor(enforce: () => void, ingestServiceImpl: IngestServiceImpl)
   {
+    if (enforce !== Enforce)
+    {
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Error: Instantiation failed: Use IngestService.getInstance() instead of new.");
+    }
+
+    this.ingestServiceImpl = ingestServiceImpl;
     this.startHealthCheckServers();
   }
 
   /**
-   * Get singleton instance
+   * Gets the singleton instance of IngestService.
+   *
+   * @returns The singleton instance of IngestService.
    */
 
   static getInstance(): IngestService
   {
     if (!IngestService.instance)
     {
-      IngestService.instance = new IngestService();
+      IngestService.instance = new IngestService(Enforce, IngestServiceImpl.getInstance());
     }
 
     return IngestService.instance;
@@ -282,7 +299,7 @@ export class IngestService
 
       const [bucket, key] = parseGcsUrl(s3Url);
       const header: Buffer = await readRange(bucket, key, 0, 511);
-      const archiveType: string = detectArchiveType(header);
+      const archiveType: string = this.ingestServiceImpl.detectArchiveType(header);
 
       if (archiveType)
       {
@@ -410,7 +427,7 @@ export class IngestService
     if (url.endsWith("/"))
     {
       this.stats.s3PrefixFanouts++;
-      const objects: [string, number][] = await listS3Prefix(url);
+      const objects: [string, number][] = await this.ingestServiceImpl.listS3Prefix(url);
 
       for (const [objUrl, objSize] of objects)
       {
@@ -447,7 +464,7 @@ export class IngestService
   {
     this.stats.urlFetches++;
     this.assertUrlScheme(msg.source_ref, HTTP_URL_PATTERN, "an http(s) URL for url sources");
-    const [s3Url, size] = await fetchUrlToS3(msg.job_id, msg.source_ref);
+    const [s3Url, size] = await this.ingestServiceImpl.fetchUrlToS3(msg.job_id, msg.source_ref);
 
     return { s3Url, size };
   }
@@ -573,7 +590,7 @@ export class IngestService
     try
     {
       const entries: Record<string, unknown>[] = await this.withTimeout(
-          extractArchiveToS3(jobId, s3Url, archiveType, msg.field_spec, msg.batch_id || jobId, password),
+          this.ingestServiceImpl.extractArchiveToS3(jobId, s3Url, archiveType, msg.field_spec, msg.batch_id || jobId, password),
           this.EXTRACTION_TIMEOUT_MS,
           `extractArchiveToS3(${jobId})`
       );
@@ -808,3 +825,10 @@ IngestService.getInstance()
       console.error("ingest_start_failed", { error: String(err) });
       process.exit(1);
     });
+
+/**
+ * Function to enforce the Singleton pattern.
+ */
+function Enforce(): void
+{
+}

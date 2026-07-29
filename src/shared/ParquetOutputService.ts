@@ -1,8 +1,9 @@
+import pino from "pino";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 
 /**
  * ParquetOutputService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -17,7 +18,7 @@ class ParquetOutputService extends ServiceManager {
    * Logger instance
    * @private
    */
-  private logger: Logger;
+  private logger: pino.Logger;
     /**
    * Gcs Utils
    * @private
@@ -40,7 +41,7 @@ class ParquetOutputService extends ServiceManager {
     }
     super(enforce);
 
-    this.logger = createLogger("parquet-writer");
+    this.logger = createLogger(module);
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.FLUSH_LINE_THRESHOLD = 2000;
   }
@@ -60,7 +61,7 @@ class ParquetOutputService extends ServiceManager {
    * Gets logger
    * @returns The logger result
    */
-  public getLogger(): Logger {
+  public getLogger(): pino.Logger {
     return this.logger;
   }
 

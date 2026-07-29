@@ -76,7 +76,7 @@ export function createLogger(name?: string | NodeModule): pino.Logger
 }
 
 
-const logger: pino.Logger = logFactory("unhandled");
+const logger: pino.Logger = createLogger(module);
 
 /**
  * Handles uncaught exceptions by logging the error.

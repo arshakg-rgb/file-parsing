@@ -1,10 +1,10 @@
+import pino from "pino";
 import { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryConsumerOptions } from "@service/archive_entry_consumer/io/IArchiveEntryConsumer.js";
 import ArchiveEntryConsumerServiceImpl from "@service/archive_entry_consumer/impl/ArchiveEntryConsumerServiceImpl.js";
 import { settings } from "@shared/Settings.js";
 import { receiveMessages, deleteMessage, QueueMessage } from "@shared/QueueService.js";
 import { waitForDb } from "@shared/DatabaseManager.js";
-import { createLogger } from "@utils/logger/logger.js";
-import type { Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 
 /**
  * Consumes archive entry jobs from a queue and processes them one at a time.
@@ -14,7 +14,7 @@ import type { Logger } from "@utils/logger/logger.js";
 
 export class ArchiveEntryConsumer
 {
-    private readonly logger: Logger;
+    private readonly logger: pino.Logger;
     private readonly service: IArchiveEntryConsumer;
     private readonly queueUrl: string;
     private readonly maxMessages: number;
@@ -33,7 +33,7 @@ export class ArchiveEntryConsumer
      * @param logger - Logger instance; defaults to a new "archive-entry-consumer" logger
      */
 
-    constructor(service: IArchiveEntryConsumer, options: ArchiveEntryConsumerOptions, logger: Logger = createLogger("archive-entry-consumer"))
+    constructor(service: IArchiveEntryConsumer, options: ArchiveEntryConsumerOptions, logger: pino.Logger = createLogger(module))
     {
       this.service = service;
       this.queueUrl = options.queueUrl;

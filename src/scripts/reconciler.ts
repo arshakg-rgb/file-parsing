@@ -1,14 +1,15 @@
+import pino from "pino";
 import { settings } from "@shared/Settings.js";
 import { getPendingEntryCount, repositories, waitForDb } from "@shared/DatabaseManager.js";
 import { publishEvent } from "@shared/QueueService.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus } from "@shared/models/job.js";
-import { createLogger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 
 /**
  * Logger instance for the module
  */
-const logger = createLogger("reconciler");
+const logger = createLogger(module);
 
 // Threshold: jobs stuck in INGESTING for more than 2 hours are considered stuck
 const STUCK_THRESHOLD_MS = 2 * 60 * 60 * 1000;

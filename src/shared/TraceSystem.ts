@@ -1,8 +1,9 @@
+import pino from "pino";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import type { ParsedRecordAttributes } from "@config/db/models/ParsedRecord.js";
 import crypto from "crypto";
 
@@ -34,7 +35,7 @@ export class TraceSystem extends ServiceManager {
    * Logger instance
    * @private
    */
-  private logger: Logger;
+  private logger: pino.Logger;
     /**
    * Db Manager
    * @private
@@ -54,7 +55,7 @@ export class TraceSystem extends ServiceManager {
     }
     super(enforce);
 
-    this.logger = createLogger("trace-system");
+    this.logger = createLogger(module);
     this.dbManager = PostgreSqlManager.getInstance();
   }
 

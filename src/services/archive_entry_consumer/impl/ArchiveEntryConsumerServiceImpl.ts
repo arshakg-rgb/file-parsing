@@ -1,3 +1,4 @@
+import pino from "pino";
 import crypto from "crypto";
 import fs from "fs/promises";
 import { createWriteStream } from "fs";
@@ -7,7 +8,7 @@ import { spawn } from "child_process";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import { ArchiveEntryConsumerService } from "@service/archive_entry_consumer/ArchiveEntryConsumerService.js";
 import { ArchiveEntryRequest, ArchiveEntryResponse, LogEvent, NestedArchiveEntry } from "@service/archive_entry_consumer/io/IArchiveEntryConsumer.js";
@@ -16,8 +17,8 @@ import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { publishEvent } from "@shared/QueueService.js";
 import { readRange, gcsClient } from "@shared/GcsUtils.js";
 import { markPendingEntryProcessing, markPendingEntryCompleted, markPendingEntryFailed, createPendingArchiveEntry } from "@shared/DatabaseManager.js";
-import { extractArchiveToS3, detectArchiveType } from "@service/ingest/normalizer.js";
 import {Readable} from "node:stream";
+import {IngestServiceImpl} from "@service/ingest/IngestServiceImpl";
 
 /**
  * ArchiveEntryConsumerServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -37,7 +38,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
      * @private
      */
 
-    private readonly logger: Logger;
+    private readonly logger: pino.Logger;
 
     /**
      * Gcs Utils
@@ -69,7 +70,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
 
       super(enforce);
 
-      this.logger = createLogger("archive-entry-consumer");
+      this.logger = createLogger(module);
       this.gcsUtils = FirestoreCacheUtils.getInstance();
       this.rarMountPath = process.env.RAR_TEMP_MOUNT || "/mnt/scratch";
 
@@ -99,7 +100,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
      * @returns The logger result
      */
 
-    public getLogger(): Logger
+    public getLogger(): pino.Logger
     {
       return this.logger;
     }
@@ -166,7 +167,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
       try
       {
         const header: Buffer = await readRange(bucket, key, 0, 511);
-        return detectArchiveType(header);
+        return IngestServiceImpl.getInstance().detectArchiveType(header);
       }
       catch (e)
       {
@@ -188,7 +189,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
 
       try
       {
-        const nestedEntries: NestedArchiveEntry[] = await extractArchiveToS3(jobId, s3Url, detectedType, fieldSpec, batchId, password, nestingDepth + 1);
+        const nestedEntries: NestedArchiveEntry[] = await IngestServiceImpl.getInstance().extractArchiveToS3(jobId, s3Url, detectedType, fieldSpec, batchId, password, nestingDepth + 1);
 
         await gcsClient().bucket(bucket).file(key).delete().catch((err) =>
         {

@@ -1,7 +1,8 @@
+import pino from "pino";
 import { Firestore } from "@google-cloud/firestore";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { existsSync } from "fs";
 import { resolve } from "path";
 import {IAppConfig} from "@config/system-config/io/IAppConfig.js";
@@ -31,7 +32,7 @@ class FirestoreManager extends ServiceManager
    * @private
    */
 
-  private logger: Logger;
+  private logger: pino.Logger;
 
   /**
    * Constructs a new FirestoreManager instance.
@@ -47,7 +48,7 @@ class FirestoreManager extends ServiceManager
       }
 
       super(enforce);
-      this.logger = createLogger("FirestoreManager");
+      this.logger = createLogger(module);
   }
 
   /**

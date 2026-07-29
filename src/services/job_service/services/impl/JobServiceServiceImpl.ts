@@ -1,3 +1,4 @@
+import pino from "pino";
 import { randomUUID } from "crypto";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { ValidationError } from "@errors/ValidationError.js";
@@ -8,7 +9,7 @@ import { SourceType, JobStatus, JobTimings, JobCounts } from "@shared/models/job
 import { sendRaw } from "@shared/QueueService.js";
 import { presignedPutUrl, parseGcsUrl, objectSize } from "@shared/GcsUtils.js";
 import { transition } from "@service/job_service/stateMachine.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { JobServiceService } from "@service/job_service/services/JobServiceService.js";
 import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest } from "@service/job_service/io/IJob.js";
 import {HttpError} from "@errors/HttpError.js";
@@ -20,14 +21,14 @@ import {ServerError} from "@errors/ServerError.js";
 export class JobServiceServiceImpl implements JobServiceService {
   private static instance: JobServiceServiceImpl;
   private readonly mySqlManager: PostgreSqlManager;
-  private readonly logger: Logger;
+  private readonly logger: pino.Logger;
 
   private constructor(enforce: () => void, mySqlManager: PostgreSqlManager) {
     if (enforce !== Enforce) {
       throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate JobServiceServiceImpl directly. Use getInstance()");
     }
     this.mySqlManager = mySqlManager;
-    this.logger = createLogger("JobServiceServiceImpl");
+    this.logger = createLogger(module);
   }
 
   public static getInstance(): JobServiceServiceImpl {

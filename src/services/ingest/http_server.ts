@@ -1,14 +1,15 @@
+import pino from "pino";
 import express, { Request, Response } from "express";
 import multer from "multer";
 import { settings } from "@shared/Settings.js";
 import { sendRaw } from "@shared/QueueService.js";
 import { putObject, parseGcsUrl } from "@shared/GcsUtils.js";
-import { createLogger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 
 /**
  * Logger instance for the module
  */
-const logger = createLogger("ingest-http");
+const logger = createLogger(module);
 /**
  * The app
  */

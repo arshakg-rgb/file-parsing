@@ -1,8 +1,9 @@
+import pino from "pino";
 import type { SQSClient, SQSClientConfig, Message, SendMessageCommandInput, ReceiveMessageCommandInput } from "@aws-sdk/client-sqs";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 
 export interface QueueMessage<T> {
   payload: T;
@@ -22,7 +23,7 @@ class QueueService extends ServiceManager {
    * Logger instance
    * @private
    */
-  private logger: Logger;
+  private logger: pino.Logger;
     /**
    * Q U E U E_ R E T R I E S
    * @private
@@ -71,7 +72,7 @@ class QueueService extends ServiceManager {
     }
     super(enforce);
 
-    this.logger = createLogger("queue-utils");
+    this.logger = createLogger(module);
   }
 
     /**

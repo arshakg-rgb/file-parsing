@@ -1,3 +1,4 @@
+import pino from "pino";
 import "reflect-metadata";
 import pg from "pg";
 import { Sequelize } from "sequelize-typescript";
@@ -6,7 +7,7 @@ import Config from "../system-config/Config.js";
 import { ServiceManager, Enforce } from "../ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { ServerError } from "@errors/ServerError.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import ParseJob from "./models/ParseJob.js";
 import DeadLetter from "./models/DeadLetter.js";
 import OutputPart from "./models/OutputPart.js";
@@ -66,7 +67,7 @@ export class PostgreSqlManager extends ServiceManager
    * @private
    */
 
-  private logger: Logger;
+  private logger: pino.Logger;
 
   /**
    * Constructs a new PostgreSqlManager instance.
@@ -82,7 +83,7 @@ export class PostgreSqlManager extends ServiceManager
         throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate PostgreSqlManager directly. Use getInstance()");
       }
 
-      this.logger = createLogger("PostgreSqlManager");
+      this.logger = createLogger(module);
   }
 
   /**

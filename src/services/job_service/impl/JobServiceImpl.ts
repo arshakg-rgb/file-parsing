@@ -1,9 +1,10 @@
+import pino from "pino";
 import express, { Request, Response, NextFunction } from "express";
 import { Server as HttpServer } from "node:http";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { receiveMessages, deleteMessage } from "@shared/QueueService.js";
 import { JobEvent, EventType } from "@shared/models/events.js";
 import { handleEvent } from "@service/job_service/stateMachine.js";
@@ -40,7 +41,7 @@ class JobServiceImpl extends ServiceManager implements JobService {
    * Logger
    * @private
    */
-  private logger: Logger;
+  private logger: pino.Logger;
 
     /**
    * Constructs a new JobServiceImpl instance.
@@ -55,7 +56,7 @@ class JobServiceImpl extends ServiceManager implements JobService {
 
     this.app = express();
     this.dbManager = PostgreSqlManager.getInstance();
-    this.logger = createLogger("JobServiceImpl");
+    this.logger = createLogger(module);
     this.setupApp();
   }
 

@@ -1,9 +1,10 @@
+import pino from "pino";
 import os from "os";
 import path from "path";
 import fs from "fs";
 import Config from "@config/system-config/Config.js";
 import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 
 /**
  * Performs the csv escape cell operation.
@@ -40,7 +41,7 @@ export class CsvOutputWriter {
    * Logger instance
    * @private
    */
-  private readonly logger: Logger;
+  private readonly logger: pino.Logger;
     /**
    * Gcs Utils
    * @private
@@ -93,7 +94,7 @@ export class CsvOutputWriter {
     const base = (fieldSpec && fieldSpec.length > 0 ? fieldSpec : ["value"]).filter((c) => c !== "meta");
     this.columns = [...base, "meta"];
     this.tmpPath = path.join(os.tmpdir(), `${jobId}-output.csv`);
-    this.logger = createLogger("csv-output");
+    this.logger = createLogger(module);
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.config = Config.getInstance();
   }

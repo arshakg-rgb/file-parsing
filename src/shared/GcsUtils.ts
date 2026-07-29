@@ -1,9 +1,10 @@
+import pino from "pino";
 import crypto from "crypto";
 import { Storage } from "@google-cloud/storage";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { decode } from "@utils/normalizers/encoding.js";
 
 /**
@@ -19,7 +20,7 @@ class GcsUtils extends ServiceManager {
    * Logger instance
    * @private
    */
-  private logger: Logger;
+  private logger: pino.Logger;
     /**
    * Storage
    * @private
@@ -67,7 +68,7 @@ class GcsUtils extends ServiceManager {
     }
     super(enforce);
 
-    this.logger = createLogger("gcs-utils");
+    this.logger = createLogger(module);
   }
 
     /**

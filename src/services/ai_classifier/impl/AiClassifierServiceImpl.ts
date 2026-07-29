@@ -1,8 +1,9 @@
+import pino from "pino";
 import crypto from "crypto";
 import { GoogleGenAI } from "@google/genai";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { AiClassifierService } from "@service/ai_classifier/AiClassifierService.js";
 import {
@@ -38,7 +39,7 @@ class AiClassifierServiceImpl extends ServiceManager implements AiClassifierServ
    * Logger
    * @private
    */
-  private logger: Logger;
+  private logger: pino.Logger;
 
     /**
    * Constructs a new AiClassifierServiceImpl instance.
@@ -50,7 +51,7 @@ class AiClassifierServiceImpl extends ServiceManager implements AiClassifierServ
       throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate AiClassifierServiceImpl directly. Use getInstance()");
     }
     super(enforce);
-    this.logger = createLogger("AiClassifierServiceImpl");
+    this.logger = createLogger(module);
     const config = this.getConfig();
     const PROJECT_ID = config.settings.GCP_PROJECT_ID || "data-etl-499916";
     const LOCATION = config.settings.VERTEX_LOCATION || "us-central1";

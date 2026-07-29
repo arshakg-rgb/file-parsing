@@ -1,3 +1,4 @@
+import pino from "pino";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
@@ -7,7 +8,7 @@ import { DLQMessage, DLQStatus, FailureClass, JobStatus, LoadMessage } from "@sh
 import { receiveMessages, deleteMessage, sendMessage } from "@shared/QueueService.js";
 import { ClassifyResult, LineClassifier } from "@service/stream_parser/LineClassifier.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { metrics } from "@utils/response/metrics.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import { RetryService } from "@service/retry/RetryService.js";
@@ -26,7 +27,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
    * Logger instance
    * @private
    */
-  private logger: Logger;
+  private logger: pino.Logger;
     /**
    * Db Manager
    * @private
@@ -49,7 +50,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     }
     super(enforce);
 
-    this.logger = createLogger("retry");
+    this.logger = createLogger(module);
     this.dbManager = PostgreSqlManager.getInstance();
 
     if (process.env.HEALTH_CHECK_PORT) {
@@ -72,7 +73,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
    * Gets logger
    * @returns The logger result
    */
-  public getLogger(): Logger {
+  public getLogger(): pino.Logger {
     return this.logger;
   }
 

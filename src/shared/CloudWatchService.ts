@@ -1,8 +1,9 @@
+import pino from "pino";
 import { CloudWatchLogsClient, PutLogEventsCommand, CreateLogGroupCommand, CreateLogStreamCommand, DescribeLogGroupsCommand, PutLogEventsCommandInput } from "@aws-sdk/client-cloudwatch-logs";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import { createLogger, Logger } from "@utils/logger/logger.js";
+import { createLogger } from "@utils/logger/Log.js";
 
 /**
  * CloudWatchService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -35,7 +36,7 @@ class CloudWatchService extends ServiceManager
    * @private
    */
 
-  private logger: Logger;
+  private logger: pino.Logger;
 
   /**
    * Constructs a new CloudWatchService instance.
@@ -51,7 +52,7 @@ class CloudWatchService extends ServiceManager
     }
     super(enforce);
 
-    this.logger = createLogger("cloudwatch");
+    this.logger = createLogger(module);
   }
 
     /**
