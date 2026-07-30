@@ -12,8 +12,8 @@ import { QualityGate } from "@shared/QualityGate.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { ReportService } from "@service/report/ReportService.js";
 import { ReportRequest, ReportResponse } from "@service/report/io/IReport.js";
-import HealthService from "@utils/response/health";
-import {MetricsUtils} from "@utils/response/metrics";
+import HealthService from "@utils/response/Health";
+import {MetricsUtils} from "@utils/response/Metrics";
 
 /**
  * ReportServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.

@@ -11,8 +11,8 @@ import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { RetryService } from "@service/retry/RetryService.js";
 import { RetryRequest, RetryResponse } from "@service/retry/io/IRetry.js";
-import HealthService from "@utils/response/health";
-import {MetricsUtils} from "@utils/response/metrics";
+import HealthService from "@utils/response/Health";
+import {MetricsUtils} from "@utils/response/Metrics";
 
 /**
  * RetryServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.

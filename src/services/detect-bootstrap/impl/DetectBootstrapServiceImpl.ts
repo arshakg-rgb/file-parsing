@@ -19,7 +19,7 @@ import {
   HEADER_PATTERNS, HeaderStripResult, ProbeResult
 } from "@service/detect-bootstrap/io/IDetectBootstrap.js";
 import EncodingService from "@utils/normalizers/Encoding";
-import {MetricsUtils} from "@utils/response/metrics";
+import {MetricsUtils} from "@utils/response/Metrics";
 
 /**
  * DetectBootstrapServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.

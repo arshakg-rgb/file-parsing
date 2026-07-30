@@ -20,8 +20,8 @@ import jschardet from "jschardet";
 import JSONbig from "json-bigint";
 import crypto from "crypto";
 import EncodingService from "@utils/normalizers/Encoding";
-import HealthService from "@utils/response/health";
-import {MetricsUtils} from "@utils/response/metrics";
+import HealthService from "@utils/response/Health";
+import {MetricsUtils} from "@utils/response/Metrics";
 
 /**
  * Extract JSON records from a parsed JSON value for processing as individual classifier inputs.

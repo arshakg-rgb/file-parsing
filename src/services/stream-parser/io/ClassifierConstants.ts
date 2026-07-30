@@ -1,6 +1,7 @@
 /**
  * Field/column/key synonyms so field_spec names match real-world headers and JSON keys.
  */
+
 export const FIELD_ALIASES: Record<string, string[]> = {
   email: ["email", "mail", "emailaddress", "e_mail", "email_address", "EmailAddress"],
   name: ["name", "fullname", "full_name", "firstName", "lastName", "first_name", "last_name"],
@@ -18,40 +19,48 @@ export const FIELD_ALIASES: Record<string, string[]> = {
 /**
  * Delimiters to try for CSV-like parsing
  */
-export const DELIMITERS = [",", ";", "\t", "|", "~"];
+
+export const DELIMITERS: string[] = [",", ";", "\t", "|", "~"];
 
 /**
  * Maximum line length for processing
  */
-export const MAX_LINE_LENGTH = 64 * 1024;
+export const MAX_LINE_LENGTH: number = 64 * 1024;
 
 /**
  * Binary content threshold (ratio of non-printable characters)
  */
-export const BINARY_THRESHOLD = 0.3;
+
+export const BINARY_THRESHOLD: number = 0.3;
 
 /**
  * Minimum fields required for header detection
  */
-export const MIN_HEADER_FIELDS = 2;
+
+export const MIN_HEADER_FIELDS: number = 2;
 
 /**
  * Minimum header match ratio (must match at least half of requested fields)
  */
-export const HEADER_MATCH_RATIO = 0.5;
+
+export const HEADER_MATCH_RATIO: number = 0.5;
 
 /**
  * Phone number digit range for validation
  */
-export const PHONE_MIN_DIGITS = 10;
+
+export const PHONE_MIN_DIGITS: number = 10;
+
 /**
  * The p h o n e_ m a x_ d i g i t s
  */
-export const PHONE_MAX_DIGITS = 15;
+
+export const PHONE_MAX_DIGITS: number = 15;
 
 /**
  * Template IDs for special cases
  */
+
 export const TEMPLATE_IDS = {
   LENGTH_GATE: "length-gate",
   BINARY_GATE: "binary-gate",

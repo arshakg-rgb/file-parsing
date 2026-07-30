@@ -19,8 +19,8 @@ import {IParseJob} from "@config/db/models";
 import {IngestServiceImpl} from "@service/ingest/IngestServiceImpl";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import {SSRFError} from "@errors/SSRFError";
-import HealthService from "@utils/response/health";
-import { MetricsUtils } from "@utils/response/metrics";
+import HealthService from "@utils/response/Health";
+import { MetricsUtils } from "@utils/response/Metrics";
 
 
 export class IngestService

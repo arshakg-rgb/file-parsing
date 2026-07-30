@@ -1,4 +1,4 @@
-import { MetricsUtils } from "@utils/response/metrics";
+import { MetricsUtils } from "@utils/response/Metrics";
 
 /**
  * PrometheusService is a static utility class responsible for formatting

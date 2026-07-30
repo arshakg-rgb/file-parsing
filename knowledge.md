@@ -576,7 +576,7 @@ loaders/
 │       ├── cacheCleanup.ts          # Cache cleanup job
 │       └── log.ts                   # Log cleanup job
 └── server/
-    ├── logger.ts                    # Logger initialization
+    ├── Logger.ts                    # Logger initialization
     └── mail.ts                      # Mail initialization
 ```
 

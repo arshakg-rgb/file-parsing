@@ -11,8 +11,8 @@ import { ParquetReader } from "@dsnp/parquetjs";
 import { createLogger } from "@utils/logger/Log.js";
 import { LoadService } from "@service/load/LoadService.js";
 import { LoadResponse } from "@service/load/io/ILoad.js";
-import HealthService from "@utils/response/health";
-import {MetricsUtils} from "@utils/response/metrics";
+import HealthService from "@utils/response/Health";
+import {MetricsUtils} from "@utils/response/Metrics";
 
 /**
  * LoadServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.

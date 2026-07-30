@@ -1,6 +1,6 @@
 import express from "express";
 import {createLogger} from "@utils/logger/Log";
-import PrometheusService from "@utils/response/prometheus";
+import PrometheusService from "@utils/response/Prometheus";
 const logger = createLogger(module);
 
 /**

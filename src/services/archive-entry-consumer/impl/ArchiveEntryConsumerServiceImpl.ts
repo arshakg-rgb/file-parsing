@@ -18,7 +18,7 @@ import { readRange, gcsClient } from "@shared/GcsUtils.js";
 import { markPendingEntryProcessing, markPendingEntryCompleted, markPendingEntryFailed, createPendingArchiveEntry } from "@shared/DatabaseManager.js";
 import {Readable} from "node:stream";
 import {IngestServiceImpl} from "@service/ingest/IngestServiceImpl";
-import HealthService from "@utils/response/health";
+import HealthService from "@utils/response/Health";
 
 /**
  * ArchiveEntryConsumerServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
