@@ -26,10 +26,12 @@ export const PASSWORD_ERROR_KEYWORDS = ["password", "encrypted", "bad password"]
 
 /**
  * Max attempts when retrying an eventually-consistent GCS objectSize lookup
+ * for upload sources. Default gives a ~15 minute window so clients uploading
+ * very large files have time to finish the PUT before ingest gives up.
  */
 
-export const OBJECT_SIZE_MAX_ATTEMPTS = 5;
-export const OBJECT_SIZE_RETRY_DELAY_MS = 1000;
+export const OBJECT_SIZE_MAX_ATTEMPTS = 180;
+export const OBJECT_SIZE_RETRY_DELAY_MS = 5000;
 
 /** Archive magic-byte signatures used by ArchiveTypeDetector. */
 export const MAGIC_ZIP = Buffer.from("PK\x03\x04");
