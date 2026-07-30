@@ -379,8 +379,6 @@ export class JobServiceImpl implements JobService
       status: row.status,
       counts: row.counts as JobCounts,
       timings: row.timings as JobTimings,
-      output_paths: row.output_paths,
-      csv_output_path: (row.timings as JobTimings)?._csv_output_path as string | null | undefined,
       error: row.error,
     };
   }
@@ -402,8 +400,6 @@ export class JobServiceImpl implements JobService
       status: row.status,
       counts: row.counts as JobCounts,
       timings: row.timings as JobTimings,
-      output_paths: row.output_paths,
-      csv_output_path: (row.timings as JobTimings)?._csv_output_path as string | null | undefined,
       error: row.error,
     }));
   }

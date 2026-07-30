@@ -23,8 +23,8 @@ export interface StateMachine
      * @param error - Optional error message to persist alongside the transition
      * @param extraFields - Additional row fields to merge into the update
      */
-    transition(
-        jobId: string,
+
+    transition(jobId: string,
         newStatus: JobStatus,
         error?: string,
         extraFields?: Record<string, unknown>

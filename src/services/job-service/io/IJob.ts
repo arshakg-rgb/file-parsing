@@ -41,8 +41,6 @@ export interface IJobResponse {
   status: string;
   counts: JobCounts;
   timings: JobTimings;
-  output_paths: string[];
-  csv_output_path: string | null | undefined;
   error: string | null | undefined;
 }
 

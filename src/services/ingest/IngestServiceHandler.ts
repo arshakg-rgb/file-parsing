@@ -298,7 +298,13 @@ export class IngestService
       }
 
       const [bucket, key] = parseGcsUrl(s3Url);
-      const header: Buffer = await readRange(bucket, key, 0, 511);
+
+      if (size === 0)
+      {
+        throw new Error("Source file is empty");
+      }
+
+      const header: Buffer = await readRange(bucket, key, 0, Math.min(511, size - 1));
       const archiveType: string = this.ingestServiceImpl.detectArchiveType(header);
 
       if (archiveType)
