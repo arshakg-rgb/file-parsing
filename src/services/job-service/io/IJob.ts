@@ -98,7 +98,7 @@ export interface IUploadCsvResponse {
 export interface IDownloadCsvResponse {
   csv_output_path: string;
   filename: string;
-  buffer: Buffer;
+  download_url: string;
 }
 
 /**

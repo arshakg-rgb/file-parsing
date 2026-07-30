@@ -346,9 +346,7 @@ export class JobControllerImpl implements JobServiceController
     {
       const result: IDownloadCsvResponse = await this.service.downloadCsv(String(req.params.job_id));
 
-      res.setHeader("Content-Type", "text/csv");
-      res.setHeader("Content-Disposition", `attachment; filename="${result.filename}"`);
-      res.status(HttpStatuses.HTTP_STATUS_OK).send(result.buffer);
+      res.redirect(307, result.download_url);
     }
     catch (err)
     {

@@ -7,7 +7,7 @@ import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { ParseJobRow } from "@shared/DatabaseManager.js";
 import { SourceType, JobStatus, JobTimings, JobCounts } from "@shared/models/job.js";
 import { sendRaw } from "@shared/QueueService.js";
-import { presignedPutUrl, parseGcsUrl, objectSize, readFull, putObject } from "@shared/GcsUtils.js";
+import { presignedPutUrl, presignedGetUrl, parseGcsUrl, objectSize, readFull, putObject } from "@shared/GcsUtils.js";
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
@@ -648,10 +648,10 @@ export class JobServiceImpl implements JobService
   }
 
   /**
-   * Downloads the parsed CSV output for a completed job.
+   * Returns a presigned GCS URL to download the parsed CSV output for a completed job.
    *
    * @param jobId - The unique identifier of the job.
-   * @returns The CSV buffer, filename, and GCS path.
+   * @returns The GCS path, filename, and presigned download URL.
    * @throws HttpError if the job does not exist.
    * @throws ServerError if the parsed CSV is not yet available.
    */
@@ -682,15 +682,15 @@ export class JobServiceImpl implements JobService
       throw new ServerError(ServerError.INTERNAL, "Invalid CSV output path");
     }
 
-    const buffer = await readFull(bucket, key);
     const filename = key.split("/").pop() ?? `${jobId}.csv`;
+    const downloadUrl = await presignedGetUrl(bucket, key, 3600, filename);
 
-    this.logger.info("csv_downloaded", { job_id: jobId, path: csvOutputPath, bytes: buffer.length });
+    this.logger.info("csv_download_url_generated", { job_id: jobId, path: csvOutputPath, filename });
 
     return {
       csv_output_path: csvOutputPath,
       filename,
-      buffer,
+      download_url: downloadUrl,
     };
   }
 }

@@ -424,6 +424,35 @@ class GcsUtils extends ServiceManager {
   }
 
     /**
+   * Performs the presigned get url operation.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param expiresIn - The expires in
+   * @param filename - The attachment filename for the downloaded file
+   * @returns A promise that resolves to the result
+   */
+  public async presignedGetUrl(bucket: string, key: string, expiresIn = 3600, filename?: string): Promise<string> {
+    return this.withRetry(
+      () => this.withTimeout(async () => {
+        const options: { action: "read"; expires: number; responseDisposition?: string } = {
+          action: "read",
+          expires: Date.now() + expiresIn * 1000,
+        };
+        if (filename)
+        {
+          options.responseDisposition = `attachment; filename="${filename}"`;
+        }
+        const [url] = await this.getStorage()
+          .bucket(bucket)
+          .file(key)
+          .getSignedUrl(options);
+        return url;
+      }, this.GCS_TIMEOUT_MS),
+      this.GCS_RETRIES
+    );
+  }
+
+    /**
    * Performs the stream lines operation.
    * @param bucket - The bucket
    * @param key - The key
@@ -752,6 +781,18 @@ export function listObjects(bucket: string, prefix: string): Promise<[string, nu
  */
 export function presignedPutUrl(bucket: string, key: string, expiresIn = 3600, contentType = "application/octet-stream"): Promise<string> {
   return gcsUtils.presignedPutUrl(bucket, key, expiresIn, contentType);
+}
+
+/**
+ * Performs the presigned get url operation.
+ * @param bucket - The bucket
+ * @param key - The key
+ * @param expiresIn - The expires in
+ * @param filename - The attachment filename for the downloaded file
+ * @returns A promise that resolves to the result
+ */
+export function presignedGetUrl(bucket: string, key: string, expiresIn = 3600, filename?: string): Promise<string> {
+  return gcsUtils.presignedGetUrl(bucket, key, expiresIn, filename);
 }
 
 /**
