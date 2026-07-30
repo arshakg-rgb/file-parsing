@@ -16,5 +16,6 @@ export interface JobServiceController {
   markFailed(req: Request, res: Response, next: NextFunction): Promise<void>;
   retryJob(req: Request, res: Response, next: NextFunction): Promise<void>;
   getJobLogs(req: Request, res: Response, next: NextFunction): Promise<void>;
+  uploadCsv(req: Request, res: Response, next: NextFunction): Promise<void>;
   handleSuccessResponse(res: Response, outcome: unknown, pagination?: boolean, status?: number): void;
 }

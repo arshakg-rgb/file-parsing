@@ -31,6 +31,7 @@ export interface IJobResponse {
   counts: JobCounts;
   timings: JobTimings;
   output_paths: string[];
+  csv_output_path: string | null | undefined;
   error: string | null | undefined;
 }
 
@@ -62,6 +63,22 @@ export interface IRetryJobRequest {
  */
 export interface IMarkFailedRequest {
   reason?: string;
+}
+
+/**
+ * Upload parsed CSV to a user-supplied destination request payload.
+ */
+export interface IUploadCsvRequest {
+  destination_url: string;
+}
+
+/**
+ * Upload parsed CSV response payload.
+ */
+export interface IUploadCsvResponse {
+  csv_output_path: string | null | undefined;
+  destination_url: string;
+  bytes: number;
 }
 
 /**

@@ -7,7 +7,7 @@ import {
   ICreateJobRequest,
   IProvidePasswordRequest,
   IMarkFailedRequest,
-  IRetryJobRequest, ICreateJobResponse, IStuckJobsResponse, IJobResponse, IJobLogEntry,
+  IRetryJobRequest, ICreateJobResponse, IStuckJobsResponse, IJobResponse, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse,
 } from "@service/job-service/io/IJob.js";
 import { ServiceResponse } from "@utils/response/ServiceResponse.js";
 import { HttpError } from "@errors/HttpError.js";
@@ -276,6 +276,24 @@ export class JobControllerImpl implements JobServiceController
    * @param pagination -Whether to paginate the response.
    * @param status - The HTTP status code to set.
    */
+
+  public uploadCsv: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      const request: IUploadCsvRequest = {
+        destination_url: req.body.destination_url,
+      };
+
+      const result: IUploadCsvResponse = await this.service.uploadCsv(String(req.params.job_id), request);
+
+      this.handleSuccessResponse(res, result);
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  };
 
   public handleSuccessResponse(res: Response, outcome: {}, pagination: boolean = false, status: number = HttpStatuses.HTTP_STATUS_OK): void
   {

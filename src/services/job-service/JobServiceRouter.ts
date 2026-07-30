@@ -65,6 +65,9 @@ export class JobServiceRouter extends CustomRouter
 
     this.route("/jobs/:job_id/logs")
       .get(this.controller.getJobLogs);
+
+    this.route("/jobs/:job_id/upload-csv")
+      .post(this.controller.uploadCsv);
   }
 }
 

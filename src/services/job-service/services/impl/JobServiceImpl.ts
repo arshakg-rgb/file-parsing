@@ -7,11 +7,11 @@ import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { ParseJobRow } from "@shared/DatabaseManager.js";
 import { SourceType, JobStatus, JobTimings, JobCounts } from "@shared/models/job.js";
 import { sendRaw } from "@shared/QueueService.js";
-import { presignedPutUrl, parseGcsUrl, objectSize } from "@shared/GcsUtils.js";
+import { presignedPutUrl, parseGcsUrl, objectSize, readFull, putObject } from "@shared/GcsUtils.js";
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
-import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry } from "@service/job-service/io/IJob.js";
+import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse } from "@service/job-service/io/IJob.js";
 import {HttpError} from "@errors/HttpError.js";
 import {ServerError} from "@errors/ServerError.js";
 import {ParseJob, IParseJob, ParseJobAttributes} from "@config/db/models";
@@ -264,6 +264,7 @@ export class JobServiceImpl implements JobService
       counts: row.counts as JobCounts,
       timings: row.timings as JobTimings,
       output_paths: row.output_paths,
+      csv_output_path: (row.timings as JobTimings)?._csv_output_path as string | null | undefined,
       error: row.error,
     };
   }
@@ -286,6 +287,7 @@ export class JobServiceImpl implements JobService
       counts: row.counts as JobCounts,
       timings: row.timings as JobTimings,
       output_paths: row.output_paths,
+      csv_output_path: (row.timings as JobTimings)?._csv_output_path as string | null | undefined,
       error: row.error,
     }));
   }
@@ -469,6 +471,64 @@ export class JobServiceImpl implements JobService
       metadata: log.metadata,
       created_at: log.created_at,
     }));
+  }
+
+  /**
+   * Uploads the parsed CSV output for a completed job to a user-supplied
+   * gs:// or s3:// destination URL.
+   *
+   * @param jobId - The unique identifier of the job.
+   * @param request - The upload request containing the destination URL.
+   * @returns The source CSV path, destination URL, and number of bytes written.
+   * @throws HttpError if the job does not exist.
+   * @throws ServerError if the parsed CSV is not yet available.
+   * @throws ValidationError if the destination URL is invalid.
+   */
+
+  public async uploadCsv(jobId: string, request: IUploadCsvRequest): Promise<IUploadCsvResponse>
+  {
+    const row: IParseJob = await this.postgreSqlManager.repositories.jobs.findById(jobId);
+
+    if (!row)
+    {
+      throw new HttpError(HttpError.NOT_FOUND, "Job not found");
+    }
+
+    const csvOutputPath = (row.timings as JobTimings)?._csv_output_path as string | undefined;
+    if (!csvOutputPath)
+    {
+      throw new ServerError(ServerError.CONFLICT, "Parsed CSV output is not yet available");
+    }
+
+    if (!/^gs:\/\/|^s3:\/\//i.test(request.destination_url))
+    {
+      throw new ValidationError(ValidationError.INPUT, "destination_url must be a gs:// or s3:// URL");
+    }
+
+    let srcBucket: string;
+    let srcKey: string;
+    let dstBucket: string;
+    let dstKey: string;
+    try
+    {
+      [srcBucket, srcKey] = parseGcsUrl(csvOutputPath);
+      [dstBucket, dstKey] = parseGcsUrl(request.destination_url);
+    }
+    catch
+    {
+      throw new ValidationError(ValidationError.INPUT, "Invalid source or destination URL");
+    }
+
+    const body = await readFull(srcBucket, srcKey);
+    await putObject(dstBucket, dstKey, body, "text/csv");
+
+    this.logger.info("csv_uploaded", { job_id: jobId, from: csvOutputPath, to: request.destination_url, bytes: body.length });
+
+    return {
+      csv_output_path: csvOutputPath,
+      destination_url: request.destination_url,
+      bytes: body.length,
+    };
   }
 }
 
