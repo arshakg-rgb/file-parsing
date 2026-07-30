@@ -8,7 +8,7 @@ import {
   ICreateJobRequest,
   IProvidePasswordRequest,
   IMarkFailedRequest,
-  IRetryJobRequest, ICreateJobResponse, IStuckJobsResponse, IJobResponse, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest,
+  IRetryJobRequest, ICreateJobResponse, IStuckJobsResponse, IJobResponse, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest, IDownloadCsvResponse,
 } from "@service/job-service/io/IJob.js";
 import { ServiceResponse } from "@utils/response/ServiceResponse.js";
 import { HttpError } from "@errors/HttpError.js";
@@ -327,6 +327,28 @@ export class JobControllerImpl implements JobServiceController
       const result: IUploadCsvResponse = await this.service.uploadCsv(String(req.params.job_id), request);
 
       this.handleSuccessResponse(res, result);
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  };
+
+  /**
+   * @param req - The request object.
+   * @param res - The response object.
+   * @param next - The next middleware function.
+   */
+
+  public downloadCsv: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      const result: IDownloadCsvResponse = await this.service.downloadCsv(String(req.params.job_id));
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${result.filename}"`);
+      res.status(HttpStatuses.HTTP_STATUS_OK).send(result.buffer);
     }
     catch (err)
     {

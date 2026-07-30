@@ -18,5 +18,6 @@ export interface JobServiceController {
   retryJob(req: Request, res: Response, next: NextFunction): Promise<void>;
   getJobLogs(req: Request, res: Response, next: NextFunction): Promise<void>;
   uploadCsv(req: Request, res: Response, next: NextFunction): Promise<void>;
+  downloadCsv(req: Request, res: Response, next: NextFunction): Promise<void>;
   handleSuccessResponse(res: Response, outcome: unknown, pagination?: boolean, status?: number): void;
 }

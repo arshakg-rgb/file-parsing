@@ -93,6 +93,15 @@ export interface IUploadCsvResponse {
 }
 
 /**
+ * Download parsed CSV response payload.
+ */
+export interface IDownloadCsvResponse {
+  csv_output_path: string;
+  filename: string;
+  buffer: Buffer;
+}
+
+/**
  * A single job_logs audit-trail entry.
  */
 export interface IJobLogEntry {

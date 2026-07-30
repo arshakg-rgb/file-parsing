@@ -11,7 +11,7 @@ import { presignedPutUrl, parseGcsUrl, objectSize, readFull, putObject } from "@
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
-import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest } from "@service/job-service/io/IJob.js";
+import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest, IDownloadCsvResponse } from "@service/job-service/io/IJob.js";
 import {HttpError} from "@errors/HttpError.js";
 import {ServerError} from "@errors/ServerError.js";
 import {ParseJob, IParseJob, ParseJobAttributes} from "@config/db/models";
@@ -644,6 +644,53 @@ export class JobServiceImpl implements JobService
       csv_output_path: csvOutputPath,
       destination_url: request.destination_url,
       bytes: body.length,
+    };
+  }
+
+  /**
+   * Downloads the parsed CSV output for a completed job.
+   *
+   * @param jobId - The unique identifier of the job.
+   * @returns The CSV buffer, filename, and GCS path.
+   * @throws HttpError if the job does not exist.
+   * @throws ServerError if the parsed CSV is not yet available.
+   */
+
+  public async downloadCsv(jobId: string): Promise<IDownloadCsvResponse>
+  {
+    const row: IParseJob = await this.postgreSqlManager.repositories.jobs.findById(jobId);
+
+    if (!row)
+    {
+      throw new HttpError(HttpError.NOT_FOUND, "Job not found");
+    }
+
+    const csvOutputPath = (row.timings as JobTimings)?._csv_output_path as string | undefined;
+    if (!csvOutputPath)
+    {
+      throw new ServerError(ServerError.CONFLICT, "Parsed CSV output is not yet available");
+    }
+
+    let bucket: string;
+    let key: string;
+    try
+    {
+      [bucket, key] = parseGcsUrl(csvOutputPath);
+    }
+    catch
+    {
+      throw new ServerError(ServerError.INTERNAL, "Invalid CSV output path");
+    }
+
+    const buffer = await readFull(bucket, key);
+    const filename = key.split("/").pop() ?? `${jobId}.csv`;
+
+    this.logger.info("csv_downloaded", { job_id: jobId, path: csvOutputPath, bytes: buffer.length });
+
+    return {
+      csv_output_path: csvOutputPath,
+      filename,
+      buffer,
     };
   }
 }

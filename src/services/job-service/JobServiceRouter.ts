@@ -74,6 +74,9 @@ export class JobServiceRouter extends CustomRouter
 
     this.route("/jobs/:job_id/upload-csv")
       .post(this.controller.uploadCsv);
+
+    this.route("/jobs/:job_id/download-csv")
+      .get(this.controller.downloadCsv);
   }
 }
 
