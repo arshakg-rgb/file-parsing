@@ -12,4 +12,4 @@ RUN npm install --omit=dev
 COPY --from=build /app/dist/ ./dist/
 COPY configs/ ./configs/
 ENV NODE_ENV=production
-CMD ["node", "dist/services/ai_classifier/main.js"]
+CMD ["node", "dist/services/ai-classifier/main.js"]
