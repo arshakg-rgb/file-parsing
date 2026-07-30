@@ -1,8 +1,9 @@
+import pino from "pino";
 import { randomUUID } from "crypto";
 import { settings } from "@shared/Settings.js";
-import { FinalizeRepository } from "@service/job-service/finalize/FinalizeRepository.js";
-import { GcsObjectStorage } from "@service/job-service/finalize/GcsObjectStorage.js";
-import { IObjectStorage } from "@service/job-service/finalize/IObjectStorage.js";
+import { readFull, putObject, objectSize, deleteObject } from "@shared/GcsUtils.js";
+import { getJob, repositories, type DeadLetterRow } from "@shared/DatabaseManager.js";
+import { createLogger } from "@utils/logger/Log.js";
 import { LineNumberMapper } from "@service/job-service/finalize/LineNumberMapper.js";
 import { ParquetEngine, type ParquetRow } from "@service/job-service/finalize/ParquetEngine.js";
 import { StoragePath, type GcsProtocol } from "@service/job-service/finalize/StoragePath.js";
@@ -15,43 +16,11 @@ export type { FinalizeResult } from "@service/job-service/io/IFinalizationServic
  * Composes repository, storage, Parquet, and line-mapping concerns.
  */
 class FinalizationService {
-    /**
-   * Repository
-   * @private
-   */
-  private readonly repository: FinalizeRepository;
-    /**
-   * Storage
-   * @private
-   */
-  private readonly storage: IObjectStorage;
-    /**
-   * Engine
-   * @private
-   */
-  private readonly engine: typeof ParquetEngine;
-    /**
-   * Line Mapper
-   * @private
-   */
+  private readonly logger: pino.Logger;
   private readonly lineMapper: LineNumberMapper;
 
-    /**
-   * Constructs a new FinalizationService instance.
-   * @param repository - The repository
-   * @param storage - The storage
-   * @param engine - The engine
-   * @param lineMapper - The line mapper
-   */
-  constructor(
-    repository: FinalizeRepository = new FinalizeRepository(),
-    storage: IObjectStorage = new GcsObjectStorage(),
-    engine: typeof ParquetEngine = ParquetEngine,
-    lineMapper: LineNumberMapper = new LineNumberMapper()
-  ) {
-    this.repository = repository;
-    this.storage = storage;
-    this.engine = engine;
+  constructor(lineMapper: LineNumberMapper = new LineNumberMapper()) {
+    this.logger = createLogger(module);
     this.lineMapper = lineMapper;
   }
 
@@ -75,7 +44,7 @@ class FinalizationService {
         const groupPaths = await this.mergeGroup(jobId, group, bucket);
         if (groupPaths?.length) mergedPaths.push(...groupPaths);
       } catch (err) {
-        console.error("finalize_merge_failed", { jobId, templateId: group.templateId, error: String(err) });
+        this.logger.error({ jobId, templateId: group.templateId, error: String(err) }, "finalize_merge_failed");
         return { failed: true, paths: partPaths, error: String(err) };
       }
     }
@@ -83,57 +52,57 @@ class FinalizationService {
     // Cross-template final merge: if the per-template outputs are small enough, collapse
     // them into one job-level merged Parquet file so callers receive a single output_paths entry.
     try {
-      console.log("finalize_cross_merge_check", { jobId, mergedPaths_count: mergedPaths.length });
+      this.logger.info({ jobId, mergedPaths_count: mergedPaths.length }, "finalize_cross_merge_check");
       if (mergedPaths.length > 1) {
         const mergedStoragePaths = mergedPaths.map((p) => StoragePath.parse(p));
         const totalMergedSize = await this.totalPartSize(mergedStoragePaths);
-        console.log("finalize_cross_merge_size_check", { jobId, totalMergedSize, max_size: settings.MAX_MERGED_PART_BYTES });
+        this.logger.info({ jobId, totalMergedSize, max_size: settings.MAX_MERGED_PART_BYTES }, "finalize_cross_merge_size_check");
         if (totalMergedSize <= settings.MAX_MERGED_PART_BYTES) {
           const allRows = await this.mergeRows(mergedStoragePaths);
-          console.log("finalize_cross_merge_rows", { jobId, rows_count: allRows.length });
+          this.logger.info({ jobId, rows_count: allRows.length }, "finalize_cross_merge_rows");
           if (allRows.length) {
             this.normalizeLineNumbers(allRows);
             const finalKey = `output/${jobId}.parquet`;
             const finalPath = new StoragePath(mergedStoragePaths[0].protocol, bucket, finalKey);
-            await this.engine.writeRows(this.storage, finalPath, allRows);
+            await ParquetEngine.writeRows(finalPath, allRows);
             await this.backfillLineNumbers(jobId, [finalPath]);
             // Delete raw parts after successful merge
-            console.log("finalize_delete_parts_start", { jobId, parts_count: partPaths.length });
+            this.logger.info({ jobId, parts_count: partPaths.length }, "finalize_delete_parts_start");
             for (const p of partPaths) {
               try {
                 const storagePath = StoragePath.parse(p);
-                console.log("finalize_delete_part", { jobId, path: p });
-                await this.storage.delete(storagePath);
-                console.log("finalize_delete_part_success", { jobId, path: p });
+                this.logger.info({ jobId, path: p }, "finalize_delete_part");
+                await deleteObject(storagePath.bucket, storagePath.key);
+                this.logger.info({ jobId, path: p }, "finalize_delete_part_success");
               } catch (err) {
-                console.error("finalize_delete_part_failed", { path: p, error: String(err) });
+                this.logger.error({ path: p, error: String(err) }, "finalize_delete_part_failed");
               }
             }
-            console.log("finalize_delete_parts_complete", { jobId });
+            this.logger.info({ jobId }, "finalize_delete_parts_complete");
             // Delete per-template merged files after successful cross-merge
-            console.log("finalize_delete_merged_start", { jobId, merged_count: mergedPaths.length });
+            this.logger.info({ jobId, merged_count: mergedPaths.length }, "finalize_delete_merged_start");
             for (const p of mergedPaths) {
               try {
                 const storagePath = StoragePath.parse(p);
-                console.log("finalize_delete_merged", { jobId, path: p });
-                await this.storage.delete(storagePath);
-                console.log("finalize_delete_merged_success", { jobId, path: p });
+                this.logger.info({ jobId, path: p }, "finalize_delete_merged");
+                await deleteObject(storagePath.bucket, storagePath.key);
+                this.logger.info({ jobId, path: p }, "finalize_delete_merged_success");
               } catch (err) {
-                console.error("finalize_delete_merged_failed", { path: p, error: String(err) });
+                this.logger.error({ path: p, error: String(err) }, "finalize_delete_merged_failed");
               }
             }
-            console.log("finalize_delete_merged_complete", { jobId });
-            console.log("finalize_cross_merge_success", { jobId, final_path: finalPath.toString() });
+            this.logger.info({ jobId }, "finalize_delete_merged_complete");
+            this.logger.info({ jobId, final_path: finalPath.toString() }, "finalize_cross_merge_success");
             return { failed: false, paths: [finalPath.toString()] };
           } else {
-            console.log("finalize_cross_merge_skip_empty", { jobId });
+            this.logger.info({ jobId }, "finalize_cross_merge_skip_empty");
           }
         } else {
-          console.log("finalize_cross_merge_skip_too_large", { jobId, totalMergedSize });
+          this.logger.info({ jobId, totalMergedSize }, "finalize_cross_merge_skip_too_large");
         }
       }
     } catch (err) {
-      console.error("finalize_cross_merge_failed", { jobId, error: String(err) });
+      this.logger.error({ jobId, error: String(err) }, "finalize_cross_merge_failed");
       // Continue with the per-template merged paths rather than failing the whole job.
     }
 
@@ -170,7 +139,7 @@ class FinalizationService {
     const mergedKey = `outputs/${jobId}/merged/${group.templateId}/${mergedId}.parquet`;
     const mergedPath = new StoragePath(group.protocol, bucket, mergedKey);
 
-    await this.engine.writeRows(this.storage, mergedPath, rows);
+    await ParquetEngine.writeRows(mergedPath, rows);
     return [mergedPath.toString()];
   }
 
@@ -219,7 +188,7 @@ class FinalizationService {
   private async totalPartSize(paths: StoragePath[]): Promise<number> {
     let total = 0;
     for (const p of paths) {
-      total += await this.storage.size(p);
+      total += await objectSize(p.bucket, p.key);
     }
     return total;
   }
@@ -232,7 +201,7 @@ class FinalizationService {
   private async mergeRows(paths: StoragePath[]): Promise<ParquetRow[]> {
     const rows: ParquetRow[] = [];
     for (const p of paths) {
-      const chunk = await this.engine.readRows(this.storage, p);
+      const chunk = await ParquetEngine.readRows(p);
       for (const row of chunk) {
         rows.push(row);
       }
@@ -261,9 +230,9 @@ class FinalizationService {
    * @param mergedPaths - The merged paths
    */
   private async backfillLineNumbers(jobId: string, mergedPaths: StoragePath[]): Promise<void> {
-    const job = await this.repository.getJob(jobId);
+    const job = await getJob(jobId);
     if (!job?.s3_url) {
-      console.log("backfill_skip_no_source", { jobId });
+      this.logger.info({ jobId }, "backfill_skip_no_source");
       return;
     }
 
@@ -273,7 +242,7 @@ class FinalizationService {
       // Pretty-printed JSON files are not line-oriented; byte offsets stored during parsing
       // are record indexes, not source-file byte positions. Line-number backfill would map
       // many records to the same source line and break the (job_id, line_no) unique constraint.
-      console.log("backfill_skip_json_source", { jobId, s3_url: job.s3_url });
+      this.logger.info({ jobId, s3_url: job.s3_url }, "backfill_skip_json_source");
       return;
     }
 
@@ -282,35 +251,36 @@ class FinalizationService {
 
     let source: Buffer | undefined;
     try {
-      source = await this.storage.read(StoragePath.parse(job.s3_url));
+      const sourcePath = StoragePath.parse(job.s3_url);
+      source = await readFull(sourcePath.bucket, sourcePath.key);
     } catch (e) {
-      console.warn("backfill_source_read_failed", { jobId, error: String(e) });
+      this.logger.warn({ jobId, error: String(e) }, "backfill_source_read_failed");
       return;
     }
 
     const targetOffsets = new Set<number>();
     for (const p of mergedPaths) {
       try {
-        const rows = await this.engine.readRows(this.storage, p);
+        const rows = await ParquetEngine.readRows(p);
         for (const r of rows) {
           if (r._byte_offset !== undefined && r._byte_offset !== null) {
             targetOffsets.add(Number(ParquetEngine.sanitizeValue(r._byte_offset, false)));
           }
         }
       } catch (e) {
-        console.warn("backfill_parsed_read_failed", { jobId, path: p.toString(), error: String(e) });
+        this.logger.warn({ jobId, path: p.toString(), error: String(e) }, "backfill_parsed_read_failed");
       }
     }
 
-    const deadLetters = await this.repository.getDeadLetters(jobId);
+    const deadLetters: DeadLetterRow[] = await repositories.deadLetters.findByJob(jobId);
     for (const dlq of deadLetters) {
-      targetOffsets.add(dlq.byteOffset);
+      targetOffsets.add(Number(dlq.byte_offset));
     }
 
     let rubbishEntries: Array<Record<string, unknown>> = [];
     if (rubbishLogPath) {
       try {
-        const raw = await this.storage.read(StoragePath.parse(rubbishLogPath));
+        const raw = await readFull(StoragePath.parse(rubbishLogPath).bucket, StoragePath.parse(rubbishLogPath).key);
         const text = raw.toString("utf-8");
         rubbishEntries = text
           .split("\n")
@@ -322,7 +292,7 @@ class FinalizationService {
           }
         }
       } catch (e) {
-        console.warn("backfill_rubbish_read_failed", { jobId, error: String(e) });
+        this.logger.warn({ jobId, error: String(e) }, "backfill_rubbish_read_failed");
       }
     }
 
@@ -330,9 +300,9 @@ class FinalizationService {
     const lineMap = this.lineMapper.computeLineMap(source, sortedOffsets);
 
     for (const dlq of deadLetters) {
-      const line = lineMap.get(dlq.byteOffset);
+      const line = lineMap.get(Number(dlq.byte_offset));
       if (line !== undefined) {
-        await this.repository.updateDeadLetterLineNo(dlq.dlqId, line);
+        await repositories.deadLetters.updateLineNo(dlq.dlq_id, line);
       }
     }
 
@@ -375,10 +345,10 @@ class FinalizationService {
     const logPath = StoragePath.parse(rubbishLogPath);
     const body = Buffer.from(updated.map((e) => JSON.stringify(e)).join("\n"));
     try {
-      await this.storage.write(logPath, body, "application/x-ndjson");
-      console.log("rubbish_log_backfilled", { jobId, entries: updated.length });
+      await putObject(logPath.bucket, logPath.key, body, "application/x-ndjson");
+      this.logger.info({ jobId, entries: updated.length }, "rubbish_log_backfilled");
     } catch (e) {
-      console.warn("backfill_rubbish_write_failed", { jobId, error: String(e) });
+      this.logger.warn({ jobId, error: String(e) }, "backfill_rubbish_write_failed");
     }
   }
 
@@ -389,7 +359,7 @@ class FinalizationService {
    */
   private async backfillParquet(storagePath: StoragePath, lineMap: Map<number, number>): Promise<void> {
     try {
-      const rows = await this.engine.readRows(this.storage, storagePath);
+      const rows = await ParquetEngine.readRows(storagePath);
       let fileChanged = false;
       for (const r of rows) {
         const line = lineMap.get(r._byte_offset as number);
@@ -400,10 +370,10 @@ class FinalizationService {
       }
 
       if (fileChanged) {
-        await this.engine.writeRows(this.storage, storagePath, rows);
+        await ParquetEngine.writeRows(storagePath, rows);
       }
     } catch (e) {
-      console.warn("backfill_output_failed", { path: storagePath.toString(), error: String(e) });
+      this.logger.warn({ path: storagePath.toString(), error: String(e) }, "backfill_output_failed");
     }
   }
 }

@@ -10,28 +10,28 @@ import { JobEvent } from "@shared/models/events.js";
 import { handleEvent } from "@service/job-service/stateMachine.js";
 import { JobServiceRouter } from "@service/job-service/JobServiceRouter.js";
 import { createTables } from "@shared/DatabaseManager.js";
-import { JobService } from "@service/job-service/JobService.js";
 import {
   DEFAULT_PORT,
   EVENT_BATCH_SIZE,
   EVENT_LOOP_ERROR_BACKOFF_MS, EVENT_POLL_WAIT_SECONDS,
+  IJobService,
   JobResponse,
   NON_RETRYABLE_JOB_ERROR_MARKERS
 } from "@service/job-service/io/IJobService.js";
 import Config from "@config/system-config/Config";
 
 /**
- * JobServiceImpl is a singleton class responsible for managing the job service. It wires up
+ * JobServiceManager is a singleton class responsible for managing the job service. It wires up
  * the HTTP API, database, and background event consumer, and exposes lifecycle hooks to
  * initialize and gracefully stop the service.
  */
-class JobServiceImpl extends ServiceManager implements JobService
+class JobServiceManager extends ServiceManager implements IJobService
 {
   /**
    *  Singleton instance.
    */
 
-  protected static instance: JobServiceImpl;
+  protected static instance: JobServiceManager;
 
   /**
    * The Express application instance.
@@ -58,7 +58,7 @@ class JobServiceImpl extends ServiceManager implements JobService
   private readonly logger: pino.Logger;
 
   /**
-   * Constructs a new JobServiceImpl instance.
+   * Constructs a new JobServiceManager instance.
    * @param enforce - A function to enforce the Singleton pattern
    * @throws {InstantiationError} if instantiated directly instead of via {@link getInstance}
    */
@@ -67,7 +67,7 @@ class JobServiceImpl extends ServiceManager implements JobService
   {
     if (enforce !== Enforce)
     {
-      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Cannot instantiate JobServiceImpl directly. Use getInstance()");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Cannot instantiate JobServiceManager directly. Use getInstance()");
     }
     super(enforce);
 
@@ -79,18 +79,18 @@ class JobServiceImpl extends ServiceManager implements JobService
   }
 
   /**
-   * Gets the single instance of the JobServiceImpl class, creating it on first access.
+   * Gets the single instance of the JobServiceManager class, creating it on first access.
    * @returns The single instance of the class
    */
 
-  public static getInstance(): JobServiceImpl
+  public static getInstance(): JobServiceManager
   {
-    if (!JobServiceImpl.instance)
+    if (!JobServiceManager.instance)
     {
-      JobServiceImpl.instance = new JobServiceImpl(Enforce);
+      JobServiceManager.instance = new JobServiceManager(Enforce);
     }
 
-    return JobServiceImpl.instance;
+    return JobServiceManager.instance;
   }
 
   /**
@@ -338,4 +338,4 @@ class JobServiceImpl extends ServiceManager implements JobService
   }
 }
 
-export default JobServiceImpl;
+export default JobServiceManager;

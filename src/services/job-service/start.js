@@ -1,4 +1,4 @@
-const JobServiceImpl = require('./impl/JobServiceImpl.js').default;
+const JobServiceManager = require('./JobServiceManager.js').default;
 
-const jobService = JobServiceImpl.getInstance();
+const jobService = JobServiceManager.getInstance();
 jobService.start();

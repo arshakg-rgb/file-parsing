@@ -3,7 +3,7 @@ import os from "os";
 import path from "path";
 import { randomUUID } from "crypto";
 import { ParquetReader, ParquetWriter, ParquetSchema, type SchemaDefinition, type ParquetType } from "@dsnp/parquetjs";
-import { IObjectStorage } from "./IObjectStorage.js";
+import { readFull, putObject } from "@shared/GcsUtils.js";
 import { StoragePath } from "./StoragePath.js";
 
 export interface ParquetRow {
@@ -85,8 +85,8 @@ export class ParquetEngine {
    * @param storagePath - The storage path
    * @returns A promise that resolves to the list
    */
-  static async readRows(storage: IObjectStorage, storagePath: StoragePath): Promise<ParquetRow[]> {
-    const buffer = await storage.read(storagePath);
+  static async readRows(storagePath: StoragePath): Promise<ParquetRow[]> {
+    const buffer = await readFull(storagePath.bucket, storagePath.key);
     const reader = await ParquetReader.openBuffer(buffer);
     const cursor = reader.getCursor();
     const rows: ParquetRow[] = [];
@@ -104,7 +104,7 @@ export class ParquetEngine {
    * @param storagePath - The storage path
    * @param rows - The rows
    */
-  static async writeRows(storage: IObjectStorage, storagePath: StoragePath, rows: ParquetRow[]): Promise<void> {
+  static async writeRows(storagePath: StoragePath, rows: ParquetRow[]): Promise<void> {
     if (rows.length === 0) {
       return;
     }
@@ -119,7 +119,7 @@ export class ParquetEngine {
 
     try {
       const buffer = await fs.readFile(tempFile);
-      await storage.write(storagePath, buffer, "application/octet-stream");
+      await putObject(storagePath.bucket, storagePath.key, buffer, "application/octet-stream");
     } finally {
       await fs.unlink(tempFile).catch(() => {});
     }
