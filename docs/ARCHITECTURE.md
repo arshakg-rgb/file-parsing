@@ -184,7 +184,7 @@ Ordered and deterministic:
 6. **CSV fallback** — delimiters `, ; \t |`, needs `≥ max(2, |field_spec|)` parts, `template_id = "csv-auto"`.
 7. **uncertain**.
 
-`src/shared/safeRegex.ts` guards AI-generated regexes against ReDoS (rejects patterns > 1024 chars, lines > 64 KB, and quantified groups).
+`src/shared/SafeRegex.ts` guards AI-generated regexes against ReDoS (rejects patterns > 1024 chars, lines > 64 KB, and quantified groups).
 
 ### 6.2 AI escalation is NOT in the hot loop
 

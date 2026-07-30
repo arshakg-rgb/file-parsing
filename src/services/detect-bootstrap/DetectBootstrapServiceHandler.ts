@@ -6,11 +6,8 @@ import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ClassifyMessage, ParseMessage } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "@shared/QueueService.js";
 import { parseGcsUrl, objectSize, readRange } from "@shared/GcsUtils.js";
-import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "@utils/normalizers/encoding.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
-import { metrics } from "@utils/response/metrics.js";
-import { startHealthCheckServer } from "@utils/response/health.js";
 import { waitForDb } from "@shared/DatabaseManager.js";
 import { aiClassifierService } from "@service/ai-classifier/AiClassifierServiceHandler.js";
 import {
@@ -19,6 +16,9 @@ import {
   HeaderStripResult,
   ProbeResult
 } from "@service/detect-bootstrap/io/IDetectBootstrap";
+import EncodingService from "@utils/normalizers/Encoding";
+import HealthService from "@utils/response/health";
+import {MetricsUtils} from "@utils/response/metrics";
 
 
 export class DetectBootstrapService
@@ -71,7 +71,7 @@ export class DetectBootstrapService
   {
     if (process.env.HEALTH_CHECK_PORT)
     {
-      startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
+      HealthService.startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
 
     this.initializeClassifier();
@@ -221,13 +221,13 @@ export class DetectBootstrapService
   {
     this.stats.encodingDetections++;
 
-    if (isLikelyUtf8(raw.subarray(0, 65536)))
+    if (EncodingService.isLikelyUtf8(raw.subarray(0, 65536)))
     {
       return "utf-8";
     }
 
     const result: IDetectedMap = jschardet.detect(raw.slice(0, 65536));
-    return normalizeEncoding(result.encoding);
+    return EncodingService.normalizeEncoding(result.encoding);
   }
 
   /**
@@ -239,7 +239,7 @@ export class DetectBootstrapService
    */
   private measureRowWidth(raw: Buffer, encoding: string): [number, number]
   {
-    const text: string = decode(raw, encoding);
+    const text: string = EncodingService.decode(raw, encoding);
     const lines: string[] = text.split(/\r?\n/).filter((l) => l.trim());
 
     if (!lines.length)
@@ -247,7 +247,7 @@ export class DetectBootstrapService
       return [256, 512];
     }
 
-    const sizes: number[] = lines.map((l) => Buffer.byteLength(l, bufferEncodingFor(encoding)));
+    const sizes: number[] = lines.map((l) => Buffer.byteLength(l, EncodingService.bufferEncodingFor(encoding)));
     const avg: number = sizes.reduce((a, b) => a + b, 0) / sizes.length;
 
     return [avg, Math.max(...sizes)];
@@ -263,7 +263,7 @@ export class DetectBootstrapService
 
   private fingerprintProbe(raw: Buffer, encoding: string): string
   {
-    const text: string = decode(raw, encoding);
+    const text: string = EncodingService.decode(raw, encoding);
     const lines: string[] = text.split(/\r?\n/).filter((l) => l.trim());
 
     if (!lines.length)
@@ -322,7 +322,7 @@ export class DetectBootstrapService
 
   private extractSampleLines(raw: Buffer, encoding: string, n: number): string[]
   {
-    const text: string = decode(raw, encoding);
+    const text: string = EncodingService.decode(raw, encoding);
     return text.split(/\r?\n/).filter((l) => l.trim()).slice(0, n);
   }
 
@@ -428,7 +428,7 @@ export class DetectBootstrapService
         fingerprint,
         error: String(aiErr),
       });
-      metrics.increment("detect.ai_timeout", 1);
+      MetricsUtils.increment("detect.ai_timeout", 1);
 
       return null;
     }
@@ -518,7 +518,7 @@ export class DetectBootstrapService
         fingerprint,
       });
 
-      metrics.increment("detect.template_created", 1, { kind: resp.kind });
+      MetricsUtils.increment("detect.template_created", 1, { kind: resp.kind });
 
       return { fingerprint, templateId: resp.template.template_id };
     }
@@ -626,7 +626,7 @@ export class DetectBootstrapService
     const offsets: number[] = this.computeProbeOffsets(fileSize, windowSize);
     this.totalProbes += offsets.length;
     this.logger.info("probing", { job_id: jobId, probe_count: offsets.length, file_size: fileSize });
-    metrics.increment("detect.probe_start", 1, { probe_count: String(offsets.length) });
+    MetricsUtils.increment("detect.probe_start", 1, { probe_count: String(offsets.length) });
 
     const fieldSpecArray: string[] = this.parseFieldSpec(msg.field_spec);
 
@@ -662,8 +662,8 @@ export class DetectBootstrapService
       duration_ms: bootstrapDuration,
     });
 
-    metrics.increment("detect.complete", 1, { seeds: String(seedTemplateIds.length) });
-    metrics.set("detect.duration_ms", bootstrapDuration);
+    MetricsUtils.increment("detect.complete", 1, { seeds: String(seedTemplateIds.length) });
+    MetricsUtils.set("detect.duration_ms", bootstrapDuration);
 
     await this.forwardToParse(msg, jobId, fileSize, seedTemplateIds);
   }
@@ -702,7 +702,7 @@ export class DetectBootstrapService
         {
           const errMsg: string = String(exc);
           this.logger.error("detect_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
-          metrics.increment("detect.error", 1);
+          MetricsUtils.increment("detect.error", 1);
           this.emit(payload.job_id, EventType.ERROR_OCCURRED, { error: errMsg });
           await deleteMessage(settings.CLASSIFY_QUEUE_URL, receiptHandle);
         }

@@ -4,10 +4,10 @@ import { settings } from "@shared/Settings.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { FailureClass, ColumnMap } from "@shared/models/job.js";
 import { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
-import { safeRegex, safeRegexTest } from "@utils/validator/safeRegex.js";
 import { AIVerdict, ClassifyRequest } from "@service/ai-classifier/io/IAiClassifier.js";
 import {ClassifyResponse, ClassifyResult, IClassifier} from "@service/stream-parser/io/IClassifier.js";
 import {aiClassifierService} from "@service/ai-classifier/AiClassifierServiceHandler.js";
+import SafeRegexUtils from "@utils/validator/SafeRegex";
 
 export type { ClassifyResult } from "@service/stream-parser/io/IClassifier.js";
 
@@ -440,13 +440,13 @@ export class LineClassifier implements IClassifier
   {
     for (const t of this.rubbishTemplates)
     {
-      if ((t.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(t.signature, line))
+      if ((t.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && SafeRegexUtils.safeRegexTest(t.signature, line))
       {
         return { verdict: "rubbish", template_id: t.template_id };
       }
     }
 
-    if (cached && "signature" in cached && (cached.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(cached.signature, line))
+    if (cached && "signature" in cached && (cached.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && SafeRegexUtils.safeRegexTest(cached.signature, line))
     {
       return { verdict: "rubbish", template_id: cached.template_id };
     }
@@ -731,7 +731,7 @@ export class LineClassifier implements IClassifier
   {
     if ("signature" in tmpl)
     {
-      if ((tmpl.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(tmpl.signature, line))
+      if ((tmpl.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && SafeRegexUtils.safeRegexTest(tmpl.signature, line))
       {
         return { verdict: "rubbish", template_id: tmpl.template_id };
       }
@@ -2116,7 +2116,7 @@ export class LineClassifier implements IClassifier
     if (loc.startsWith("regex:"))
     {
       const regexStr: string = loc.replace("regex:", "");
-      const re: RegExp | null = safeRegex(regexStr);
+      const re: RegExp | null = SafeRegexUtils.safeRegex(regexStr);
 
       if (!re)
       {

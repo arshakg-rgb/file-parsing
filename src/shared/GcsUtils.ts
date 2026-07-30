@@ -1,11 +1,10 @@
 import pino from "pino";
 import crypto from "crypto";
 import { Storage } from "@google-cloud/storage";
-import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { createLogger } from "@utils/logger/Log.js";
-import { decode } from "@utils/normalizers/encoding.js";
+import EncodingService from "@utils/normalizers/Encoding";
 
 /**
  * GcsUtils is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -498,7 +497,7 @@ class GcsUtils extends ServiceManager {
 
     if (remainder.length > 0) {
       const raw = remainder;
-      const lineText = decode(raw, encoding).replace(/\r\n$|\n$/, "");
+      const lineText = EncodingService.decode(raw, encoding).replace(/\r\n$|\n$/, "");
       if (lineText) yield [lineText, remainderStart, raw.length];
     }
   }
@@ -531,7 +530,7 @@ class GcsUtils extends ServiceManager {
 
     if (result.lineStart < data.length) {
       const raw = data.slice(result.lineStart);
-      const text = decode(raw, encoding).replace(/\r\n$|\n$/, "");
+      const text = EncodingService.decode(raw, encoding).replace(/\r\n$|\n$/, "");
 
       // Detect and split run-on KV records (multiple records joined by space instead of newline)
       // Pattern: Email: X - Name: Y - Followers: N - Created At: ... Email: A - Name: B...
@@ -576,7 +575,7 @@ class GcsUtils extends ServiceManager {
 
     const makeLine = (endExclusive: number): [string, number, number] => {
       const raw = data.slice(lineStart, endExclusive);
-      const tuple: [string, number, number] = [decode(raw, encoding).replace(/\r\n$|\n$/, ""), dataBase + lineStart, raw.length];
+      const tuple: [string, number, number] = [EncodingService.decode(raw, encoding).replace(/\r\n$|\n$/, ""), dataBase + lineStart, raw.length];
       lineStart = endExclusive;
       quotedNewlines = 0;
       return tuple;

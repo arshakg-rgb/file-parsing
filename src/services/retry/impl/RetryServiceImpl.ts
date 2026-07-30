@@ -4,15 +4,15 @@ import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { DeadLetterAttributes } from "@config/db/models/DeadLetter.js";
-import { DLQMessage, DLQStatus, FailureClass, JobStatus, LoadMessage } from "@shared/models/job.js";
+import { DLQMessage, FailureClass, LoadMessage } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, sendMessage } from "@shared/QueueService.js";
 import { ClassifyResult, LineClassifier } from "@service/stream-parser/LineClassifier.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
-import { metrics } from "@utils/response/metrics.js";
-import { startHealthCheckServer } from "@utils/response/health.js";
 import { RetryService } from "@service/retry/RetryService.js";
-import { IRetry, RetryRequest, RetryResponse } from "@service/retry/io/IRetry.js";
+import { RetryRequest, RetryResponse } from "@service/retry/io/IRetry.js";
+import HealthService from "@utils/response/health";
+import {MetricsUtils} from "@utils/response/metrics";
 
 /**
  * RetryServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -54,7 +54,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     this.dbManager = PostgreSqlManager.getInstance();
 
     if (process.env.HEALTH_CHECK_PORT) {
-      startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
+      HealthService.startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
   }
 
@@ -108,7 +108,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
       failure_class: msg.failure_class,
       attempts: msg.attempts + 1,
     });
-    metrics.increment("retry.attempt", 1, { failure_class: msg.failure_class });
+    MetricsUtils.increment("retry.attempt", 1, { failure_class: msg.failure_class });
 
     if (msg.dlq_id) {
       const row = await this.getDeadLetter(msg.dlq_id);
@@ -141,7 +141,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     if (recovered && recovered.verdict === "parsed" && recovered.row) {
       await this.emitRecovered(msg, recovered);
       this.logger.info("line_recovered", { job_id: msg.job_id, byte_offset: msg.byte_offset });
-      metrics.increment("retry.recovered", 1, { failure_class: msg.failure_class });
+      MetricsUtils.increment("retry.recovered", 1, { failure_class: msg.failure_class });
     } else {
       const delay = msg.attempts >= 1 ? config.settings.RETRY_DELAYED_DELAY_SECONDS : 0;
       await this.reEnqueue(msg, delay);
@@ -259,7 +259,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
       failure_class: msg.failure_class,
       attempts: msg.attempts,
     });
-    metrics.increment("retry.marked_for_review", 1, { failure_class: msg.failure_class });
+    MetricsUtils.increment("retry.marked_for_review", 1, { failure_class: msg.failure_class });
   }
 
     /**
@@ -298,7 +298,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
       attempts: updated.attempts,
       delay_s: delaySeconds,
     });
-    metrics.increment("retry.re_enqueued", 1);
+    MetricsUtils.increment("retry.re_enqueued", 1);
   }
 
     /**
@@ -322,11 +322,11 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
           const errorStr = String(exc);
           if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition"))) {
             this.logger.error("retry_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
-            metrics.increment("retry.error_ack", 1);
+            MetricsUtils.increment("retry.error_ack", 1);
             await deleteMessage(config.settings.DLQ_QUEUE_URL, receiptHandle);
           } else {
             this.logger.error("retry_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
-            metrics.increment("retry.error", 1);
+            MetricsUtils.increment("retry.error", 1);
           }
         }
       }

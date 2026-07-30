@@ -3,7 +3,7 @@ import os from "os";
 import path from "path";
 import fs from "fs";
 import Config from "@config/system-config/Config.js";
-import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
+import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import { createLogger } from "@utils/logger/Log.js";
 
 /**

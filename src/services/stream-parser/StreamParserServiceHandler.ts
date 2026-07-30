@@ -14,14 +14,14 @@ import { TraceSystem } from "@shared/TraceSystem.js";
 import { QualityGate } from "@shared/QualityGate.js";
 import { AdaptiveProbing } from "@shared/AdaptiveProbing.js";
 import { createLogger } from "@utils/logger/Log.js";
-import { metrics } from "@utils/response/metrics.js";
-import { startHealthCheckServer } from "@utils/response/health.js";
 import { waitForDb } from "@shared/DatabaseManager.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import jschardet from "jschardet";
 import JSONbig from "json-bigint";
 import crypto from "crypto";
-import { normalizeEncoding, isLikelyUtf8 } from "@utils/normalizers/encoding.js";
+import EncodingService from "@utils/normalizers/Encoding";
+import HealthService from "@utils/response/health";
+import {MetricsUtils} from "@utils/response/metrics";
 
 /**
  * Extract JSON records from a parsed JSON value for processing as individual classifier inputs.
@@ -228,7 +228,7 @@ export class StreamParserService {
   private constructor() {
     // Initialize health check server if port is configured
     if (process.env.HEALTH_CHECK_PORT) {
-      startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
+      HealthService.startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
 
     // Register signal handlers for graceful shutdown
@@ -407,7 +407,7 @@ export class StreamParserService {
     const jobId = msg.job_id;
     this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.PARSING });
     this.logger.info("parse_start", { job_id: jobId, s3_url: msg.s3_url, size: msg.size });
-    metrics.increment("parse.start", 1);
+    MetricsUtils.increment("parse.start", 1);
 
     const [bucket, key] = parseGcsUrl(msg.s3_url);
 
@@ -431,7 +431,7 @@ export class StreamParserService {
     const probeOffsets = probing.generateProbeOffsets(fileSize, probeCount);
 
     this.logger.info("adaptive_probing", { job_id: jobId, probe_count: probeCount, file_size: fileSize });
-    metrics.increment("parse.probing_start", 1, { probe_count: String(probeCount) });
+    MetricsUtils.increment("parse.probing_start", 1, { probe_count: String(probeCount) });
 
     let detectedEncoding = "utf-8";
     let avgRowWidth = 0;
@@ -445,12 +445,12 @@ export class StreamParserService {
         // Prefer UTF-8 when the probe window validates as UTF-8 (jschardet misdetects
         // UTF-8-with-multibyte as ISO-8859-x/windows-125x). Otherwise take a
         // high-confidence guess, normalized to a label decode() can handle via TextDecoder.
-        if (isLikelyUtf8(buffer)) {
+        if (EncodingService.isLikelyUtf8(buffer)) {
           detectedEncoding = "utf-8";
         } else {
           const detected = jschardet.detect(buffer);
           if (detected.encoding && detected.confidence > 0.9) {
-            detectedEncoding = normalizeEncoding(detected.encoding);
+            detectedEncoding = EncodingService.normalizeEncoding(detected.encoding);
           }
         }
 
@@ -747,7 +747,7 @@ export class StreamParserService {
             const trimmed = line.trim();
             let isJsonShape = trimmed[0] === "{" || trimmed[0] === "[";
             // Catch JSON-in-string lines like "{\"...\": ...}" or "[...]"
-            if (!isJsonShape && trimmed[0] === '"') {
+            if (!isJsonShape && trimmed[0] === "\"") {
               try {
                 const unwrapped = JSON.parse(trimmed);
                 if (typeof unwrapped === "string") {
@@ -874,15 +874,15 @@ export class StreamParserService {
         ai_calls: aiCalls,
         ai_recoveries: aiLocalRecoveries
       });
-      metrics.set("parse.lines_parsed", counts.parsed);
-      metrics.set("parse.lines_dropped", counts.dropped_rubbish);
-      metrics.set("parse.lines_failed", totalFailed(counts));
-      metrics.set("parse.duration_ms", parseDuration);
-      metrics.set("parse.ai_calls", aiCalls);
+      MetricsUtils.set("parse.lines_parsed", counts.parsed);
+      MetricsUtils.set("parse.lines_dropped", counts.dropped_rubbish);
+      MetricsUtils.set("parse.lines_failed", totalFailed(counts));
+      MetricsUtils.set("parse.duration_ms", parseDuration);
+      MetricsUtils.set("parse.ai_calls", aiCalls);
     } catch (exc) {
       fatal = exc instanceof Error ? exc : new Error(String(exc));
       this.logger.error("parse_failed", { job_id: jobId }, fatal);
-      metrics.increment("parse.error", 1);
+      MetricsUtils.increment("parse.error", 1);
       this.emit(jobId, EventType.ERROR_OCCURRED, { error: String(exc) });
     } finally {
       // Best-effort flush to preserve partial progress only on fatal errors
@@ -936,11 +936,11 @@ export class StreamParserService {
           // Ack bad messages to prevent infinite retry loop
           if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition"))) {
             this.logger.error("stream_parser_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
-            metrics.increment("parse.message_error_ack", 1);
+            MetricsUtils.increment("parse.message_error_ack", 1);
             await deleteMessage(settings.PARSE_QUEUE_URL, receiptHandle);
           } else {
             this.logger.error("stream_parser_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
-            metrics.increment("parse.message_error", 1);
+            MetricsUtils.increment("parse.message_error", 1);
           }
         } finally {
           this.currentJob = null;

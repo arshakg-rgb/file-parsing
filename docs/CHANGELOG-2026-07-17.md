@@ -27,7 +27,7 @@ anything else throws `ERR_UNKNOWN_ENCODING` and killed the parse outright.
 Separately, jschardet's low-confidence guesses were mangling valid UTF-8 text.
 
 **Files touched.**
-- `src/shared/encoding.ts` (**new**) — `decode()` via `TextDecoder`, charset
+- `src/shared/Encoding.ts` (**new**) — `decode()` via `TextDecoder`, charset
   normalization, UTF-8-preference logic.
 
 **Verified.** `tsc` clean; `local_test.ts` section 16 (encoding) exercises the

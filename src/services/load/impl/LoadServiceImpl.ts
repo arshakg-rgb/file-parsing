@@ -2,17 +2,17 @@ import pino from "pino";
 import Config from "@config/system-config/Config.js";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
+import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { LoadMessage } from "@shared/models/job.js";
 import {receiveMessages, deleteMessage, publishEvent, QueueMessage} from "@shared/QueueService.js";
 import { ParquetReader } from "@dsnp/parquetjs";
 import { createLogger } from "@utils/logger/Log.js";
-import { metrics } from "@utils/response/metrics.js";
-import { startHealthCheckServer } from "@utils/response/health.js";
 import { LoadService } from "@service/load/LoadService.js";
 import { LoadResponse } from "@service/load/io/ILoad.js";
+import HealthService from "@utils/response/health";
+import {MetricsUtils} from "@utils/response/metrics";
 
 /**
  * LoadServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -95,7 +95,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
 
     if (process.env.HEALTH_CHECK_PORT)
     {
-      startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
+      HealthService.startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
   }
 
@@ -158,7 +158,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     if (msg.recovered_row)
     {
       this.logger.info("load_recovered_row", { job_id: jobId, byte_offset: msg.byte_offset });
-      metrics.increment("load.recovered_row", 1);
+      MetricsUtils.increment("load.recovered_row", 1);
       const row: Record<string, unknown> = this.buildRecoveredRow(msg);
       await this.upsertRows(jobId, [row]);
       this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: 1 });
@@ -166,7 +166,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     }
 
     this.logger.info("load_start", { job_id: jobId, parts: (msg.output_paths || []).length });
-    metrics.increment("load.start", 1, { parts: String((msg.output_paths || []).length) });
+    MetricsUtils.increment("load.start", 1, { parts: String((msg.output_paths || []).length) });
 
     let totalRows: number = 0;
 
@@ -186,13 +186,13 @@ class LoadServiceImpl extends ServiceManager implements LoadService
       }
 
       this.logger.info("load_complete", { job_id: jobId, total_rows: totalRows });
-      metrics.set("load.rows_loaded", totalRows);
+      MetricsUtils.set("load.rows_loaded", totalRows);
       this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: totalRows });
     }
     catch (exc)
     {
       this.logger.error("load_failed", { job_id: jobId }, exc instanceof Error ? exc : new Error(String(exc)));
-      metrics.increment("load.error", 1);
+      MetricsUtils.increment("load.error", 1);
       this.emit(jobId, EventType.ERROR_OCCURRED, { error: String(exc) });
     }
   }
@@ -323,13 +323,13 @@ class LoadServiceImpl extends ServiceManager implements LoadService
           if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition")))
           {
             this.logger.error("load_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
-            metrics.increment("load.message_error_ack", 1);
+            MetricsUtils.increment("load.message_error_ack", 1);
             await deleteMessage(config.settings.LOAD_QUEUE_URL, receiptHandle);
           }
           else
           {
             this.logger.error("load_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
-            metrics.increment("load.message_error", 1);
+            MetricsUtils.increment("load.message_error", 1);
           }
         }
       }

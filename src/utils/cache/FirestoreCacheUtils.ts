@@ -1,27 +1,15 @@
 import crypto from "crypto";
 import { Storage } from "@google-cloud/storage";
 import Config from "@config/system-config/Config.js";
-import { decode } from "@utils/normalizers/Normalizer.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
+import {GCS_RETRIES, GCS_TIMEOUT_MS, LineState} from "@utils/cache/io/IFirestoreCache";
+import NormalizerUtils from "@utils/normalizers/Normalizer";
 
-/**
- * Performs the enforce operation.
- */
-function Enforce(): void {}
-
-/**
- * The g c s_ r e t r i e s
- */
-const GCS_RETRIES = 3;
-/**
- * The g c s_ t i m e o u t_ m s
- */
-const GCS_TIMEOUT_MS = 7200000; // Increased to 7200s (2 hours) for very large files
 
 /**
  * FirestoreCacheUtils provides utility helpers.
  */
-class FirestoreCacheUtils {
+export class FirestoreCacheUtils {
     /**
    * Singleton instance
    * @private
@@ -420,7 +408,7 @@ class FirestoreCacheUtils {
 
     if (remainder.length > 0) {
       const raw = remainder;
-      const lineText = decode(raw, encoding).replace(/\r\n$|\n$/, "");
+      const lineText = NormalizerUtils.decode(raw, encoding).replace(/\r\n$|\n$/, "");
       if (lineText) yield [lineText, remainderStart, raw.length];
     }
   }
@@ -453,7 +441,7 @@ class FirestoreCacheUtils {
 
     if (result.lineStart < data.length) {
       const raw = data.slice(result.lineStart);
-      const text = decode(raw, encoding).replace(/\r\n$|\n$/, "");
+      const text = NormalizerUtils.decode(raw, encoding).replace(/\r\n$|\n$/, "");
 
       // Detect and split run-on KV records (multiple records joined by space instead of newline)
       // Pattern: Email: X - Name: Y - Followers: N - Created At: ... Email: A - Name: B...
@@ -498,7 +486,7 @@ class FirestoreCacheUtils {
 
     const makeLine = (endExclusive: number): [string, number, number] => {
       const raw = data.slice(lineStart, endExclusive);
-      const tuple: [string, number, number] = [decode(raw, encoding).replace(/\r\n$|\n$/, ""), dataBase + lineStart, raw.length];
+      const tuple: [string, number, number] = [NormalizerUtils.decode(raw, encoding).replace(/\r\n$|\n$/, ""), dataBase + lineStart, raw.length];
       lineStart = endExclusive;
       quotedNewlines = 0;
       return tuple;
@@ -555,173 +543,8 @@ class FirestoreCacheUtils {
   }
 }
 
-interface LineState {
-  inQuote: boolean;
-}
-
-
-export default FirestoreCacheUtils;
-
-// Backward compatibility wrappers
-const cacheUtils = FirestoreCacheUtils.getInstance();
 
 /**
- * Performs the gcs client operation.
+ * Performs the enforce operation.
  */
-export function gcsClient() {
-  return cacheUtils.getStorage();
-}
-
-/**
- * Parses gcs url
- * @param url - The URL to process
- * @returns The [string, string] result
- */
-export function parseGcsUrl(url: string): [string, string] {
-  return cacheUtils.parseGcsUrl(url);
-}
-
-/**
- * Performs the object size operation.
- * @param bucket - The bucket
- * @param key - The key
- * @returns A promise that resolves to the result
- */
-export async function objectSize(bucket: string, key: string): Promise<number> {
-  return cacheUtils.objectSize(bucket, key);
-}
-
-/**
- * Reads range
- * @param bucket - The bucket
- * @param key - The key
- * @param start - The start
- * @param end - The end
- * @returns A promise that resolves to the result
- */
-export async function readRange(bucket: string, key: string, start: number, end: number): Promise<Buffer> {
-  return cacheUtils.readRange(bucket, key, start, end);
-}
-
-/**
- * Reads full
- * @param bucket - The bucket
- * @param key - The key
- * @returns A promise that resolves to the result
- */
-export async function readFull(bucket: string, key: string): Promise<Buffer> {
-  return cacheUtils.readFull(bucket, key);
-}
-
-/**
- * Performs the put object operation.
- * @param bucket - The bucket
- * @param key - The key
- * @param body - The body
- * @param contentType - The content type
- */
-export async function putObject(
-  bucket: string,
-  key: string,
-  body: Buffer,
-  contentType = "application/octet-stream"
-): Promise<void> {
-  return cacheUtils.putObject(bucket, key, body, contentType);
-}
-
-/**
- * Performs the put json operation.
- * @param bucket - The bucket
- * @param key - The key
- * @param data - The data to process
- */
-export async function putJson(bucket: string, key: string, data: Record<string, unknown>): Promise<void> {
-  return cacheUtils.putJson(bucket, key, data);
-}
-
-/**
- * Performs the put parquet operation.
- * @param bucket - The bucket
- * @param key - The key
- * @param body - The body
- */
-export async function putParquet(bucket: string, key: string, body: Buffer): Promise<void> {
-  return cacheUtils.putParquet(bucket, key, body);
-}
-
-/**
- * Copies object
- * @param srcBucket - The src bucket
- * @param srcKey - The src key
- * @param dstBucket - The dst bucket
- * @param dstKey - The dst key
- */
-export async function copyObject(
-  srcBucket: string,
-  srcKey: string,
-  dstBucket: string,
-  dstKey: string
-): Promise<void> {
-  return cacheUtils.copyObject(srcBucket, srcKey, dstBucket, dstKey);
-}
-
-/**
- * Performs the list objects operation.
- * @param bucket - The bucket
- * @param prefix - The prefix
- * @returns A promise that resolves to the list
- */
-export async function listObjects(bucket: string, prefix: string): Promise<[string, number][]> {
-  return cacheUtils.listObjects(bucket, prefix);
-}
-
-/**
- * Performs the presigned put url operation.
- * @param bucket - The bucket
- * @param key - The key
- * @param expiresIn - The expires in
- * @param contentType - The content type
- * @returns A promise that resolves to the result
- */
-export async function presignedPutUrl(bucket: string, key: string, expiresIn = 3600, contentType = "application/octet-stream"): Promise<string> {
-  return cacheUtils.presignedPutUrl(bucket, key, expiresIn, contentType);
-}
-
-/**
- * Performs the stream lines operation.
- * @param bucket - The bucket
- * @param key - The key
- * @param chunkSize - The chunk size
- * @param encoding - The encoding
- * @returns The async generator<[string, number, number]> result
- */
-export async function* streamLines(
-  bucket: string,
-  key: string,
-  chunkSize?: number,
-  encoding = "utf-8"
-): AsyncGenerator<[string, number, number]> {
-  yield* cacheUtils.streamLines(bucket, key, chunkSize, encoding);
-}
-
-/**
- * Splits all lines
- * @param data - The data to process
- * @param encoding - The encoding
- * @returns The list of results
- */
-export function splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] {
-  return cacheUtils.splitAllLines(data, encoding);
-}
-
-/**
- * Performs the sha256 hex operation.
- * @param data - The data to process
- * @returns The string result
- */
-export function sha256Hex(data: Buffer): string {
-  return cacheUtils.sha256Hex(data);
-}
-
-// Backward-compat re-exports
-export { parseGcsUrl as parseS3Url };
+function Enforce(): void {}

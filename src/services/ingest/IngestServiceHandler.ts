@@ -7,8 +7,6 @@ import { parseGcsUrl, objectSize, readRange, copyObject } from "@shared/GcsUtils
 import { getJob, repositories, waitForDb, createPendingArchiveEntry } from "@shared/DatabaseManager.js";
 import { BombError } from "@errors/BombError.js";
 import { createLogger } from "@utils/logger/Log.js";
-import { metrics } from "@utils/response/metrics.js";
-import { startHealthCheckServer } from "@utils/response/health.js";
 import {PasswordError} from "@errors/PasswordError";
 import {
   GCS_OR_S3_URL_PATTERN,
@@ -21,6 +19,8 @@ import {IParseJob} from "@config/db/models";
 import {IngestServiceImpl} from "@service/ingest/IngestServiceImpl";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import {SSRFError} from "@errors/SSRFError";
+import HealthService from "@utils/response/health";
+import { MetricsUtils } from "@utils/response/metrics";
 
 
 export class IngestService
@@ -136,7 +136,7 @@ export class IngestService
     {
       try
       {
-        startHealthCheckServer(port);
+        HealthService.startHealthCheckServer(port);
       }
       catch (err)
       {
@@ -271,7 +271,7 @@ export class IngestService
 
     this.transition(jobId, JobStatus.INGESTING);
     this.logger.info("ingest_start", { job_id: jobId, source_type: msg.source_type });
-    metrics.increment("ingest.start", 1, { source_type: msg.source_type });
+    MetricsUtils.increment("ingest.start", 1, { source_type: msg.source_type });
 
     try
     {
@@ -317,7 +317,7 @@ export class IngestService
       });
 
       this.logger.info("ingest_forwarded_to_classify", { job_id: jobId, s3_url: s3Url });
-      metrics.increment("ingest.forwarded", 1, { target: "classify" });
+      MetricsUtils.increment("ingest.forwarded", 1, { target: "classify" });
     }
     catch (exc)
     {
@@ -326,13 +326,13 @@ export class IngestService
     finally
     {
       const ingestDuration: number = Date.now() - ingestStartTime;
-      metrics.set("ingest.duration_ms", ingestDuration);
+      MetricsUtils.set("ingest.duration_ms", ingestDuration);
     }
   }
 
   /**
    * Handle an error raised during ingest, transitioning the job and recording
-   * metrics appropriately for the error type (SSRF block, password required, or
+   * MetricsUtils appropriately for the error type (SSRF block, password required, or
    * generic failure).
    *
    * @param exc - The caught error
@@ -346,7 +346,7 @@ export class IngestService
     {
       this.logger.error("ssrf_blocked", { job_id: jobId }, exc);
       this.stats.ssrfBlocks++;
-      metrics.increment("ingest.ssrf_blocked", 1);
+      MetricsUtils.increment("ingest.ssrf_blocked", 1);
       this.transition(jobId, JobStatus.FAILED, `SSRF blocked: ${exc}`);
       return;
     }
@@ -359,7 +359,7 @@ export class IngestService
       if (attempts >= settings.ARCHIVE_PASSWORD_MAX_ATTEMPTS)
       {
         this.logger.error("archive_password_exhausted", { job_id: jobId, attempts });
-        metrics.increment("ingest.password_exhausted", 1);
+        MetricsUtils.increment("ingest.password_exhausted", 1);
         this.transition(jobId, JobStatus.FAILED, `password_unavailable: ${exc}`);
       }
       else
@@ -373,7 +373,7 @@ export class IngestService
     }
 
     this.logger.error("ingest_error", { job_id: jobId }, exc instanceof Error ? exc : new Error(String(exc)));
-    metrics.increment("ingest.error", 1);
+    MetricsUtils.increment("ingest.error", 1);
     this.transition(jobId, JobStatus.FAILED, String(exc));
   }
 
@@ -444,7 +444,7 @@ export class IngestService
         );
       }
       this.logger.info("s3_prefix_fanout", { job_id: msg.job_id, count: objects.length });
-      metrics.increment("ingest.prefix_fanout", objects.length);
+      MetricsUtils.increment("ingest.prefix_fanout", objects.length);
       return null;
     }
 
@@ -561,7 +561,7 @@ export class IngestService
           copyError instanceof Error ? copyError : new Error(String(copyError))
       );
 
-      metrics.increment("ingest.copy_failed", 1);
+      MetricsUtils.increment("ingest.copy_failed", 1);
 
       throw new Error(`Failed to copy file from uploads to ingested: ${String(copyError)}`);
     }
@@ -598,7 +598,7 @@ export class IngestService
       if (!entries.length)
       {
         this.logger.warn("archive_empty", { job_id: jobId, s3_url: s3Url });
-        metrics.increment("ingest.archive_empty", 1);
+        MetricsUtils.increment("ingest.archive_empty", 1);
         this.transition(jobId, JobStatus.FAILED, "Archive contained no extractable files");
         return;
       }
@@ -614,7 +614,7 @@ export class IngestService
       }
 
       this.logger.info("archive_extracted", { job_id: jobId, entries: entries.length, pending: hasPending });
-      metrics.increment("ingest.archive_extracted", entries.length);
+      MetricsUtils.increment("ingest.archive_extracted", entries.length);
 
       if (hasPending)
       {
@@ -650,7 +650,7 @@ export class IngestService
     if (isPending)
     {
       this.logger.info("archive_entry_pending", { job_id: jobId, entry_name: entryName, entry_size: entrySize });
-      metrics.increment("ingest.entry_pending", 1);
+      MetricsUtils.increment("ingest.entry_pending", 1);
       await createPendingArchiveEntry(jobId, entryName, entrySize);
       return true;
     }
@@ -683,13 +683,13 @@ export class IngestService
     {
       this.stats.archiveBombs++;
       this.logger.error("archive_bomb_detected", { job_id: jobId }, exc);
-      metrics.increment("ingest.archive_bomb", 1);
+      MetricsUtils.increment("ingest.archive_bomb", 1);
       this.transition(jobId, JobStatus.FAILED, `Archive bomb: ${exc}`);
       return;
     }
 
     this.logger.error("archive_extraction_failed", { job_id: jobId }, exc instanceof Error ? exc : new Error(String(exc)));
-    metrics.increment("ingest.archive_error", 1);
+    MetricsUtils.increment("ingest.archive_error", 1);
     this.transition(jobId, JobStatus.FAILED, String(exc));
   }
 
@@ -760,13 +760,13 @@ export class IngestService
       if ((errorStr.includes("Job") && errorStr.includes("not found")) || errorStr.includes("cannot transition"))
       {
         this.logger.error("ingest_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
-        metrics.increment("ingest.message_error_ack", 1);
+        MetricsUtils.increment("ingest.message_error_ack", 1);
         await deleteMessage(settings.INGEST_QUEUE_URL, receiptHandle);
       }
       else
       {
         this.logger.error("ingest_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
-        metrics.increment("ingest.message_error", 1);
+        MetricsUtils.increment("ingest.message_error", 1);
       }
     }
   }
@@ -809,7 +809,7 @@ export class IngestService
       catch (dbError)
       {
         this.logger.error("database_connection_lost", { error: String(dbError) }, dbError instanceof Error ? dbError : new Error(String(dbError)));
-        metrics.increment("ingest.db_connection_lost", 1);
+        MetricsUtils.increment("ingest.db_connection_lost", 1);
         await waitForDb();
         await new Promise((r) => setTimeout(r, 5000));
       }

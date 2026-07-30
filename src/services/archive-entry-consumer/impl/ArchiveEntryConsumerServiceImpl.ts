@@ -7,9 +7,8 @@ import path from "path";
 import { spawn } from "child_process";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
+import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import { createLogger } from "@utils/logger/Log.js";
-import { startHealthCheckServer } from "@utils/response/health.js";
 import { ArchiveEntryConsumerService } from "@service/archive-entry-consumer/ArchiveEntryConsumerService.js";
 import { ArchiveEntryRequest, ArchiveEntryResponse, LogEvent, NestedArchiveEntry } from "@service/archive-entry-consumer/io/IArchiveEntryConsumer.js";
 import { settings } from "@shared/Settings.js";
@@ -19,6 +18,7 @@ import { readRange, gcsClient } from "@shared/GcsUtils.js";
 import { markPendingEntryProcessing, markPendingEntryCompleted, markPendingEntryFailed, createPendingArchiveEntry } from "@shared/DatabaseManager.js";
 import {Readable} from "node:stream";
 import {IngestServiceImpl} from "@service/ingest/IngestServiceImpl";
+import HealthService from "@utils/response/health";
 
 /**
  * ArchiveEntryConsumerServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -76,7 +76,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
 
       if (process.env.HEALTH_CHECK_PORT)
       {
-        startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
+          HealthService.startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
       }
     }
 

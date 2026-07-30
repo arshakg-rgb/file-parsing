@@ -2,15 +2,14 @@ import pino from "pino";
 import { settings } from "@shared/Settings.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { FailureClass } from "@shared/models/job.js";
-import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
-import { safeRegex, safeRegexTest } from "@utils/validator/safeRegex.js";
+import { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import ServiceManager from "@config/ServiceManager.js";
 import { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { ClassifierService } from "@service/stream-parser/ClassifierService.js";
-import { IClassifier, ClassifyRequest, ClassifyResponse, ClassifyResult } from "@service/stream-parser/io/IClassifier.js";
+import { ClassifyRequest, ClassifyResult } from "@service/stream-parser/io/IClassifier.js";
 import { FIELD_ALIASES, DELIMITERS, MAX_LINE_LENGTH, BINARY_THRESHOLD, MIN_HEADER_FIELDS, HEADER_MATCH_RATIO, PHONE_MIN_DIGITS, PHONE_MAX_DIGITS, TEMPLATE_IDS } from "@service/stream-parser/io/ClassifierConstants.js";
-import {aiClassifierService} from "@service/ai-classifier/AiClassifierServiceHandler.js";
+import SafeRegexUtils from "@utils/validator/SafeRegex";
 
 enum AIVerdict {
   RECORD_TEMPLATE = "record-template",
@@ -209,13 +208,13 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
 
     // 5. Known high-confidence rubbish templates.
     for (const t of this.rubbishTemplates) {
-      if ((t.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(t.signature, line)) {
+      if ((t.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && SafeRegexUtils.safeRegexTest(t.signature, line)) {
         return { verdict: "rubbish", template_id: t.template_id };
       }
     }
 
     // 6. AI-cached rubbish (learned earlier in this job).
-    if (cached && "signature" in cached && (cached.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(cached.signature, line)) {
+    if (cached && "signature" in cached && (cached.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && SafeRegexUtils.safeRegexTest(cached.signature, line)) {
       return { verdict: "rubbish", template_id: cached.template_id };
     }
 
@@ -294,7 +293,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
    */
   private toResult(line: string, tmpl: RecordTemplate | RubbishTemplate): ClassifyResult {
     if ("signature" in tmpl) {
-      if ((tmpl.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && safeRegexTest(tmpl.signature, line)) {
+      if ((tmpl.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && SafeRegexUtils.safeRegexTest(tmpl.signature, line)) {
         return { verdict: "rubbish", template_id: tmpl.template_id };
       }
       return { verdict: "uncertain", failure_class: FailureClass.UNCERTAIN };
@@ -816,7 +815,7 @@ class ClassifierServiceImpl extends ServiceManager implements ClassifierService 
     }
     if (loc.startsWith("regex:")) {
       const regexStr = loc.replace("regex:", "");
-      const re = safeRegex(regexStr);
+      const re = SafeRegexUtils.safeRegex(regexStr);
       if (!re) return undefined;
       const target = typeof parsed === "string" ? parsed : line;
       const match = re.exec(target);

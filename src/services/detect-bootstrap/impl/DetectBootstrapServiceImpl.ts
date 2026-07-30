@@ -3,14 +3,12 @@ import crypto from "crypto";
 import jschardet from "jschardet";
 import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
+import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ClassifyMessage, ParseMessage } from "@shared/models/job.js";
 import { sendRaw, publishEvent } from "@shared/QueueService.js";
-import { decode, normalizeEncoding, bufferEncodingFor, isLikelyUtf8 } from "@utils/normalizers/encoding.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
-import { metrics } from "@utils/response/metrics.js";
 import { AiClassifierService } from "@service/ai-classifier/AiClassifierServiceHandler.js";
 import { mockClassify } from "@service/ai-classifier/mock.js";
 import { DetectBootstrapService } from "@service/detect-bootstrap/DetectBootstrapService.js";
@@ -20,6 +18,8 @@ import {
   CSV_DELIMITERS,
   HEADER_PATTERNS, HeaderStripResult, ProbeResult
 } from "@service/detect-bootstrap/io/IDetectBootstrap.js";
+import EncodingService from "@utils/normalizers/Encoding";
+import {MetricsUtils} from "@utils/response/metrics";
 
 /**
  * DetectBootstrapServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -185,9 +185,9 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
    */
   public detectEncoding(raw: Buffer): string {
     // Prefer UTF-8 when the bytes actually validate as UTF-8
-    if (isLikelyUtf8(raw.subarray(0, 65536))) return "utf-8";
+    if (EncodingService.isLikelyUtf8(raw.subarray(0, 65536))) return "utf-8";
     const result = jschardet.detect(raw.slice(0, 65536));
-    return normalizeEncoding(result.encoding);
+    return EncodingService.normalizeEncoding(result.encoding);
   }
 
   /**
@@ -197,10 +197,10 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
    * @returns The [number, number] result
    */
   public measureRowWidth(raw: Buffer, encoding: string): [number, number] {
-    const text = decode(raw, encoding);
+    const text = EncodingService.decode(raw, encoding);
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
     if (!lines.length) return [256, 512];
-    const sizes = lines.map((l) => Buffer.byteLength(l, bufferEncodingFor(encoding)));
+    const sizes = lines.map((l) => Buffer.byteLength(l, EncodingService.bufferEncodingFor(encoding)));
     const avg = sizes.reduce((a, b) => a + b, 0) / sizes.length;
     return [avg, Math.max(...sizes)];
   }
@@ -220,7 +220,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
    * @returns The string result
    */
   public fingerprintProbe(raw: Buffer, encoding: string): string {
-    const text = decode(raw, encoding);
+    const text = EncodingService.decode(raw, encoding);
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
     if (!lines.length) return this.hash("empty");
 
@@ -253,7 +253,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
    * @returns The list of results
    */
   public extractSampleLines(raw: Buffer, encoding: string, n: number): string[] {
-    const text = decode(raw, encoding);
+    const text = EncodingService.decode(raw, encoding);
     return text.split(/\r?\n/).filter((l) => l.trim()).slice(0, n);
   }
 
@@ -332,7 +332,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
       return resp;
     } catch (aiErr) {
       this.logger.warn("ai_call_timeout", { job_id: jobId, source: "detect-bootstrap", fingerprint, error: String(aiErr) });
-      metrics.increment("detect.ai_timeout", 1);
+      MetricsUtils.increment("detect.ai_timeout", 1);
       return null;
     }
   }
@@ -403,7 +403,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
         saved_to_registry: true,
       });
       this.logger.info("seed_template_created", { job_id: jobId, kind: resp.kind, template_id: templateId, fingerprint });
-      metrics.increment("detect.template_created", 1, { kind: resp.kind });
+      MetricsUtils.increment("detect.template_created", 1, { kind: resp.kind });
       return { fingerprint, templateId };
     }
 
@@ -474,7 +474,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
 
     const offsets = this.computeProbeOffsets(fileSize, windowSize);
     this.logger.info("probing", { job_id: jobId, probe_count: offsets.length, file_size: fileSize });
-    metrics.increment("detect.probe_start", 1, { probe_count: String(offsets.length) });
+    MetricsUtils.increment("detect.probe_start", 1, { probe_count: String(offsets.length) });
 
     const fieldSpecArray = this.parseFieldSpec(msg.field_spec);
 
@@ -487,7 +487,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     }
 
     this.logger.info("detect_complete", { job_id: jobId, seeds: seedTemplateIds.length, probes: offsets.length });
-    metrics.increment("detect.complete", 1, { seeds: String(seedTemplateIds.length) });
+    MetricsUtils.increment("detect.complete", 1, { seeds: String(seedTemplateIds.length) });
 
     await this.forwardToParse(msg, jobId, fileSize, seedTemplateIds);
   }
