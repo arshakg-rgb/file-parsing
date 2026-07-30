@@ -22,6 +22,17 @@ export interface ICreateJobResponse {
 }
 
 /**
+ * Single-call upload-and-create request payload.
+ */
+export interface IUploadAndCreateJobRequest {
+  source_buffer: Buffer;
+  mimetype: string;
+  field_spec: unknown;
+  column_map?: unknown;
+  batch_id?: string;
+}
+
+/**
  * Job response payload.
  */
 export interface IJobResponse {

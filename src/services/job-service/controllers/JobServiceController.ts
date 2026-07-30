@@ -8,6 +8,7 @@ import { Request, Response, NextFunction } from "express";
  */
 export interface JobServiceController {
   createJob(req: Request, res: Response, next: NextFunction): Promise<void>;
+  uploadAndCreateJob(req: Request, res: Response, next: NextFunction): Promise<void>;
   findStuckJobs(req: Request, res: Response, next: NextFunction): Promise<void>;
   getJob(req: Request, res: Response, next: NextFunction): Promise<void>;
   getBatchJobs(req: Request, res: Response, next: NextFunction): Promise<void>;

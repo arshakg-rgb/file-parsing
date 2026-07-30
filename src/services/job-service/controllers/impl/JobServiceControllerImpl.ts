@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { InstantiationError } from "@errors/InstantiationError.js";
+import { ValidationError } from "@errors/ValidationError.js";
 import { JobServiceController } from "@service/job-service/controllers/JobServiceController.js";
 import { JobService } from "@service/job-service/services/JobService.js";
 import { JobServiceImpl  } from "@service/job-service/services/impl/JobServiceImpl.js";
@@ -7,7 +8,7 @@ import {
   ICreateJobRequest,
   IProvidePasswordRequest,
   IMarkFailedRequest,
-  IRetryJobRequest, ICreateJobResponse, IStuckJobsResponse, IJobResponse, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse,
+  IRetryJobRequest, ICreateJobResponse, IStuckJobsResponse, IJobResponse, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest,
 } from "@service/job-service/io/IJob.js";
 import { ServiceResponse } from "@utils/response/ServiceResponse.js";
 import { HttpError } from "@errors/HttpError.js";
@@ -89,6 +90,44 @@ export class JobControllerImpl implements JobServiceController
       };
 
       const result: ICreateJobResponse = await this.service.createJob(request);
+
+      this.handleSuccessResponse(res, result, false, 202);
+    }
+    catch (err) {
+      next(err);
+    }
+  };
+
+  /**
+   * @param req - The request object.
+   * @param res - The response object.
+   * @param next - The next middleware function.
+   */
+
+  public uploadAndCreateJob: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      if (!req.file)
+      {
+        throw new ValidationError(ValidationError.INPUT, "file is required");
+      }
+
+      const parseJsonField = (value: unknown): unknown =>
+      {
+        if (typeof value !== "string") return value;
+        try { return JSON.parse(value); } catch { return value; }
+      };
+
+      const request: IUploadAndCreateJobRequest = {
+        source_buffer: req.file.buffer,
+        mimetype: req.file.mimetype,
+        field_spec: parseJsonField(req.body.field_spec),
+        column_map: req.body.column_map ? parseJsonField(req.body.column_map) : undefined,
+        batch_id: req.body.batch_id,
+      };
+
+      const result: ICreateJobResponse = await this.service.uploadAndCreateJob(request);
 
       this.handleSuccessResponse(res, result, false, 202);
     }

@@ -1,3 +1,4 @@
+import multer from "multer";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { CustomRouter } from "@utils/router/CustomRouter.js";
 import { JobServiceController } from "@service/job-service/controllers/JobServiceController.js";
@@ -39,8 +40,13 @@ export class JobServiceRouter extends CustomRouter
 
   private initializeRoutes(): void
   {
+    const upload = multer({ storage: multer.memoryStorage() });
+
     this.route("/jobs")
       .post(this.controller.createJob);
+
+    this.route("/jobs/upload")
+      .post(upload.single("file"), this.controller.uploadAndCreateJob);
 
     this.route("/jobs/stuck")
       .get(this.controller.findStuckJobs);

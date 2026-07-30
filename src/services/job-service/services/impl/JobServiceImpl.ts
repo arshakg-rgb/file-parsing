@@ -11,7 +11,7 @@ import { presignedPutUrl, parseGcsUrl, objectSize, readFull, putObject } from "@
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
-import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse } from "@service/job-service/io/IJob.js";
+import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest } from "@service/job-service/io/IJob.js";
 import {HttpError} from "@errors/HttpError.js";
 import {ServerError} from "@errors/ServerError.js";
 import {ParseJob, IParseJob, ParseJobAttributes} from "@config/db/models";
@@ -226,6 +226,122 @@ export class JobServiceImpl implements JobService
     this.logger.info("job_queued", { job_id: jobId, message_id: messageId });
 
     return { job_id: jobId, status: JobStatus.QUEUED, presigned_put_url: putUrl, message_id: messageId };
+  }
+
+  /**
+   * Creates an upload job from a supplied file buffer in a single call.
+   * Uploads the buffer to GCS and immediately queues it for ingestion.
+   *
+   * @param request - The upload-and-create request.
+   * @returns The created job details.
+   * @throws ValidationError if the request contains invalid input.
+   * @throws ServerError if the upload to GCS fails.
+   */
+
+  public async uploadAndCreateJob(request: IUploadAndCreateJobRequest): Promise<ICreateJobResponse>
+  {
+    const { source_buffer, mimetype, field_spec, column_map, batch_id } = request;
+
+    let columnMap: Record<string, number | number[]> | undefined;
+    if (column_map)
+    {
+      const raw = typeof column_map === "string" ? (() => { try { return JSON.parse(column_map); } catch { return undefined; } })() : column_map;
+
+      if (raw && typeof raw === "object" && !Array.isArray(raw))
+      {
+        const cleaned: Record<string, number | number[]> = {};
+
+        for (const [k, v] of Object.entries(raw))
+        {
+          if (typeof v === "number" && Number.isInteger(v) && v >= 0)
+          {
+            cleaned[k] = v;
+          }
+
+          else if (Array.isArray(v))
+          {
+            const idxs = v.filter((n: unknown) => typeof n === "number" && Number.isInteger(n) && n >= 0);
+
+            if (idxs.length)
+            {
+              cleaned[k] = idxs;
+            }
+          }
+        }
+        if (Object.keys(cleaned).length) columnMap = cleaned;
+      }
+    }
+
+    const namesFromArray = (arr: unknown[]): string[] =>
+      arr.map((f) => (typeof f === "string" ? f : (f as { name?: string } | undefined | null)?.name)).filter((x): x is string => typeof x === "string");
+
+    let fieldNames: string[] = [];
+
+    if (field_spec)
+    {
+      if (Array.isArray(field_spec))
+      {
+        fieldNames = namesFromArray(field_spec);
+      }
+      else
+      {
+        throw new ValidationError(ValidationError.INPUT, "field_spec must be an array of field names, not a string");
+      }
+    }
+
+    if (!fieldNames.length)
+    {
+      throw new ValidationError(ValidationError.INPUT, "field_spec must contain at least one valid field name");
+    }
+
+    const jobId = randomUUID();
+    const batchId: string = batch_id || randomUUID();
+    const now: string = new Date().toISOString();
+
+    const uploadKey = `uploads/${jobId}/source`;
+    const s3Url = `gs://${settings.DATA_BUCKET}/${uploadKey}`;
+
+    try
+    {
+      await putObject(settings.DATA_BUCKET, uploadKey, source_buffer, mimetype || "application/octet-stream");
+    }
+    catch (err)
+    {
+      throw new ServerError(ServerError.INTERNAL, `Failed to upload file to GCS: ${String(err)}`);
+    }
+
+    const row: ParseJobRow = {
+      job_id: jobId,
+      batch_id: batchId,
+      source_type: SourceType.UPLOAD,
+      source_ref: s3Url,
+      s3_url: s3Url,
+      field_spec: fieldNames,
+      exec_path: "stream",
+      status: JobStatus.QUEUED,
+      output_paths: [],
+      counts: { parsed: 0, dropped_rubbish: 0, failed_by_class: {} },
+      timings: { queued_at: now },
+      error: undefined,
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+
+    this.logger.info("upload_job_created", { job_id: jobId, queue_url: settings.INGEST_QUEUE_URL, bytes: source_buffer.length });
+    await ParseJob.create(row);
+
+    const messageId: string = await sendRaw(settings.INGEST_QUEUE_URL, {
+      job_id: jobId,
+      source_type: SourceType.UPLOAD,
+      source_ref: s3Url,
+      field_spec: fieldNames,
+      column_map: columnMap,
+      batch_id: batchId,
+    });
+
+    this.logger.info("upload_job_queued", { job_id: jobId, message_id: messageId });
+
+    return { job_id: jobId, status: JobStatus.QUEUED, message_id: messageId };
   }
 
   /**
