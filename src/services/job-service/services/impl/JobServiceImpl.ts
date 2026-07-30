@@ -430,8 +430,8 @@ export class JobServiceImpl implements JobService
         throw new ValidationError(ValidationError.INPUT,`Invalid target_status: ${target_status}`);
     }
 
-    try {
-
+    try
+    {
       await transition(jobId, target_status);
     }
     catch (err)

@@ -15,20 +15,27 @@ export interface IJobService {
   stop(): Promise<void>;
 }
 
-
-/** Default HTTP port used when the PORT environment variable is not set. */
+/**
+ * Default HTTP port used when the PORT environment variable is not set.
+ */
 
 export const DEFAULT_PORT = 8080;
 
-/** Max number of messages to pull per receive call in the event consumer loop. */
+/**
+ * Max number of messages to pull per receive call in the event consumer loop.
+ */
 
 export const EVENT_BATCH_SIZE = 10;
 
-/** Visibility timeout / long-poll wait (seconds) for the event consumer loop. */
+/**
+ * Visibility timeout / long-poll wait (seconds) for the event consumer loop.
+ */
 
 export const EVENT_POLL_WAIT_SECONDS = 5;
 
-/** Backoff delay (ms) after an unexpected failure in the event consumer loop. */
+/**
+ * Backoff delay (ms) after an unexpected failure in the event consumer loop.
+ */
 
 export const EVENT_LOOP_ERROR_BACKOFF_MS = 5_000;
 

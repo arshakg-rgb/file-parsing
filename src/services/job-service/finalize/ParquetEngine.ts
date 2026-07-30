@@ -10,6 +10,7 @@ export interface ParquetRow {
   [key: string]: unknown;
 }
 
+
 /**
  * ParquetEngine is responsible for parquet engine operations.
  */
@@ -19,33 +20,73 @@ export class ParquetEngine {
    * Long objects, Buffer/Uint8Array, Date) into safe scalar Parquet values.
    * Objects/arrays become JSON strings; Long-like objects become numbers.
    */
-  static sanitizeValue(value: unknown, isRecord = false): unknown {
-    if (value === null || value === undefined) return value;
-    if (typeof value === "bigint") return Number(value);
-    if (typeof value === "boolean" || typeof value === "number" || typeof value === "string") return value;
-    if (value instanceof Date) return value;
 
-    const anyValue = value as { toNumber?: () => number };
-    if (typeof anyValue.toNumber === "function") {
-      try {
-        const n = anyValue.toNumber();
-        if (Number.isFinite(n)) return n;
-      } catch { /* fall through */ }
+  static sanitizeValue(value: unknown, isRecord = false): unknown
+  {
+    if (value === null || value === undefined)
+    {
+      return value;
     }
 
-    if (Buffer.isBuffer(value)) return value.toString("utf-8");
-    if (value instanceof Uint8Array) return Buffer.from(value).toString("utf-8");
-    if (Array.isArray(value)) return JSON.stringify(value);
+    if (typeof value === "bigint")
+    {
+      return Number(value);
+    }
 
-    if (typeof value === "object" && isRecord) {
+    if (typeof value === "boolean" || typeof value === "number" || typeof value === "string")
+    {
+      return value;
+    }
+
+    if (value instanceof Date)
+    {
+      return value;
+    }
+
+    const anyValue = value as { toNumber?: () => number };
+
+    if (typeof anyValue.toNumber === "function")
+    {
+      try
+      {
+        const n: number = anyValue.toNumber();
+        if (Number.isFinite(n))
+        {
+          return n;
+        }
+      }
+      catch
+      { /* fall through */
+      }
+    }
+
+    if (Buffer.isBuffer(value))
+    {
+      return value.toString("utf-8");
+    }
+
+    if (value instanceof Uint8Array)
+    {
+      return Buffer.from(value).toString("utf-8");
+    }
+
+    if (Array.isArray(value))
+    {
+      return JSON.stringify(value);
+    }
+
+    if (typeof value === "object" && isRecord)
+    {
       const result: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(value)) {
+
+      for (const [k, v] of Object.entries(value))
+      {
         result[k] = ParquetEngine.sanitizeValue(v, false);
       }
+
       return result;
     }
 
-    // Any remaining object (nested JSON, maps, etc.) becomes a JSON string.
     return JSON.stringify(value);
   }
 
@@ -54,12 +95,19 @@ export class ParquetEngine {
    * @param rows - The rows
    * @returns The parquet schema result
    */
-  static buildSchema(rows: ParquetRow[]): ParquetSchema {
+
+  static buildSchema(rows: ParquetRow[]): ParquetSchema
+  {
     const schemaObj: SchemaDefinition = {};
-    for (const row of rows) {
-      for (const [k, v] of Object.entries(row)) {
-        if (!schemaObj[k]) {
-          const value = ParquetEngine.sanitizeValue(v, false);
+
+    for (const row of rows)
+    {
+      for (const [k, v] of Object.entries(row))
+      {
+        if (!schemaObj[k])
+        {
+          const value: unknown = ParquetEngine.sanitizeValue(v, false);
+
           const type: ParquetType =
             value === null || value === undefined
               ? "UTF8"
@@ -81,18 +129,24 @@ export class ParquetEngine {
 
     /**
    * Reads rows
-   * @param storage - The storage
    * @param storagePath - The storage path
    * @returns A promise that resolves to the list
    */
-  static async readRows(storagePath: StoragePath): Promise<ParquetRow[]> {
-    const buffer = await readFull(storagePath.bucket, storagePath.key);
-    const reader = await ParquetReader.openBuffer(buffer);
+
+  static async readRows(storagePath: StoragePath): Promise<ParquetRow[]>
+    {
+    const buffer: Buffer = await readFull(storagePath.bucket, storagePath.key);
+    const reader: ParquetReader = await ParquetReader.openBuffer(buffer);
     const cursor = reader.getCursor();
     const rows: ParquetRow[] = [];
     let row: ParquetRow | null;
-    while ((row = await cursor.next() as ParquetRow | null)) {
-      if (row) rows.push(ParquetEngine.sanitizeValue(row, true) as ParquetRow);
+
+    while ((row = await cursor.next() as ParquetRow | null))
+    {
+      if (row)
+      {
+        rows.push(ParquetEngine.sanitizeValue(row, true) as ParquetRow);
+      }
     }
     await reader.close();
     return rows;
@@ -100,27 +154,35 @@ export class ParquetEngine {
 
     /**
    * Writes rows
-   * @param storage - The storage
    * @param storagePath - The storage path
    * @param rows - The rows
    */
-  static async writeRows(storagePath: StoragePath, rows: ParquetRow[]): Promise<void> {
-    if (rows.length === 0) {
+
+  static async writeRows(storagePath: StoragePath, rows: ParquetRow[]): Promise<void>
+  {
+    if (rows.length === 0)
+    {
       return;
     }
 
-    const sanitizedRows = rows.map((row) => ParquetEngine.sanitizeValue(row, true) as ParquetRow);
-    const tempFile = path.join(os.tmpdir(), `${randomUUID()}.parquet`);
-    const writer = await ParquetWriter.openFile(ParquetEngine.buildSchema(sanitizedRows), tempFile);
-    for (const row of sanitizedRows) {
+    const sanitizedRows: ParquetRow[] = rows.map((row) => ParquetEngine.sanitizeValue(row, true) as ParquetRow);
+    const tempFile: string = path.join(os.tmpdir(), `${randomUUID()}.parquet`);
+    const writer: ParquetWriter = await ParquetWriter.openFile(ParquetEngine.buildSchema(sanitizedRows), tempFile);
+
+    for (const row of sanitizedRows)
+    {
       await writer.appendRow(row);
     }
+
     await writer.close();
 
-    try {
+    try
+    {
       const buffer = await fs.readFile(tempFile);
       await putObject(storagePath.bucket, storagePath.key, buffer, "application/octet-stream");
-    } finally {
+    }
+    finally
+    {
       await fs.unlink(tempFile).catch(() => {});
     }
   }

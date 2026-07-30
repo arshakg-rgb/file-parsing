@@ -3,7 +3,8 @@ import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse
 /**
  * Job Service business-logic interface.
  */
-export interface JobService {
+export interface JobService
+{
   createJob(request: ICreateJobRequest): Promise<ICreateJobResponse>;
   findStuckJobs(thresholdMinutes: number): Promise<IStuckJobsResponse>;
   getJob(jobId: string): Promise<IJobResponse | null>;

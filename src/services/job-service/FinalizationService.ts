@@ -8,7 +8,6 @@ import { LineNumberMapper } from "@service/job-service/finalize/LineNumberMapper
 import { ParquetEngine, type ParquetRow } from "@service/job-service/finalize/ParquetEngine.js";
 import { StoragePath, type GcsProtocol } from "@service/job-service/finalize/StoragePath.js";
 import type { FinalizeResult } from "@service/job-service/io/IFinalizationService.js";
-
 export type { FinalizeResult } from "@service/job-service/io/IFinalizationService.js";
 
 /**
@@ -16,13 +15,7 @@ export type { FinalizeResult } from "@service/job-service/io/IFinalizationServic
  * Composes repository, storage, Parquet, and line-mapping concerns.
  */
 class FinalizationService {
-  private readonly logger: pino.Logger;
-  private readonly lineMapper: LineNumberMapper;
-
-  constructor(lineMapper: LineNumberMapper = new LineNumberMapper()) {
-    this.logger = createLogger(module);
-    this.lineMapper = lineMapper;
-  }
+  private readonly logger: pino.Logger = createLogger(module);
 
     /**
    * Performs the finalize output operation.
@@ -297,7 +290,7 @@ class FinalizationService {
     }
 
     const sortedOffsets = Array.from(targetOffsets).sort((a, b) => a - b);
-    const lineMap = this.lineMapper.computeLineMap(source, sortedOffsets);
+    const lineMap = LineNumberMapper.computeLineMap(source, sortedOffsets);
 
     for (const dlq of deadLetters) {
       const line = lineMap.get(Number(dlq.byte_offset));
