@@ -5,8 +5,8 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
-COPY src/services/job_service/start.js ./dist/services/job_service/start.js
+COPY src/services/job-service/start.js ./dist/services/job-service/start.js
 ENV NODE_ENV=production
 ENV PORT=8080
 COPY configs/ ./configs/
-CMD ["node", "dist/services/job_service/start.js"]
+CMD ["node", "dist/services/job-service/start.js"]
