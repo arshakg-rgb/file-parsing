@@ -1,5 +1,5 @@
 /**
- * Upload a sample LinkedIn-like NDJSON file to GCS and run it through LineClassifier locally.
+ * Upload a sample LinkedIn-like NDJSON file to GCS and run it through LineClassifierServiceImpl locally.
  *
  * Usage:
  *   npx tsx src/scripts/upload_and_test_sample.ts
@@ -12,7 +12,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Storage } from "@google-cloud/storage";
-import { LineClassifier } from "../services/stream-parser/LineClassifier.js";
+import { LineClassifier } from "../services/stream-parser/LineClassifierServiceImpl.js";
 
 const SAMPLE_FILE = path.join(__dirname, "../../samples/test-linkedin.ndjson");
 const BUCKET = process.env.GCS_SAMPLE_BUCKET || "datalead-osint";
@@ -21,7 +21,7 @@ const GCS_KEY = `samples/test-linkedin-${Date.now()}.ndjson`;
 const FIELD_SPEC = ["email", "name", "phone", "address"];
 
 async function classifyLocal() {
-  console.log("\n=== Local LineClassifier test ===");
+  console.log("\n=== Local LineClassifierServiceImpl test ===");
   const raw = await fs.readFile(SAMPLE_FILE, "utf8");
   const lines = raw.split("\n").filter((l) => l.trim() !== "");
 

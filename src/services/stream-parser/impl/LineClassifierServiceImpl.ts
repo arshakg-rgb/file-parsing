@@ -11,7 +11,7 @@ import SafeRegexUtils from "@utils/validator/SafeRegex";
 
 export type { ClassifyResult } from "@service/stream-parser/io/IClassifier.js";
 
-export class LineClassifier implements IClassifier
+export class LineClassifierServiceImpl implements IClassifier
 {
   private jobId: string;
   private fieldSpec: string[];
@@ -81,7 +81,7 @@ export class LineClassifier implements IClassifier
    * @param rubbishTemplates - Known rubbish/noise signatures available for matching.
    * @param columnMap - Optional client-supplied fixed column map for headerless delimited files.
    * @param aiRateLimiter - Optional rate limiter whose `acquire()` is awaited before any AI call.
-   * @returns A new LineClassifier instance configured for the given job and field spec.
+   * @returns A new LineClassifierServiceImpl instance configured for the given job and field spec.
    */
 
   public constructor(jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: { acquire(): Promise<void> } | null)
@@ -97,7 +97,7 @@ export class LineClassifier implements IClassifier
     this.normalizedFieldSpec = fieldSpec.map((f) => this.normalizeKey(f));
     this.aliasMap = new Map<string, Set<string>>();
 
-    for (const [base, aliases] of Object.entries(LineClassifier.ALIASES))
+    for (const [base, aliases] of Object.entries(LineClassifierServiceImpl.ALIASES))
     {
       const set = new Set<string>();
       for (const a of aliases) set.add(this.normalizeKey(a));
@@ -184,7 +184,7 @@ export class LineClassifier implements IClassifier
       if (!cacheComputed)
       {
         cacheComputed = true;
-        cached = this.aiCache.get(LineClassifier.quickFingerprint(line));
+        cached = this.aiCache.get(LineClassifierServiceImpl.quickFingerprint(line));
       }
 
       return cached;
@@ -229,7 +229,7 @@ export class LineClassifier implements IClassifier
       return {verdict: "rubbish", template_id: "length-gate"};
     }
 
-    if (line.length > LineClassifier.MAX_LINE_LENGTH)
+    if (line.length > LineClassifierServiceImpl.MAX_LINE_LENGTH)
     {
       return { verdict: "uncertain", failure_class: FailureClass.TRANSFORM_ERROR };
     }
@@ -246,20 +246,20 @@ export class LineClassifier implements IClassifier
       }
     }
 
-    if (nonPrintable / trimmed.length > LineClassifier.NON_PRINTABLE_RATIO_MAX)
+    if (nonPrintable / trimmed.length > LineClassifierServiceImpl.NON_PRINTABLE_RATIO_MAX)
     {
       return { verdict: "rubbish", template_id: "binary-gate" };
     }
 
     let binaryCount: number = 0;
-    LineClassifier.BINARY_RE.lastIndex = 0;
+    LineClassifierServiceImpl.BINARY_RE.lastIndex = 0;
 
-    while (LineClassifier.BINARY_RE.exec(trimmed) !== null)
+    while (LineClassifierServiceImpl.BINARY_RE.exec(trimmed) !== null)
     {
       binaryCount++;
     }
 
-    if (binaryCount / trimmed.length > LineClassifier.BINARY_RATIO_MAX)
+    if (binaryCount / trimmed.length > LineClassifierServiceImpl.BINARY_RATIO_MAX)
     {
       return { verdict: "rubbish", template_id: "binary-gate" };
     }
@@ -491,7 +491,7 @@ export class LineClassifier implements IClassifier
 
   public async classifyWithAI(line: string, contextLines: string[], remainingBudget?: number): Promise<ClassifyResult>
   {
-    const fp: string = LineClassifier.quickFingerprint(line);
+    const fp: string = LineClassifierServiceImpl.quickFingerprint(line);
     const cached: RecordTemplate | RubbishTemplate | undefined = this.aiCache.get(fp);
 
     if (cached)
@@ -592,7 +592,7 @@ export class LineClassifier implements IClassifier
 
     try
     {
-      parsed = LineClassifier.JSON_SAFE.parse(template);
+      parsed = LineClassifierServiceImpl.JSON_SAFE.parse(template);
     }
     catch
     {
@@ -633,7 +633,7 @@ export class LineClassifier implements IClassifier
 
         if (coerced)
         {
-          this.logger.info("ai_json_parse_succeeded", { fingerprint: LineClassifier.quickFingerprint(line), keys: Object.keys(coerced).length });
+          this.logger.info("ai_json_parse_succeeded", { fingerprint: LineClassifierServiceImpl.quickFingerprint(line), keys: Object.keys(coerced).length });
 
           return { result: { verdict: "parsed", row: coerced, template_id: "ai-json" }, ai_calls_used: 1 };
         }
@@ -877,7 +877,7 @@ export class LineClassifier implements IClassifier
 
       try
       {
-        const obj = LineClassifier.JSON_SAFE.parse(line);
+        const obj = LineClassifierServiceImpl.JSON_SAFE.parse(line);
 
         if (obj && typeof obj === "object" && !Array.isArray(obj))
         {
@@ -938,7 +938,7 @@ export class LineClassifier implements IClassifier
     if (rec.structure === "csv")
     {
       const delim = rec.delimiter ?? ",";
-      return LineClassifier.parseCsvLine(line, delim, "\"");
+      return LineClassifierServiceImpl.parseCsvLine(line, delim, "\"");
     }
 
     if (rec.structure === "regex" || rec.structure === "fixed")
@@ -969,7 +969,7 @@ export class LineClassifier implements IClassifier
 
     const out: string = s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-    if (this.normalizeKeyCache.size < LineClassifier.NORMALIZE_CACHE_MAX)
+    if (this.normalizeKeyCache.size < LineClassifierServiceImpl.NORMALIZE_CACHE_MAX)
     {
       this.normalizeKeyCache.set(s, out);
     }
@@ -1000,7 +1000,7 @@ export class LineClassifier implements IClassifier
       return true;
     }
 
-    const aliases: string[] = LineClassifier.ALIASES[normalizedField] || [normalizedField];
+    const aliases: string[] = LineClassifierServiceImpl.ALIASES[normalizedField] || [normalizedField];
 
     return aliases.some((a) => this.normalizeKey(a) === normalizedKey);
   }
@@ -1031,7 +1031,7 @@ export class LineClassifier implements IClassifier
 
     if (normalizedField === "email")
     {
-      return LineClassifier.EMAIL_RE.test(v);
+      return LineClassifierServiceImpl.EMAIL_RE.test(v);
     }
 
     if (normalizedField === "phone")
@@ -1110,7 +1110,7 @@ export class LineClassifier implements IClassifier
         {
           try
           {
-            const inner = LineClassifier.JSON_SAFE.parse(sv);
+            const inner = LineClassifierServiceImpl.JSON_SAFE.parse(sv);
             if (typeof inner === "string") sv = inner;
           }
           catch
@@ -1124,7 +1124,7 @@ export class LineClassifier implements IClassifier
       {
         try
         {
-          const parsed = LineClassifier.JSON_SAFE.parse(sv);
+          const parsed = LineClassifierServiceImpl.JSON_SAFE.parse(sv);
 
           if (parsed && typeof parsed === "object")
           {
@@ -1477,7 +1477,7 @@ export class LineClassifier implements IClassifier
       {
         try
         {
-          const inner = LineClassifier.JSON_SAFE.parse(t) as string;
+          const inner = LineClassifierServiceImpl.JSON_SAFE.parse(t) as string;
           return this.parseJsonRecord(inner);
         }
         catch
@@ -1512,7 +1512,7 @@ export class LineClassifier implements IClassifier
 
     for (const seg of line.split(/\s+-\s+/))
     {
-      const m: RegExpExecArray | null = LineClassifier.KV_SEG_RE.exec(seg);
+      const m: RegExpExecArray | null = LineClassifierServiceImpl.KV_SEG_RE.exec(seg);
       if (m) obj[m[1].trim()] = m[2].trim();
     }
 
@@ -1542,7 +1542,7 @@ export class LineClassifier implements IClassifier
 
     try
     {
-      parsed = LineClassifier.JSON_SAFE.parse(trimmed);
+      parsed = LineClassifierServiceImpl.JSON_SAFE.parse(trimmed);
     }
     catch
     {
@@ -1578,14 +1578,14 @@ export class LineClassifier implements IClassifier
   {
     let best: string[] | null = null;
 
-    for (const delim of LineClassifier.DELIMITER_CANDIDATES)
+    for (const delim of LineClassifierServiceImpl.DELIMITER_CANDIDATES)
     {
       if (!line.includes(delim))
       {
         continue;
       }
 
-      const parts: string[] = LineClassifier.parseCsvLine(line, delim, "\"");
+      const parts: string[] = LineClassifierServiceImpl.parseCsvLine(line, delim, "\"");
 
       if (parts.length < 2)
       {
@@ -1629,7 +1629,7 @@ export class LineClassifier implements IClassifier
         return null;
       }
 
-      if (!LineClassifier.HEADER_LABEL_RE.test(v))
+      if (!LineClassifierServiceImpl.HEADER_LABEL_RE.test(v))
       {
         return null;
       }
@@ -1969,7 +1969,7 @@ export class LineClassifier implements IClassifier
 
       const v: string = String(parts[j] ?? "").trim();
 
-      if (!v || LineClassifier.DELIMITER_ONLY_RE.test(v) || LineClassifier.ID_LIKE_RE.test(v) || LineClassifier.SALUTATION_RE.test(v))
+      if (!v || LineClassifierServiceImpl.DELIMITER_ONLY_RE.test(v) || LineClassifierServiceImpl.ID_LIKE_RE.test(v) || LineClassifierServiceImpl.SALUTATION_RE.test(v))
       {
         continue;
       }
@@ -2027,7 +2027,7 @@ export class LineClassifier implements IClassifier
     if (runs.length === 1 && weakFieldIndices.length > 1)
     {
       const run: number[] = runs[0];
-      const zipPos: number = run.findIndex((idx) => LineClassifier.ZIP_RE.test(String(parts[idx] ?? "").trim()));
+      const zipPos: number = run.findIndex((idx) => LineClassifierServiceImpl.ZIP_RE.test(String(parts[idx] ?? "").trim()));
 
       if (zipPos > 0)
       {
@@ -2183,10 +2183,10 @@ export class LineClassifier implements IClassifier
       else
       {
         const s: string = String(v).trim();
-        const binaryChars: any[] = s.match(LineClassifier.BINARY_RE) || [];
+        const binaryChars: any[] = s.match(LineClassifierServiceImpl.BINARY_RE) || [];
         const binaryCount: number = binaryChars.filter((c) => c !== "\t" && c !== "\n" && c !== "\r").length;
 
-        if (s.length > 0 && binaryCount / s.length > LineClassifier.BINARY_RATIO_MAX)
+        if (s.length > 0 && binaryCount / s.length > LineClassifierServiceImpl.BINARY_RATIO_MAX)
         {
           return null as unknown as Record<string, unknown>;
         }
@@ -2282,9 +2282,9 @@ export class LineClassifier implements IClassifier
       }
     }
 
-    for (const delim of LineClassifier.DELIMITER_CANDIDATES)
+    for (const delim of LineClassifierServiceImpl.DELIMITER_CANDIDATES)
     {
-      const parts: string[] = LineClassifier.parseCsvLine(line, delim, "\"");
+      const parts: string[] = LineClassifierServiceImpl.parseCsvLine(line, delim, "\"");
 
       if (parts.length >= 3)
       {

@@ -33,9 +33,9 @@ Conceptually the ordered stages are:
    - `rubbish-signature` → cached, dropped + logged;
    - `uncertain` → dead-letter for **human review** (never a guess).
 
-### 2.1 Implementation — `src/services/stream_parser/LineClassifier.ts`
+### 2.1 Implementation — `src/services/stream_parser/LineClassifierServiceImpl.ts`
 
-`LineClassifier.classify(line, byteOffset, byteLength)` returns `{ verdict: "parsed" | "rubbish" | "uncertain", row?, template_id?, template_version?, failure_class? }`. Its actual stage order is a faithful, slightly richer expansion of the intent:
+`LineClassifierServiceImpl.classify(line, byteOffset, byteLength)` returns `{ verdict: "parsed" | "rubbish" | "uncertain", row?, template_id?, template_version?, failure_class? }`. Its actual stage order is a faithful, slightly richer expansion of the intent:
 
 | Stage | What it does | Result |
 |-------|--------------|--------|

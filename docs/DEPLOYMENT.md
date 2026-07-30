@@ -85,7 +85,7 @@ The `DISABLED FOR FAST TEST BUILDS` comments are grouped exactly as: (a) `ai-cla
 The standalone `ai-classifier` Cloud Run service exposes a `/classify` HTTP endpoint that **has no callers**. AI classification happens **in-process** inside `detect-bootstrap` and `stream-parser` via dynamic import of the same handler code:
 
 - `src/services/detect_bootstrap/DetectBootstrapServiceHandler.ts` → `await import("../ai_classifier/AiClassifierServiceHandler.js")` (and `../ai_classifier/mock.js`)
-- `src/services/stream_parser/LineClassifier.ts` → `await import("../ai_classifier/AiClassifierServiceHandler.js")`
+- `src/services/stream_parser/LineClassifierServiceImpl.ts` → `await import("../ai_classifier/AiClassifierServiceHandler.js")`
 
 So the classifier library ships **inside** the detect/stream images and runs in the same process — no network hop to a separate service.
 

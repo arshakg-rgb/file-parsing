@@ -6,13 +6,14 @@ import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { DeadLetterAttributes } from "@config/db/models/DeadLetter.js";
 import { DLQMessage, FailureClass, LoadMessage } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, sendMessage } from "@shared/QueueService.js";
-import { ClassifyResult, LineClassifier } from "@service/stream-parser/LineClassifier.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { RetryService } from "@service/retry/RetryService.js";
 import { RetryRequest, RetryResponse } from "@service/retry/io/IRetry.js";
 import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
+import {ClassifyResult} from "@service/stream-parser/io/IClassifier";
+import {LineClassifierServiceImpl} from "@service/stream-parser/impl/LineClassifierServiceImpl";
 
 /**
  * RetryServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -201,7 +202,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     const fieldSpec = await this.getFieldSpec(msg.job_id);
     const recordTemplates = templateRegistry.getAllRecordTemplates();
     const rubbishTemplates = templateRegistry.getAllRubbishTemplates();
-    const classifier = new LineClassifier(
+    const classifier = new LineClassifierServiceImpl(
       msg.job_id,
       fieldSpec,
       recordTemplates,

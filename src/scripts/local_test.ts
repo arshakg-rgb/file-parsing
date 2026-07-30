@@ -827,7 +827,7 @@ check("UTF-8 content round-trips correctly (not mojibake) once detected as utf-8
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 17. Ordered line classifier (design conformance)
-// The stream-parser now routes every line through LineClassifier.classify() in the
+// The stream-parser now routes every line through LineClassifierServiceImpl.classify() in the
 // designed order (length/binary gate -> learned templates -> structural JSON/kv ->
 // rubbish -> validated CSV -> uncertain), extracting ONLY field_spec fields and
 // DECLINING junk/header lines instead of force-parsing them. These cases lock in the
@@ -840,7 +840,7 @@ console.log("\n=== 17. Ordered line classifier ===");
 /**
  * The {  line classifier }
  */
-const { LineClassifier } = await import("@service/stream-parser/LineClassifier.js");
+const { LineClassifier } = await import("@service/stream-parser/LineClassifierServiceImpl.js");
 /**
  * The f s
  */

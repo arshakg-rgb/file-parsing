@@ -5,7 +5,6 @@ import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ParseMessage, FailureClass, JobCounts, totalFailed, ColumnMap } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, publishEvent, modifyAckDeadline } from "@shared/QueueService.js";
 import { parseGcsUrl, streamLines, objectSize, readRange, readFull } from "@shared/GcsUtils.js";
-import { LineClassifier } from "./LineClassifier.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { OutputManager } from "@shared/OutputManager.js";
 import { CsvOutputWriter } from "@shared/CsvOutputWriter.js";
@@ -22,6 +21,7 @@ import crypto from "crypto";
 import EncodingService from "@utils/normalizers/Encoding";
 import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
+import {LineClassifierServiceImpl} from "@service/stream-parser/impl/LineClassifierServiceImpl";
 
 /**
  * Extract JSON records from a parsed JSON value for processing as individual classifier inputs.
@@ -477,7 +477,7 @@ export class StreamParserService {
     const recordTemplates = templateRegistry.getAllRecordTemplates();
     const rubbishTemplates = templateRegistry.getAllRubbishTemplates();
     const columnMap = (msg as unknown as Record<string, unknown>).column_map as ColumnMap | undefined;
-    const classifier = new LineClassifier(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, this.getAIRateLimiter());
+    const classifier = new LineClassifierServiceImpl(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, this.getAIRateLimiter());
     const outputManager = new OutputManager();
     const csvWriter = new CsvOutputWriter(jobId, fieldSpec);
     const dlqManager = DLQManager.getInstance();

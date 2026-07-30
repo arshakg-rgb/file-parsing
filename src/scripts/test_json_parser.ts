@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { LineClassifier } from "../services/stream-parser/LineClassifier.js";
+import { LineClassifier } from "../services/stream-parser/LineClassifierServiceImpl.js";
 import {aiClassifierService} from "@service/ai-classifier/AiClassifierServiceHandler.js";
 const INPUT_FILE = process.env.INPUT || "test.json";
 const OUTPUT_FILE = process.env.OUTPUT || "test_json_output.csv";

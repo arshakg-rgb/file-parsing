@@ -172,7 +172,7 @@ Upsert `ON CONFLICT (fingerprint)` bumps `version + 1`.
 
 Consumes `fpp-parse` (`src/services/stream_parser/StreamParserServiceHandler.ts`).
 
-### 6.1 LineClassifier (`src/services/stream_parser/LineClassifier.ts`)
+### 6.1 LineClassifierServiceImpl (`src/services/stream_parser/LineClassifierServiceImpl.ts`)
 
 Ordered and deterministic:
 
@@ -322,7 +322,7 @@ These **do not agree**. `parsed_records`, `templates`, and `pending_archive_entr
 | `src/shared/traceSystem.ts` | per-line `parsed_records` insert + counters |
 | `src/services/ingest/SsrfGuard.ts` | SSRF blocklist / redirect / size checks |
 | `src/services/detect_bootstrap/DetectBootstrapServiceHandler.ts` | probing + fingerprinting + seed minting |
-| `src/services/stream_parser/LineClassifier.ts` | ordered line classifier |
+| `src/services/stream_parser/LineClassifierServiceImpl.ts` | ordered line classifier |
 | `src/services/load/LoadServiceHandler.ts` | bulk insert into `parsed_records` |
 | `src/services/retry/RetryServiceHandler.ts` | DLQ recovery strategies |
 | `src/services/job_service/FinalizationService.ts` | part merge + quality gate + backfill |

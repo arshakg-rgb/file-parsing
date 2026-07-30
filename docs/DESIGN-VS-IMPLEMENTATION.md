@@ -25,7 +25,7 @@ The eight logical services live under `src/services/`: `job_service`, `ingest`, 
 | # | Rule | Status | Notes |
 |---|---|---|---|
 | 1 | AI teaches templates; the engine runs them (never per-line) | Partial | The engine runs templates. AI is reached only out-of-band via retry/DLQ, not from the hot loop (see "Deferred"). |
-| 2 | Two template stores, one classifier (record + rubbish) | Partial | `LineClassifier` tries record templates before rubbish, as designed. But there are **two disconnected registries** (Postgres vs. Firestore) — see below. |
+| 2 | Two template stores, one classifier (record + rubbish) | Partial | `LineClassifierServiceImpl` tries record templates before rubbish, as designed. But there are **two disconnected registries** (Postgres vs. Firestore) — see below. |
 | 3 | Extract only what the client wants (`field_spec`) | **Closed 2026-07-17** | Was violated; the refactor now extracts only `field_spec` fields on every path. |
 | 4 | Everything becomes an object-store object first | Yes | Ingest copies uploads/links/archive entries into `datalead-osint`. |
 | 5 | Bad row never stops a file; rubbish and failures go to separate stores, rubbish never retried | Mostly | `rubbish_log` vs. `dead_letters` are separate; retry skips rubbish. Line-fate accounting has known holes (see "Other divergences"). |
@@ -35,7 +35,7 @@ The eight logical services live under `src/services/`: `job_service`, `ingest`, 
 
 The design specifies an ordered, cheapest-first classifier: (1) length/empty gate → drop, no AI; (2) record templates → extract target fields → Parquet row; (3) rubbish templates → drop + rubbish-log; (4) AI, only for unknowns, returning exactly one verdict — `record-template` (cached, parsed), `rubbish-signature` (cached, dropped+logged), or `uncertain` (→ dead-letter for human review, never a guess). A non-negotiable **asymmetry** governs it: record templates are tried *before* rubbish, rubbish matches only on a high-confidence structural signature, and ambiguity always resolves toward "keep and check" — dropping a real record is unrecoverable, an extra AI call is cheap.
 
-This is implemented in `src/services/stream_parser/LineClassifier.ts` as `LineClassifier.classify()`. The verified order is:
+This is implemented in `src/services/stream_parser/LineClassifierServiceImpl.ts` as `LineClassifierServiceImpl.classify()`. The verified order is:
 
 1. **Length / empty / binary gate** (`classifier.ts:63-74`) — empty → rubbish `length-gate`; `> 64 KB` → `uncertain`; non-printable ratio `> 0.3` → rubbish `binary-gate`. Declined locally, never AI.
 2. **Header capture** (first data line only, `classifier.ts:78-85`, `detectHeader` at `:353`) — a genuine header row is detected, used to build a name→column map, and **declined itself** (rubbish `header`), never emitted as a data row.
@@ -53,9 +53,9 @@ Before commit `de5299b`, the stream parser did not run the designed classifier a
 
 ### Gap 1 — `formatDetector` bypassed the classifier, template registry, and AI
 
-Commit `0507455` had added `src/shared/formatDetector.ts` (`parseLine` classifying each line as BINARY/JSON/TWITTER_USER/CSV). In `stream_parser/handler.ts` it ran **first**: BINARY → dropped rubbish; JSON and TWITTER_USER → parsed **directly** into Parquet with hardcoded `templateId` `"json"`/`"twitter_user"`, dumping `...sanitizedRow` (every parsed key), bypassing `LineClassifier`, the template registry, and the AI path; only CSV fell through to the classifier. Consequences: extraction was not `field_spec`-targeted for JSON/Twitter (rule 3 violated), no template was ever learned for those shapes (rule 1 violated), and `parseTwitterUserLine` truncated any name/email containing `-`.
+Commit `0507455` had added `src/shared/formatDetector.ts` (`parseLine` classifying each line as BINARY/JSON/TWITTER_USER/CSV). In `stream_parser/handler.ts` it ran **first**: BINARY → dropped rubbish; JSON and TWITTER_USER → parsed **directly** into Parquet with hardcoded `templateId` `"json"`/`"twitter_user"`, dumping `...sanitizedRow` (every parsed key), bypassing `LineClassifierServiceImpl`, the template registry, and the AI path; only CSV fell through to the classifier. Consequences: extraction was not `field_spec`-targeted for JSON/Twitter (rule 3 violated), no template was ever learned for those shapes (rule 1 violated), and `parseTwitterUserLine` truncated any name/email containing `-`.
 
-**Fix (verified):** `handler.ts` no longer imports `formatDetector`; it constructs one `LineClassifier` per job (`handler.ts:202`) and routes **every** line through `classifier.classify(line, byteOffset, byteLength)` (`handler.ts:226`). JSON and key-value shapes are now handled by the classifier's structural recognizers, which extract only `field_spec` fields.
+**Fix (verified):** `handler.ts` no longer imports `formatDetector`; it constructs one `LineClassifierServiceImpl` per job (`handler.ts:202`) and routes **every** line through `classifier.classify(line, byteOffset, byteLength)` (`handler.ts:226`). JSON and key-value shapes are now handled by the classifier's structural recognizers, which extract only `field_spec` fields.
 
 ### Gap 2 — `field_spec` was silently ignored / dropped
 
@@ -79,7 +79,7 @@ The first cut of this refactor went through a multi-agent adversarial review tha
 
 The design's centerpiece is: an unknown line triggers a **synchronous** AI call from inside the streaming pass, the verdict is cached as a template, and the parser acts on it — so the very lines the AI is meant to learn from are the ones it sees. **This is intentionally not wired.** The hot loop calls only the deterministic `classifier.classify()`; unmatched lines return `uncertain` and are dead-lettered to `fpp-line-dlq`. The retry service picks them up out-of-band: `src/services/retry/RetryServiceHandler.ts:52` routes `FailureClass.UNCERTAIN` straight to `updateDeadLetterStatus(dlq_id, "review")` (`retry/handler.ts:137`) — i.e. human review, not AI. The scaffolding for in-loop AI exists but is dormant:
 
-- `LineClassifier.classifyWithAI` / `classifyWithTimeout` (`classifier.ts:150-179`) — never called from `handler.ts`.
+- `LineClassifierServiceImpl.classifyWithAI` / `classifyWithTimeout` (`classifier.ts:150-179`) — never called from `handler.ts`.
 - `AIRateLimiter` is defined and instantiated in `stream_parser/handler.ts:58,102`, but its `acquire()` is never awaited on the parse path.
 - The AI is reached (from the retry side and via in-process dynamic `import("../ai_classifier/handler.js")`, `classifier.ts:162`) only for encoding/transform/extraction/type-mismatch retries — not for `uncertain`.
 

@@ -30,29 +30,3 @@ export interface IClassifier
 
   classifyWithTimeout(line: string, contextLines: string[], timeoutMs: number, remainingBudget?: number): Promise<ClassifyResult>;
 }
-
-
-/**
- * Verdicts returned by the AI classifier backend.
- */
-export enum AIVerdict {
-  RECORD_TEMPLATE = "record-template",
-  RUBBISH_SIGNATURE = "rubbish-signature",
-  UNCERTAIN = "uncertain",
-}
-
-/**
- * Result of matching a line against a delimited/CSV representation.
- */
-export interface DelimitedRecordResult {
-  row: Record<string, unknown>;
-  usedHeader: boolean;
-}
-
-/**
- * Result of matching a line against a structural (JSON/KV/XML/YAML) representation.
- */
-export interface StructuralRecordResult {
-  row: Record<string, unknown>;
-  template_id: string;
-}

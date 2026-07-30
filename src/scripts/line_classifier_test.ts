@@ -1,5 +1,5 @@
 /**
- * LineClassifier unit tests – no GCP/DB/AI needed.
+ * LineClassifierServiceImpl unit tests – no GCP/DB/AI needed.
  * Usage: npx tsx src/scripts/line_classifier_test.ts
  *
  * Covers the recent parser improvements:
@@ -10,7 +10,7 @@
  */
 
 import assert from "node:assert/strict";
-import { LineClassifier } from "../services/stream-parser/LineClassifier.js";
+import { LineClassifier } from "../services/stream-parser/LineClassifierServiceImpl.js";
 import { ClassifyResult } from "../services/stream-parser/io/IClassifier.js";
 
 let _passed = 0, _failed = 0;
