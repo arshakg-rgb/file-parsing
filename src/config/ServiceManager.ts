@@ -73,8 +73,6 @@ export class ServiceManager {
   }
 }
 
-function Enforce(): void {}
-
-export { Enforce };
+export function Enforce(): void {}
 
 export default ServiceManager;

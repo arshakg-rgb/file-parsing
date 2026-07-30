@@ -477,7 +477,7 @@ export class StreamParserService {
     const recordTemplates = templateRegistry.getAllRecordTemplates();
     const rubbishTemplates = templateRegistry.getAllRubbishTemplates();
     const columnMap = (msg as unknown as Record<string, unknown>).column_map as ColumnMap | undefined;
-    const classifier = new LineClassifierServiceImpl(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, this.getAIRateLimiter());
+    const classifier = LineClassifierServiceImpl.getInstance(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, this.getAIRateLimiter());
     const outputManager = new OutputManager();
     const csvWriter = new CsvOutputWriter(jobId, fieldSpec);
     const dlqManager = DLQManager.getInstance();

@@ -8,25 +8,42 @@ import { AIVerdict, ClassifyRequest } from "@service/ai-classifier/io/IAiClassif
 import {ClassifyResponse, ClassifyResult, IClassifier} from "@service/stream-parser/io/IClassifier.js";
 import {aiClassifierService} from "@service/ai-classifier/AiClassifierServiceHandler.js";
 import SafeRegexUtils from "@utils/validator/SafeRegex";
+import {InstantiationError} from "@errors/InstantiationError.js";
+import { Enforce } from "@config/ServiceManager.js";
 
 export type { ClassifyResult } from "@service/stream-parser/io/IClassifier.js";
 
+/**
+ * Minimal shape required of an AI-call rate limiter: something whose `acquire()` can be
+ * awaited before making an AI request. Named so the shape isn't repeated at every use site.
+ */
+export interface AiRateLimiter
+{
+  acquire(): Promise<void>;
+}
+
 export class LineClassifierServiceImpl implements IClassifier
 {
-  private jobId: string;
-  private fieldSpec: string[];
-  private recordTemplates: RecordTemplate[];
-  private rubbishTemplates: RubbishTemplate[];
-  private aiCache: Map<string, RecordTemplate | RubbishTemplate>;
+  /**
+   * Singleton instance
+   * @private
+   */
+  protected static instance: LineClassifierServiceImpl;
+
+  private readonly jobId: string;
+  private readonly fieldSpec: string[];
+  private readonly recordTemplates: RecordTemplate[];
+  private readonly rubbishTemplates: RubbishTemplate[];
+  private readonly aiCache: Map<string, RecordTemplate | RubbishTemplate>;
   private headerMap: Record<string, number> | null = null;
   private headerParts: string[] | null = null;
-  private columnMap: ColumnMap | null = null;
+  private readonly columnMap: ColumnMap | null = null;
   private firstLine: boolean = true;
-  private logger: pino.Logger;
-  private normalizedFieldSpec: string[];
-  private aliasMap: Map<string, Set<string>>;
-  private aiRateLimiter?: { acquire(): Promise<void> };
-  private defaultMinMatches!: number;
+  private readonly logger: pino.Logger;
+  private readonly normalizedFieldSpec: string[];
+  private readonly aliasMap: Map<string, Set<string>>;
+  private readonly aiRateLimiter?: AiRateLimiter;
+  private readonly defaultMinMatches: number;
   private static readonly ALIASES: Record<string, string[]> = {
     email: ["email", "mail", "emailaddress", "e_mail", "emails"],
     name: ["name", "fullname", "full_name"],
@@ -72,9 +89,10 @@ export class LineClassifierServiceImpl implements IClassifier
    */
 
   private static readonly JSON_SAFE = JSONbig({ storeAsString: true });
-  private normalizeKeyCache: Map<string, string> = new Map<string, string>();
+  private readonly normalizeKeyCache: Map<string, string> = new Map<string, string>();
 
   /**
+   * @param enforce - A function to enforce the Singleton pattern
    * @param jobId - Identifier of the job this classifier instance is bound to; used for logging and AI requests.
    * @param fieldSpec - Ordered list of target field names the classifier should extract from every line.
    * @param recordTemplates - Learned record templates (local + previously AI-discovered) available for matching.
@@ -84,8 +102,13 @@ export class LineClassifierServiceImpl implements IClassifier
    * @returns A new LineClassifierServiceImpl instance configured for the given job and field spec.
    */
 
-  public constructor(jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: { acquire(): Promise<void> } | null)
+  public constructor(enforce: () => void, jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: AiRateLimiter | null)
   {
+    if (enforce !== Enforce)
+    {
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate LineClassifierServiceImpl directly. Use getInstance()");
+    }
+
     this.jobId = jobId;
     this.fieldSpec = fieldSpec;
     this.recordTemplates = recordTemplates;
@@ -105,6 +128,21 @@ export class LineClassifierServiceImpl implements IClassifier
     }
 
     this.defaultMinMatches = Math.max(1, Math.ceil(fieldSpec.filter((f) => f !== "meta").length * 0.75));
+  }
+
+  /**
+   * Gets the single instance of the LineClassifierServiceImpl class.
+   * @returns The single instance of the class
+   */
+
+  public static getInstance(jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: AiRateLimiter | null): LineClassifierServiceImpl
+  {
+    if (!LineClassifierServiceImpl.instance)
+    {
+      LineClassifierServiceImpl.instance = new LineClassifierServiceImpl(Enforce, jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, aiRateLimiter);
+    }
+
+    return LineClassifierServiceImpl.instance;
   }
 
   /**
@@ -317,7 +355,7 @@ export class LineClassifierServiceImpl implements IClassifier
       return {verdict: "uncertain", failure_class: FailureClass.UNCERTAIN};
     }
 
-    const coerced: Record<string, unknown> = this.coerce(extracted.row);
+    const coerced: Record<string, unknown> | null = this.coerce(extracted.row);
 
     if (coerced)
     {
@@ -429,6 +467,21 @@ export class LineClassifierServiceImpl implements IClassifier
   }
 
   /**
+   * Checks whether a rubbish template's signature matches `line` at or above the configured
+   * confidence threshold. Shared by the synchronous rubbish-template stage and the AI-cache
+   * resolution path so the acceptance rule can't drift between the two call sites.
+   *
+   * @param t - The rubbish template to test.
+   * @param line - The raw line to test the signature against.
+   * @returns `true` if `t.confidence` meets `settings.RUBBISH_CONFIDENCE_MIN` and `t.signature` matches `line`.
+   */
+
+  private matchesRubbishSignature(t: RubbishTemplate, line: string): boolean
+  {
+    return (t.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && SafeRegexUtils.safeRegexTest(t.signature, line);
+  }
+
+  /**
    * Stage: known high-confidence rubbish templates, then AI-cached rubbish.
    *
    * @param line - The raw line to test against rubbish signatures.
@@ -440,13 +493,13 @@ export class LineClassifierServiceImpl implements IClassifier
   {
     for (const t of this.rubbishTemplates)
     {
-      if ((t.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && SafeRegexUtils.safeRegexTest(t.signature, line))
+      if (this.matchesRubbishSignature(t, line))
       {
         return { verdict: "rubbish", template_id: t.template_id };
       }
     }
 
-    if (cached && "signature" in cached && (cached.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && SafeRegexUtils.safeRegexTest(cached.signature, line))
+    if (cached && "signature" in cached && this.matchesRubbishSignature(cached, line))
     {
       return { verdict: "rubbish", template_id: cached.template_id };
     }
@@ -467,7 +520,7 @@ export class LineClassifierServiceImpl implements IClassifier
 
   private finalizeParsedOrReject(row: Record<string, unknown>, templateId: string, templateVersion?: number): ClassifyResult
   {
-    const coerced: Record<string, unknown> = this.coerce(row);
+    const coerced: Record<string, unknown> | null = this.coerce(row);
 
     if (!coerced)
     {
@@ -629,7 +682,7 @@ export class LineClassifierServiceImpl implements IClassifier
 
       if (aiRow && typeof aiRow === "object" && !Array.isArray(aiRow))
       {
-        const coerced: Record<string, unknown> = this.coerce(aiRow);
+        const coerced: Record<string, unknown> | null = this.coerce(aiRow);
 
         if (coerced)
         {
@@ -648,7 +701,7 @@ export class LineClassifierServiceImpl implements IClassifier
 
     if (extracted)
     {
-      const coerced: Record<string, unknown> = this.coerce(extracted.row);
+      const coerced: Record<string, unknown> | null = this.coerce(extracted.row);
 
       if (coerced)
       {
@@ -731,7 +784,7 @@ export class LineClassifierServiceImpl implements IClassifier
   {
     if ("signature" in tmpl)
     {
-      if ((tmpl.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && SafeRegexUtils.safeRegexTest(tmpl.signature, line))
+      if (this.matchesRubbishSignature(tmpl, line))
       {
         return { verdict: "rubbish", template_id: tmpl.template_id };
       }
@@ -1084,11 +1137,11 @@ export class LineClassifierServiceImpl implements IClassifier
 
       if (Array.isArray(v))
       {
-        const allObjects: boolean = v?.length > 0 && v?.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
+        const allObjects: boolean = v.length > 0 && v.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
 
         if (allObjects)
         {
-          for (let i = 0; i < v?.length; i++)
+          for (let i = 0; i < v.length; i++)
           {
             Object.assign(out, this.flattenObject(v[i] as Record<string, unknown>, `${key}[${i}]`));
           }
@@ -2146,7 +2199,7 @@ export class LineClassifierServiceImpl implements IClassifier
    * @returns The coerced row with normalized values, or `null` if any field is rejected for binary corruption.
    */
 
-  private coerce(row: Record<string, unknown>): Record<string, unknown>
+  private coerce(row: Record<string, unknown>): Record<string, unknown> | null
   {
     const out: Record<string, unknown> = {};
 
@@ -2183,12 +2236,12 @@ export class LineClassifierServiceImpl implements IClassifier
       else
       {
         const s: string = String(v).trim();
-        const binaryChars: any[] = s.match(LineClassifierServiceImpl.BINARY_RE) || [];
+        const binaryChars: string[] = s.match(LineClassifierServiceImpl.BINARY_RE) || [];
         const binaryCount: number = binaryChars.filter((c) => c !== "\t" && c !== "\n" && c !== "\r").length;
 
         if (s.length > 0 && binaryCount / s.length > LineClassifierServiceImpl.BINARY_RATIO_MAX)
         {
-          return null as unknown as Record<string, unknown>;
+          return null;
         }
         out[k] = s;
       }

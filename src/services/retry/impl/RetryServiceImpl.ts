@@ -1,6 +1,5 @@
 import pino from "pino";
-import Config from "@config/system-config/Config.js";
-import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { DeadLetterAttributes } from "@config/db/models/DeadLetter.js";
@@ -13,7 +12,7 @@ import { RetryRequest, RetryResponse } from "@service/retry/io/IRetry.js";
 import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
 import {ClassifyResult} from "@service/stream-parser/io/IClassifier";
-import {LineClassifierServiceImpl} from "@service/stream-parser/impl/LineClassifierServiceImpl";
+import {LineClassifierServiceImpl} from "@service/stream-parser/impl/LineClassifierServiceImpl.js";
 
 /**
  * RetryServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -202,7 +201,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     const fieldSpec = await this.getFieldSpec(msg.job_id);
     const recordTemplates = templateRegistry.getAllRecordTemplates();
     const rubbishTemplates = templateRegistry.getAllRubbishTemplates();
-    const classifier = new LineClassifierServiceImpl(
+    const classifier = LineClassifierServiceImpl.getInstance(
       msg.job_id,
       fieldSpec,
       recordTemplates,
@@ -334,5 +333,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService {
     }
   }
 }
+
+function Enforce(): void {}
 
 export default RetryServiceImpl;
