@@ -94,7 +94,7 @@ Cached-template matching is local and cheap. A match-rate monitor (`src/services
 The system is eight *logical* services. Deployment packaging is a separate question (see §7 open question 9).
 
 ### 4.1 Job Service — the spine
-`src/services/job_service/` (`router.ts`, `stateMachine.ts`, `finalize.ts`, `main.ts`)
+`src/services/job_service/` (`router.ts`, `StateMachineImpl.ts`, `finalize.ts`, `main.ts`)
 
 - Owns the job **state machine** and the `parse_jobs` table.
 - Issues **presigned PUT** URLs for uploads (`presignedPutUrl`, returned as `presigned_put_url` on `POST /jobs`, HTTP `202`).
@@ -175,7 +175,7 @@ Types live in `src/shared/models/` (`job.ts`, `template.ts`, `events.ts`). Names
 - **`TraceRecord`** — written atomically with each parsed record: `s3_url`, `byte_offset` + `byte_length`, `record_index`, `line_no`, `job_id`, `part_id`, `template_id` + `template_version`, `checksum`, `parsed_at`.
 
 ### 5.1 Job state machine
-Defined in `src/shared/models/job.ts` (`VALID_TRANSITIONS`, `TERMINAL_STATUSES`) and driven by `stateMachine.ts`:
+Defined in `src/shared/models/job.ts` (`VALID_TRANSITIONS`, `TERMINAL_STATUSES`) and driven by `StateMachineImpl.ts`:
 
 ```
 queued → ingesting [→ awaiting_password] → detecting → parsing

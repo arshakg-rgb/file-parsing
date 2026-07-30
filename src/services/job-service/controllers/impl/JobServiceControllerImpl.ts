@@ -7,7 +7,7 @@ import {
   ICreateJobRequest,
   IProvidePasswordRequest,
   IMarkFailedRequest,
-  IRetryJobRequest, ICreateJobResponse, IStuckJobsResponse, IJobResponse,
+  IRetryJobRequest, ICreateJobResponse, IStuckJobsResponse, IJobResponse, IJobLogEntry,
 } from "@service/job-service/io/IJob.js";
 import { ServiceResponse } from "@utils/response/ServiceResponse.js";
 import { HttpError } from "@errors/HttpError.js";
@@ -241,6 +241,26 @@ export class JobControllerImpl implements JobServiceController
       await this.service.retryJob(String(req.params.job_id), request);
 
       this.handleSuccessResponse(res, {}, false, 204);
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  };
+
+  /**
+   * @param req - The request object.
+   * @param res - The response object.
+   * @param next - The next middleware function.
+   */
+
+  public getJobLogs: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      const result: IJobLogEntry[] = await this.service.getJobLogs(String(req.params.job_id));
+
+      this.handleSuccessResponse(res, result);
     }
     catch (err)
     {

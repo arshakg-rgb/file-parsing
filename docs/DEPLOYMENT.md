@@ -165,7 +165,7 @@ Context for what the running instance *should* be doing once the stale deploy is
 
 - `0d11495` — Fix encoding detection (`ERR_UNKNOWN_ENCODING` for latin-1/iso-8859-1/cp1252/etc.); decode via `TextDecoder`; prefer UTF-8 over low-confidence jschardet guesses. New `src/shared/encoding.ts`.
 - `de5299b` — stream_parser now follows the designed ordered classifier flow (length/binary gate → header capture → record templates → structural JSON/kv recognizers → rubbish → validated CSV → uncertain). Extracts only `field_spec` fields; declines junk; removed the `formatDetector` bypass and greedy positional csv-auto. Hardened via a 26-agent adversarial review (20 bugs fixed).
-- `79d5cca` — Fix `field_spec` JSONB insert (`invalid input syntax for type json`): `JSON.stringify` the array before binding (`router.ts` + `stateMachine.ts`).
+- `79d5cca` — Fix `field_spec` JSONB insert (`invalid input syntax for type json`): `JSON.stringify` the array before binding (`router.ts` + `StateMachineImpl.ts`).
 - `4463d80` — Line-splitting recovery for stray/unbalanced quotes (`gcsUtils` scanLines; `MAX_QUOTED_NEWLINES` default 0, `MAX_LINE_BYTES` cap) + per-job CSV writer (`src/shared/csvOutputWriter.ts` → `gs://$DATA_BUCKET/output/<jobId>.csv`).
 - `4091092` + `c7d7388` — Trimmed `cloudbuild.yaml` to the 4 test services; disabled the other 5 (see §3).
 - `8b8f91d` + `81ab663` — Switched `ci-cd.yml` to `workflow_dispatch`-only (see §5).

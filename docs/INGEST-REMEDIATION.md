@@ -85,7 +85,7 @@ These are the foundation. Most change-units are thin call-site edits on top of o
   Excludes the current entry from the `SUM`. Fixes `[15]`: today `markPendingEntryProcessing` runs *before* `getPendingEntryTotalSize`, whose SQL sums `status IN ('completed', 'processing')` (`db.ts:192`), so the current entry is counted twice and any single async entry over ~5 GB is rejected as a bomb (entry + entry > 10 GB) and loops forever.
 
 - **Deterministic `childJobId` via `uuidv5` + `UNIQUE(parent_job_id, source_ref)` + `ON CONFLICT DO NOTHING`**
-  Makes child-job creation idempotent. Fixes `[19]`: today `createChildJob` (`stateMachine.ts:114`) generates a fresh `randomUUID` (`stateMachine.ts:117`) with no unique key, so an `ENTRY_DISCOVERED` redelivery inserts a duplicate child that re-parses and re-loads the entry. This is a prerequisite for `[16]` and `[20]`.
+  Makes child-job creation idempotent. Fixes `[19]`: today `createChildJob` (`StateMachineImpl.ts:114`) generates a fresh `randomUUID` (`StateMachineImpl.ts:117`) with no unique key, so an `ENTRY_DISCOVERED` redelivery inserts a duplicate child that re-parses and re-loads the entry. This is a prerequisite for `[16]` and `[20]`.
 
 - **`ingestGuardDecision(status, override, ageMs)`**
   Centralizes the idempotency decision: skip **all** post-`QUEUED`/`AWAITING_PASSWORD` states (kills DONE re-extraction), honor a manual override, and allow re-ingest of a stale `INGESTING` job. Fixes `[16]` (today `handleIngest` short-circuits only on `INGESTING`/`FAILED` at `handler.ts:54,59` then acks, so redelivery after DONE re-extracts and duplicates every child, and a mid-extraction crash acks the message and strands the job in `INGESTING`); reused by `[7]`.
@@ -119,8 +119,8 @@ These are the foundation. Most change-units are thin call-site edits on top of o
 
 | CU | Fixes | Summary | Depends on |
 |----|-------|---------|-----------|
-| **CU7** | `[26][14]` | Write RAR entries to `DATA_BUCKET` instead of the source archive bucket (today `entryKey = archive/${jobId}/${file.name}` is written to `bucket` at `IngestServiceImpl.ts:274`, causing 403s on read-only customer buckets); and fix the `batchId` → `batch_id` mismatch (emitters send camelCase `batchId` at `IngestServiceImpl.ts:384,241`; readers expect `batch_id` per `events.ts:46` and `stateMachine.ts:128`, so archive children get `batch_id = NULL`). | — |
-| **CU8** | `[23]` | Re-run archive detection on `.gz`/nested/depth-1 entries instead of routing them straight to CLASSIFY (`stateMachine.ts:144`). | CU6 |
+| **CU7** | `[26][14]` | Write RAR entries to `DATA_BUCKET` instead of the source archive bucket (today `entryKey = archive/${jobId}/${file.name}` is written to `bucket` at `IngestServiceImpl.ts:274`, causing 403s on read-only customer buckets); and fix the `batchId` → `batch_id` mismatch (emitters send camelCase `batchId` at `IngestServiceImpl.ts:384,241`; readers expect `batch_id` per `events.ts:46` and `StateMachineImpl.ts:128`, so archive children get `batch_id = NULL`). | — |
+| **CU8** | `[23]` | Re-run archive detection on `.gz`/nested/depth-1 entries instead of routing them straight to CLASSIFY (`StateMachineImpl.ts:144`). | CU6 |
 | **CU9** | `[9]` | Encrypted-ZIP: full 7z-decrypt path, or honest-failure variant per decision #2. | CU1 + CU2 (gated on decision #2) |
 | **CU10** | `[1]` | Fix or remove `POST /upload`. Today the object-key has a leading-slash writer↔reader mismatch (`http_server.ts:13`), it never inserts a `parse_jobs` row (so `GET /jobs/:id` 404s forever), sets the wrong `source_type` (`"s3"`), and buffers multipart in memory with no auth or size cap. Standalone. | — |
 
@@ -184,7 +184,7 @@ The ordering above is not a preference; violating it duplicates or drops user da
 | `src/services/ingest/http_server.ts` | `POST /upload` + health endpoint |
 | `src/services/ingest/SsrfGuard.ts` | `checkUrl` / `fetchUrlStream`, IP blocklist |
 | `src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts` | Async per-entry consumer; `handleArchiveEntry` (`:127`), `consumerLoop` (`:283`, invoked `:350`) |
-| `src/services/job_service/stateMachine.ts` | `createChildJob` (`:114`), event handling |
+| `src/services/job_service/StateMachineImpl.ts` | `createChildJob` (`:114`), event handling |
 | `src/shared/db.ts` | `getPendingEntryCount` (`:175`), `getPendingEntryTotalSize` (`:188`), pending-entry mutators |
 | `src/shared/queueUtils.ts` | `publishEvent` (`:263`), `sendRaw` (`:242`), `pubReceive` (`:120`) |
 | `src/shared/models/job.ts` | `JobStatus` enum, `VALID_TRANSITIONS` (`:30`) |

@@ -11,6 +11,7 @@ import type { ParsedRecordAttributes, ParsedRecordCreationAttributes } from "@co
 import type { RubbishLogAttributes, RubbishLogCreationAttributes } from "@config/db/models/RubbishLog.js";
 import type { TemplateAttributes, TemplateCreationAttributes } from "@config/db/models/Template.js";
 import type { SchemaMigrationAttributes, SchemaMigrationCreationAttributes } from "@config/db/models/SchemaMigration.js";
+import type { JobLogAttributes, JobLogCreationAttributes } from "@config/db/models/JobLog.js";
 import type { JobCounts } from "@shared/models/job.js";
 import type { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 
@@ -783,6 +784,48 @@ export class SchemaMigrationRepository {
 }
 
 /**
+ * JobLogRepository is responsible for the job_logs audit trail: crashes (with
+ * the stage they occurred in), templates matched, and drop/DLQ counts.
+ */
+export class JobLogRepository {
+    /**
+   * Constructs a new JobLogRepository instance.
+   * @param models - The models
+   */
+  constructor(private models: DatabaseModels) {}
+
+    /**
+   * Gets the job log.
+   */
+  private get JobLog() {
+    return this.models.JobLog;
+  }
+
+    /**
+   * Records a job log entry.
+   * @param data - The data to process
+   * @returns A promise that resolves to the result
+   */
+  async log(data: JobLogCreationAttributes): Promise<JobLogAttributes> {
+    const row = await this.JobLog.create(data);
+    return row.get({ plain: true }) as JobLogAttributes;
+  }
+
+    /**
+   * Finds all log entries for a job, oldest first.
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the list
+   */
+  async findByJob(jobId: string): Promise<JobLogAttributes[]> {
+    return (await this.JobLog.findAll({
+      where: { job_id: jobId },
+      order: [["created_at", "ASC"]],
+      raw: true,
+    })) as JobLogAttributes[];
+  }
+}
+
+/**
  * Repositories is responsible for repositories operations.
  */
 export class Repositories {
@@ -818,6 +861,10 @@ export class Repositories {
    * Schema Migrations
    */
   readonly schemaMigrations: SchemaMigrationRepository;
+    /**
+   * Job Logs
+   */
+  readonly jobLogs: JobLogRepository;
 
     /**
    * Constructs a new Repositories instance.
@@ -832,5 +879,6 @@ export class Repositories {
     this.rubbishLogs = new RubbishLogRepository(models);
     this.templates = new TemplateRepository(models);
     this.schemaMigrations = new SchemaMigrationRepository(models);
+    this.jobLogs = new JobLogRepository(models);
   }
 }

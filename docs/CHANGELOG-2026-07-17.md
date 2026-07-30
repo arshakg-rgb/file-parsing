@@ -83,7 +83,7 @@ handed Postgres something it could not parse as JSON, so every insert of a
 
 **Files touched.**
 - `router.ts`
-- `stateMachine.ts`
+- `StateMachineImpl.ts`
 
 **Verified.** `tsc` clean; offline suite still green.
 

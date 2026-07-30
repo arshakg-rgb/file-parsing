@@ -63,3 +63,15 @@ export interface IRetryJobRequest {
 export interface IMarkFailedRequest {
   reason?: string;
 }
+
+/**
+ * A single job_logs audit-trail entry.
+ */
+export interface IJobLogEntry {
+  event_type: string;
+  stage: string | null | undefined;
+  template_id: string | null | undefined;
+  message: string | null | undefined;
+  metadata: Record<string, unknown> | null | undefined;
+  created_at: Date | undefined;
+}

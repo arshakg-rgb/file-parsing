@@ -7,7 +7,7 @@ import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {receiveMessages, deleteMessage, QueueMessage} from "@shared/QueueService.js";
 import { JobEvent } from "@shared/models/events.js";
-import { handleEvent } from "@service/job-service/stateMachine.js";
+import { handleEvent } from "@service/job-service/StateMachineImpl.js";
 import { JobServiceRouter } from "@service/job-service/JobServiceRouter.js";
 import { createTables } from "@shared/DatabaseManager.js";
 import {

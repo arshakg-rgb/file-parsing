@@ -16,6 +16,7 @@ import ParsedRecord from "./models/ParsedRecord.js";
 import RubbishLog from "./models/RubbishLog.js";
 import Template from "./models/Template.js";
 import SchemaMigration from "./models/SchemaMigration.js";
+import JobLog from "./models/JobLog.js";
 import type { DatabaseModels } from "./models/index.js";
 import { Repositories } from "./repositories/index.js";
 import {IDatabaseConfig} from "@config/system-config/io/IDatabaseConfig.js";
@@ -268,6 +269,7 @@ export class PostgreSqlManager extends ServiceManager
           RubbishLog,
           Template,
           SchemaMigration,
+          JobLog,
         };
         this.sequelize.addModels(Object.values(this._models));
       }

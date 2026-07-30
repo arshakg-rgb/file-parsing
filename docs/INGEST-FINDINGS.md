@@ -20,7 +20,7 @@ the `src/services/archive_entry_consumer/` worker that extracts individual archi
 asynchronously, the `src/scripts/reconciler.ts` stuck-job sweeper, and the shared plumbing they
 lean on (`src/shared/db.ts`, `src/shared/queueUtils.ts`, `src/shared/models/job.ts`,
 `src/shared/models/events.ts`, and the Job Service state machine in
-`src/services/job_service/stateMachine.ts`). Findings are grouped A–E by theme, ordered by ID
+`src/services/job_service/StateMachineImpl.ts`). Findings are grouped A–E by theme, ordered by ID
 within each group, and every entry carries a severity, a concrete `file:line` anchor, and a failure
 scenario written so a new engineer can see exactly how it goes wrong. The counts: **7 critical, 14
 high, 11 medium.**
@@ -186,10 +186,10 @@ right one, and the job still fails as if no password were available.
 
 **Anchors:** emitters use camelCase `batchId` at `src/services/ingest/IngestServiceImpl.ts:384` and `:241`;
 readers expect snake_case `batch_id` at `src/shared/models/events.ts:46` and
-`src/services/job_service/stateMachine.ts:124,128`.
+`src/services/job_service/StateMachineImpl.ts:124,128`.
 
 The archive path emits events keyed `batchId`, but the event model and the state machine read
-`batch_id`. The `INSERT` at `stateMachine.ts:124-128` binds `data.batch_id`, which is `undefined`
+`batch_id`. The `INSERT` at `StateMachineImpl.ts:124-128` binds `data.batch_id`, which is `undefined`
 for these events. Archive children are therefore written with `batch_id = NULL` and drop out of the
 batch rollup.
 **Failure scenario:** a multi-file archive is expanded, but its children never associate with the
@@ -208,7 +208,7 @@ the job reports it found nothing to extract.
 
 ### [23] MEDIUM — `.gz` and nested entries bypass intake normalization
 
-**Anchors:** `src/services/job_service/stateMachine.ts` `createChildJob` (~line 114-144) routes
+**Anchors:** `src/services/job_service/StateMachineImpl.ts` `createChildJob` (~line 114-144) routes
 straight to `CLASSIFY`.
 
 `createChildJob` sends child entries directly to the CLASSIFY stage instead of routing them back
@@ -310,7 +310,7 @@ re-expanded and every child job is created a second time.
 
 ### [19] HIGH — `createChildJob` is not idempotent
 
-**Anchors:** `src/services/job_service/stateMachine.ts:117` (`const childId = randomUUID()`),
+**Anchors:** `src/services/job_service/StateMachineImpl.ts:117` (`const childId = randomUUID()`),
 insert at `:124`.
 
 `createChildJob` mints a fresh `randomUUID()` for each invocation and there is no unique constraint

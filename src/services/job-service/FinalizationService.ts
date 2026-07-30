@@ -36,8 +36,24 @@ class FinalizationService {
       try {
         const groupPaths = await this.mergeGroup(jobId, group, bucket);
         if (groupPaths?.length) mergedPaths.push(...groupPaths);
+        await repositories.jobLogs.log({
+          job_id: jobId,
+          event_type: "template_used",
+          stage: "finalize",
+          template_id: group.templateId,
+          message: null,
+          metadata: { part_count: group.paths.length, output_count: groupPaths?.length ?? 0 },
+        });
       } catch (err) {
         this.logger.error({ jobId, templateId: group.templateId, error: String(err) }, "finalize_merge_failed");
+        await repositories.jobLogs.log({
+          job_id: jobId,
+          event_type: "crashed",
+          stage: "finalize",
+          template_id: group.templateId,
+          message: String(err),
+          metadata: { part_count: group.paths.length },
+        });
         return { failed: true, paths: partPaths, error: String(err) };
       }
     }

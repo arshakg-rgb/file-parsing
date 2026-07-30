@@ -8,10 +8,10 @@ import type { ParseJobRow } from "@shared/DatabaseManager.js";
 import { SourceType, JobStatus, JobTimings, JobCounts } from "@shared/models/job.js";
 import { sendRaw } from "@shared/QueueService.js";
 import { presignedPutUrl, parseGcsUrl, objectSize } from "@shared/GcsUtils.js";
-import { transition } from "@service/job-service/stateMachine.js";
+import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
-import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest } from "@service/job-service/io/IJob.js";
+import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry } from "@service/job-service/io/IJob.js";
 import {HttpError} from "@errors/HttpError.js";
 import {ServerError} from "@errors/ServerError.js";
 import {ParseJob, IParseJob, ParseJobAttributes} from "@config/db/models";
@@ -439,6 +439,36 @@ export class JobServiceImpl implements JobService
       throw new ServerError(ServerError.CONFLICT, err instanceof Error ? err.message : String(err));
     }
     await sendRaw(queueUrl, message);
+  }
+
+  /**
+   * Retrieves the audit-trail log entries for a job: crashes (with the stage
+   * they occurred in), which templates were used, and drop/DLQ counts.
+   *
+   * @param jobId - The unique identifier of the job.
+   * @returns The list of log entries for the job, oldest first.
+   * @throws HttpError if the job does not exist.
+   */
+
+  public async getJobLogs(jobId: string): Promise<IJobLogEntry[]>
+  {
+    const row: IParseJob = await this.postgreSqlManager.repositories.jobs.findById(jobId);
+
+    if (!row)
+    {
+      throw new HttpError(HttpError.NOT_FOUND, "Job not found");
+    }
+
+    const rows = await this.postgreSqlManager.repositories.jobLogs.findByJob(jobId);
+
+    return rows.map((log) => ({
+      event_type: log.event_type,
+      stage: log.stage,
+      template_id: log.template_id,
+      message: log.message,
+      metadata: log.metadata,
+      created_at: log.created_at,
+    }));
   }
 }
 

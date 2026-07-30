@@ -62,6 +62,9 @@ export class JobServiceRouter extends CustomRouter
 
     this.route("/jobs/:job_id/retry")
       .post(this.controller.retryJob);
+
+    this.route("/jobs/:job_id/logs")
+      .get(this.controller.getJobLogs);
   }
 }
 

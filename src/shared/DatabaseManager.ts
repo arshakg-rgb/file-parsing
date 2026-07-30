@@ -4,6 +4,7 @@ import type { ParseJobAttributes } from "@config/db/models/ParseJob.js";
 import type { OutputPartAttributes } from "@config/db/models/OutputPart.js";
 import type { DeadLetterAttributes } from "@config/db/models/DeadLetter.js";
 import type { PendingArchiveEntryAttributes } from "@config/db/models/PendingArchiveEntry.js";
+import type { JobLogAttributes } from "@config/db/models/JobLog.js";
 
 /**
  * Database manager instance
@@ -31,6 +32,7 @@ export type ParseJobRow = ParseJobAttributes;
 export type OutputPartRow = OutputPartAttributes;
 export type DeadLetterRow = DeadLetterAttributes;
 export type PendingArchiveEntryRow = PendingArchiveEntryAttributes;
+export type JobLogRow = JobLogAttributes;
 
 // Re-export functions as wrappers around the repository layer
 export async function waitForDb(): Promise<void> {
