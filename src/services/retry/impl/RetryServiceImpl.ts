@@ -6,7 +6,7 @@ import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { DeadLetterAttributes } from "@config/db/models/DeadLetter.js";
 import { DLQMessage, DLQStatus, FailureClass, JobStatus, LoadMessage } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, sendMessage } from "@shared/QueueService.js";
-import { ClassifyResult, LineClassifier } from "@service/stream_parser/LineClassifier.js";
+import { ClassifyResult, LineClassifier } from "@service/stream-parser/LineClassifier.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { metrics } from "@utils/response/metrics.js";

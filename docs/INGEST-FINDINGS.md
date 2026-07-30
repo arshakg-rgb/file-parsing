@@ -15,7 +15,7 @@ This document is a map of everything currently wrong with the parser's *ingest p
 that pulls a source file in (from a URL, S3/GCS object, or an HTTP upload), normalizes it, and, if
 it is an archive (ZIP / TAR / 7z / RAR / gzip), expands it into child entries that flow downstream
 to classification, parsing, loading, and reporting. The review covered five subsystems:
-`src/services/ingest/` (the `handler.ts`, `normalizer.ts`, `http_server.ts`, and `ssrf_guard.ts`),
+`src/services/ingest/` (the `handler.ts`, `IngestServiceImpl.ts`, `http_server.ts`, and `SsrfGuard.ts`),
 the `src/services/archive_entry_consumer/` worker that extracts individual archive entries
 asynchronously, the `src/scripts/reconciler.ts` stuck-job sweeper, and the shared plumbing they
 lean on (`src/shared/db.ts`, `src/shared/queueUtils.ts`, `src/shared/models/job.ts`,
@@ -60,13 +60,13 @@ to be transient and never logged; entry names come straight from an attacker-con
 
 ### [0] CRITICAL — Archive passwords leak four different ways
 
-**Anchors:** `src/services/ingest/normalizer.ts:148,280,519,561`;
-`src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:80,83`; `src/services/ingest/normalizer.ts:151`;
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts:148,280,519,561`;
+`src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:80,83`; `src/services/ingest/IngestServiceImpl.ts:151`;
 `src/services/job_service/JobServiceRouter.ts:150-154`; `src/services/ingest/IngestServiceHandler.ts:19` (module-global
-`_passwordCache`); `src/services/ingest/normalizer.ts:246`.
+`_passwordCache`); `src/services/ingest/IngestServiceImpl.ts:246`.
 
 The RAR path shells out to `unrar` and passes the password as a single `'-p' + password` argv
-token. That token is visible to any process on the box via `ps`. Concretely, in `normalizer.ts`
+token. That token is visible to any process on the box via `ps`. Concretely, in `IngestServiceImpl.ts`
 the list step does `listArgs.push('-p' + password)` (line ~148) and the extract step does
 `extractArgs.push('-p' + password)` (line ~280); the same pattern repeats in the encrypted-ZIP
 sniff at ~519/561 and in `archive_entry_consumer/handler.ts` at ~80. Four distinct leaks:
@@ -74,9 +74,9 @@ sniff at ~519/561 and in `archive_entry_consumer/handler.ts` at ~80. Four distin
 1. **`ps` visibility** — the password rides in `argv` to `spawn('unrar', ...)`.
 2. **Plaintext logs** — `archive_entry_consumer/handler.ts:83` logs `extract_args` (which contains
    `-p<password>`) via `logger.info("archive_entry_extract_start", { extract_args })`, and
-   `normalizer.ts:151` logs `listArgs` via `console.log("rar_list_starting", { args: listArgs })`.
+   `IngestServiceImpl.ts:151` logs `listArgs` via `console.log("rar_list_starting", { args: listArgs })`.
 3. **Persisted in queue/DLQ bodies** — the password is written into message payloads
-   (`job_service/router.ts:150-154`, `ingest/handler.ts`, `normalizer.ts:246` sets
+   (`job_service/router.ts:150-154`, `ingest/handler.ts`, `IngestServiceImpl.ts:246` sets
    `password: password || undefined` on the async entry message), so it lands in queue bodies and,
    on failure, the dead-letter queue.
 4. **Cached forever in memory** — `const _passwordCache = new Map<string, Buffer>()` at
@@ -90,7 +90,7 @@ produces, and lives in process memory for the container's lifetime.
 
 ### [2] CRITICAL — Arbitrary host-file read via symlink entries
 
-**Anchors:** `src/services/ingest/normalizer.ts:436` (`extractTarArchive`), `:452-454` (stat/read),
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts:436` (`extractTarArchive`), `:452-454` (stat/read),
 `:466` (`extract7z`), `:485-487` (stat/read).
 
 `extractTarArchive` and `extract7z` extract the whole archive to a temp tree, then walk it doing
@@ -104,7 +104,7 @@ extraction reads and exfiltrates the key into a user-readable artifact.
 
 ### [12] HIGH — `unrar` argument injection via entry names
 
-**Anchors:** `src/services/ingest/normalizer.ts:278`;
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts:278`;
 `src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:78`.
 
 Attacker-controlled entry names are passed positionally to `unrar` with **no `--` end-of-options
@@ -115,7 +115,7 @@ extraction behavior in attacker-chosen ways.
 
 ### [8] HIGH — SSRF DNS-rebinding TOCTOU (check-time vs fetch-time)
 
-**Anchors:** `src/services/ingest/ssrf_guard.ts:118` (`checkUrl` calls `dnsLookup`), `:136-137`
+**Anchors:** `src/services/ingest/SsrfGuard.ts:118` (`checkUrl` calls `dnsLookup`), `:136-137`
 (`fetchUrlStream` calls `checkUrl` then `fetch`).
 
 `checkUrl` resolves the hostname once via `dnsLookup` and validates that first address against
@@ -129,7 +129,7 @@ IPv6 ranges are also unimplemented.
 
 ### [22] MEDIUM — Unvalidated `gs://` source (no bucket allow-list)
 
-**Anchors:** `src/services/ingest/ssrf_guard.ts:97-100` (early `return` for `gs:`).
+**Anchors:** `src/services/ingest/SsrfGuard.ts:97-100` (early `return` for `gs:`).
 
 `checkUrl` short-circuits with `if (parsed.protocol === "gs:") return;` — any `gs://` source is
 trusted unconditionally. A `source_ref` of `gs://internal-bucket/secrets.json` is copied into
@@ -157,7 +157,7 @@ job — it 404s permanently and nothing downstream can act on it.
 
 ### [3] CRITICAL — `.gz` / `.7z` archives are never detected
 
-**Anchors:** `src/services/ingest/normalizer.ts:77` (`MAGIC_GZ`), `:78` (`MAGIC_7Z`), used at
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts:77` (`MAGIC_GZ`), `:78` (`MAGIC_7Z`), used at
 `:83-84`.
 
 The magic-byte constants are built from string literals: `const MAGIC_GZ = Buffer.from("\x1f\x8b")`
@@ -172,7 +172,7 @@ the classifier as raw compressed bytes.
 
 ### [9] HIGH — Encrypted-ZIP password is a no-op
 
-**Anchors:** `src/services/ingest/normalizer.ts:9` (`import NodeStreamZip`), `~:402` (extract with
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts:9` (`import NodeStreamZip`), `~:402` (extract with
 `password` option ignored).
 
 `node-stream-zip` v1 cannot decrypt AES/ZipCrypto entries; its `password` option is silently
@@ -184,7 +184,7 @@ right one, and the job still fails as if no password were available.
 
 ### [14] HIGH — `batchId` vs `batch_id` casing mismatch drops archive children from rollups
 
-**Anchors:** emitters use camelCase `batchId` at `src/services/ingest/normalizer.ts:384` and `:241`;
+**Anchors:** emitters use camelCase `batchId` at `src/services/ingest/IngestServiceImpl.ts:384` and `:241`;
 readers expect snake_case `batch_id` at `src/shared/models/events.ts:46` and
 `src/services/job_service/stateMachine.ts:124,128`.
 
@@ -197,7 +197,7 @@ parent batch — batch counts are wrong and completion logic misfires.
 
 ### [26] MEDIUM — RAR entries written to the wrong bucket
 
-**Anchors:** `src/services/ingest/normalizer.ts:274`;
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts:274`;
 `src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:74-75`.
 
 The extracted `entryKey` is written back into the **source archive bucket**, not `DATA_BUCKET`. On
@@ -342,7 +342,7 @@ lingers and blocks parent completion indefinitely.
 
 ### [27] MEDIUM — Async-route publish failure swallowed, row without a message
 
-**Anchors:** `src/services/ingest/normalizer.ts:246,250` (`createPendingArchiveEntry` then
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts:246,250` (`createPendingArchiveEntry` then
 `sendRaw`).
 
 On the async archive route, `createPendingArchiveEntry` can succeed while the subsequent `sendRaw`
@@ -354,7 +354,7 @@ told to extract it.
 
 ### [31] MEDIUM — DONE published mid-ingestion (registration race)
 
-**Anchors:** `src/services/ingest/normalizer.ts:237`.
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts:237`.
 
 A fast async entry can finish extracting before later entries of the *same* RAR have even been
 registered. During that gap `pending == 0`, which (via [5]'s counting) can trigger a premature
@@ -371,7 +371,7 @@ run bomb guards only after inflation, and leak temp files/handles on error paths
 
 ### [6] CRITICAL — Whole-archive / whole-body buffering, uncapped
 
-**Anchors:** `src/services/ingest/normalizer.ts:356` (`readFull`); URL fetch buffers via
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts:356` (`readFull`); URL fetch buffers via
 `Buffer.concat`.
 
 Only the RAR path streams. Everything else calls `readFull` (line ~356) to pull the whole archive
@@ -383,7 +383,7 @@ container, the message redelivers, and the pod crash-loops.
 
 ### [10] HIGH — Bomb guards run after full decompression; no per-entry cap for tar/7z
 
-**Anchors:** `src/services/ingest/normalizer.ts:429` (gz), `:411` (zip), `:446`
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts:429` (gz), `:411` (zip), `:446`
 (`extractTarArchive`), `:477` (`extract7z`) — `checkRatio` called after inflation.
 
 gz/zip/tar/7z all inflate fully to RAM or tmpfs *before* `checkRatio` is consulted, and there is no
@@ -394,7 +394,7 @@ guard can reject it.
 
 ### [11] HIGH — RAR: no ratio/entry guard, trusts declared sizes, silent drop
 
-**Anchors:** `src/services/ingest/normalizer.ts:231-266` (size decisions from listing),
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts:231-266` (size decisions from listing),
 streaming output.
 
 The streaming RAR path never calls `checkRatio`. Its size decisions use the **attacker-declared**
@@ -417,8 +417,8 @@ to a second worker, and now two workers extract the same archive in parallel.
 
 ### [18] HIGH — Temp file / handle leaks on error paths
 
-**Anchors:** `src/services/ingest/normalizer.ts:133` (RAR download before try/finally);
-`src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:67`; zip/tar/7z cleanup at `normalizer.ts:417-418,
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts:133` (RAR download before try/finally);
+`src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts:67`; zip/tar/7z cleanup at `IngestServiceImpl.ts:417-418,
 461-462, 494-495` (straight-line, not `finally`).
 
 The RAR temp download happens *before* the `try/finally` that would unlink it (line ~133), and the
@@ -429,7 +429,7 @@ container's disk until it fills.
 
 ### [28] MEDIUM — Timeout does not cancel the underlying work
 
-**Anchors:** `withTimeout` (a bare `Promise.race`), affecting `normalizer.ts` extraction.
+**Anchors:** `withTimeout` (a bare `Promise.race`), affecting `IngestServiceImpl.ts` extraction.
 
 `withTimeout` is implemented as a plain `Promise.race`. After the timeout fires and the job is
 marked `FAILED`, the `unrar` child processes, GCS write streams, and nested extractions keep
@@ -450,7 +450,7 @@ blow the memory limit.
 
 ### [30] MEDIUM — Pipe resolves before nonzero exit; a failed stream never kills the child
 
-**Anchors:** `src/services/ingest/normalizer.ts:288`.
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts:288`.
 
 The extraction promise resolves on the stream `finish` event, which fires *before* `unrar` reports
 a nonzero exit (e.g. CRC error exit code 3) — so a truncated entry is accepted as complete.
@@ -467,7 +467,7 @@ These violate explicit spec guarantees even where behavior is otherwise "working
 
 ### [24] MEDIUM — One bad entry aborts the whole ZIP/tar/7z
 
-**Anchors:** `src/services/ingest/normalizer.ts` — ZIP/tar/7z entry loops lack per-entry
+**Anchors:** `src/services/ingest/IngestServiceImpl.ts` — ZIP/tar/7z entry loops lack per-entry
 `try/catch` (contrast the RAR loop, which wraps entries at `~234-250` and `~306-340`).
 
 Unlike the RAR path, the ZIP/tar/7z extraction loops have no per-entry `try/catch`. A single corrupt

@@ -105,10 +105,10 @@ The system is eight *logical* services. Deployment packaging is a separate quest
 - Fan-in of `job-events`: `handleEvent` dispatches `JOB_STATUS_CHANGED`, `ENTRY_DISCOVERED` (→ `createChildJob`), `PARSING_COMPLETED` (→ `onParsingCompleted` → finalize → load), `LOADING_COMPLETED` (→ report), `REPORTING_COMPLETED` (→ `done`), `ERROR_OCCURRED` (→ `failed`).
 
 ### 4.2 Ingest — everything becomes an object
-`src/services/ingest/` (`handler.ts`, `ssrf_guard.ts`, `normalizer.ts`, `http_server.ts`)
+`src/services/ingest/` (`handler.ts`, `SsrfGuard.ts`, `IngestServiceImpl.ts`, `http_server.ts`)
 
 - Normalizes **every** source into a range-addressable object in the data bucket.
-- **SSRF guard is mandatory** (`ssrf_guard.ts`, `checkUrl` / `fetchUrlStream`): blocks metadata IPs, RFC-1918 and other reserved ranges (IPv4 and IPv6), rejects embedded credentials and non-`http(s)`/`gs:` schemes, re-checks the target on every redirect (max 5, `redirect: "manual"`), and enforces a size cap (`ALLOWED_FETCH_SIZE_BYTES`, default 5GB) plus timeout (`FETCH_TIMEOUT_SECONDS`, default 600s). `gs://` internal URLs are allowed.
+- **SSRF guard is mandatory** (`SsrfGuard.ts`, `checkUrl` / `fetchUrlStream`): blocks metadata IPs, RFC-1918 and other reserved ranges (IPv4 and IPv6), rejects embedded credentials and non-`http(s)`/`gs:` schemes, re-checks the target on every redirect (max 5, `redirect: "manual"`), and enforces a size cap (`ALLOWED_FETCH_SIZE_BYTES`, default 5GB) plus timeout (`FETCH_TIMEOUT_SECONDS`, default 600s). `gs://` internal URLs are allowed.
 - **Archives** are extracted with bomb guards: max compression ratio `ARCHIVE_MAX_COMPRESSION_RATIO` (~100:1), nesting depth `ARCHIVE_MAX_NESTING_DEPTH` (1), uncompressed-size cap `ARCHIVE_MAX_UNCOMPRESSED_BYTES` (10GB), entry-count cap `ARCHIVE_MAX_ENTRIES` (10000). Each entry becomes **its own object + its own job**, emitted as an `ENTRY_DISCOVERED` event (the Job Service creates the child job).
 - **Encrypted archives** → `awaiting_password`: the job holds no worker, allows bounded attempts (`ARCHIVE_PASSWORD_MAX_ATTEMPTS`, default 3), and on exhaustion transitions to `failed` (`password_unavailable`). Passwords arrive via `POST /jobs/:job_id/password` → an `action: "provide_password"` message on the ingest queue.
 

@@ -771,7 +771,7 @@ check("extractJson handles nested JSON objects", () => {
 // 16. Encoding normalization / safe decode
 // Regression: jschardet emits labels (latin-1, iso-8859-1, cp1252, windows-1252,
 // iso-8859-2) that Buffer.toString rejects with ERR_UNKNOWN_ENCODING. This crashed
-// detect_bootstrap and stream_parser. Fixed twice incorrectly (latin-1 -> iso-8859-1,
+// detect-bootstrap and stream-parser. Fixed twice incorrectly (latin-1 -> iso-8859-1,
 // both invalid) before decode() routed non-native labels through TextDecoder.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -827,7 +827,7 @@ check("UTF-8 content round-trips correctly (not mojibake) once detected as utf-8
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 17. Ordered line classifier (design conformance)
-// The stream_parser now routes every line through LineClassifier.classify() in the
+// The stream-parser now routes every line through LineClassifier.classify() in the
 // designed order (length/binary gate -> learned templates -> structural JSON/kv ->
 // rubbish -> validated CSV -> uncertain), extracting ONLY field_spec fields and
 // DECLINING junk/header lines instead of force-parsing them. These cases lock in the
@@ -840,7 +840,7 @@ console.log("\n=== 17. Ordered line classifier ===");
 /**
  * The {  line classifier }
  */
-const { LineClassifier } = await import("@service/stream_parser/LineClassifier.js");
+const { LineClassifier } = await import("@service/stream-parser/LineClassifier.js");
 /**
  * The f s
  */
@@ -921,7 +921,7 @@ check("phone content-match rejects ZIP+4 / year ranges (needs 10-15 digits)", ()
   assert.equal(classifyOne(["phone"], "2020-2021,Town").verdict, "uncertain");
 });
 
-// --- router field_spec normalization (job_service accepts multiple encodings) ---
+// --- router field_spec normalization (job-service accepts multiple encodings) ---
 check("field_spec normalization: array / JSON-array string / JSON-{fields} string / comma string", () => {
   const norm = (field_spec: unknown): string[] => {
     const namesFromArray = (arr: unknown[]): string[] =>

@@ -10,8 +10,8 @@
  */
 
 import assert from "node:assert/strict";
-import { LineClassifier } from "../services/stream_parser/LineClassifier.js";
-import { ClassifyResult } from "../services/stream_parser/io/IClassifier.js";
+import { LineClassifier } from "../services/stream-parser/LineClassifier.js";
+import { ClassifyResult } from "../services/stream-parser/io/IClassifier.js";
 
 let _passed = 0, _failed = 0;
 

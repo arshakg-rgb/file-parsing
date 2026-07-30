@@ -118,7 +118,7 @@ All of the following were confirmed to still exist on disk and to have no live i
 | `src/shared/cloudwatch.ts` | AWS-era leftover; dead. | File exists, unreferenced in the GCP pipeline. |
 | `src/shared/secrets.ts` | Dead per KB. | File exists. |
 | `@aws-sdk/client-dynamodb` | Unused dependency (AWS era). | KB. |
-| `extractRar()` in `src/services/ingest/normalizer.ts` (line 499) | Dead alternate RAR path; the live RAR handling is the `spawn('unrar', …)` block earlier in the file (~lines 152-294). | `extractRar` defined at line 499; distinct from the active path. |
+| `extractRar()` in `src/services/ingest/IngestServiceImpl.ts` (line 499) | Dead alternate RAR path; the live RAR handling is the `spawn('unrar', …)` block earlier in the file (~lines 152-294). | `extractRar` defined at line 499; distinct from the active path. |
 | `ANTHROPIC_*` / `AI_CLASSIFIER_URL` config keys | Dead config from an earlier AI-classifier design. | KB. |
 | Stale `unrar-async` declaration in `src/types.d.ts` | Orphan type decl. | KB. |
 | `DLQManager.retryEntry` / `DLQManager.batchRetryJob` (`src/shared/dlqManager.ts:83,176`) | Stubs. `retryEntry` fetches the line and returns `true` but only comments "In production, this would publish to retry queue" — it does not. `batchRetryJob` loops over those stubs. | Confirmed in `dlqManager.ts`. |

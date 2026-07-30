@@ -12,5 +12,5 @@ export interface LoadResponse {
 }
 
 export interface ILoad {
-  processLoad(req: LoadRequest): Promise<LoadResponse>;
+  processLoad(): Promise<LoadResponse>;
 }

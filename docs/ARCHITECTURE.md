@@ -120,12 +120,12 @@ Other HTTP surfaces: **ingest** `http_server.ts` exposes `POST /upload` (+ `/hea
 ### 4.1 Source resolution (three entry points)
 
 1. **Upload** — `src/services/ingest/http_server.ts` `POST /upload` (multer memory storage → GCS → `fpp-ingest`).
-2. **URL fetch** — `normalizer.fetchUrlToS3`, guarded by `src/services/ingest/ssrf_guard.ts`.
+2. **URL fetch** — `normalizer.fetchUrlToS3`, guarded by `src/services/ingest/SsrfGuard.ts`.
 3. **Pre-staged `gs://` object**, or a **prefix** ending in `/` (fans out one `ENTRY_DISCOVERED` per object; the parent transitions straight to `done`).
 
 > Known inconsistency: the `/upload` handler is internally incoherent — it writes one GCS key but enqueues a different `source_ref`, sends `source_type` `"s3"` (not `"upload"`), and never inserts a `parse_jobs` row.
 
-### 4.2 SSRF guard (`ssrf_guard.ts`)
+### 4.2 SSRF guard (`SsrfGuard.ts`)
 
 `http`/`https` only (`gs://` is trusted); rejects embedded credentials; blocklists private/reserved IPv4+IPv6 CIDRs **with a DNS resolution check**; follows redirects manually (max 5 hops, re-checked every hop); 600 s timeout; 5 GB cap enforced on both `Content-Length` and cumulative streamed bytes. **Known weaknesses**: DNS-rebinding TOCTOU (the fetch re-resolves independently of the guard), a single-A-record check, and multicast `224/4` and `240/4` not blocked.
 
@@ -139,7 +139,7 @@ Magic-byte detection on the first **512 bytes** (zip / gz / 7z / rar / tar). Bom
 - `gz` entries lose their filename (renamed `decompressed_<jobId>.dat`).
 - Entry object layouts are inconsistent across sync-RAR / async-RAR / other formats.
 
-> `extractRar()` in `normalizer.ts` is dead code. `archive_entry_consumer`'s retry ceiling is unreachable (always called with `attempt=1`, `MAX_RETRIES=3`, so permanent failures redeliver forever). Exotic encodings (e.g. windows-1252) can crash the probe: `Buffer.toString` throws `ERR_UNKNOWN_ENCODING` and the fallback cannot catch it.
+> `extractRar()` in `IngestServiceImpl.ts` is dead code. `archive_entry_consumer`'s retry ceiling is unreachable (always called with `attempt=1`, `MAX_RETRIES=3`, so permanent failures redeliver forever). Exotic encodings (e.g. windows-1252) can crash the probe: `Buffer.toString` throws `ERR_UNKNOWN_ENCODING` and the fallback cannot catch it.
 
 ---
 
@@ -320,7 +320,7 @@ These **do not agree**. `parsed_records`, `templates`, and `pending_archive_entr
 | `src/shared/dlqManager.ts` | DLQ insert/idempotency |
 | `src/shared/qualityGate.ts` | (no-op) failed-ratio gate |
 | `src/shared/traceSystem.ts` | per-line `parsed_records` insert + counters |
-| `src/services/ingest/ssrf_guard.ts` | SSRF blocklist / redirect / size checks |
+| `src/services/ingest/SsrfGuard.ts` | SSRF blocklist / redirect / size checks |
 | `src/services/detect_bootstrap/DetectBootstrapServiceHandler.ts` | probing + fingerprinting + seed minting |
 | `src/services/stream_parser/LineClassifier.ts` | ordered line classifier |
 | `src/services/load/LoadServiceHandler.ts` | bulk insert into `parsed_records` |

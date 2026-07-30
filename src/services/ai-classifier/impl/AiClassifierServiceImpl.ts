@@ -1,0 +1,437 @@
+import pino from "pino";
+import crypto from "crypto";
+import { GoogleGenAI } from "@google/genai";
+import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import { createLogger } from "@utils/logger/Log.js";
+import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
+import { AiClassifierService } from "@service/ai-classifier/AiClassifierService.js";
+import {
+  ClassifyRequest,
+  ClassifyResponse,
+  FieldLocator,
+  CSVParseResult,
+  AIVerdict,
+} from "@service/ai-classifier/io/IAiClassifier.js";
+
+type RawClassifyResponse = Record<string, unknown>;
+
+const CSV_DELIMITERS = [",", ";", "\t", "|"] as const;
+const FENCE_RE = /\`\`\`(?:json)?\s*(\{[\s\S]*?\})\s*\`\`\`/;
+const JSON_BRACE_RE = /\{[\s\S]*\}/;
+const STRUCTURE_NAMES = new Set(["csv", "json", "kv", "fixed", "regex"]);
+
+/**
+ * AiClassifierServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
+ */
+class AiClassifierServiceImpl extends ServiceManager implements AiClassifierService {
+    /**
+   * Singleton instance
+   * @private
+   */
+  protected static instance: AiClassifierServiceImpl;
+    /**
+   * Ai
+   * @private
+   */
+  private ai: GoogleGenAI;
+    /**
+   * Logger
+   * @private
+   */
+  private logger: pino.Logger;
+
+    /**
+   * Constructs a new AiClassifierServiceImpl instance.
+   * @param enforce - A function to enforce the Singleton pattern
+   * @throws Error if instantiated directly
+   */
+  protected constructor(enforce: () => void) {
+    if (enforce !== Enforce) {
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate AiClassifierServiceImpl directly. Use getInstance()");
+    }
+    super(enforce);
+    this.logger = createLogger(module);
+    const config = this.getConfig();
+    const PROJECT_ID = config.settings.GCP_PROJECT_ID || "data-etl-499916";
+    const LOCATION = config.settings.VERTEX_LOCATION || "us-central1";
+
+    this.ai = new GoogleGenAI({
+      vertexai: true,
+      project: PROJECT_ID,
+      location: LOCATION,
+    });
+  }
+
+    /**
+   * Gets the single instance of the AiClassifierServiceImpl class.
+   * @returns The single instance of the class
+   */
+  public static getInstance(): AiClassifierServiceImpl {
+    if (!AiClassifierServiceImpl.instance) {
+      AiClassifierServiceImpl.instance = new AiClassifierServiceImpl(Enforce);
+    }
+    return AiClassifierServiceImpl.instance;
+  }
+
+  /**
+   * Vertex AI integration using local implementation pattern
+   */
+  public async askVertexAI(prompt: string): Promise<string> {
+    const config = this.getConfig();
+    const MODEL = config.settings.VERTEX_MODEL || "gemini-2.5-flash";
+
+    const response = await this.ai.models.generateContent({
+      model: MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: prompt }],
+        },
+      ],
+      config: {
+        responseModalities: ["TEXT"],
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+      },
+    });
+
+    return response.text
+      ?? response.candidates?.[0]?.content?.parts?.map((part: unknown) => (part as { text?: string }).text).join("")
+      ?? "";
+  }
+
+    /**
+   * Builds user prompt
+   * @param req - The HTTP request object
+   * @returns The string result
+   */
+  public buildUserPrompt(req: ClassifyRequest): string {
+    return `Target fields to extract: ${req.field_spec.join(", ")}\n\nUnknown line to classify:\n${req.unknown_line}\n\nSurrounding context lines:\n${req.context_lines?.join("\n") || "(none)"}
+
+IMPORTANT: You must respond with a template definition (kind, template.field_map, etc.) as specified in the system prompt. Do NOT extract the data from this line - create a reusable template that can parse this line and similar lines.`;
+  }
+
+    /**
+   * Extracts json
+   * @param text - The text
+   * @returns The raw classify response result
+   */
+  public extractJson(text: string): RawClassifyResponse {
+    // Try markdown code fence first (```json or ```)
+    const fence = FENCE_RE.exec(text);
+    if (fence) return JSON.parse(fence[1]) as RawClassifyResponse;
+
+    // Try bare JSON object
+    const brace = JSON_BRACE_RE.exec(text);
+    if (brace) {
+      try {
+        return JSON.parse(brace[0]) as RawClassifyResponse;
+      } catch {}
+    }
+
+    // Try to find JSON by looking for first { and last }
+    const firstBrace = text.indexOf("{");
+    const lastBrace = text.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        return JSON.parse(text.substring(firstBrace, lastBrace + 1)) as RawClassifyResponse;
+      } catch {}
+    }
+
+    throw new Error(`No JSON found in model output. Response: ${text.slice(0, 200)}...`);
+  }
+
+    /**
+   * Performs the fingerprint operation.
+   * @param line - The line to process
+   * @param raw - The raw
+   * @returns The string result
+   */
+  public fingerprint(line: string, raw: RawClassifyResponse): string {
+    const t = (raw.template || {}) as Record<string, unknown>;
+    const parts = [(raw.kind as string) || "unknown", (t.structure as string) || "", (t.delimiter as string) || "", (t.quote_char as string) || ""];
+    if (t.field_map) parts.push(Object.keys(t.field_map as Record<string, unknown>).sort().join(","));
+    if (t.signature) parts.push((t.signature as string).slice(0, 64));
+    return crypto.createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 24);
+  }
+
+    /**
+   * Performs the quick fingerprint operation.
+   * @param line - The line to process
+   * @returns The string result
+   */
+  public quickFingerprint(line: string): string {
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return crypto.createHash("sha256").update(`json|${Object.keys(parsed).sort().join(",")}`).digest("hex").slice(0, 24);
+      }
+    } catch {}
+    for (const delim of CSV_DELIMITERS) {
+      const parts = line.split(delim);
+      if (parts.length >= 3) {
+        return crypto.createHash("sha256").update(`csv|${delim}|${parts.length}`).digest("hex").slice(0, 24);
+      }
+    }
+    if (line.includes("=") && line.split("=").length >= 2) {
+      return crypto.createHash("sha256").update("kv|=").digest("hex").slice(0, 24);
+    }
+    return crypto.createHash("sha256").update(`text|${line.length}`).digest("hex").slice(0, 24);
+  }
+
+    /**
+   * Builds template from raw
+   * @param raw - The raw
+   * @param kindStr - The kind str
+   * @param line - The line to process
+   * @returns The record template |  rubbish template | null result
+   */
+  public buildTemplateFromRaw(raw: RawClassifyResponse, kindStr: string, line: string): RecordTemplate | RubbishTemplate | null {
+    try {
+      const fp = this.fingerprint(line, raw);
+      if (kindStr === "record-template") {
+        const t = (raw.template || {}) as Record<string, unknown>;
+        const fieldMap: Record<string, { locator: string; type: string }> = {};
+        for (const [field, loc] of Object.entries((t.field_map || {}) as Record<string, FieldLocator>)) {
+          const locator = loc as FieldLocator;
+          fieldMap[field] = {
+            locator: locator.index !== undefined ? `index:${locator.index}` :
+                      locator.regex ? `regex:${locator.regex}` :
+                      locator.key ? `key:${locator.key}` : "unknown",
+            type: "string"
+          };
+        }
+        return {
+          template_id: crypto.randomUUID(),
+          fingerprint: fp,
+          version: 1,
+          field_map: fieldMap,
+          structure: (t.structure as string) || "csv",
+          length_hint: (t.length_hint_min as number) || 0,
+          source: "ai" as const,
+          created_at: new Date(),
+        };
+      }
+      if (kindStr === "rubbish-signature")
+        {
+        const t = (raw.template || {}) as Record<string, unknown>;
+        return {
+          template_id: crypto.randomUUID(),
+          fingerprint: fp,
+          version: 1,
+          signature: t.signature as string,
+          confidence: parseFloat(t.confidence as string) || 0.95,
+          source: "ai" as const,
+          created_at: new Date(),
+        };
+      }
+    } catch (err) {
+      this.logger.warn("template_build_error", { error: String(err), raw: JSON.stringify(raw).slice(0, 200) });
+    }
+    return null;
+  }
+
+    /**
+   * Calls vertex a i
+   * @param prompt - The prompt
+   * @returns A promise that resolves to the result
+   */
+  public async callVertexAI(prompt: string): Promise<RawClassifyResponse> {
+    try {
+      this.logger.info("vertex_ai_request_start", { promptLength: prompt.length });
+      const text = await this.askVertexAI(prompt);
+      this.logger.info("vertex_ai_response_raw", { response: text.slice(0, 500) });
+      const parsed = this.extractJson(text);
+      this.logger.info("vertex_ai_response_parsed", { parsedKeys: Object.keys(parsed).length });
+      return parsed as RawClassifyResponse;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : (typeof error === "string" ? error : JSON.stringify(error));
+      this.logger.error("vertex_ai_request_failed", {
+        error: errorMessage,
+        ...(error instanceof Error && error.stack ? { stack: error.stack } : {}),
+      });
+      throw error;
+    }
+  }
+
+    /**
+   * Performs the try parse as c s v operation.
+   * @param line - The line to process
+   * @param fieldSpec - The field spec
+   * @returns The c s v parse result result
+   */
+  public tryParseAsCSV(line: string, fieldSpec: string[]): CSVParseResult {
+    // Ensure fieldSpec is an array
+    const fieldSpecArray = Array.isArray(fieldSpec) ? fieldSpec :
+      (typeof fieldSpec === "string" ? JSON.parse(fieldSpec) : []);
+
+    for (const delimiter of CSV_DELIMITERS) {
+      const parts = line.split(delimiter);
+
+      if (parts.length === fieldSpecArray.length && parts.every(part => part.trim().length > 0)) {
+        this.logger.info("csv_parser_success", { delimiter, fields: parts });
+        return { success: true, delimiter, fields: parts };
+      }
+    }
+
+    this.logger.debug("csv_parser_failed", { line, fieldSpec: fieldSpecArray });
+    return { success: false, delimiter: "", fields: [] };
+  }
+
+    /**
+   * Creates template from c s v
+   * @param line - The line to process
+   * @param fieldSpec - The field spec
+   * @param delimiter - The delimiter
+   * @returns The record template result
+   */
+  public createTemplateFromCSV(line: string, fieldSpec: string[], delimiter: string): RecordTemplate {
+    const fieldMap: Record<string, { locator: string; type: string }> = {};
+
+    fieldSpec.forEach((field, index) => {
+      fieldMap[field] = { locator: `index:${index}`, type: "string" };
+    });
+
+    const template = {
+      template_id: crypto.randomBytes(16).toString("hex"),
+      fingerprint: this.quickFingerprint(line),
+      version: 1,
+      field_map: fieldMap,
+      structure: "csv",
+      length_hint: line.length,
+      source: "ai" as const,
+      created_at: new Date()
+    };
+
+    this.logger.info("csv_template_created", {
+      template_id: template.template_id,
+      fieldMap,
+      structure: template.structure,
+      delimiter
+    });
+
+    return template;
+  }
+
+    /**
+   * Classifies ai
+   * @param req - The HTTP request object
+   * @returns A promise that resolves to the result
+   */
+  public async classifyAi(req: ClassifyRequest): Promise<ClassifyResponse> {
+    this.logger.info("classify_ai_start", { job_id: req.job_id, line_length: req.unknown_line.length, field_spec: req.field_spec });
+    await templateRegistry.loadFromDatabase();
+
+    // Step 1: Try CSV parsing with common delimiters before template matching
+    const csvResult = this.tryParseAsCSV(req.unknown_line, req.field_spec);
+    if (csvResult.success) {
+      this.logger.info("ai_classifier_csv_parse_success", { job_id: req.job_id, delimiter: csvResult.delimiter });
+      const template = this.createTemplateFromCSV(req.unknown_line, req.field_spec, csvResult.delimiter);
+      await templateRegistry.saveTemplate(template, "record");
+      this.logger.info("ai_template_saved", { job_id: req.job_id, template_id: template.template_id, kind: "record", source: "csv_fast_path" });
+      templateRegistry.addRecordTemplate(template);
+      return { kind: AIVerdict.RECORD_TEMPLATE, template };
+    }
+
+    // Step 2: Try to match by fingerprint (fast path)
+    const lineFp = this.quickFingerprint(req.unknown_line);
+    const existing = templateRegistry.getByFingerprint(lineFp);
+    if (existing) {
+      const kind = (existing as RecordTemplate).field_map ? AIVerdict.RECORD_TEMPLATE : AIVerdict.RUBBISH_SIGNATURE;
+      this.logger.info("ai_classifier_fingerprint_match", { job_id: req.job_id, fingerprint: lineFp, template_id: existing.template_id, kind });
+      return { kind, template: existing };
+    }
+
+    // Step 3: Try to match against existing record templates by attempting to parse
+    const recordMatch = templateRegistry.matchRecordTemplate(req.unknown_line, req.field_spec);
+    if (recordMatch) {
+      this.logger.info("ai_classifier_local_match", { job_id: req.job_id, template_id: recordMatch.template_id });
+      return { kind: AIVerdict.RECORD_TEMPLATE, template: recordMatch };
+    }
+
+    // Step 4: Try to match against rubbish templates
+    const rubbishMatch = templateRegistry.matchRubbishTemplate(req.unknown_line);
+    if (rubbishMatch) {
+      this.logger.info("ai_classifier_rubbish_match", { job_id: req.job_id, template_id: rubbishMatch.template_id });
+      return { kind: AIVerdict.RUBBISH_SIGNATURE, template: rubbishMatch };
+    }
+
+    // Step 5: No local match found, fall back to Vertex AI
+    this.logger.info("ai_classifier_fallback_to_ai", { job_id: req.job_id, fingerprint: lineFp, reason: "no_local_template_match" });
+
+    const userPrompt = this.buildUserPrompt(req);
+    try {
+      const raw = await this.callVertexAI(userPrompt);
+      let kindStr: string = (raw.kind as string) || "uncertain";
+
+      // Handle structure names (csv, json, etc.) as record-template
+      if (STRUCTURE_NAMES.has(kindStr)) {
+        kindStr = "record-template";
+      }
+
+      if (kindStr === "uncertain") {
+        this.logger.info("ai_classifier_uncertain", { job_id: req.job_id, fingerprint: lineFp });
+        return { kind: AIVerdict.UNCERTAIN };
+      }
+      const tmpl = this.buildTemplateFromRaw(raw, kindStr, req.unknown_line);
+      if (!tmpl) {
+        this.logger.warn("ai_classifier_template_build_failed", { job_id: req.job_id, raw_kind: kindStr });
+        return { kind: AIVerdict.UNCERTAIN };
+      }
+
+      // Save to database and cache
+      const kind = kindStr === "record-template" ? "record" : "rubbish";
+      await templateRegistry.saveTemplate(tmpl, kind);
+      this.logger.info("ai_template_saved", { job_id: req.job_id, template_id: tmpl.template_id, kind, source: "ai_call", fingerprint: tmpl.fingerprint });
+      templateRegistry.addRecordTemplate(tmpl as RecordTemplate);
+
+      const verdict = kindStr === "record-template" ? AIVerdict.RECORD_TEMPLATE : AIVerdict.RUBBISH_SIGNATURE;
+      this.logger.info("ai_classified", { job_id: req.job_id, verdict, template_id: tmpl.template_id, fingerprint: tmpl.fingerprint });
+      return { kind: verdict, template: tmpl };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : (typeof err === "string" ? err : JSON.stringify(err));
+      this.logger.error("vertex_ai_call_failed", {
+        job_id: req.job_id,
+        error: errorMessage,
+        ...(err instanceof Error && err.stack ? { stack: err.stack } : {}),
+      });
+      return { kind: AIVerdict.UNCERTAIN };
+    }
+  }
+
+    /**
+   * Validates template
+   * @param req - The HTTP request object
+   * @param tmpl - The tmpl
+   * @returns True if the operation succeeds, false otherwise
+   */
+
+  public async validateTemplate(req: ClassifyRequest, tmpl: RecordTemplate): Promise<boolean> {
+    try {
+      // Basic validation: ensure template can extract fields from the line
+      const line = req.unknown_line;
+      const fieldMap = tmpl.field_map;
+
+      // Simple validation: check if we can at least parse the structure
+      if (tmpl.structure === "csv") {
+        const parts = line.split(",");
+        return parts.length >= Object.keys(fieldMap).length;
+      }
+      if (tmpl.structure === "json") {
+        try {
+          const parsed = JSON.parse(line);
+          return typeof parsed === "object" && parsed !== null;
+        } catch {
+          return false;
+        }
+      }
+      return true;
+    } catch (err) {
+      this.logger.warn("template_validation_error", { job_id: req.job_id, error: String(err) });
+      return false;
+    }
+  }
+}
+
+export default AiClassifierServiceImpl;

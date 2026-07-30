@@ -2,7 +2,7 @@ name: CI/CD Pipeline
 
 # Deploy by delegating to the authoritative Cloud Build config (cloudbuild.yaml).
 # The previous version did its own docker build + `gcloud run deploy` with UNDERSCORE
-# service names (stream_parser, detect_bootstrap) which are invalid Cloud Run names, so it
+# service names (stream-parser, detect-bootstrap) which are invalid Cloud Run names, so it
 # never actually updated the live (hyphen-named) services — the code appeared to "never
 # deploy". cloudbuild.yaml has the correct service names, Artifact Registry images, secrets,
 # Cloud SQL, and the fast-test service subset. Submitting it keeps a single source of truth.

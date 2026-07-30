@@ -18,11 +18,11 @@ These are product/ops decisions that block their respective change-units. Get an
 
 ## Test-infrastructure blocker — do this first, inside CU6
 
-The unit-test suite is currently **green while production is broken**, so fixing the code without fixing the test harness leaves you flying blind. In `src/scripts/local_test.ts` §3, the test defines its **own private, correct copy** of `detectArchiveType` (a shadow function at `local_test.ts:126`) and asserts against that shadow — it never imports the real, broken exported symbol from `src/services/ingest/normalizer.ts`. That is why finding `[3]` (magic-byte detection is broken in prod) coexists with a passing test.
+The unit-test suite is currently **green while production is broken**, so fixing the code without fixing the test harness leaves you flying blind. In `src/scripts/local_test.ts` §3, the test defines its **own private, correct copy** of `detectArchiveType` (a shadow function at `local_test.ts:126`) and asserts against that shadow — it never imports the real, broken exported symbol from `src/services/ingest/IngestServiceImpl.ts`. That is why finding `[3]` (magic-byte detection is broken in prod) coexists with a passing test.
 
 Do the following as part of **CU6**, before relying on any test signal:
 
-- Delete the shadow `detectArchiveType` in `local_test.ts` and import the **real** exported `detectArchiveType` from `normalizer.ts`.
+- Delete the shadow `detectArchiveType` in `local_test.ts` and import the **real** exported `detectArchiveType` from `IngestServiceImpl.ts`.
 - **Export** `handleArchiveEntry` from `src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts` (currently module-private at `handler.ts:127`) so retry/permanent-error logic is unit-testable.
 - Guard the module-bottom call `consumerLoop()` (`handler.ts:350`) behind an `import.meta.url` main-module check so importing the module for tests does not start the consumer loop.
 
@@ -42,13 +42,13 @@ These are the foundation. Most change-units are thin call-site edits on top of o
 - **`src/shared/secret.ts` — sole owner of `unrar` argv construction.**
   Note this is a **new** file, distinct from the existing `src/shared/secrets.ts` (which loads GCP Secret Manager values). This component becomes the *only* place that builds `unrar` argument lists. It passes the password via the child's **stdin** using a bare `-p` flag (never `-p<password>` on argv, so it stays off `ps`/`/proc`), inserts a `--` separator before operands to stop arg-injection, validates entry names, and exposes `redactArgs()` for logging. Fixes `[0]` (password leaks 4 ways) + `[12]` (arg injection); reused by `[9][11]`.
 
-  > Today the leak is concrete: `normalizer.ts:148,519` build `'-p' + password` and `console.log` the arg array (`normalizer.ts:151`), and the consumer does the same at `archive_entry_consumer/handler.ts:80,83`. All of these route through `secret.ts` after this CU.
+  > Today the leak is concrete: `IngestServiceImpl.ts:148,519` build `'-p' + password` and `console.log` the arg array (`IngestServiceImpl.ts:151`), and the consumer does the same at `archive_entry_consumer/handler.ts:80,83`. All of these route through `secret.ts` after this CU.
 
 - **`src/shared/safeExtract.ts` — `safeWalkFiles(root)`**
   A single recursive directory walk that gates each entry with `lstat` (reads only real regular files via `isFile()`; skips symlinks, devices, FIFOs) plus a realpath-containment check. Fixes `[2]` (arbitrary host-file read via symlink entries like `data.csv -> /etc/passwd`, currently possible because `extractTarArchive`/`extract7z` `stat`/`readFile` the extracted tree with no symlink guard). Name-validation logic is shared with `[12]`.
 
 - **`enforceRatioStreaming` + a size-capped `Transform`**
-  Enforces compression ratio, total uncompressed size, and entry count **during** decompression, on the **actual** bytes streamed — not after a full inflate. Replaces the current `checkRatio()` helper (`normalizer.ts:366`) which runs only *after* full decompression. Fixes `[10]`; reused by `[6][11]`.
+  Enforces compression ratio, total uncompressed size, and entry count **during** decompression, on the **actual** bytes streamed — not after a full inflate. Replaces the current `checkRatio()` helper (`IngestServiceImpl.ts:366`) which runs only *after* full decompression. Fixes `[10]`; reused by `[6][11]`.
 
 - **`withDownloadedTempFile` + streaming size-capped download**
   Downloads to a temp file with the size cap enforced *before* buffering, and `unlink`s in a `finally` even when the body throws. Fixes `[6]` (uncapped whole-archive buffering → OOM) + `[18]` (temp-file/handle leaks on error paths).
@@ -65,10 +65,10 @@ These are the foundation. Most change-units are thin call-site edits on top of o
 ### Network and source-guard primitives
 
 - **SSRF `resolveAndPin` + expanded IPv6 blocklist**
-  `checkUrl` returns the vetted IP, and `fetch` is driven through an `undici` Agent **pinned to that exact IP**, closing the DNS-rebinding TOCTOU (`[8]`: today `checkUrl` resolves once at `ssrf_guard.ts` and `fetch()` independently re-resolves, so a host can be public at check time and `169.254.169.254` at fetch time). Also adds the missing reserved IPv6 ranges: `2001:db8::/32`, `2002::/16` (6to4), `64:ff9b::/96` (NAT64), and re-checks IPv4-mapped addresses.
+  `checkUrl` returns the vetted IP, and `fetch` is driven through an `undici` Agent **pinned to that exact IP**, closing the DNS-rebinding TOCTOU (`[8]`: today `checkUrl` resolves once at `SsrfGuard.ts` and `fetch()` independently re-resolves, so a host can be public at check time and `169.254.169.254` at fetch time). Also adds the missing reserved IPv6 ranges: `2001:db8::/32`, `2002::/16` (6to4), `64:ff9b::/96` (NAT64), and re-checks IPv4-mapped addresses.
 
 - **`src/shared/sourceGuard.ts` — `assertAllowedGcsBucket`**
-  A bucket allow-list applied to every caller-supplied `gs://` or `s3://` reference at each dereference point. Fixes `[22]` (today `checkUrl` returns early for `gs://` at `ssrf_guard.ts:97-100`, so `source_ref=gs://internal-bucket/secrets.json` is copied into `DATA_BUCKET` and parsed). Gated on decision #1.
+  A bucket allow-list applied to every caller-supplied `gs://` or `s3://` reference at each dereference point. Fixes `[22]` (today `checkUrl` returns early for `gs://` at `SsrfGuard.ts:97-100`, so `source_ref=gs://internal-bucket/secrets.json` is copied into `DATA_BUCKET` and parsed). Gated on decision #1.
 
 ### Lifecycle and idempotency primitives (the keystones)
 
@@ -104,7 +104,7 @@ These are the foundation. Most change-units are thin call-site edits on top of o
 | CU | Fixes | Summary | Depends on |
 |----|-------|---------|-----------|
 | **CU1** | `[30]` | Build `src/shared/childRunner.ts` (`runChildToStream`). No behavior flip on its own; it is the substrate for the RAR/7z CUs. | — |
-| **CU6** | `[3]` | Fix magic-byte constants and delete the test shadow. Replace `Buffer.from("\x1f\x8b")` / `Buffer.from("7z\xbc\xaf\x27\x1c")` (UTF-8 mis-encodes bytes ≥ 0x80) with byte arrays `Buffer.from([0x1f,0x8b])` and `Buffer.from([0x37,0x7a,0xbc,0xaf,0x27,0x1c])` in `normalizer.ts:76-78`. Includes the test-infra unblock described above. | — |
+| **CU6** | `[3]` | Fix magic-byte constants and delete the test shadow. Replace `Buffer.from("\x1f\x8b")` / `Buffer.from("7z\xbc\xaf\x27\x1c")` (UTF-8 mis-encodes bytes ≥ 0x80) with byte arrays `Buffer.from([0x1f,0x8b])` and `Buffer.from([0x37,0x7a,0xbc,0xaf,0x27,0x1c])` in `IngestServiceImpl.ts:76-78`. Includes the test-infra unblock described above. | — |
 
 ### Phase 1 — Security (parallelizable)
 
@@ -112,14 +112,14 @@ These are the foundation. Most change-units are thin call-site edits on top of o
 |----|-------|---------|-----------|
 | **CU2** | `[0][12]` | Build `src/shared/secret.ts`; route all `unrar` argv through it (password via stdin, `--` separator, redacted logs). | CU1 |
 | **CU3** | `[2]` | Build `src/shared/safeExtract.ts` (`safeWalkFiles`); use it in `extractTarArchive`/`extract7z` so symlink/device/fifo entries are skipped and containment is enforced. | — |
-| **CU4** | `[8]` | SSRF `resolveAndPin` + pinned `undici` Agent + expanded IPv6 blocklist in `src/services/ingest/ssrf_guard.ts`. | — (gated on decision #3) |
+| **CU4** | `[8]` | SSRF `resolveAndPin` + pinned `undici` Agent + expanded IPv6 blocklist in `src/services/ingest/SsrfGuard.ts`. | — (gated on decision #3) |
 | **CU5** | `[22]` | Build `src/shared/sourceGuard.ts` (`assertAllowedGcsBucket`); call it at every `gs://`/`s3://` deref. | — (gated on decision #1) |
 
 ### Phase 2 — Broken features
 
 | CU | Fixes | Summary | Depends on |
 |----|-------|---------|-----------|
-| **CU7** | `[26][14]` | Write RAR entries to `DATA_BUCKET` instead of the source archive bucket (today `entryKey = archive/${jobId}/${file.name}` is written to `bucket` at `normalizer.ts:274`, causing 403s on read-only customer buckets); and fix the `batchId` → `batch_id` mismatch (emitters send camelCase `batchId` at `normalizer.ts:384,241`; readers expect `batch_id` per `events.ts:46` and `stateMachine.ts:128`, so archive children get `batch_id = NULL`). | — |
+| **CU7** | `[26][14]` | Write RAR entries to `DATA_BUCKET` instead of the source archive bucket (today `entryKey = archive/${jobId}/${file.name}` is written to `bucket` at `IngestServiceImpl.ts:274`, causing 403s on read-only customer buckets); and fix the `batchId` → `batch_id` mismatch (emitters send camelCase `batchId` at `IngestServiceImpl.ts:384,241`; readers expect `batch_id` per `events.ts:46` and `stateMachine.ts:128`, so archive children get `batch_id = NULL`). | — |
 | **CU8** | `[23]` | Re-run archive detection on `.gz`/nested/depth-1 entries instead of routing them straight to CLASSIFY (`stateMachine.ts:144`). | CU6 |
 | **CU9** | `[9]` | Encrypted-ZIP: full 7z-decrypt path, or honest-failure variant per decision #2. | CU1 + CU2 (gated on decision #2) |
 | **CU10** | `[1]` | Fix or remove `POST /upload`. Today the object-key has a leading-slash writer↔reader mismatch (`http_server.ts:13`), it never inserts a `parse_jobs` row (so `GET /jobs/:id` 404s forever), sets the wrong `source_type` (`"s3"`), and buffers multipart in memory with no auth or size cap. Standalone. | — |
@@ -149,7 +149,7 @@ Ship strictly in this order: **CU18 → CU16 → CU17 → CU19.**
 
 | CU | Fixes | Summary | Depends on |
 |----|-------|---------|-----------|
-| **CU20** | `[6][10][11]` | Streaming intake + guards enforced **inside** decompression, with `[18]` leak cleanup folded in: cap before buffering, use `withDownloadedTempFile`, and enforce ratio/size/entry-count on actual streamed bytes (RAR included — today streaming RAR never calls `checkRatio` and trusts attacker-declared listing sizes at `normalizer.ts:231-266`). | CU1 |
+| **CU20** | `[6][10][11]` | Streaming intake + guards enforced **inside** decompression, with `[18]` leak cleanup folded in: cap before buffering, use `withDownloadedTempFile`, and enforce ratio/size/entry-count on actual streamed bytes (RAR included — today streaming RAR never calls `checkRatio` and trusts attacker-declared listing sizes at `IngestServiceImpl.ts:231-266`). | CU1 |
 | **CU21** | `[18]` | Temp-file/handle leak cleanup — folded into CU20 (download-before-`try/finally` and straight-line cleanups become `finally`). | with CU20 |
 | **CU22** | `[17][29]` | `ModAckController` keep-alive lease + `runWithConcurrency` bounded pool — ship together. | — |
 | **CU23** | `[28]` | Abort-on-timeout: plumb `AbortSignal` through `withTimeout` → extract → spawn so a FAILED/timeout stops children, write streams, nested extractions, and keep-alives. | CU1 + CU22 |
@@ -180,9 +180,9 @@ The ordering above is not a preference; violating it duplicates or drops user da
 | Path | Role |
 |------|------|
 | `src/services/ingest/IngestServiceHandler.ts` | Ingest message handler; idempotency guard, `_passwordCache` (`:19`), status transitions |
-| `src/services/ingest/normalizer.ts` | Archive detection + extraction (RAR/zip/gz/tar/7z), magic bytes (`:76-78`), `unrar` argv |
+| `src/services/ingest/IngestServiceImpl.ts` | Archive detection + extraction (RAR/zip/gz/tar/7z), magic bytes (`:76-78`), `unrar` argv |
 | `src/services/ingest/http_server.ts` | `POST /upload` + health endpoint |
-| `src/services/ingest/ssrf_guard.ts` | `checkUrl` / `fetchUrlStream`, IP blocklist |
+| `src/services/ingest/SsrfGuard.ts` | `checkUrl` / `fetchUrlStream`, IP blocklist |
 | `src/services/archive_entry_consumer/ArchiveEntryConsumerServiceHandler.ts` | Async per-entry consumer; `handleArchiveEntry` (`:127`), `consumerLoop` (`:283`, invoked `:350`) |
 | `src/services/job_service/stateMachine.ts` | `createChildJob` (`:114`), event handling |
 | `src/shared/db.ts` | `getPendingEntryCount` (`:175`), `getPendingEntryTotalSize` (`:188`), pending-entry mutators |

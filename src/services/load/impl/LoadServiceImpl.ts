@@ -4,58 +4,72 @@ import ServiceManager, { Enforce } from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import FirestoreCacheUtils from "@utils/cache/FirestoreCacheUtils.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
-import { EventType, JobEvent, makeJobEvent } from "@shared/models/events.js";
-import { JobStatus, LoadMessage } from "@shared/models/job.js";
-import { receiveMessages, deleteMessage, publishEvent } from "@shared/QueueService.js";
+import { EventType, makeJobEvent } from "@shared/models/events.js";
+import { LoadMessage } from "@shared/models/job.js";
+import {receiveMessages, deleteMessage, publishEvent, QueueMessage} from "@shared/QueueService.js";
 import { ParquetReader } from "@dsnp/parquetjs";
 import { createLogger } from "@utils/logger/Log.js";
 import { metrics } from "@utils/response/metrics.js";
 import { startHealthCheckServer } from "@utils/response/health.js";
 import { LoadService } from "@service/load/LoadService.js";
-import { ILoad, LoadRequest, LoadResponse } from "@service/load/io/ILoad.js";
+import { LoadResponse } from "@service/load/io/ILoad.js";
 
 /**
  * LoadServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
  */
-class LoadServiceImpl extends ServiceManager implements LoadService {
+class LoadServiceImpl extends ServiceManager implements LoadService
+{
     /**
    * Singleton instance
    * @private
    */
+
   protected static instance: LoadServiceImpl;
+
     /**
    * Logger instance
    * @private
    */
+
   private logger: pino.Logger;
+
     /**
    * Gcs Utils
    * @private
    */
+
   private gcsUtils: FirestoreCacheUtils;
+
     /**
    * Db Manager
    * @private
    */
+
   private dbManager: PostgreSqlManager;
+
     /**
    * S Y S T E M_ C O L S
    * @private
    */
+
   private SYSTEM_COLS = [
     "_job_id", "_byte_offset", "_byte_length", "_record_index",
     "_line_no", "_template_id", "_template_version", "_checksum",
     "_parsed_at", "_part_id",
   ] as const;
+
     /**
-   * P A R A M S_ P E R_ R O W
+   * params per row
    * @private
    */
+
   private PARAMS_PER_ROW: number;
+
     /**
-   * U P S E R T_ B A T C H
+   * upsert batch
    * @private
    */
+
   private UPSERT_BATCH: number;
 
     /**
@@ -63,8 +77,11 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
    * @param enforce - A function to enforce the Singleton pattern
    * @throws Error if instantiated directly
    */
-  protected constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
+
+  protected constructor(enforce: () => void)
+  {
+    if (enforce !== Enforce)
+    {
       throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate LoadServiceImpl directly. Use getInstance()");
     }
     super(enforce);
@@ -76,7 +93,8 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.dbManager = PostgreSqlManager.getInstance();
 
-    if (process.env.HEALTH_CHECK_PORT) {
+    if (process.env.HEALTH_CHECK_PORT)
+    {
       startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
   }
@@ -85,10 +103,14 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
    * Gets the single instance of the LoadServiceImpl class.
    * @returns The single instance of the class
    */
-  public static getInstance(): LoadServiceImpl {
-    if (!LoadServiceImpl.instance) {
+
+  public static getInstance(): LoadServiceImpl
+  {
+    if (!LoadServiceImpl.instance)
+    {
       LoadServiceImpl.instance = new LoadServiceImpl(Enforce);
     }
+
     return LoadServiceImpl.instance;
   }
 
@@ -96,33 +118,19 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
    * Gets logger
    * @returns The logger result
    */
-  public getLogger(): pino.Logger {
+
+  public getLogger(): pino.Logger
+  {
     return this.logger;
   }
 
     /**
-   * Gets gcs utils
-   * @returns The firestore cache utils result
-   */
-  public getGcsUtils(): FirestoreCacheUtils {
-    return this.gcsUtils;
-  }
-
-    /**
-   * Gets db manager
-   * @returns The my sql manager result
-   */
-  public getDbManager(): PostgreSqlManager {
-    return this.dbManager;
-  }
-
-    /**
    * Processes load
-   * @param req - The HTTP request object
    * @returns A promise that resolves to the result
    */
-  public async processLoad(req: LoadRequest): Promise<LoadResponse> {
-    // Placeholder implementation
+
+  public async processLoad(): Promise<LoadResponse>
+  {
     return { success: true };
   }
 
@@ -132,7 +140,9 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
    * @param eventType - The event type
    * @param data - The data to process
    */
-  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>) {
+
+  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>)
+  {
     publishEvent(makeJobEvent(eventType, jobId, "load", data));
   }
 
@@ -140,13 +150,16 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
    * Loads job
    * @param msg - The msg
    */
-  public async loadJob(msg: LoadMessage): Promise<void> {
-    const jobId = msg.job_id;
 
-    if (msg.recovered_row) {
+  public async loadJob(msg: LoadMessage): Promise<void>
+    {
+    const jobId: string = msg.job_id;
+
+    if (msg.recovered_row)
+    {
       this.logger.info("load_recovered_row", { job_id: jobId, byte_offset: msg.byte_offset });
       metrics.increment("load.recovered_row", 1);
-      const row = this.buildRecoveredRow(msg);
+      const row: Record<string, unknown> = this.buildRecoveredRow(msg);
       await this.upsertRows(jobId, [row]);
       this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: 1 });
       return;
@@ -155,11 +168,19 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     this.logger.info("load_start", { job_id: jobId, parts: (msg.output_paths || []).length });
     metrics.increment("load.start", 1, { parts: String((msg.output_paths || []).length) });
 
-    let totalRows = 0;
-    try {
-      for (const s3Path of msg.output_paths || []) {
-        const rows = await this.readParquet(s3Path);
-        if (!rows.length) continue;
+    let totalRows: number = 0;
+
+    try
+    {
+      for (const s3Path of msg.output_paths || [])
+      {
+        const rows: Record<string, unknown>[] = await this.readParquet(s3Path);
+
+        if (!rows.length)
+        {
+          continue;
+        }
+
         await this.upsertRows(jobId, rows);
         totalRows += rows.length;
       }
@@ -167,7 +188,9 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
       this.logger.info("load_complete", { job_id: jobId, total_rows: totalRows });
       metrics.set("load.rows_loaded", totalRows);
       this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: totalRows });
-    } catch (exc) {
+    }
+    catch (exc)
+    {
       this.logger.error("load_failed", { job_id: jobId }, exc instanceof Error ? exc : new Error(String(exc)));
       metrics.increment("load.error", 1);
       this.emit(jobId, EventType.ERROR_OCCURRED, { error: String(exc) });
@@ -179,8 +202,11 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
    * @param msg - The msg
    * @returns The record<string, unknown> result
    */
-  private buildRecoveredRow(msg: LoadMessage): Record<string, unknown> {
-    const now = new Date().toISOString();
+
+  private buildRecoveredRow(msg: LoadMessage): Record<string, unknown>
+    {
+    const now: string = new Date().toISOString();
+
     return {
       ...msg.recovered_row,
       _job_id: msg.job_id,
@@ -201,17 +227,23 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
    * @param s3Path - The s3 path
    * @returns A promise that resolves to the list
    */
-  private async readParquet(s3Path: string): Promise<Record<string, unknown>[]> {
+
+  private async readParquet(s3Path: string): Promise<Record<string, unknown>[]>
+  {
     const [bucket, key] = this.gcsUtils.parseGcsUrl(s3Path);
-    const raw = await this.gcsUtils.readFull(bucket, key);
-    const reader = await ParquetReader.openBuffer(raw);
+    const raw: Buffer = await this.gcsUtils.readFull(bucket, key);
+    const reader: ParquetReader = await ParquetReader.openBuffer(raw);
     const cursor = reader.getCursor();
     const rows: Record<string, unknown>[] = [];
     let row: unknown;
-    while ((row = await cursor.next())) {
+
+    while ((row = await cursor.next()))
+    {
       rows.push(row as Record<string, unknown>);
     }
+
     await reader.close();
+
     return rows;
   }
 
@@ -220,16 +252,29 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
    * @param _jobId - The _job id
    * @param rows - The rows
    */
-  private async upsertRows(_jobId: string, rows: Record<string, unknown>[]): Promise<void> {
-    if (!rows.length) return;
 
-    for (let i = 0; i < rows.length; i += this.UPSERT_BATCH) {
-      const batch = rows.slice(i, i + this.UPSERT_BATCH);
-      const records = batch.map((row) => {
+  private async upsertRows(_jobId: string, rows: Record<string, unknown>[]): Promise<void>
+  {
+    if (!rows.length)
+    {
+      return;
+    }
+
+    for (let i = 0; i < rows.length; i += this.UPSERT_BATCH)
+    {
+      const batch: Record<string, unknown>[] = rows.slice(i, i + this.UPSERT_BATCH);
+      const records = batch.map((row) =>
+      {
         const fields: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(row)) {
-          if (!k.startsWith("_")) fields[k] = v;
+
+        for (const [k, v] of Object.entries(row))
+        {
+          if (!k.startsWith("_"))
+          {
+            fields[k] = v;
+          }
         }
+
         return {
           _job_id: row._job_id as string,
           _byte_offset: row._byte_offset as number,
@@ -253,27 +298,36 @@ class LoadServiceImpl extends ServiceManager implements LoadService {
     /**
    * Performs the consumer loop operation.
    */
-  public async consumerLoop(): Promise<void> {
+
+  public async consumerLoop(): Promise<void>
+  {
     await this.dbManager.initialize();
     this.logger.info("load_consumer_started");
-    const config = this.getConfig();
-    while (true) {
-      const messages = await receiveMessages<LoadMessage>(
-        config.settings.LOAD_QUEUE_URL,
-        (body) => JSON.parse(body) as LoadMessage,
-        1
-      );
-      for (const { payload, receiptHandle } of messages) {
-        try {
+    const config: Config = this.getConfig();
+
+    while (true)
+    {
+      const messages: QueueMessage<LoadMessage>[] = await receiveMessages<LoadMessage>(config.settings.LOAD_QUEUE_URL, (body) => JSON.parse(body) as LoadMessage, 1);
+
+      for (const { payload, receiptHandle } of messages)
+      {
+        try
+        {
           await this.loadJob(payload);
           await deleteMessage(config.settings.LOAD_QUEUE_URL, receiptHandle);
-        } catch (exc) {
-          const errorStr = String(exc);
-          if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition"))) {
+        }
+        catch (exc)
+        {
+          const errorStr: string = String(exc);
+
+          if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition")))
+          {
             this.logger.error("load_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
             metrics.increment("load.message_error_ack", 1);
             await deleteMessage(config.settings.LOAD_QUEUE_URL, receiptHandle);
-          } else {
+          }
+          else
+          {
             this.logger.error("load_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
             metrics.increment("load.message_error", 1);
           }

@@ -22,7 +22,7 @@ const importSource = {
   RubbishTemplate: "shared/TemplateRegistryService.js",
   TemplateKind: "shared/TemplateRegistryService.js",
   FieldLocator: "shared/models/template.js",
-  ParquetRow: "services/job_service/finalize/ParquetEngine.js",
+  ParquetRow: "services/job-service/finalize/ParquetEngine.js",
   TraceRecord: "shared/TraceSystem.js",
   SQSClientConfig: "@aws-sdk/client-sqs",
   SendMessageCommandInput: "@aws-sdk/client-sqs",
@@ -109,9 +109,9 @@ function buildReplacementMap(sourceFile, filePath) {
       // Promise<any>
       if (ts.isTypeReferenceNode(parent) && ts.isIdentifier(parent.typeName) && parent.typeName.text === "Promise") {
         // known Promise<any> returns
-        if (relPath.includes("detect_bootstrap/DetectBootstrapServiceHandler") && varName === "classify") {
+        if (relPath.includes("detect-bootstrap/DetectBootstrapServiceHandler") && varName === "classify") {
           replaceRange(start, end, "ClassifyResponse", "ClassifyResponse");
-        } else if (relPath.includes("ai_classifier") && varName === "callVertexAI") {
+        } else if (relPath.includes("ai-classifier") && varName === "callVertexAI") {
           replaceRange(start, end, "ClassifyResponse", "ClassifyResponse");
         } else {
           replaceRange(start, end, "unknown");
@@ -137,7 +137,7 @@ function buildReplacementMap(sourceFile, filePath) {
         const left = exprText.trim();
         if (left === "counts") replaceRange(start, end, "JobCounts", "JobCounts");
         else if (left === "timings") replaceRange(start, end, "JobTimings", "JobTimings");
-        else if (left === "part" && relPath.includes("stream_parser/ParquetWriterPool")) {
+        else if (left === "part" && relPath.includes("stream-parser/ParquetWriterPool")) {
           replaceRange(start, end, "OutputPartCreationAttributes", "OutputPartCreationAttributes");
         } else if (left === "row" && relPath.includes("FinalizeRepository")) {
           replaceRange(start, end, "DeadLetterRow", "DeadLetterRow");
@@ -158,7 +158,7 @@ function buildReplacementMap(sourceFile, filePath) {
         else if (varName === "getParts" && relPath.includes("ReportServiceImpl")) replaceRange(start, end, "OutputPartRow[]", "OutputPartRow");
         else if (varName === "getBatchJobs" && relPath.includes("ReportServiceImpl")) replaceRange(start, end, "ParseJobRow[]", "ParseJobRow");
         else if (varName === "getCounts") replaceRange(start, end, "JobCounts", "JobCounts");
-        else if (varName === "callVertexAI" && relPath.includes("ai_classifier")) replaceRange(start, end, "ClassifyResponse", "ClassifyResponse");
+        else if (varName === "callVertexAI" && relPath.includes("ai-classifier")) replaceRange(start, end, "ClassifyResponse", "ClassifyResponse");
         else replaceRange(start, end, "unknown");
         return;
       }
@@ -175,7 +175,7 @@ function buildReplacementMap(sourceFile, filePath) {
       if (varName === "logger") replaceRange(start, end, "Logger", "Logger");
       else if (varName === "firestore") replaceRange(start, end, "Firestore", "Firestore");
       else if (varName === "req" || varName === "request") {
-        if (relPath.includes("ai_classifier") || relPath.includes("detect_bootstrap") || relPath.includes("classifier")) {
+        if (relPath.includes("ai-classifier") || relPath.includes("detect-bootstrap") || relPath.includes("classifier")) {
           replaceRange(start, end, "ClassifyRequest", "ClassifyRequest");
         } else {
           replaceRange(start, end, "Request", "Request");
@@ -186,7 +186,7 @@ function buildReplacementMap(sourceFile, filePath) {
       else if (varName === "details") replaceRange(start, end, "unknown");
       else if (varName === "value") replaceRange(start, end, "unknown");
       else if (varName === "raw") {
-        if (relPath.includes("ai_classifier") || relPath.includes("detect_bootstrap")) replaceRange(start, end, "ClassifyResponse", "ClassifyResponse");
+        if (relPath.includes("ai-classifier") || relPath.includes("detect-bootstrap")) replaceRange(start, end, "ClassifyResponse", "ClassifyResponse");
         else replaceRange(start, end, "Record<string, unknown>");
       } else if (varName === "field_spec") replaceRange(start, end, "string[]");
       else if (varName === "output_paths") replaceRange(start, end, "string[]");

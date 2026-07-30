@@ -12,7 +12,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Storage } from "@google-cloud/storage";
-import { LineClassifier } from "../services/stream_parser/LineClassifier.js";
+import { LineClassifier } from "../services/stream-parser/LineClassifier.js";
 
 const SAMPLE_FILE = path.join(__dirname, "../../samples/test-linkedin.ndjson");
 const BUCKET = process.env.GCS_SAMPLE_BUCKET || "datalead-osint";

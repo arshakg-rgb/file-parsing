@@ -25,8 +25,8 @@ export class LoadService implements ILoad {
    * @param req - The HTTP request object
    * @returns A promise that resolves to the result
    */
-  async processLoad(req: LoadRequest): Promise<LoadResponse> {
-    return this.service.processLoad(req);
+  async processLoad(): Promise<LoadResponse> {
+    return this.service.processLoad();
   }
 
     /**

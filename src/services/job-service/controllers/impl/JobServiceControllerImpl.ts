@@ -1,0 +1,279 @@
+import { Request, Response, NextFunction } from "express";
+import { InstantiationError } from "@errors/InstantiationError.js";
+import { JobServiceController } from "@service/job-service/controllers/JobServiceController.js";
+import { JobService } from "@service/job-service/services/JobService.js";
+import { JobServiceImpl  } from "@service/job-service/services/impl/JobServiceImpl.js";
+import {
+  ICreateJobRequest,
+  IProvidePasswordRequest,
+  IMarkFailedRequest,
+  IRetryJobRequest, ICreateJobResponse, IStuckJobsResponse, IJobResponse,
+} from "@service/job-service/io/IJob.js";
+import { ServiceResponse } from "@utils/response/ServiceResponse.js";
+import { HttpError } from "@errors/HttpError.js";
+import {constants as HttpStatuses} from "http2";
+import {IPaginatedResult} from "@utils/pagination/app/io/IPagination";
+
+/**
+ * Singleton implementation of the Job Service HTTP controller.
+ *
+ * Thin controller: extracts request data, delegates to the service,
+ * and formats the HTTP response. Errors are forwarded via next(error).
+ */
+export class JobControllerImpl implements JobServiceController
+{
+  /**
+   * The singleton instance of `JobControllerImpl`.
+   * @private
+   */
+
+  private static instance: JobControllerImpl;
+
+  /**
+   * The JobServiceService instance.
+   * @private
+   */
+
+  private readonly service: JobService;
+
+  /**
+   * Constructs a new JobControllerImpl instance.
+   *
+   * @param service - The JobService instance to use for region operations.
+   * @param enforce - A function to enforce the Singleton pattern.
+   * @throws Error if instantiated directly.
+   */
+
+  private constructor(service: JobService, enforce: () => void)
+  {
+    if (enforce !== Enforce)
+    {
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate JobControllerImpl directly. Use getInstance()");
+    }
+
+    this.service = service;
+  }
+
+  /**
+   * Returns the singleton instance of JobControllerImpl.
+   *
+   * @returns The singleton instance of JobControllerImpl.
+   */
+
+  public static getInstance(): JobControllerImpl
+  {
+    if (!JobControllerImpl.instance)
+    {
+      JobControllerImpl.instance = new JobControllerImpl(JobServiceImpl.getInstance(), Enforce);
+    }
+
+    return JobControllerImpl.instance;
+  }
+
+  /**
+   * @param req - The request object.
+   * @param res - The response object.
+   * @param next - The next middleware function.
+   */
+
+  public createJob: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      const request: ICreateJobRequest = {
+        source_type: req.body.source_type,
+        source_ref: req.body.source_ref,
+        field_spec: req.body.field_spec,
+        batch_id: req.body.batch_id,
+        column_map: req.body.column_map,
+      };
+
+      const result: ICreateJobResponse = await this.service.createJob(request);
+
+      this.handleSuccessResponse(res, result, false, 202);
+    }
+    catch (err) {
+      next(err);
+    }
+  };
+
+  /**
+   * @param req - The request object.
+   * @param res - The response object.
+   * @param next - The next middleware function.
+   */
+
+  public findStuckJobs: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      const thresholdMinutes: number = parseInt(req.query.minutes as string) || 15;
+      const result: IStuckJobsResponse = await this.service.findStuckJobs(thresholdMinutes);
+
+      this.handleSuccessResponse(res, result);
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  };
+
+  /**
+   * @param req - The request object.
+   * @param res - The response object.
+   * @param next - The next middleware function.
+   */
+
+  public getJob: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      const result: IJobResponse = await this.service.getJob(String(req.params.job_id));
+
+      if (!result)
+      {
+        next(new HttpError(HttpError.NOT_FOUND, "NOT_FOUND", ));
+        return;
+      }
+
+      this.handleSuccessResponse(res, result);
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  };
+
+  /**
+   * @param req - The request object.
+   * @param res - The response object.
+   * @param next - The next middleware function.
+   */
+
+  public getBatchJobs: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      const result: IJobResponse[] = await this.service.getBatchJobs(String(req.params.batch_id));
+      this.handleSuccessResponse(res, result);
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  };
+
+  /**
+   * @param req - The request object.
+   * @param res - The response object.
+   * @param next - The next middleware function.
+   */
+
+  public providePassword: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      const request: IProvidePasswordRequest = { password: req.body.password };
+
+      await this.service.providePassword(String(req.params.job_id), request);
+
+      this.handleSuccessResponse(res, {}, false, 204);
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  };
+
+  /**
+   * @param req - The request object.
+   * @param res - The response object.
+   * @param next - The next middleware function.
+   */
+
+  public releaseHold: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      await this.service.releaseHold(String(req.params.job_id));
+
+      this.handleSuccessResponse(res, {}, false, 204);
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  };
+
+  /**
+   * @param req - The request object.
+   * @param res - The response object.
+   * @param next - The next middleware function.
+   */
+
+  public markFailed: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      const request: IMarkFailedRequest = { reason: req.body.reason };
+
+      await this.service.markFailed(String(req.params.job_id), request);
+
+      this.handleSuccessResponse(res, {}, false, 204);
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  };
+
+  /**
+   * @param req - The request object.
+   * @param res - The response object.
+   * @param next - The next middleware function.
+   */
+
+  public retryJob: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      const request: IRetryJobRequest = { target_status: req.body.target_status };
+      await this.service.retryJob(String(req.params.job_id), request);
+
+      this.handleSuccessResponse(res, {}, false, 204);
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  };
+
+  /**
+   * Handles the service response.
+   *
+   * @param res - The response object.
+   * @param outcome - The outcome of the service operation.
+   * @param pagination -Whether to paginate the response.
+   * @param status - The HTTP status code to set.
+   */
+
+  public handleSuccessResponse(res: Response, outcome: {}, pagination: boolean = false, status: number = HttpStatuses.HTTP_STATUS_OK): void
+  {
+    const serviceResponse: ServiceResponse = new ServiceResponse(res)
+        .setStatus(status);
+
+    if (pagination)
+    {
+      const { data, pages } = outcome as IPaginatedResult<any>;
+      serviceResponse.setOutcome(data, pages);
+    }
+    else
+    {
+      serviceResponse.setOutcome(outcome);
+    }
+
+    serviceResponse.send();
+  };
+}
+
+function Enforce(): void {}
