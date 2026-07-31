@@ -1,76 +1,90 @@
-import { IReport, ReportRequest, ReportResponse } from "@service/report/io/IReport.js";
+import { IReport, ReportResponse } from "@service/report/io/IReport.js";
 import ReportServiceImpl from "@service/report/impl/ReportServiceImpl.js";
-import { ReportMessage } from "@shared/models/job.js";
 
 /**
- * Legacy ReportService class - now a thin wrapper around ReportServiceImpl
- * This maintains backward compatibility while using the new service pattern
+ * Thin wrapper around ReportServiceImpl, kept for backward compatibility
+ * with call sites that instantiate `ReportService` directly instead of
+ * going through the singleton. Prefer `ReportServiceImpl.getInstance()`
+ * for new code.
+ *
+ * The underlying implementation can be injected for testing; when omitted
+ * it defaults to the singleton instance.
  */
-export class ReportService implements IReport {
-    /**
-   * Service
-   * @private
-   */
-  private service: ReportServiceImpl;
 
-    /**
-   * Constructs a new ReportService instance.
-   */
-  constructor() {
-    this.service = ReportServiceImpl.getInstance();
+export class ReportService implements IReport
+{
+  private static defaultInstance: ReportService;
+
+  private readonly service: ReportServiceImpl;
+
+  constructor(service: ReportServiceImpl = ReportServiceImpl.getInstance())
+  {
+    this.service = service;
   }
 
-    /**
-   * Processes report
-   * @param req - The HTTP request object
-   * @returns A promise that resolves to the result
+  /**
+   * Shared instance used by the static backward-compatibility methods
+   * and the bootstrap entrypoint below.
    */
-  async processReport(req: ReportRequest): Promise<ReportResponse> {
-    return this.service.processReport(req);
+
+  private static getDefault(): ReportService
+  {
+    if (!ReportService.defaultInstance)
+    {
+      ReportService.defaultInstance = new ReportService();
+    }
+
+    return ReportService.defaultInstance;
   }
 
-    /**
-   * Performs the generate report operation.
-   * @param msg - The msg
-   */
-  async generateReport(msg: ReportMessage): Promise<void> {
-    return this.service.generateReport(msg);
+  async processReport(): Promise<ReportResponse>
+  {
+    return this.service.processReport();
   }
 
-    /**
-   * Performs the consumer loop operation.
-   */
-  async consumerLoop(): Promise<void> {
+  async consumerLoop(): Promise<void>
+  {
     return this.service.consumerLoop();
+  }
+
+  /**
+   * Bootstraps the consumer loop when this module is loaded as the
+   * service entrypoint. Guarded via REPORT_SERVICE_AUTOSTART so importing
+   * this module elsewhere (tests, or another service that only needs
+   * `generateReport`) doesn't trigger a second, competing consumer loop.
+   */
+
+  static bootstrap(): void
+  {
+    const logger = ReportServiceImpl.getInstance().getLogger();
+    const instance: ReportService = ReportService.getDefault();
+
+    instance.consumerLoop().catch((err) =>
+    {
+      logger.error(
+          "report_consumer_failed",
+          err instanceof Error ? err : new Error(String(err))
+      );
+      process.exit(1);
+    });
+
+    const shutdown = (signal: NodeJS.Signals) =>
+    {
+      logger.info("report_consumer_shutting_down", { signal });
+      process.exit(0);
+    };
+
+    process.once("SIGTERM", shutdown);
+    process.once("SIGINT", shutdown);
   }
 }
 
-// Re-export the new service for direct use
 export { default as ReportServiceImpl } from "@service/report/impl/ReportServiceImpl.js";
 export { IReport, ReportRequest, ReportResponse } from "@service/report/io/IReport.js";
 
-// Backward compatibility wrappers
-const reportService = new ReportService();
-
-/**
- * Performs the generate report operation.
- * @param msg - The msg
- */
-export async function generateReport(msg: ReportMessage): Promise<void> {
-  return reportService.generateReport(msg);
+if (process.env.REPORT_SERVICE_AUTOSTART !== "false")
+{
+  ReportService.bootstrap();
 }
-
-/**
- * Performs the consumer loop operation.
- */
-export async function consumerLoop(): Promise<void> {
-  return reportService.consumerLoop();
-}
-
-// Auto-start the service when module is loaded
-reportService.consumerLoop().catch(err => {
-  console.error("report_consumer_failed", { error: String(err) });
-  process.exit(1);
-});
 
 export default ReportService;
