@@ -5,11 +5,10 @@ import { createLogger } from "@utils/logger/Log.js";
 import { FailureClass, ColumnMap } from "@shared/models/job.js";
 import { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { AIVerdict, ClassifyRequest } from "@service/ai-classifier/io/IAiClassifier.js";
-import {ClassifyResponse, ClassifyResult, IClassifier} from "@service/stream-parser/io/IClassifier.js";
-import {aiClassifierService} from "@service/ai-classifier/AiClassifierServiceHandler.js";
+import {AiRateLimiter, ClassifyResponse, ClassifyResult, IClassifier} from "@service/stream-parser/io/IClassifier.js";
 import SafeRegexUtils from "@utils/validator/SafeRegex";
 import {InstantiationError} from "@errors/InstantiationError.js";
-import { Enforce } from "@config/ServiceManager.js";
+import {aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierServiceImpl";
 
 export type { ClassifyResult } from "@service/stream-parser/io/IClassifier.js";
 
@@ -17,10 +16,6 @@ export type { ClassifyResult } from "@service/stream-parser/io/IClassifier.js";
  * Minimal shape required of an AI-call rate limiter: something whose `acquire()` can be
  * awaited before making an AI request. Named so the shape isn't repeated at every use site.
  */
-export interface AiRateLimiter
-{
-  acquire(): Promise<void>;
-}
 
 export class LineClassifierServiceImpl implements IClassifier
 {
@@ -702,7 +697,7 @@ export class LineClassifierServiceImpl implements IClassifier
     if (isJsonLine)
     {
       this.logger.info("ai_call_initiated", { fingerprint: fp, line_length: line.length, context_lines: contextLines.length, reason: "json_parse" });
-      const { result, ai_calls_used } = await this.tryDiscoverJsonFields(line, aiClassifierService.parseJsonLine);
+      const { result, ai_calls_used } = await this.tryDiscoverJsonFields(line, aiClassifierServiceImpl.parseJsonLine);
 
       if (result)
       {
@@ -719,7 +714,7 @@ export class LineClassifierServiceImpl implements IClassifier
       await this.aiRateLimiter.acquire();
     }
 
-    const resp: ClassifyResponse = await aiClassifierService.classifyAi(req);
+    const resp: ClassifyResponse = await aiClassifierServiceImpl.classifyAi(req);
     const ai_calls_used = 1;
 
     if (resp.kind === AIVerdict.UNCERTAIN || !resp.template)
@@ -1076,7 +1071,7 @@ export class LineClassifierServiceImpl implements IClassifier
     {
       const obj: Record<string, string> = {};
 
-      let parts: string[] = [];
+      let parts: string[];
 
       if (line.includes(" - "))
       {
@@ -1274,11 +1269,11 @@ export class LineClassifierServiceImpl implements IClassifier
 
       if (Array.isArray(v))
       {
-        const allObjects: boolean = v.length > 0 && v.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
+        const allObjects: boolean = v?.length > 0 && v?.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
 
         if (allObjects)
         {
-          for (let i = 0; i < v.length; i++)
+          for (let i = 0; i < v?.length; i++)
           {
             Object.assign(out, this.flattenObject(v[i] as Record<string, unknown>, `${key}[${i}]`));
           }
@@ -2549,3 +2544,5 @@ export class LineClassifierServiceImpl implements IClassifier
     return `text|${trimmed.length}`;
   }
 }
+
+export function Enforce(): void {}

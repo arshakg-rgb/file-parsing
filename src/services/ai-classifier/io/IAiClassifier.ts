@@ -39,3 +39,10 @@ export interface IAiClassifier
 {
   classifyAi(req: ClassifyRequest): Promise<ClassifyResponse>;
 }
+
+export type RawClassifyResponse = Record<string, unknown>;
+
+export const CSV_DELIMITERS = [",", ";", "\t", "|"] as const;
+export const FENCE_RE = /\`\`\`(?:json)?\s*(\{[\s\S]*?\})\s*\`\`\`/;
+export const JSON_BRACE_RE = /\{[\s\S]*\}/;
+export const STRUCTURE_NAMES = new Set(["csv", "json", "kv", "fixed", "regex"]);

@@ -1,6 +1,6 @@
 import pino from "pino";
 import { randomUUID } from "crypto";
-import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { Template, TemplateKind } from "@shared/models/template.js";
 import { ITemplateRegistry } from "@service/ai-classifier/io/ITemplateRegistry.js";
@@ -225,3 +225,5 @@ export class TemplateRegistryService extends ServiceManager implements ITemplate
     }
   }
 }
+
+function Enforce(): void {}

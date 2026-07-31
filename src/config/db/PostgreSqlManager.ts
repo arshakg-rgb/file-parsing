@@ -4,7 +4,7 @@ import pg from "pg";
 import { Sequelize } from "sequelize-typescript";
 import { URL } from "url";
 import Config from "../system-config/Config.js";
-import { ServiceManager, Enforce } from "../ServiceManager.js";
+import { ServiceManager } from "../ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { ServerError } from "@errors/ServerError.js";
 import { createLogger } from "@utils/logger/Log.js";
@@ -294,3 +294,5 @@ export class PostgreSqlManager extends ServiceManager
 
 
 export default PostgreSqlManager;
+
+function Enforce(): void {}

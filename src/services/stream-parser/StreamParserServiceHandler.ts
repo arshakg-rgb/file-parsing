@@ -22,7 +22,7 @@ import EncodingService from "@utils/normalizers/Encoding";
 import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
 import {LineClassifierServiceImpl} from "@service/stream-parser/impl/LineClassifierServiceImpl";
-import { aiClassifierService } from "@service/ai-classifier/AiClassifierServiceHandler.js";
+import {aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierServiceImpl";
 
 /**
  * Extract JSON records from a parsed JSON value for processing as individual classifier inputs.
@@ -636,7 +636,7 @@ export class StreamParserService {
         }
 
         try {
-          const extracted = await aiClassifierService.extractFromMeta(row.meta, fieldSpec, jobId);
+          const extracted = await aiClassifierServiceImpl.extractFromMeta(row.meta, fieldSpec, jobId);
           if (!extracted) {
             return row;
           }
@@ -678,7 +678,7 @@ export class StreamParserService {
         {
           aiHeaderMapped = true;
           try {
-            const aiMapping = await aiClassifierService.mapHeaderColumns(line, fieldSpec, jobId);
+            const aiMapping = await aiClassifierServiceImpl.mapHeaderColumns(line, fieldSpec, jobId);
             if (aiMapping)
             {
               classifier.setHeaderMap(aiMapping, line);

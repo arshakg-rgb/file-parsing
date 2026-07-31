@@ -1,7 +1,7 @@
 import pino from "pino";
 import crypto from "crypto";
 import jschardet from "jschardet";
-import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
@@ -9,7 +9,6 @@ import { JobStatus, ClassifyMessage, ParseMessage } from "@shared/models/job.js"
 import { sendRaw, publishEvent } from "@shared/QueueService.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
-import { AiClassifierService } from "@service/ai-classifier/AiClassifierServiceHandler.js";
 import { mockClassify } from "@service/ai-classifier/mock.js";
 import { DetectBootstrapService } from "@service/detect-bootstrap/DetectBootstrapService.js";
 import {
@@ -20,6 +19,7 @@ import {
 } from "@service/detect-bootstrap/io/IDetectBootstrap.js";
 import EncodingService from "@utils/normalizers/Encoding";
 import {MetricsUtils} from "@utils/response/Metrics";
+import {AiClassifierServiceImpl, aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierServiceImpl";
 
 /**
  * DetectBootstrapServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -101,7 +101,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
       };
     }
 
-    const aiService = AiClassifierService.getInstance();
+    const aiService = AiClassifierServiceImpl.getInstance();
     return async (req: ClassifyRequest): Promise<ClassifyResponse> => {
       const aiReq = {
         ...req,
@@ -512,3 +512,5 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
 }
 
 export default DetectBootstrapServiceImpl;
+
+function Enforce(): void {}

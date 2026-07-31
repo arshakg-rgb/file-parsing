@@ -1,5 +1,5 @@
 import pino from "pino";
-import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import { createLogger } from "@utils/logger/Log.js";
@@ -345,3 +345,5 @@ export class AdaptiveProbing extends ServiceManager {
 
 
 export default AdaptiveProbing;
+
+function Enforce(): void {}

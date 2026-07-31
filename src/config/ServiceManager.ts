@@ -11,12 +11,15 @@ const logger: pino.Logger = createLogger(module);
  * Subclasses may override connect() and gracefulStop(). The public initialize() and
  * shutdown() methods wrap these with logging and process-exit on fatal failures.
  */
-export class ServiceManager {
+export class ServiceManager
+{
   protected static instance: ServiceManager | undefined;
   protected readonly config: Config;
 
-  protected constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
+  protected constructor(enforce: () => void)
+  {
+    if (enforce !== Enforce)
+    {
       throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate ServiceManager directly. Use getInstance()");
     }
     this.config = Config.getInstance();
@@ -34,7 +37,8 @@ export class ServiceManager {
    * Closes the connection / stops the service gracefully.
    * Override in lifecycle managers.
    */
-  public async gracefulStop(): Promise<void> {
+  public async gracefulStop(): Promise<void>
+  {
     // no-op by default
   }
 
@@ -42,11 +46,16 @@ export class ServiceManager {
    * Initializes the manager by connecting and logging the result.
    * Exits the process on fatal connection failure.
    */
-  public async initialize(): Promise<void> {
-    try {
+
+  public async initialize(): Promise<void>
+  {
+    try
+    {
       await this.connect();
       logger.info(`${this.constructor.name} connected successfully`);
-    } catch (error) {
+    }
+    catch (error)
+    {
       logger.error(`Failed to connect to ${this.constructor.name}: ${error instanceof Error ? error.message : String(error)}`);
       process.exit(1);
     }
@@ -55,11 +64,16 @@ export class ServiceManager {
   /**
    * Shuts the manager down by gracefully stopping and logging the result.
    */
-  public async shutdown(): Promise<void> {
-    try {
+
+  public async shutdown(): Promise<void>
+  {
+    try
+    {
       await this.gracefulStop();
       logger.info(`${this.constructor.name} closed successfully`);
-    } catch (error) {
+    }
+    catch (error)
+    {
       logger.error(`Failed to close ${this.constructor.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -68,11 +82,13 @@ export class ServiceManager {
    * Returns the shared configuration instance.
    * @returns The Config instance.
    */
-  public getConfig(): Config {
+
+  public getConfig(): Config
+  {
     return this.config;
   }
 }
 
-export function Enforce(): void {}
+function Enforce(): void {}
 
 export default ServiceManager;

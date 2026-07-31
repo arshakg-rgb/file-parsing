@@ -1,7 +1,7 @@
 import pino from "pino";
 import express, { Request, Response, NextFunction } from "express";
 import { Server as HttpServer } from "node:http";
-import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import { createLogger } from "@utils/logger/Log.js";
@@ -339,3 +339,5 @@ class JobServiceManager extends ServiceManager implements IJobService
 }
 
 export default JobServiceManager;
+
+function Enforce(): void {}

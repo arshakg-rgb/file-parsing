@@ -1,6 +1,6 @@
 import pino from "pino";
 import { Firestore } from "@google-cloud/firestore";
-import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { existsSync } from "fs";
@@ -167,3 +167,5 @@ class FirestoreManager extends ServiceManager
 }
 
 export default FirestoreManager;
+
+function Enforce(): void {}

@@ -1,7 +1,6 @@
 import pino from "pino";
 import { CloudWatchLogsClient, PutLogEventsCommand, CreateLogGroupCommand, CreateLogStreamCommand, DescribeLogGroupsCommand, PutLogEventsCommandInput } from "@aws-sdk/client-cloudwatch-logs";
-import Config from "@config/system-config/Config.js";
-import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { createLogger } from "@utils/logger/Log.js";
 
@@ -264,3 +263,6 @@ export async function sendJsonToCloudWatch(
 ): Promise<void> {
   return cloudWatchService.sendJsonToCloudWatch(logGroupName, logStreamName, data);
 }
+
+
+function Enforce(): void {}

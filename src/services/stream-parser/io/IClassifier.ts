@@ -30,3 +30,9 @@ export interface IClassifier
 
   classifyWithTimeout(line: string, contextLines: string[], timeoutMs: number, remainingBudget?: number): Promise<ClassifyResult>;
 }
+
+
+export interface AiRateLimiter
+{
+  acquire(): Promise<void>;
+}

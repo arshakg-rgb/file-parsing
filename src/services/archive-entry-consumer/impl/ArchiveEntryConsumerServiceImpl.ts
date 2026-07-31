@@ -5,7 +5,7 @@ import { createWriteStream } from "fs";
 import { pipeline } from "stream/promises";
 import path from "path";
 import { spawn } from "child_process";
-import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import { createLogger } from "@utils/logger/Log.js";
@@ -407,3 +407,5 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
 }
 
 export default ArchiveEntryConsumerServiceImpl;
+
+function Enforce(): void {}

@@ -1,7 +1,7 @@
 import pino from "pino";
 import crypto from "crypto";
 import { Storage } from "@google-cloud/storage";
-import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { createLogger } from "@utils/logger/Log.js";
 import EncodingService from "@utils/normalizers/Encoding";
@@ -831,3 +831,5 @@ export function sha256Hex(data: Buffer): string {
 }
 
 export { parseGcsUrl as parseS3Url };
+
+function Enforce(): void {}

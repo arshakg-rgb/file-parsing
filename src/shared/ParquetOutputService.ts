@@ -1,5 +1,5 @@
 import pino from "pino";
-import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import { createLogger } from "@utils/logger/Log.js";
@@ -87,3 +87,5 @@ export default ParquetOutputService;
  * The parquet output service
  */
 export const parquetOutputService = ParquetOutputService.getInstance();
+
+function Enforce(): void {}

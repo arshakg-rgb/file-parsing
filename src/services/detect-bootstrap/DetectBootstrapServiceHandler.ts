@@ -9,7 +9,6 @@ import { parseGcsUrl, objectSize, readRange } from "@shared/GcsUtils.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { waitForDb } from "@shared/DatabaseManager.js";
-import { aiClassifierService } from "@service/ai-classifier/AiClassifierServiceHandler.js";
 import {
   ClassifyKind,
   ClassifyRequest, ClassifyResponse, CSV_DELIMITERS, HEADER_PATTERNS,
@@ -19,6 +18,7 @@ import {
 import EncodingService from "@utils/normalizers/Encoding";
 import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
+import {aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierServiceImpl";
 
 
 export class DetectBootstrapService
@@ -117,7 +117,7 @@ export class DetectBootstrapService
           context_lines: req.context_lines || [],
         };
 
-        const aiResp: ClassifyResponse = await aiClassifierService.classifyAi(aiReq);
+        const aiResp: ClassifyResponse = await aiClassifierServiceImpl.classifyAi(aiReq);
 
         return aiResp.template
             ? { kind: aiResp.kind as ClassifyKind, template: aiResp.template }

@@ -1,7 +1,6 @@
 import pino from "pino";
-import type { SQSClient, SQSClientConfig, Message, SendMessageCommandInput, ReceiveMessageCommandInput } from "@aws-sdk/client-sqs";
-import Config from "@config/system-config/Config.js";
-import ServiceManager, { Enforce } from "@config/ServiceManager.js";
+import type { SQSClient, SQSClientConfig, SendMessageCommandInput } from "@aws-sdk/client-sqs";
+import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { createLogger } from "@utils/logger/Log.js";
 
@@ -14,54 +13,54 @@ export interface QueueMessage<T> {
  * QueueService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
  */
 class QueueService extends ServiceManager {
-    /**
+  /**
    * Singleton instance
    * @private
    */
   protected static instance: QueueService;
-    /**
+  /**
    * Logger instance
    * @private
    */
   private logger: pino.Logger;
-    /**
+  /**
    * Q U E U E_ R E T R I E S
    * @private
    */
   private readonly QUEUE_RETRIES = 3;
-    /**
+  /**
    * Q U E U E_ R E T R Y_ D E L A Y
    * @private
    */
   private readonly QUEUE_RETRY_DELAY = 200;
-    /**
+  /**
    * Q U E U E_ T I M E O U T_ S E N D
    * @private
    */
   private readonly QUEUE_TIMEOUT_SEND = 60000;
-    /**
+  /**
    * Q U E U E_ T I M E O U T_ R E C E I V E
    * @private
    */
   private readonly QUEUE_TIMEOUT_RECEIVE = 120000;
 
-    /**
+  /**
    * Pub Publisher
    * @private
    */
   private pubPublisher: unknown = null;
-    /**
+  /**
    * Pub Subscriber
    * @private
    */
   private pubSubscriber: unknown = null;
-    /**
+  /**
    * Sqs Client
    * @private
    */
   private sqsClient: unknown = null;
 
-    /**
+  /**
    * Constructs a new QueueService instance.
    * @param enforce - A function to enforce the Singleton pattern
    * @throws Error if instantiated directly
@@ -75,7 +74,7 @@ class QueueService extends ServiceManager {
     this.logger = createLogger(module);
   }
 
-    /**
+  /**
    * Gets the single instance of the QueueService class.
    * @returns The single instance of the class
    */
@@ -86,7 +85,7 @@ class QueueService extends ServiceManager {
     return QueueService.instance;
   }
 
-    /**
+  /**
    * Checks whether retryable
    * @param err - The error that occurred
    * @returns True if the condition is met, false otherwise
@@ -101,7 +100,7 @@ class QueueService extends ServiceManager {
     return true;
   }
 
-    /**
+  /**
    * Performs the with timeout operation.
    * @param fn - The fn
    * @param ms - The ms
@@ -116,19 +115,19 @@ class QueueService extends ServiceManager {
       }, ms);
 
       fn().then(
-        (value) => {
-          clearTimeout(timer);
-          resolve(value);
-        },
-        (err) => {
-          clearTimeout(timer);
-          reject(err);
-        }
+          (value) => {
+            clearTimeout(timer);
+            resolve(value);
+          },
+          (err) => {
+            clearTimeout(timer);
+            reject(err);
+          }
       );
     });
   }
 
-    /**
+  /**
    * Performs the with retry operation.
    * @param fn - The fn
    * @param retries - The number of retries
@@ -151,7 +150,7 @@ class QueueService extends ServiceManager {
     throw lastErr;
   }
 
-    /**
+  /**
    * Checks whether pub sub
    * @returns True if the condition is met, false otherwise
    */
@@ -160,7 +159,7 @@ class QueueService extends ServiceManager {
     return config.settings.QUEUE_BACKEND === "pubsub";
   }
 
-    /**
+  /**
    * Gets pub publisher
    */
   private async getPubPublisher() {
@@ -174,7 +173,7 @@ class QueueService extends ServiceManager {
     return this.pubPublisher;
   }
 
-    /**
+  /**
    * Gets pub subscriber
    */
   private async getPubSubscriber() {
@@ -188,7 +187,7 @@ class QueueService extends ServiceManager {
     return this.pubSubscriber;
   }
 
-    /**
+  /**
    * Performs the topic path operation.
    * @param q - The q
    * @returns The string result
@@ -199,7 +198,7 @@ class QueueService extends ServiceManager {
     return `projects/${config.settings.GCP_PROJECT_ID}/topics/${q.split("/").pop()!.replace(/\.fifo$/, "")}`;
   }
 
-    /**
+  /**
    * Performs the subscription path operation.
    * @param q - The q
    * @returns The string result
@@ -210,7 +209,7 @@ class QueueService extends ServiceManager {
     return `projects/${config.settings.GCP_PROJECT_ID}/subscriptions/${q.split("/").pop()!.replace(/\.fifo$/, "")}-sub`;
   }
 
-    /**
+  /**
    * Gets sqs client
    */
   private async getSqsClient() {
@@ -226,7 +225,7 @@ class QueueService extends ServiceManager {
     return this.sqsClient;
   }
 
-    /**
+  /**
    * Performs the pub send operation.
    * @param queueUrl - The queue url
    * @param payload - The payload
@@ -240,11 +239,11 @@ class QueueService extends ServiceManager {
       this.logger.debug("pub_send_attempt", { queueUrl, topic, groupId });
       const pub = (await this.getPubPublisher()) as unknown as { publish: (opts: { topic: string; messages: { data: string; orderingKey: string }[] }) => Promise<[{ messageIds?: string[] }]> };
       const [resp] = await this.withTimeout<[{ messageIds?: string[] }]>(
-        () => pub.publish({
-          topic: topic,
-          messages: [{ data, orderingKey: groupId }],
-        }),
-        this.QUEUE_TIMEOUT_SEND
+          () => pub.publish({
+            topic: topic,
+            messages: [{ data, orderingKey: groupId }],
+          }),
+          this.QUEUE_TIMEOUT_SEND
       );
       const messageId = (resp.messageIds ?? [])[0] ?? "";
       this.logger.debug("pub_send_success", { topic, messageId });
@@ -252,7 +251,7 @@ class QueueService extends ServiceManager {
     });
   }
 
-    /**
+  /**
    * Performs the pub receive operation.
    * @param queueUrl - The queue url
    * @param parser - The parser
@@ -285,7 +284,7 @@ class QueueService extends ServiceManager {
     return [];
   }
 
-    /**
+  /**
    * Performs the pub delete operation.
    * @param queueUrl - The queue url
    * @param ackId - The ack id
@@ -295,13 +294,13 @@ class QueueService extends ServiceManager {
     await this.withRetry(async () => {
       const sub = (await this.getPubSubscriber()) as unknown as { acknowledge: (opts: { subscription: string; ackIds: string[] }) => Promise<unknown> };
       await this.withTimeout<unknown>(
-        () => sub.acknowledge({ subscription: this.subscriptionPath(queueUrl), ackIds: [ackId] }),
-        this.QUEUE_TIMEOUT_SEND
+          () => sub.acknowledge({ subscription: this.subscriptionPath(queueUrl), ackIds: [ackId] }),
+          this.QUEUE_TIMEOUT_SEND
       );
     });
   }
 
-    /**
+  /**
    * Performs the pub modify ack deadline operation.
    * @param queueUrl - The queue url
    * @param ackId - The ack id
@@ -312,13 +311,13 @@ class QueueService extends ServiceManager {
     await this.withRetry(async () => {
       const sub = (await this.getPubSubscriber()) as unknown as { modifyAckDeadline: (opts: { subscription: string; ackIds: string[]; ackDeadlineSeconds: number }) => Promise<unknown> };
       await this.withTimeout<unknown>(
-        () => sub.modifyAckDeadline({ subscription: this.subscriptionPath(queueUrl), ackIds: [ackId], ackDeadlineSeconds: deadlineSeconds }),
-        this.QUEUE_TIMEOUT_SEND
+          () => sub.modifyAckDeadline({ subscription: this.subscriptionPath(queueUrl), ackIds: [ackId], ackDeadlineSeconds: deadlineSeconds }),
+          this.QUEUE_TIMEOUT_SEND
       );
     });
   }
 
-    /**
+  /**
    * Performs the sqs send operation.
    * @param queueUrl - The queue url
    * @param payload - The payload
@@ -340,17 +339,17 @@ class QueueService extends ServiceManager {
       }
       const client = (await this.getSqsClient()) as SQSClient;
       const resp = await this.withTimeout<{ MessageId?: string }>(
-        async () => {
-          const { SendMessageCommand } = await import("@aws-sdk/client-sqs");
-          return client.send(new SendMessageCommand(params));
-        },
-        this.QUEUE_TIMEOUT_SEND
+          async () => {
+            const { SendMessageCommand } = await import("@aws-sdk/client-sqs");
+            return client.send(new SendMessageCommand(params));
+          },
+          this.QUEUE_TIMEOUT_SEND
       );
       return resp.MessageId ?? "";
     });
   }
 
-    /**
+  /**
    * Performs the sqs receive operation.
    * @param queueUrl - The queue url
    * @param parser - The parser
@@ -363,14 +362,14 @@ class QueueService extends ServiceManager {
       const { ReceiveMessageCommand } = await import("@aws-sdk/client-sqs");
       const client = (await this.getSqsClient()) as SQSClient;
       const resp = await this.withTimeout<{ Messages?: { Body?: string; ReceiptHandle?: string }[] }>(
-        () => client.send(new ReceiveMessageCommand({
-          QueueUrl: queueUrl,
-          MaxNumberOfMessages: Math.min(max, 10),
-          WaitTimeSeconds: Math.min(wait, 20),
-          AttributeNames: ["All"],
-          MessageAttributeNames: ["All"],
-        })),
-        this.QUEUE_TIMEOUT_RECEIVE
+          () => client.send(new ReceiveMessageCommand({
+            QueueUrl: queueUrl,
+            MaxNumberOfMessages: Math.min(max, 10),
+            WaitTimeSeconds: Math.min(wait, 20),
+            AttributeNames: ["All"],
+            MessageAttributeNames: ["All"],
+          })),
+          this.QUEUE_TIMEOUT_RECEIVE
       );
       return (resp.Messages ?? []).map((m) => ({
         payload: parser(m.Body ?? ""),
@@ -379,7 +378,7 @@ class QueueService extends ServiceManager {
     });
   }
 
-    /**
+  /**
    * Performs the sqs delete operation.
    * @param queueUrl - The queue url
    * @param receiptHandle - The receipt handle
@@ -390,13 +389,13 @@ class QueueService extends ServiceManager {
       const { DeleteMessageCommand } = await import("@aws-sdk/client-sqs");
       const client = (await this.getSqsClient()) as SQSClient;
       await this.withTimeout<unknown>(
-        () => client.send(new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: receiptHandle })),
-        this.QUEUE_TIMEOUT_SEND
+          () => client.send(new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: receiptHandle })),
+          this.QUEUE_TIMEOUT_SEND
       );
     });
   }
 
-    /**
+  /**
    * Sends message
    * @param queueUrl - The queue url
    * @param payload - The payload
@@ -405,18 +404,18 @@ class QueueService extends ServiceManager {
    * @returns A promise that resolves to the result
    */
   public async sendMessage(
-    queueUrl: string,
-    payload: object,
-    delaySeconds = 0,
-    messageGroupId?: string
+      queueUrl: string,
+      payload: object,
+      delaySeconds = 0,
+      messageGroupId?: string
   ): Promise<string> {
     const gid = messageGroupId ?? ((payload as Record<string, unknown>).job_id as string | undefined) ?? "default";
     return this.isPubSub()
-      ? this.pubSend(queueUrl, payload, gid)
-      : this.sqsSend(queueUrl, payload, delaySeconds, gid);
+        ? this.pubSend(queueUrl, payload, gid)
+        : this.sqsSend(queueUrl, payload, delaySeconds, gid);
   }
 
-    /**
+  /**
    * Sends raw
    * @param queueUrl - The queue url
    * @param body - The body
@@ -427,7 +426,7 @@ class QueueService extends ServiceManager {
     return this.sendMessage(queueUrl, body, delaySeconds, (body.job_id as string | undefined) ?? "default");
   }
 
-    /**
+  /**
    * Receives messages
    * @param queueUrl - The queue url
    * @param parser - The parser
@@ -436,28 +435,28 @@ class QueueService extends ServiceManager {
    * @returns A promise that resolves to the list
    */
   public async receiveMessages<T extends object>(
-    queueUrl: string,
-    parser: (body: string) => T,
-    maxMessages = 1,
-    waitSeconds = 20
+      queueUrl: string,
+      parser: (body: string) => T,
+      maxMessages = 1,
+      waitSeconds = 20
   ): Promise<QueueMessage<T>[]> {
     return this.isPubSub()
-      ? this.pubReceive(queueUrl, parser, maxMessages, waitSeconds)
-      : this.sqsReceive(queueUrl, parser, maxMessages, waitSeconds);
+        ? this.pubReceive(queueUrl, parser, maxMessages, waitSeconds)
+        : this.sqsReceive(queueUrl, parser, maxMessages, waitSeconds);
   }
 
-    /**
+  /**
    * Deletes message
    * @param queueUrl - The queue url
    * @param receiptHandle - The receipt handle
    */
   public async deleteMessage(queueUrl: string, receiptHandle: string): Promise<void> {
     return this.isPubSub()
-      ? this.pubDelete(queueUrl, receiptHandle)
-      : this.sqsDelete(queueUrl, receiptHandle);
+        ? this.pubDelete(queueUrl, receiptHandle)
+        : this.sqsDelete(queueUrl, receiptHandle);
   }
 
-    /**
+  /**
    * Modifies ack deadline
    * @param queueUrl - The queue url
    * @param receiptHandle - The receipt handle
@@ -471,7 +470,7 @@ class QueueService extends ServiceManager {
     // For SQS, we would use ChangeMessageVisibility, but not needed for current use case
   }
 
-    /**
+  /**
    * Publishes event
    * @param event - The event
    * @returns A promise that resolves to the result
@@ -501,10 +500,10 @@ const queueService = QueueService.getInstance();
  * @returns A promise that resolves to the result
  */
 export async function sendMessage(
-  queueUrl: string,
-  payload: object,
-  delaySeconds = 0,
-  messageGroupId?: string
+    queueUrl: string,
+    payload: object,
+    delaySeconds = 0,
+    messageGroupId?: string
 ): Promise<string> {
   return queueService.sendMessage(queueUrl, payload, delaySeconds, messageGroupId);
 }
@@ -529,10 +528,10 @@ export async function sendRaw(queueUrl: string, body: Record<string, unknown>, d
  * @returns A promise that resolves to the list
  */
 export async function receiveMessages<T extends object>(
-  queueUrl: string,
-  parser: (body: string) => T,
-  maxMessages = 1,
-  waitSeconds = 20
+    queueUrl: string,
+    parser: (body: string) => T,
+    maxMessages = 1,
+    waitSeconds = 20
 ): Promise<QueueMessage<T>[]> {
   return queueService.receiveMessages(queueUrl, parser, maxMessages, waitSeconds);
 }
@@ -564,3 +563,5 @@ export async function modifyAckDeadline(queueUrl: string, receiptHandle: string,
 export async function publishEvent(event: object): Promise<string | null> {
   return queueService.publishEvent(event);
 }
+
+function Enforce(): void {}

@@ -1,4 +1,3 @@
-import pino from "pino";
 import express, { Request, Response, NextFunction } from "express";
 import { settings } from "@shared/Settings.js";
 import FirestoreManager from "@config/firestore/FirestoreManager.js";
@@ -6,7 +5,7 @@ import { ClassifyRequest, TemplateKind } from "@shared/models/template.js";
 import { mockClassify } from "./mock.js";
 import { TemplateRegistryFacade } from "./templateRegistry.js";
 import { createLogger } from "@utils/logger/Log.js";
-import {aiClassifierService} from "@service/ai-classifier/AiClassifierServiceHandler.js";
+import {aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierServiceImpl";
 
 const logger = createLogger(module);
 
@@ -27,7 +26,7 @@ app.post("/classify", async (req: Request, res: Response, next: NextFunction) =>
       res.json(mockClassify(request));
       return;
     }
-    const result = await aiClassifierService.classifyAi(request);
+    const result = await aiClassifierServiceImpl.classifyAi(request);
     res.json(result);
   } catch (err) {
     next(err);
