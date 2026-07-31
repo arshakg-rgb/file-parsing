@@ -90,9 +90,10 @@ export class CsvOutputWriter {
    * @param fieldSpec - The field spec
    */
   constructor(private readonly jobId: string, fieldSpec: string[]) {
-    // Output columns are exactly the requested field_spec (deduplicated).
-    const base = (fieldSpec && fieldSpec.length > 0 ? fieldSpec : ["value"]);
-    this.columns = [...new Set(base)];
+    // Output columns are the requested field_spec (deduplicated, with meta removed),
+    // followed by a trailing "meta" column that captures all unmapped fields.
+    const base = (fieldSpec && fieldSpec.length > 0 ? fieldSpec : ["value"]).filter((c) => c !== "meta");
+    this.columns = [...new Set(base), "meta"];
     this.tmpPath = path.join(os.tmpdir(), `${jobId}-output.csv`);
     this.logger = createLogger(module);
     this.gcsUtils = FirestoreCacheUtils.getInstance();

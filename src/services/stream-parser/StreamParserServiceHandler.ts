@@ -745,12 +745,10 @@ export class StreamParserService {
             // Sanitize row data before storage
             const sanitizedRow = this.sanitizeRecord(result.row || {});
 
-            // AI enrichment from meta JSON (dynamic, field_spec-driven)
-            await enrichFromMeta(sanitizedRow);
-
-            // Remove meta from output if it is not in the requested field_spec
-            if (!fieldSpec.includes("meta") && "meta" in sanitizedRow) {
-              delete sanitizedRow.meta;
+            // AI enrichment from meta JSON is only useful for JSON-derived records.
+            // For CSV/TSV rows the meta column is already a clean JSON object of unmapped fields.
+            if (result.template_id === "json" || result.template_id?.startsWith("json-")) {
+              await enrichFromMeta(sanitizedRow);
             }
 
             // Write-time guard: never emit a row whose email/phone is populated but invalid, no
