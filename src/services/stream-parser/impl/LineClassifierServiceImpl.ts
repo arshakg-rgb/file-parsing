@@ -286,7 +286,6 @@ export class LineClassifierServiceImpl implements IClassifier
     {
       this.firstLine = false;
 
-      // If an AI-driven header map was injected, use it directly.
       if (!this.headerMap)
       {
         const header: Record<string, number | number[]> | null = this.detectHeader(line);
@@ -297,7 +296,6 @@ export class LineClassifierServiceImpl implements IClassifier
         }
       }
 
-      // First line was (or consumed) the header.
       if (this.headerMap)
       {
         const parts: string[] | null = this.splitBestDelimited(line);
@@ -1191,8 +1189,6 @@ export class LineClassifierServiceImpl implements IClassifier
       return true;
     }
 
-    // Dynamic match for numbered/segmented variants a source file may use for a single
-    // logical field, e.g. "address1"/"address2", "street_address_1", "phone2".
     return aliases.some((a) => {
       const na: string = this.normalizeKey(a);
       return na.length >= 3 && normalizedKey.startsWith(na) && /^\d*$/.test(normalizedKey.slice(na.length));
@@ -1314,7 +1310,6 @@ export class LineClassifierServiceImpl implements IClassifier
         }
       }
 
-      // Skip JSON parsing for the 'meta' field to preserve it as a string
       if (typeof sv === "string" && (sv.trim().startsWith("{") || sv.trim().startsWith("[")) && key !== "meta")
       {
         try
@@ -1884,8 +1879,6 @@ export class LineClassifierServiceImpl implements IClassifier
       }
       else if (matchingIndices.length > 1)
       {
-        // Multiple columns map to the same logical field (e.g. address1/address2):
-        // merge them so no data is silently dropped.
         map[field] = matchingIndices;
         matched++;
       }
@@ -2092,8 +2085,6 @@ export class LineClassifierServiceImpl implements IClassifier
           }
         }
 
-        // If meta is in fieldSpec and has a mapped column, use that column's value directly as a JSON string
-        // Otherwise, use the metaObj built from unmapped columns
         const metaColumnIndex: number | number[] | undefined = this.headerMap!["meta"];
         if (metaColumnIndex !== undefined)
         {
