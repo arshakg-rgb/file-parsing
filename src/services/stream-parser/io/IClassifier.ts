@@ -36,3 +36,17 @@ export interface AiRateLimiter
 {
   acquire(): Promise<void>;
 }
+
+
+/**
+ * Handle returned to collaborators (e.g. `LineClassifierServiceImpl`) that need
+ * to acquire AI rate-limit tokens without depending on `StreamParserService`
+ * directly. Backed entirely by private state/methods on the service instance —
+ * this is a thin delegation object, not a second class or a free function.
+ */
+
+export interface AIRateLimiterHandle {
+  acquire(): Promise<void>;
+  getStats(): { currentRequests: number; rpm: number; burst: number };
+  reset(): void;
+}
