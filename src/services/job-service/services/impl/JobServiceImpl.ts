@@ -373,12 +373,14 @@ export class JobServiceImpl implements JobService
       return null;
     }
 
+    const timings = await this.buildTimingsWithDownload(row.job_id, row.timings as JobTimings);
+
     return {
       job_id: row.job_id,
       batch_id: row.batch_id,
       status: row.status,
       counts: row.counts as JobCounts,
-      timings: row.timings as JobTimings,
+      timings,
       error: row.error,
     };
   }
@@ -394,14 +396,43 @@ export class JobServiceImpl implements JobService
   {
     const rows: ParseJobAttributes[] = await this.postgreSqlManager.repositories.jobs.findByBatchId(batchId);
 
-    return rows.map((row: ParseJobRow) => ({
-      job_id: row.job_id,
-      batch_id: row.batch_id,
-      status: row.status,
-      counts: row.counts as JobCounts,
-      timings: row.timings as JobTimings,
-      error: row.error,
+    return await Promise.all(rows.map(async (row: ParseJobRow) =>
+    {
+      const timings = await this.buildTimingsWithDownload(row.job_id, row.timings as JobTimings);
+
+      return {
+        job_id: row.job_id,
+        batch_id: row.batch_id,
+        status: row.status,
+        counts: row.counts as JobCounts,
+        timings,
+        error: row.error,
+      };
     }));
+  }
+
+  /**
+   * Builds job timings with a presigned download URL for the parsed CSV.
+   */
+  private async buildTimingsWithDownload(jobId: string, rawTimings: JobTimings): Promise<JobTimings>
+  {
+    const timings: JobTimings = { ...rawTimings };
+    const csvOutputPath = rawTimings._csv_output_path as string | undefined;
+    if (csvOutputPath)
+    {
+      try
+      {
+        const [bucket, key] = parseGcsUrl(csvOutputPath);
+        const filename = key.split("/").pop() ?? `${jobId}.csv`;
+        timings.download_path = await presignedGetUrl(bucket, key, 3600, filename);
+      }
+      catch (err)
+      {
+        this.logger.warn("download_url_generation_failed", { job_id: jobId, error: String(err) });
+        timings.download_path = null;
+      }
+    }
+    return timings;
   }
 
   /**
