@@ -59,16 +59,6 @@ export interface EntryDiscoveredData {
   pending?: boolean;
 }
 
-export interface PendingEntryData {
-  parent_job_id: string;
-  batch_id: string;
-  entry_s3_url: null;
-  entry_name: string;
-  entry_size: number;
-  field_spec: string[];
-  pending: true;
-}
-
 export interface ParsingCompletedData {
   job_id: string;
   parsed: number;

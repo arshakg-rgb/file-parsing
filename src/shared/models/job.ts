@@ -1,11 +1,6 @@
-import { randomUUID } from "crypto";
 import { SourceType } from "@common/enum/SourceType.js";
-import { ExecPath } from "@common/enum/ExecPath.js";
 import { JobStatus } from "@common/enum/JobStatus.js";
 import { FailureClass } from "@common/enum/FailureClass.js";
-import { DLQStatus } from "@common/enum/DLQStatus.js";
-
-// Re-export enums for backward compatibility
 export { SourceType } from "@common/enum/SourceType.js";
 export { ExecPath } from "@common/enum/ExecPath.js";
 export { JobStatus } from "@common/enum/JobStatus.js";
@@ -69,55 +64,6 @@ export interface JobTimings {
   [key: string]: unknown;
 }
 
-export interface ParseJob {
-  job_id: string;
-  batch_id?: string;
-  parent_job_id?: string;
-  source_type: SourceType;
-  source_ref: string;
-  s3_url?: string;
-  size?: number;
-  field_spec: string[];
-  exec_path: ExecPath;
-  status: JobStatus;
-  output_paths: string[];
-  counts: JobCounts;
-  timings: JobTimings;
-  error?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-/**
- * Performs the default parse job operation.
- * @returns The parse job result
- */
-export function defaultParseJob(): ParseJob {
-  const now = new Date().toISOString();
-  return {
-    job_id: randomUUID(),
-    source_type: SourceType.S3,
-    source_ref: "",
-    field_spec: [],
-    exec_path: ExecPath.STREAM,
-    status: JobStatus.QUEUED,
-    output_paths: [],
-    counts: { parsed: 0, dropped_rubbish: 0, failed_by_class: {} },
-    timings: {},
-    created_at: now,
-    updated_at: now,
-  };
-}
-
-/**
- * Checks whether transition to
- * @param current - The current
- * @param next - The next middleware function
- * @returns True if the condition is met, false otherwise
- */
-export function canTransitionTo(current: JobStatus, next: JobStatus): boolean {
-  return VALID_TRANSITIONS[current]?.includes(next) ?? false;
-}
 
 /**
  * Checks whether terminal
@@ -126,40 +72,6 @@ export function canTransitionTo(current: JobStatus, next: JobStatus): boolean {
  */
 export function isTerminal(status: JobStatus): boolean {
   return TERMINAL_STATUSES.has(status);
-}
-
-export interface OutputPart {
-  part_id: string;
-  job_id: string;
-  template_id: string;
-  s3_path: string;
-  row_count: number;
-  byte_size: number;
-  created_at: string;
-}
-
-export interface RubbishLogEntry {
-  job_id: string;
-  byte_offset: number;
-  line_no: number;
-  raw_bytes: string;
-  matched_template_id: string;
-  logged_at: string;
-}
-
-export interface DeadLetterEntry {
-  dlq_id: string;
-  job_id: string;
-  byte_offset: number;
-  byte_length: number;
-  line_no: number;
-  raw_bytes: string;
-  failure_class: FailureClass;
-  error: string;
-  attempts: number;
-  status: DLQStatus;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface TraceRecord {

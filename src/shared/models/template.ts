@@ -1,4 +1,3 @@
-import { randomUUID } from "crypto";
 
 export enum TemplateKind {
   RECORD = "record",
@@ -23,17 +22,6 @@ export interface FieldLocator {
   index?: number;
   regex?: string;
   key?: string;
-}
-
-/**
- * Validates field locator
- * @param loc - The loc
- */
-export function validateFieldLocator(loc: FieldLocator): void {
-  const set = [loc.index, loc.regex, loc.key].filter((v) => v !== null && v !== undefined);
-  if (set.length !== 1) {
-    throw new Error("Exactly one of index, regex, key must be set in FieldLocator");
-  }
 }
 
 export interface RecordTemplateData {
@@ -65,18 +53,6 @@ export interface Template {
   updated_at: string;
 }
 
-/**
- * Validates template
- * @param t - The t
- */
-export function validateTemplate(t: Template): void {
-  if (t.kind === TemplateKind.RECORD && !t.record) {
-    throw new Error("Template with kind=record must have record data");
-  }
-  if (t.kind === TemplateKind.RUBBISH && !t.rubbish) {
-    throw new Error("Template with kind=rubbish must have rubbish data");
-  }
-}
 
 export enum AIVerdict {
   RECORD_TEMPLATE = "record-template",
@@ -95,75 +71,4 @@ export interface ClassifyResponse {
   kind: AIVerdict;
   template?: Template;
   reasoning?: string;
-}
-
-/**
- * Performs the make record template operation.
- * @param record - The record
- * @param fingerprint - The fingerprint
- * @param source - The source
- * @returns The template result
- */
-export function makeRecordTemplate(
-  record: RecordTemplateData,
-  fingerprint: string,
-  source: TemplateSource = TemplateSource.AI
-): Template {
-  return {
-    template_id: randomUUID(),
-    kind: TemplateKind.RECORD,
-    fingerprint,
-    version: 1,
-    record,
-    source,
-    match_count: 0,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-}
-
-/**
- * Performs the make rubbish template operation.
- * @param rubbish - The rubbish
- * @param fingerprint - The fingerprint
- * @param source - The source
- * @returns The template result
- */
-export function makeRubbishTemplate(
-  rubbish: RubbishTemplateData,
-  fingerprint: string,
-  source: TemplateSource = TemplateSource.AI
-): Template {
-  if (rubbish.confidence < 0.9) {
-    throw new Error(`Rubbish template confidence ${rubbish.confidence} is below minimum 0.90`);
-  }
-  return {
-    template_id: randomUUID(),
-    kind: TemplateKind.RUBBISH,
-    fingerprint,
-    version: 1,
-    rubbish,
-    source,
-    match_count: 0,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-}
-
-/**
- * Checks whether record
- * @param t - The t
- * @returns True if the condition is met, false otherwise
- */
-export function isRecord(t: Template): boolean {
-  return t.kind === TemplateKind.RECORD;
-}
-
-/**
- * Checks whether rubbish
- * @param t - The t
- * @returns True if the condition is met, false otherwise
- */
-export function isRubbish(t: Template): boolean {
-  return t.kind === TemplateKind.RUBBISH;
 }
