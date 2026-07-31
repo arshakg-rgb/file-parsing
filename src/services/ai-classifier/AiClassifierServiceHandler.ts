@@ -626,9 +626,17 @@ Output:`;
     this.logger.info("ai_header_mapping_start", { job_id: jobId, header_line: headerLine, field_spec: fieldSpec });
 
     const prompt = `You are a data mapping assistant.
-Given this CSV header line and the target field specification, map each source column to the most appropriate target field.
-A source column can map to ONE target field, and a target field can use ONE OR MORE source column indices (e.g. address_1 + address_2 both map to "address").
-Unmapped columns can be ignored.
+Given this CSV header line and the target field specification, return a JSON mapping of target field names to 0-based source column indices.
+
+Rules:
+- A source column maps to exactly one target field.
+- A target field may use one OR MORE source column indices. If a logical field is split across multiple columns, list all of them in the order they should appear, joined by ", ".
+- For "address", include all street address parts such as Address1, Address2, street, house, and number columns.
+- For "location", include city, county, state, postcode, zip, and country columns (e.g. City + County + Postcode + CountryName).
+- For "phone", prefer "Telephone", "Mobile", or "Cell" over "Fax" and pick only one value.
+- For "email", pick the Email or email-like column.
+- Ignore ID, passenger, reservation, and other unrelated metadata columns.
+- Do not create a "meta" mapping.
 
 Target field specification: ${fieldSpec.join(", ")}
 CSV header line: ${headerLine}
@@ -640,7 +648,7 @@ Return ONLY valid JSON in this exact shape (no markdown, no explanation):
   }
 }
 
-Use 0-based column indices. If a field has no matching column, omit it from "mappings".`;
+Use 0-based column indices. If a field has no matching column, omit it from "mappings".`
 
     try
     {
