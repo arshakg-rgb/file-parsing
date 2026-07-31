@@ -160,6 +160,105 @@ export class LineClassifierServiceImpl implements IClassifier
     this.headerMap = map;
     const parts: string[] | null = this.splitBestDelimited(headerLine);
     this.headerParts = parts ? parts.map((p) => p.trim()) : [headerLine.trim()];
+    this.expandCompositeHeaderMap();
+  }
+
+  /**
+   * Expands an injected or detected header map by adding unmapped columns that
+   * semantically belong to a target composite field. This is dynamic and
+   * pattern-driven, not a hardcoded list of column names for one file.
+   */
+  private expandCompositeHeaderMap(): void
+  {
+    if (!this.headerMap || !this.headerParts || this.fieldSpec.length === 0)
+    {
+      return;
+    }
+
+    const normalized = (s: string): string =>
+      s.toLowerCase()
+        .replace(/[-_.\s]+/g, "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+
+    const skip = /emergency|emerg|business|fax|secondary|alternate/;
+
+    const patterns: Record<string, RegExp[]> = {
+      address: [
+        /(?:^|[^a-z0-9])addr(?:ess)?/,
+        /(?:^|[^a-z0-9])(?:street|st|road|rd|lane|jalan|avenue|av)/,
+        /(?:^|[^a-z0-9])(?:house|hse|apt|apartment|unit|block|lot|building|number|no)/,
+      ],
+      location: [
+        /(?:^|[^a-z0-9])(?:city|town)/,
+        /(?:^|[^a-z0-9])(?:county|state|province|region|district)/,
+        /(?:^|[^a-z0-9])(?:postcode|postal|zip)/,
+        /(?:^|[^a-z0-9])(?:country|countryname)/,
+      ],
+      name: [
+        /(?:^|[^a-z0-9])(?:first|given|fore)/,
+        /(?:^|[^a-z0-9])(?:last|sur)/,
+        /(?:^|[^a-z0-9])(?:full|complete)/,
+        /(?:^|[^a-z0-9])name/,
+      ],
+      phone: [
+        /(?:^|[^a-z0-9])(?:telephone|telefon|tel|mobile|cell|handphone|hp|phone)/,
+      ],
+      email: [
+        /(?:^|[^a-z0-9])e?mail/,
+      ],
+    };
+
+    const mapped = new Set<number>();
+    for (const idxs of Object.values(this.headerMap))
+    {
+      if (idxs === undefined) continue;
+      for (const i of Array.isArray(idxs) ? idxs : [idxs])
+      {
+        mapped.add(i);
+      }
+    }
+
+    for (const field of this.fieldSpec)
+    {
+      const fieldPatterns = patterns[field];
+      if (!fieldPatterns) continue;
+
+      const matched = new Set<number>();
+      const existing = this.headerMap[field];
+      if (existing !== undefined)
+      {
+        for (const i of Array.isArray(existing) ? existing : [existing])
+        {
+          matched.add(i);
+        }
+      }
+
+      for (let i = 0; i < this.headerParts.length; i++)
+      {
+        if (matched.has(i) || mapped.has(i)) continue;
+        const norm = normalized(this.headerParts[i]);
+        if (skip.test(norm)) continue;
+        for (const re of fieldPatterns)
+        {
+          if (re.test(norm))
+          {
+            matched.add(i);
+            break;
+          }
+        }
+      }
+
+      if (matched.size > 0)
+      {
+        const sorted = [...matched].sort((a, b) => a - b);
+        this.headerMap[field] = sorted;
+        for (const i of sorted)
+        {
+          mapped.add(i);
+        }
+      }
+    }
   }
 
   /**
@@ -194,7 +293,7 @@ export class LineClassifierServiceImpl implements IClassifier
 
         if (header)
         {
-          this.headerMap = header;
+          this.setHeaderMap(header, line);
         }
       }
 
