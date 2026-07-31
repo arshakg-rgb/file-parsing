@@ -862,6 +862,8 @@ export class StreamParserService {
         dlq_count: failedTotal,
         rubbish_log_path: counts.rubbish_log_path,
         csv_output_path: csvOutputPath,
+        ai_calls: aiCalls,
+        ai_recoveries: aiLocalRecoveries,
       }));
 
       const parseDuration = Date.now() - parseStartTime;

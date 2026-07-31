@@ -157,6 +157,16 @@ export class StateMachineImpl implements StateMachine
         metadata: { from: current, to: newStatus },
       });
     }
+    else
+    {
+      await this.jobLogsRepo.log({
+        job_id: jobId,
+        event_type: "stage_completed",
+        stage: newStatus,
+        message: null,
+        metadata: { from: current, to: newStatus, terminal: isTerminal(newStatus) },
+      });
+    }
 
     Object.assign(updates, extraFields);
 
@@ -357,6 +367,21 @@ export class StateMachineImpl implements StateMachine
     const totalLines: number = data.parsed + data.dropped_rubbish + data.failed;
     const failedRatio: number = totalLines > 0 ? data.failed / totalLines : 0;
 
+    const [droppedSummary, failedSummary, templateUsage] = await Promise.all([
+      repositories.rubbishLogs.getSummaryByJob(event.job_id).catch((err) => {
+        this.logger.warn({ job_id: event.job_id, error: String(err) }, "dropped_summary_failed");
+        return { count: data.dropped_rubbish, first_line_no: null, last_line_no: null, by_template: {} };
+      }),
+      repositories.deadLetters.getSummaryByJob(event.job_id).catch((err) => {
+        this.logger.warn({ job_id: event.job_id, error: String(err) }, "failed_summary_failed");
+        return { count: data.failed, first_line_no: null, last_line_no: null, by_class: data.failed_by_class || {} };
+      }),
+      repositories.parsedRecords.getTemplateUsageCounts(event.job_id).catch((err) => {
+        this.logger.warn({ job_id: event.job_id, error: String(err) }, "template_usage_failed");
+        return [];
+      }),
+    ]);
+
     await this.jobLogsRepo.log({
       job_id: event.job_id,
       event_type: "parsing_summary",
@@ -364,10 +389,12 @@ export class StateMachineImpl implements StateMachine
       message: null,
       metadata: {
         parsed: data.parsed,
-        dropped_rubbish: data.dropped_rubbish,
-        failed: data.failed,
+        templates_used: templateUsage,
+        dropped_rubbish: droppedSummary,
+        failed: failedSummary,
         dlq_count: data.dlq_count ?? 0,
-        failed_by_class: data.failed_by_class || {},
+        ai_calls: data.ai_calls ?? 0,
+        ai_recoveries: data.ai_recoveries ?? 0,
       },
     });
 

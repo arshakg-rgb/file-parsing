@@ -355,6 +355,48 @@ export class DeadLetterRepository {
   async countByJob(jobId: string): Promise<number> {
     return this.DeadLetter.count({ where: { job_id: jobId } });
   }
+
+    /**
+   * Summarizes failed (dead-lettered) lines for a job: total count, the
+   * first/last source line number involved, and a breakdown by failure class.
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the summary
+   */
+  async getSummaryByJob(jobId: string): Promise<{
+    count: number;
+    first_line_no: number | null;
+    last_line_no: number | null;
+    by_class: Record<string, number>;
+  }> {
+    const [range] = (await this.DeadLetter.findAll({
+      where: { job_id: jobId },
+      attributes: [
+        [Sequelize.fn("COUNT", Sequelize.col("dlq_id")), "count"],
+        [Sequelize.fn("MIN", Sequelize.col("line_no")), "first_line_no"],
+        [Sequelize.fn("MAX", Sequelize.col("line_no")), "last_line_no"],
+      ],
+      raw: true,
+    })) as unknown as { count: string; first_line_no: number | null; last_line_no: number | null }[];
+
+    const classRows = (await this.DeadLetter.findAll({
+      where: { job_id: jobId },
+      attributes: ["failure_class", [Sequelize.fn("COUNT", Sequelize.col("dlq_id")), "count"]],
+      group: ["failure_class"],
+      raw: true,
+    })) as unknown as { failure_class: string; count: string }[];
+
+    const by_class: Record<string, number> = {};
+    for (const row of classRows) {
+      by_class[row.failure_class] = Number(row.count);
+    }
+
+    return {
+      count: range ? Number(range.count) : 0,
+      first_line_no: range?.first_line_no ?? null,
+      last_line_no: range?.last_line_no ?? null,
+      by_class,
+    };
+  }
 }
 
 /**
@@ -591,6 +633,22 @@ export class ParsedRecordRepository {
   async countByJob(jobId: string): Promise<number> {
     return this.ParsedRecord.count({ where: { _job_id: jobId } });
   }
+
+    /**
+   * Returns how many rows each record template parsed for a job.
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the per-template counts
+   */
+  async getTemplateUsageCounts(jobId: string): Promise<{ template_id: string; count: number }[]> {
+    const rows = (await this.ParsedRecord.findAll({
+      where: { _job_id: jobId },
+      attributes: ["_template_id", [Sequelize.fn("COUNT", Sequelize.col("_record_index")), "count"]],
+      group: ["_template_id"],
+      raw: true,
+    })) as unknown as { _template_id: string; count: string }[];
+
+    return rows.map((r) => ({ template_id: r._template_id, count: Number(r.count) }));
+  }
 }
 
 /**
@@ -648,6 +706,49 @@ export class RubbishLogRepository {
    */
   async countByJob(jobId: string): Promise<number> {
     return this.RubbishLog.count({ where: { job_id: jobId } });
+  }
+
+    /**
+   * Summarizes dropped (rubbish) lines for a job: total count, the
+   * first/last source line number involved, and a breakdown by the
+   * rubbish template that matched.
+   * @param jobId - The job identifier
+   * @returns A promise that resolves to the summary
+   */
+  async getSummaryByJob(jobId: string): Promise<{
+    count: number;
+    first_line_no: number | null;
+    last_line_no: number | null;
+    by_template: Record<string, number>;
+  }> {
+    const [range] = (await this.RubbishLog.findAll({
+      where: { job_id: jobId },
+      attributes: [
+        [Sequelize.fn("COUNT", Sequelize.col("id")), "count"],
+        [Sequelize.fn("MIN", Sequelize.col("line_no")), "first_line_no"],
+        [Sequelize.fn("MAX", Sequelize.col("line_no")), "last_line_no"],
+      ],
+      raw: true,
+    })) as unknown as { count: string; first_line_no: number | null; last_line_no: number | null }[];
+
+    const templateRows = (await this.RubbishLog.findAll({
+      where: { job_id: jobId },
+      attributes: ["matched_template_id", [Sequelize.fn("COUNT", Sequelize.col("id")), "count"]],
+      group: ["matched_template_id"],
+      raw: true,
+    })) as unknown as { matched_template_id: string; count: string }[];
+
+    const by_template: Record<string, number> = {};
+    for (const row of templateRows) {
+      by_template[row.matched_template_id] = Number(row.count);
+    }
+
+    return {
+      count: range ? Number(range.count) : 0,
+      first_line_no: range?.first_line_no ?? null,
+      last_line_no: range?.last_line_no ?? null,
+      by_template,
+    };
   }
 }
 

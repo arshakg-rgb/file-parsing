@@ -79,4 +79,6 @@ export interface ParsingCompletedData {
   dlq_count: number;
   rubbish_log_path?: string;
   csv_output_path?: string | null;
+  ai_calls?: number;
+  ai_recoveries?: number;
 }
