@@ -1183,7 +1183,8 @@ export class LineClassifierServiceImpl implements IClassifier
         }
       }
 
-      if (typeof sv === "string" && (sv.trim().startsWith("{") || sv.trim().startsWith("[")))
+      // Skip JSON parsing for the 'meta' field to preserve it as a string
+      if (typeof sv === "string" && (sv.trim().startsWith("{") || sv.trim().startsWith("[")) && key !== "meta")
       {
         try
         {
@@ -1932,7 +1933,20 @@ export class LineClassifierServiceImpl implements IClassifier
           }
         }
 
-        row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
+        // If meta is in fieldSpec and has a mapped column, use that column's value directly as a JSON string
+        // Otherwise, use the metaObj built from unmapped columns
+        const metaColumnIndex: number | number[] | undefined = this.headerMap!["meta"];
+        if (metaColumnIndex !== undefined)
+        {
+          const metaValue: string = Array.isArray(metaColumnIndex)
+            ? metaColumnIndex.map((idx) => (idx < parts.length ? String(parts[idx] ?? "").trim() : "")).filter((c) => c !== "").join(", ")
+            : (metaColumnIndex < parts.length ? String(parts[metaColumnIndex] ?? "").trim() : "");
+          row["meta"] = metaValue || null;
+        }
+        else
+        {
+          row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
+        }
 
         if (row["meta"] !== null)
         {
