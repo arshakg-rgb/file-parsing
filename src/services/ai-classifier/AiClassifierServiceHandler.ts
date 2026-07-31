@@ -167,6 +167,98 @@ export class AiClassifierService
   }
 
   /**
+   * Extract target field values from a JSON meta payload. The AI returns a
+   * JSON object with the best-matching source values for each requested
+   * target field. The returned object also includes a cleaned "meta" string
+   * with the extracted fields removed, or null if no relevant data exists.
+   *
+   * @param metaJson - The raw meta JSON string to extract from.
+   * @param targetColumns - Target field names to extract into.
+   * @param jobId - Job id for logging.
+   * @returns A promise resolving to an object with extracted values and a
+   *          cleaned meta string, or null on failure/irrelevant data.
+   */
+
+  public async extractFromMeta(metaJson: string, targetColumns: string[], jobId: string): Promise<{ row: Record<string, unknown>; cleanedMeta: string | null } | null>
+  {
+    this.logger.info("ai_meta_extraction_start", { job_id: jobId, target_columns: targetColumns, meta_preview: metaJson.slice(0, 200) });
+
+    const exampleFields = targetColumns.map((col) => `  "${col}": "value or null"`).join(",\n");
+    const prompt = `You are a data extraction assistant. Extract relevant values from the following JSON object for these target fields: ${targetColumns.join(", ")}.
+
+The meta JSON may contain any fields. Map each source field to the most semantically appropriate target field. For example:
+- Postcode / postal code / zip values enrich the field that represents location or address
+- CountryName / country / nation values enrich the field that represents location, address, or country
+- first_name, last_name, full_name map to the corresponding name fields
+- Any source field should be mapped to the most appropriate target field only once
+- If a target field cannot be filled from the meta, set it to null
+
+Return ONLY valid JSON in this exact shape (no markdown, no explanation):
+{
+${exampleFields},
+  "extracted_meta_keys": ["sourceKey1", "sourceKey2"]
+}
+
+The "extracted_meta_keys" array must list the source JSON keys that were used for extraction, so they can be removed from the original meta. Include only keys that were actually used.
+
+Meta JSON:
+${metaJson}
+
+Output:`;
+
+    try
+    {
+      const raw = await this.askVertexAI(prompt);
+      const jsonStr = AiClassifierService.extractJsonFromMarkdown(raw);
+      const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      {
+        this.logger.warn("ai_meta_extraction_invalid_response", { job_id: jobId, raw });
+        return null;
+      }
+
+      const row: Record<string, unknown> = {};
+      for (const col of targetColumns)
+      {
+        if (col in parsed)
+        {
+          row[col] = parsed[col] === undefined ? null : parsed[col];
+        }
+      }
+
+      const extractedKeys: string[] = Array.isArray(parsed.extracted_meta_keys)
+          ? (parsed.extracted_meta_keys as unknown[]).filter((k): k is string => typeof k === "string")
+          : [];
+
+      let cleanedMeta: string | null = null;
+      try
+      {
+        const metaObj = JSON.parse(metaJson) as Record<string, unknown>;
+        for (const k of extractedKeys)
+        {
+          delete metaObj[k];
+        }
+        cleanedMeta = Object.keys(metaObj).length > 0 ? JSON.stringify(metaObj) : null;
+      }
+      catch
+      {
+        /* if metaJson is not valid JSON, keep it unchanged */
+        cleanedMeta = metaJson;
+      }
+
+      this.logger.info("ai_meta_extraction_success", { job_id: jobId, extracted_keys: extractedKeys, cleaned_meta: cleanedMeta });
+      return { row, cleanedMeta };
+    }
+    catch (err)
+    {
+      const errorMessage = err instanceof Error ? err.message : (typeof err === "string" ? err : JSON.stringify(err));
+      this.logger.error("ai_meta_extraction_failed", { job_id: jobId, error: errorMessage });
+      return null;
+    }
+  }
+
+  /**
    * Ask the model to parse a JSON record into the requested target columns,
    * plus a "meta" column holding any unmapped fields as a JSON string.
    *
@@ -185,7 +277,10 @@ export class AiClassifierService
         : "No target columns were specified; return the most reasonable top-level/flattened fields as columns.";
     const prompt = `You are a JSON parsing assistant. Given the JSON record below, extract values and return ONLY a JSON object.
 ${targetHint}
-For each target column, use the source field or path that best matches it; if nothing matches, use null.
+For each target column, choose the single best-matching source field or path; if nothing matches, use null.
+If a logical field is split across multiple source keys (e.g. address1/address2, or street+city+zip for "location"), COMBINE them into one string in the order they would naturally appear, joined by ", ".
+If two source keys are equally plausible for the same target (e.g. "phone" and "phone_number" both present), prefer the more complete/valid-looking value, and put the other in "meta".
+If nothing matches, use null.
 Add a "meta" key containing a JSON-string of all source fields/paths NOT represented by the target columns.
 If target columns are empty, return all source keys as columns and put any remaining nested/unmapped data in "meta".
 Do not wrap the output in markdown; return raw JSON only.
@@ -377,7 +472,7 @@ Output:`;
         model: settings.VERTEX_MODEL || "gemini-2.5-flash",
       });
 
-      const rawText: string = await this.askVertexAI(userPrompt);
+      const rawText: string = await this.askVertexAI(userPrompt, Math.max(1000, settings.AI_CLASSIFY_TIMEOUT_MS - 2500));
       this.logger.info("vertex_ai_response_raw", {
         job_id: req.job_id,
         fingerprint,
@@ -513,6 +608,77 @@ Output:`;
     }
 
     return this.genAIClient;
+  }
+
+  /**
+   * Ask Vertex AI to map CSV header columns to the target field_spec.
+   * Returns an object where keys are field_spec fields and values are arrays
+   * of 0-based column indices. Unmapped columns are ignored.
+   *
+   * @param headerLine - The CSV header line (e.g. "email,phone,address_1,address_2,city").
+   * @param fieldSpec - Ordered target field names (e.g. ["email","phone","address","location"]).
+   * @param jobId - Job id for logging.
+   * @returns A promise resolving to a column mapping, or null if the model fails or refuses.
+   */
+
+  public async mapHeaderColumns(headerLine: string, fieldSpec: string[], jobId: string): Promise<Record<string, number[]> | null>
+  {
+    this.logger.info("ai_header_mapping_start", { job_id: jobId, header_line: headerLine, field_spec: fieldSpec });
+
+    const prompt = `You are a data mapping assistant.
+Given this CSV header line and the target field specification, map each source column to the most appropriate target field.
+A source column can map to ONE target field, and a target field can use ONE OR MORE source column indices (e.g. address_1 + address_2 both map to "address").
+Unmapped columns can be ignored.
+
+Target field specification: ${fieldSpec.join(", ")}
+CSV header line: ${headerLine}
+
+Return ONLY valid JSON in this exact shape (no markdown, no explanation):
+{
+  "mappings": {
+    "fieldName": [0, 1]
+  }
+}
+
+Use 0-based column indices. If a field has no matching column, omit it from "mappings".`;
+
+    try
+    {
+      const raw = await this.askVertexAI(prompt);
+      const jsonStr = AiClassifierService.extractJsonFromMarkdown(raw);
+      const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+
+      if (!parsed || typeof parsed !== "object" || !parsed.mappings || typeof parsed.mappings !== "object")
+      {
+        this.logger.warn("ai_header_mapping_invalid_response", { job_id: jobId, raw });
+        return null;
+      }
+
+      const mappings = parsed.mappings as Record<string, unknown>;
+      const out: Record<string, number[]> = {};
+
+      for (const [field, idxs] of Object.entries(mappings))
+      {
+        if (!fieldSpec.includes(field))
+        {
+          continue;
+        }
+
+        if (Array.isArray(idxs) && idxs.every((n) => typeof n === "number" && n >= 0))
+        {
+          out[field] = idxs as number[];
+        }
+      }
+
+      this.logger.info("ai_header_mapping_success", { job_id: jobId, mapping: out });
+      return out;
+    }
+    catch (err)
+    {
+      const errorMessage = err instanceof Error ? err.message : (typeof err === "string" ? err : JSON.stringify(err));
+      this.logger.error("ai_header_mapping_failed", { job_id: jobId, error: errorMessage });
+      return null;
+    }
   }
 
   /**
@@ -723,30 +889,73 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
 
   private static extractJsonFromMarkdown(raw: string): string
   {
-    let trimmed: string = raw.trim();
+    let text: string = raw.trim();
 
-    trimmed = trimmed.replace(/^```(?:json)?\s*\n?/, "").trim();
-    trimmed = trimmed.replace(/\n?```\s*$/, "").trim();
+    text = text.replace(/^```(?:json)?\s*\n?/, "").trim();
+    text = text.replace(/\n?```\s*$/, "").trim();
 
-    const firstBrace: number = trimmed.indexOf("{");
-    const lastBrace: number = trimmed.lastIndexOf("}");
-
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace)
+    try
     {
-      trimmed = trimmed.slice(firstBrace, lastBrace + 1);
+      JSON.parse(text);
+      return text;
     }
-    else
+    catch
     {
-      const firstBracket: number = trimmed.indexOf("[");
-      const lastBracket: number = trimmed.lastIndexOf("]");
+      // continue to extraction
+    }
 
-      if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket)
+    const extractBalanced = (open: string, close: string): string | null =>
+    {
+      let depth = 0;
+      let start = -1;
+      let inString = false;
+      let escape = false;
+      for (let i = 0; i < text.length; i++)
       {
-        trimmed = trimmed.slice(firstBracket, lastBracket + 1);
+        const c = text[i];
+        if (inString)
+        {
+          if (escape)
+          {
+            escape = false;
+          }
+          else if (c === "\\")
+          {
+            escape = true;
+          }
+          else if (c === '"')
+          {
+            inString = false;
+          }
+        }
+        else
+        {
+          if (c === '"')
+          {
+            inString = true;
+          }
+          else if (c === open)
+          {
+            if (depth === 0) start = i;
+            depth++;
+          }
+          else if (c === close)
+          {
+            if (depth > 0) depth--;
+            if (depth === 0 && start !== -1) return text.slice(start, i + 1);
+          }
+        }
       }
-    }
+      return null;
+    };
 
-    return trimmed.replace(/\\(u[0-9a-fA-F]{4}|["\\/bfnrt])|\\/g, (match) => (match.length > 1 ? match : "\\\\"));
+    const jsonObj = extractBalanced("{", "}");
+    if (jsonObj) return jsonObj;
+
+    const jsonArr = extractBalanced("[", "]");
+    if (jsonArr) return jsonArr;
+
+    return text.replace(/\\(u[0-9a-fA-F]{4}|["\\/bfnrt])|\\/g, (match) => (match.length > 1 ? match : "\\\\"));
   }
 }
 

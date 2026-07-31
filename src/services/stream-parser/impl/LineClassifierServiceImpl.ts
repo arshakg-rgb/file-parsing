@@ -146,6 +146,23 @@ export class LineClassifierServiceImpl implements IClassifier
   }
 
   /**
+   * Allows an external (e.g. AI-derived) header map to be injected before
+   * streaming begins. When set, the first line is treated as a header without
+   * running the built-in heuristic detection. The raw header line is split
+   * using the same delimited-line logic as the rest of the classifier.
+   *
+   * @param map - Map of field name to 0-based column index or array of indices.
+   * @param headerLine - The raw CSV header line.
+   */
+
+  public setHeaderMap(map: Record<string, number | number[]>, headerLine: string): void
+  {
+    this.headerMap = map;
+    const parts: string[] | null = this.splitBestDelimited(headerLine);
+    this.headerParts = parts ? parts.map((p) => p.trim()) : [headerLine.trim()];
+  }
+
+  /**
    * Classifies one line. Stages run in order; the first stage to return a non-null
    * result wins. See the class-level doc comment for the rationale behind the order.
    *
@@ -169,11 +186,26 @@ export class LineClassifierServiceImpl implements IClassifier
     if (this.firstLine)
     {
       this.firstLine = false;
-      const header: Record<string, number | number[]> | null = this.detectHeader(line);
 
-      if (header)
+      // If an AI-driven header map was injected, use it directly.
+      if (!this.headerMap)
       {
-        this.headerMap = header;
+        const header: Record<string, number | number[]> | null = this.detectHeader(line);
+
+        if (header)
+        {
+          this.headerMap = header;
+        }
+      }
+
+      // First line was (or consumed) the header.
+      if (this.headerMap)
+      {
+        const parts: string[] | null = this.splitBestDelimited(line);
+        if (parts)
+        {
+          this.headerParts = parts.map((p) => p.trim());
+        }
         return { verdict: "rubbish", template_id: "header" };
       }
     }
@@ -350,7 +382,7 @@ export class LineClassifierServiceImpl implements IClassifier
 
     const extracted = this.extractFromObject(parsed, "json", undefined, true);
 
-    if (!extracted)
+    if (!extracted || extracted.ambiguous)
     {
       return {verdict: "uncertain", failure_class: FailureClass.UNCERTAIN};
     }
@@ -699,7 +731,7 @@ export class LineClassifierServiceImpl implements IClassifier
 
     const extracted = this.extractFromObject(obj, "json", undefined, true);
 
-    if (extracted)
+    if (extracted && !extracted.ambiguous)
     {
       const coerced: Record<string, unknown> | null = this.coerce(extracted.row);
 
@@ -1244,10 +1276,10 @@ export class LineClassifierServiceImpl implements IClassifier
    * @param templateId - The template identifier to attach to the result on success.
    * @param fieldSpecOverride - Optional field list to use instead of the instance's `fieldSpec` (used by the AI-JSON discovery path).
    * @param loose - If `true`, accepts the extraction even if the normal match-count/strong-field threshold isn't met.
-   * @returns The extracted row and template id, or `null` if extraction didn't meet the acceptance threshold and `loose` is `false`.
+   * @returns The extracted row, template id, and an optional `ambiguous` flag, or `null` if extraction didn't meet the acceptance threshold and `loose` is `false`.
    */
 
-  private extractFromObject(rawObj: Record<string, unknown>, templateId: string, fieldSpecOverride?: string[], loose = false): { row: Record<string, unknown>; template_id: string } | null
+  private extractFromObject(rawObj: Record<string, unknown>, templateId: string, fieldSpecOverride?: string[], loose = false): { row: Record<string, unknown>; template_id: string; ambiguous?: boolean } | null
   {
     const obj: Record<string, unknown> = this.flattenObject(rawObj);
     const spec: string[] = fieldSpecOverride ?? this.fieldSpec;
@@ -1395,11 +1427,23 @@ export class LineClassifierServiceImpl implements IClassifier
     Object.assign(metaObj, extraMeta);
     row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
 
+    let ambiguous = false;
+    for (let i = 0; i < spec.length; i++)
+    {
+      const field = spec[i];
+      if (field === "meta" || row[field] !== null) continue;
+      const nf = normalizedSpec[i];
+      const looseCandidates = Object.keys(obj).filter((k) =>
+        !consumedKeys.has(this.normalizeKey(k)) && this.normalizeKey(k).includes(nf.slice(0, 3))
+      );
+      if (looseCandidates.length > 1) ambiguous = true;
+    }
+
     const minMatches: number = fieldSpecOverride ? Math.max(1, Math.ceil(fieldSpecOverride.filter((f) => f !== "meta").length * 0.75)) : this.defaultMinMatches;
 
     const accept: boolean = strong >= 1 || matched >= minMatches;
 
-    return accept || loose ? { row, template_id: templateId } : null;
+    return accept || loose ? { row, template_id: templateId, ambiguous } : null;
   }
 
   /**
@@ -1420,6 +1464,7 @@ export class LineClassifierServiceImpl implements IClassifier
     let bestScore: number = -1;
     let bestValue: unknown;
     let bestKey: string | undefined;
+    let tiedCount: number = 0;
 
     for (const [k, val] of Object.entries(obj))
     {
@@ -1461,7 +1506,17 @@ export class LineClassifierServiceImpl implements IClassifier
         bestScore = score;
         bestValue = val;
         bestKey = nk;
+        tiedCount = 1;
       }
+      else if (score === bestScore)
+      {
+        tiedCount++;
+      }
+    }
+
+    if (tiedCount > 1)
+    {
+      return null;
     }
 
     return bestValue !== undefined ? { value: bestValue, key: bestKey! } : null;
@@ -1554,7 +1609,12 @@ export class LineClassifierServiceImpl implements IClassifier
 
     const extracted = this.extractFromObject(obj, "json");
 
-    return extracted ? { ...extracted, obj } : null;
+    if (extracted?.ambiguous)
+    {
+      return null;
+    }
+
+    return extracted ? { row: extracted.row, template_id: extracted.template_id, obj } : null;
   }
 
   /**

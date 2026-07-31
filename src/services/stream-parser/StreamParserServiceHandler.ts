@@ -22,6 +22,7 @@ import EncodingService from "@utils/normalizers/Encoding";
 import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
 import {LineClassifierServiceImpl} from "@service/stream-parser/impl/LineClassifierServiceImpl";
+import { aiClassifierService } from "@service/ai-classifier/AiClassifierServiceHandler.js";
 
 /**
  * Extract JSON records from a parsed JSON value for processing as individual classifier inputs.
@@ -620,6 +621,47 @@ export class StreamParserService {
           })()
         : streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding);
 
+      let aiHeaderMapped = false;
+
+      // AI extraction from meta JSON: if a parsed row contains a string "meta" column,
+      // ask the AI to extract target field values from it, remove the extracted keys
+      // from the meta JSON, and merge the results into the row.
+      const enrichFromMeta = async (row: Record<string, unknown>): Promise<Record<string, unknown>> => {
+        if (!aiEnabled || !row.meta || typeof row.meta !== "string") {
+          return row;
+        }
+
+        if (row.meta.trim().length === 0) {
+          return row;
+        }
+
+        try {
+          const extracted = await aiClassifierService.extractFromMeta(row.meta, fieldSpec, jobId);
+          if (!extracted) {
+            return row;
+          }
+
+          // Merge AI-extracted values into the row; only overwrite if the target field is empty.
+          for (const [field, value] of Object.entries(extracted.row)) {
+            if (value !== null && value !== undefined) {
+              const current = row[field];
+              if (current === null || current === undefined || String(current).trim() === "") {
+                row[field] = value;
+              } else if (typeof current === "string" && typeof value === "string") {
+                row[field] = `${current}, ${value}`;
+              }
+            }
+          }
+
+          // Replace meta with the cleaned version (extracted keys removed).
+          row.meta = extracted.cleanedMeta;
+        } catch (err) {
+          this.logger.warn("ai_meta_enrichment_failed", { job_id: jobId, error: String(err) });
+        }
+
+        return row;
+      };
+
       for await (const [line, byteOffset, byteLength] of lineSource) {
         lineNo += 1;
         this.stats.totalLinesProcessed++;
@@ -628,6 +670,24 @@ export class StreamParserService {
           console.log("parse_progress", { jobId, lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
         }
         await drainIfReady();
+
+        // AI-driven header mapping on first line: ask Vertex AI to map any source column
+        // to the target field_spec, so non-standard headers (address_1, city, postcode, etc.)
+        // are handled without hardcoded aliases.
+        if (!aiHeaderMapped && aiEnabled && !columnMap)
+        {
+          aiHeaderMapped = true;
+          try {
+            const aiMapping = await aiClassifierService.mapHeaderColumns(line, fieldSpec, jobId);
+            if (aiMapping)
+            {
+              classifier.setHeaderMap(aiMapping, line);
+            }
+          } catch (err) {
+            this.logger.warn("ai_header_mapping_failed", { job_id: jobId, error: String(err) });
+            // Fall back to local alias-based header detection.
+          }
+        }
 
         // Designed ordered classifier for EVERY line: length/binary gate -> learned record
         // templates -> structural recognizers (JSON / key-value, field_spec-only) -> rubbish
@@ -684,6 +744,14 @@ export class StreamParserService {
           case "parsed": {
             // Sanitize row data before storage
             const sanitizedRow = this.sanitizeRecord(result.row || {});
+
+            // AI enrichment from meta JSON (dynamic, field_spec-driven)
+            await enrichFromMeta(sanitizedRow);
+
+            // Remove meta from output if it is not in the requested field_spec
+            if (!fieldSpec.includes("meta") && "meta" in sanitizedRow) {
+              delete sanitizedRow.meta;
+            }
 
             // Write-time guard: never emit a row whose email/phone is populated but invalid, no
             // matter which template produced it. Learned/AI templates can occasionally force junk
