@@ -1,76 +1,86 @@
-import { IRetry, RetryRequest, RetryResponse } from "@service/retry/io/IRetry.js";
+import { IRetry, RetryResponse } from "@service/retry/io/IRetry.js";
 import RetryServiceImpl from "@service/retry/impl/RetryServiceImpl.js";
-import { DLQMessage } from "@shared/models/job.js";
 
 /**
- * Legacy RetryService class - now a thin wrapper around RetryServiceImpl
- * This maintains backward compatibility while using the new service pattern
+ * Thin wrapper around RetryServiceImpl, kept for backward compatibility
+ * with call sites that instantiate `RetryService` directly instead of
+ * going through the singleton. Prefer `RetryServiceImpl.getInstance()`
+ * for new code.
+ *
+ * The underlying implementation can be injected for testing; when omitted
+ * it defaults to the singleton instance.
  */
-export class RetryService implements IRetry {
-    /**
-   * Service
-   * @private
-   */
-  private service: RetryServiceImpl;
 
-    /**
-   * Constructs a new RetryService instance.
-   */
-  constructor() {
-    this.service = RetryServiceImpl.getInstance();
+export class RetryService implements IRetry
+{
+  private static defaultInstance: RetryService;
+
+  private readonly service: RetryServiceImpl;
+
+  constructor(service: RetryServiceImpl = RetryServiceImpl.getInstance())
+  {
+    this.service = service;
   }
 
-    /**
-   * Processes retry
-   * @param req - The HTTP request object
-   * @returns A promise that resolves to the result
+  /**
+   * Shared instance used by the static backward-compatibility methods
+   * and the bootstrap entrypoint below.
    */
-  async processRetry(req: RetryRequest): Promise<RetryResponse> {
-    return this.service.processRetry(req);
+
+  private static getDefault(): RetryService
+  {
+    if (!RetryService.defaultInstance)
+    {
+      RetryService.defaultInstance = new RetryService();
+    }
+
+    return RetryService.defaultInstance;
   }
 
-    /**
-   * Handles dlq entry
-   * @param msg - The msg
-   */
-  async handleDlqEntry(msg: DLQMessage): Promise<void> {
-    return this.service.handleDlqEntry(msg);
+  async processRetry(): Promise<RetryResponse>
+  {
+    return this.service.processRetry();
   }
 
-    /**
-   * Performs the consumer loop operation.
-   */
-  async consumerLoop(): Promise<void> {
+  async consumerLoop(): Promise<void>
+  {
     return this.service.consumerLoop();
   }
+
+  /**
+   * Bootstraps the consumer loop when this module is loaded as the
+   * service entrypoint. Guarded via RETRY_SERVICE_AUTOSTART so importing
+   * this module elsewhere (tests, or another service that only needs
+   * `handleDlqEntry`) doesn't trigger a second, competing consumer loop.
+   */
+
+  static bootstrap(): void
+  {
+    const logger = RetryServiceImpl.getInstance().getLogger();
+    const instance: RetryService = RetryService.getDefault();
+
+    instance.consumerLoop().catch((err) =>
+    {
+      logger.error("retry_consumer_failed", err instanceof Error ? err : new Error(String(err)));
+      process.exit(1);
+    });
+
+    const shutdown = (signal: NodeJS.Signals) =>
+    {
+      logger.info("retry_consumer_shutting_down", { signal });
+      process.exit(0);
+    };
+
+    process.once("SIGTERM", shutdown);
+    process.once("SIGINT", shutdown);
+  }
 }
 
-// Re-export the new service for direct use
-export { default as RetryServiceImpl } from "@service/retry/impl/RetryServiceImpl.js";
 export { IRetry, RetryRequest, RetryResponse } from "@service/retry/io/IRetry.js";
 
-// Backward compatibility wrappers
-const retryService = new RetryService();
-
-/**
- * Handles dlq entry
- * @param msg - The msg
- */
-export async function handleDlqEntry(msg: DLQMessage): Promise<void> {
-  return retryService.handleDlqEntry(msg);
+if (process.env.RETRY_SERVICE_AUTOSTART !== "false")
+{
+  RetryService.bootstrap();
 }
-
-/**
- * Performs the consumer loop operation.
- */
-export async function consumerLoop(): Promise<void> {
-  return retryService.consumerLoop();
-}
-
-// Auto-start the service when module is loaded
-retryService.consumerLoop().catch(err => {
-  console.error("retry_consumer_failed", { error: String(err) });
-  process.exit(1);
-});
 
 export default RetryService;
