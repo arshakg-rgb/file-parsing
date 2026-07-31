@@ -35,7 +35,7 @@ export class LineClassifierServiceImpl implements IClassifier
   private readonly recordTemplates: RecordTemplate[];
   private readonly rubbishTemplates: RubbishTemplate[];
   private readonly aiCache: Map<string, RecordTemplate | RubbishTemplate>;
-  private headerMap: Record<string, number> | null = null;
+  private headerMap: Record<string, number | number[]> | null = null;
   private headerParts: string[] | null = null;
   private readonly columnMap: ColumnMap | null = null;
   private firstLine: boolean = true;
@@ -169,7 +169,7 @@ export class LineClassifierServiceImpl implements IClassifier
     if (this.firstLine)
     {
       this.firstLine = false;
-      const header: Record<string, number> | null = this.detectHeader(line);
+      const header: Record<string, number | number[]> | null = this.detectHeader(line);
 
       if (header)
       {
@@ -1055,7 +1055,17 @@ export class LineClassifierServiceImpl implements IClassifier
 
     const aliases: string[] = LineClassifierServiceImpl.ALIASES[normalizedField] || [normalizedField];
 
-    return aliases.some((a) => this.normalizeKey(a) === normalizedKey);
+    if (aliases.some((a) => this.normalizeKey(a) === normalizedKey))
+    {
+      return true;
+    }
+
+    // Dynamic match for numbered/segmented variants a source file may use for a single
+    // logical field, e.g. "address1"/"address2", "street_address_1", "phone2".
+    return aliases.some((a) => {
+      const na: string = this.normalizeKey(a);
+      return na.length >= 3 && normalizedKey.startsWith(na) && /^\d*$/.test(normalizedKey.slice(na.length));
+    });
   }
 
   /**
@@ -1664,7 +1674,7 @@ export class LineClassifierServiceImpl implements IClassifier
    * @returns A map of field name to column index if the line qualifies as a header; otherwise `null`.
    */
 
-  private detectHeader(line: string): Record<string, number> | null
+  private detectHeader(line: string): Record<string, number | number[]> | null
   {
     const parts: string[] | null = this.splitBestDelimited(line);
 
@@ -1688,7 +1698,7 @@ export class LineClassifierServiceImpl implements IClassifier
       }
     }
 
-    const map: Record<string, number> = {};
+    const map: Record<string, number | number[]> = {};
     let matched: number = 0;
     for (const field of this.fieldSpec)
     {
@@ -1697,14 +1707,27 @@ export class LineClassifierServiceImpl implements IClassifier
         continue;
       }
 
+      const matchingIndices: number[] = [];
+
       for (let i = 0; i < parts.length; i++)
       {
         if (this.keyMatchesField(parts[i].trim(), field))
         {
-          map[field] = i;
-          matched++;
-          break;
+          matchingIndices.push(i);
         }
+      }
+
+      if (matchingIndices.length === 1)
+      {
+        map[field] = matchingIndices[0];
+        matched++;
+      }
+      else if (matchingIndices.length > 1)
+      {
+        // Multiple columns map to the same logical field (e.g. address1/address2):
+        // merge them so no data is silently dropped.
+        map[field] = matchingIndices;
+        matched++;
       }
     }
 
@@ -1849,7 +1872,8 @@ export class LineClassifierServiceImpl implements IClassifier
     {
       const strongFields: string[] = ["email", "phone", "zip", "date", "url"];
       useHeaderMap = strongFields.some((field) => {
-        const idx: number = this.headerMap![field];
+        const spec: number | number[] | undefined = this.headerMap![field];
+        const idx: number | undefined = Array.isArray(spec) ? spec[0] : spec;
         return idx !== undefined && idx < parts.length && parts[idx] && this.validateField(field, parts[idx]);
       });
     }
@@ -1858,7 +1882,9 @@ export class LineClassifierServiceImpl implements IClassifier
     {
       const row: Record<string, unknown> = {};
       let matched: number = 0;
-      const mappedIndices = new Set<number>(Object.values(this.headerMap!));
+      const mappedIndices = new Set<number>(
+        Object.values(this.headerMap!).flatMap((v) => (Array.isArray(v) ? v : [v]))
+      );
 
       for (let i = 0; i < this.fieldSpec.length; i++)
       {
@@ -1869,8 +1895,19 @@ export class LineClassifierServiceImpl implements IClassifier
           continue;
         }
 
-        const idx: number = this.headerMap![field];
-        const value: string = idx !== undefined && idx < parts.length ? parts[idx] : "";
+        const spec: number | number[] | undefined = this.headerMap![field];
+        let value: string;
+
+        if (Array.isArray(spec))
+        {
+          const cells: string[] = spec.map((idx) => (idx < parts.length ? String(parts[idx] ?? "").trim() : "")).filter((c) => c !== "");
+          value = cells.join(", ");
+        }
+        else
+        {
+          value = spec !== undefined && spec < parts.length ? parts[spec] : "";
+        }
+
         row[field] = value === "" || value === undefined ? null : value;
 
         if (row[field] !== null)
@@ -1906,7 +1943,7 @@ export class LineClassifierServiceImpl implements IClassifier
       return matched > 0 ? { row, usedHeader: true } : null;
     }
 
-    const newHeader: Record<string, number> | null = this.detectHeader(line);
+    const newHeader: Record<string, number | number[]> | null = this.detectHeader(line);
 
     if (newHeader)
     {
