@@ -625,21 +625,33 @@ Output:`;
   {
     this.logger.info("ai_header_mapping_start", { job_id: jobId, header_line: headerLine, field_spec: fieldSpec });
 
-    const prompt = `You are a data mapping assistant.
-Given this CSV header line and the target field specification, return a JSON mapping of target field names to 0-based source column indices.
+    // Split the header by any common delimiter and present clean, indexed names to the model.
+    // This makes the prompt identical for CSV, TSV, pipe, semicolon, or any delimited file.
+    const headerParts = Constants.CSV_DELIMITERS
+      .map((d) => headerLine.split(d).map((h) => h.trim().replace(/^["']|["']$/g, "")).filter((h) => h.length > 0))
+      .sort((a, b) => b.length - a.length)[0] ?? [headerLine.trim()];
 
-Rules:
-- A source column maps to exactly one target field.
-- A target field may use one OR MORE source column indices. If a logical field is split across multiple columns, list all of them in the order they should appear, joined by ", ".
-- For "address", include all street address parts such as Address1, Address2, street, house, and number columns.
-- For "location", include city, county, state, postcode, zip, and country columns (e.g. City + County + Postcode + CountryName).
-- For "phone", prefer "Telephone", "Mobile", or "Cell" over "Fax" and pick only one value.
-- For "email", pick the Email or email-like column.
-- Ignore ID, passenger, reservation, and other unrelated metadata columns.
-- Do not create a "meta" mapping.
+    const headerList = headerParts.map((h, i) => `${i}: ${h}`).join("\n");
+
+    const prompt = `You are a data mapping assistant.
+Given the source column names (with 0-based indices) and the target field specification, return a JSON mapping of target field names to arrays of source column indices.
+
+Guidelines:
+- A source column must map to exactly one target field.
+- A target field may use one OR MORE source column indices when the logical value is split across multiple columns (e.g. address_1 + address_2, or city + county + postcode + country).
+- Group related parts together in the order they appear:
+  - "address" = street, house number, address1, address2, road, lane, block, unit, etc.
+  - "location" = city, town, county, state, province, postcode, zip, country, country_name.
+  - "name" = first_name, last_name, given_name, surname, full_name, etc.
+  - "phone" = telephone, mobile, cell, contact_number (NOT fax).
+  - "email" = email, email_address, mail.
+- Ignore unrelated ID, passenger, reservation, admin, and metadata columns. They will be stored in a meta column automatically.
+- Do NOT include a "meta" mapping.
+
+Source columns:
+${headerList}
 
 Target field specification: ${fieldSpec.join(", ")}
-CSV header line: ${headerLine}
 
 Return ONLY valid JSON in this exact shape (no markdown, no explanation):
 {
@@ -648,7 +660,7 @@ Return ONLY valid JSON in this exact shape (no markdown, no explanation):
   }
 }
 
-Use 0-based column indices. If a field has no matching column, omit it from "mappings".`
+If a field has no matching source columns, omit it from "mappings".`
 
     try
     {
