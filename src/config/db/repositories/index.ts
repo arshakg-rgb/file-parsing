@@ -357,26 +357,27 @@ export class DeadLetterRepository {
   }
 
     /**
-   * Summarizes failed (dead-lettered) lines for a job: total count, the
-   * first/last source line number involved, and a breakdown by failure class.
+   * Summarizes failed (dead-lettered) lines for a job: total count, the exact
+   * source line numbers involved (capped), and a breakdown by failure class.
    * @param jobId - The job identifier
+   * @param lineNumbersLimit - Max number of individual line numbers to return
    * @returns A promise that resolves to the summary
    */
-  async getSummaryByJob(jobId: string): Promise<{
+  async getSummaryByJob(jobId: string, lineNumbersLimit = 500): Promise<{
     count: number;
-    first_line_no: number | null;
-    last_line_no: number | null;
+    line_numbers: number[];
+    line_numbers_truncated: boolean;
     by_class: Record<string, number>;
   }> {
-    const [range] = (await this.DeadLetter.findAll({
+    const count: number = await this.DeadLetter.count({ where: { job_id: jobId } });
+
+    const lineRows = (await this.DeadLetter.findAll({
       where: { job_id: jobId },
-      attributes: [
-        [Sequelize.fn("COUNT", Sequelize.col("dlq_id")), "count"],
-        [Sequelize.fn("MIN", Sequelize.col("line_no")), "first_line_no"],
-        [Sequelize.fn("MAX", Sequelize.col("line_no")), "last_line_no"],
-      ],
+      attributes: ["line_no"],
+      order: [["line_no", "ASC"]],
+      limit: lineNumbersLimit,
       raw: true,
-    })) as unknown as { count: string; first_line_no: number | null; last_line_no: number | null }[];
+    })) as unknown as { line_no: number }[];
 
     const classRows = (await this.DeadLetter.findAll({
       where: { job_id: jobId },
@@ -391,9 +392,9 @@ export class DeadLetterRepository {
     }
 
     return {
-      count: range ? Number(range.count) : 0,
-      first_line_no: range?.first_line_no ?? null,
-      last_line_no: range?.last_line_no ?? null,
+      count,
+      line_numbers: lineRows.map((r) => Number(r.line_no)),
+      line_numbers_truncated: count > lineNumbersLimit,
       by_class,
     };
   }
@@ -709,27 +710,28 @@ export class RubbishLogRepository {
   }
 
     /**
-   * Summarizes dropped (rubbish) lines for a job: total count, the
-   * first/last source line number involved, and a breakdown by the
-   * rubbish template that matched.
+   * Summarizes dropped (rubbish) lines for a job: total count, the exact
+   * source line numbers involved (capped), and a breakdown by the rubbish
+   * template that matched.
    * @param jobId - The job identifier
+   * @param lineNumbersLimit - Max number of individual line numbers to return
    * @returns A promise that resolves to the summary
    */
-  async getSummaryByJob(jobId: string): Promise<{
+  async getSummaryByJob(jobId: string, lineNumbersLimit = 500): Promise<{
     count: number;
-    first_line_no: number | null;
-    last_line_no: number | null;
+    line_numbers: number[];
+    line_numbers_truncated: boolean;
     by_template: Record<string, number>;
   }> {
-    const [range] = (await this.RubbishLog.findAll({
+    const count: number = await this.RubbishLog.count({ where: { job_id: jobId } });
+
+    const lineRows = (await this.RubbishLog.findAll({
       where: { job_id: jobId },
-      attributes: [
-        [Sequelize.fn("COUNT", Sequelize.col("id")), "count"],
-        [Sequelize.fn("MIN", Sequelize.col("line_no")), "first_line_no"],
-        [Sequelize.fn("MAX", Sequelize.col("line_no")), "last_line_no"],
-      ],
+      attributes: ["line_no"],
+      order: [["line_no", "ASC"]],
+      limit: lineNumbersLimit,
       raw: true,
-    })) as unknown as { count: string; first_line_no: number | null; last_line_no: number | null }[];
+    })) as unknown as { line_no: number }[];
 
     const templateRows = (await this.RubbishLog.findAll({
       where: { job_id: jobId },
@@ -744,9 +746,9 @@ export class RubbishLogRepository {
     }
 
     return {
-      count: range ? Number(range.count) : 0,
-      first_line_no: range?.first_line_no ?? null,
-      last_line_no: range?.last_line_no ?? null,
+      count,
+      line_numbers: lineRows.map((r) => Number(r.line_no)),
+      line_numbers_truncated: count > lineNumbersLimit,
       by_template,
     };
   }
