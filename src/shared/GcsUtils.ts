@@ -9,7 +9,8 @@ import EncodingService from "@utils/normalizers/Encoding";
 /**
  * GcsUtils is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
  */
-class GcsUtils extends ServiceManager {
+class GcsUtils extends ServiceManager
+{
     /**
    * Singleton instance
    * @private
@@ -40,21 +41,7 @@ class GcsUtils extends ServiceManager {
    * @private
    */
   private readonly FETCH_CHUNK_SIZE = 1048576;
-    /**
-   * S M A L L_ F I L E_ S I N G L E_ G E T_ T H R E S H O L D
-   * @private
-   */
-  private readonly SMALL_FILE_SINGLE_GET_THRESHOLD = 104857600;
-    /**
-   * M A X_ Q U O T E D_ N E W L I N E S
-   * @private
-   */
-  private readonly MAX_QUOTED_NEWLINES = 100;
-    /**
-   * M A X_ L I N E_ B Y T E S
-   * @private
-   */
-  private readonly MAX_LINE_BYTES = 10485760;
+
 
     /**
    * Constructs a new GcsUtils instance.
@@ -174,22 +161,6 @@ class GcsUtils extends ServiceManager {
       () => this.withTimeout(async () => {
         const [meta] = await this.getStorage().bucket(bucket).file(key).getMetadata();
         return Number((meta as { size?: string | number }).size ?? 0);
-      }, this.GCS_TIMEOUT_MS),
-      this.GCS_RETRIES
-    );
-  }
-
-    /**
-   * Performs the object exists operation.
-   * @param bucket - The bucket
-   * @param key - The key
-   * @returns A promise that resolves to true if the object exists
-   */
-  public async objectExists(bucket: string, key: string): Promise<boolean> {
-    return this.withRetry(
-      () => this.withTimeout(async () => {
-        const [exists] = await this.getStorage().bucket(bucket).file(key).exists();
-        return exists;
       }, this.GCS_TIMEOUT_MS),
       this.GCS_RETRIES
     );
@@ -502,15 +473,6 @@ class GcsUtils extends ServiceManager {
     }
   }
 
-    /**
-   * Splits all lines
-   * @param data - The data to process
-   * @param encoding - The encoding
-   * @returns The list of results
-   */
-  public splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] {
-    return [...this.splitBytesToLines(data, 0, encoding, { inQuote: false })];
-  }
 
     /**
    * Splits bytes to lines
@@ -566,7 +528,6 @@ class GcsUtils extends ServiceManager {
   ): Generator<[string, number, number], { lineStart: number; endedAtBoundary: boolean }, void> {
     const config = this.getConfig();
     const NL = 0x0a;
-    const CR = 0x0d;
     const QUOTE = 0x22;
     let pos = 0;
     let lineStart = 0;
@@ -633,11 +594,10 @@ class GcsUtils extends ServiceManager {
 }
 
 
-export default GcsUtils;
-
 /**
  * The gcs utils
  */
+
 const gcsUtils = GcsUtils.getInstance();
 
 /**
@@ -667,15 +627,6 @@ export function objectSize(bucket: string, key: string): Promise<number> {
   return gcsUtils.objectSize(bucket, key);
 }
 
-/**
- * Performs the object exists operation.
- * @param bucket - The bucket
- * @param key - The key
- * @returns A promise that resolves to true if the object exists
- */
-export function objectExists(bucket: string, key: string): Promise<boolean> {
-  return gcsUtils.objectExists(bucket, key);
-}
 
 /**
  * Reads range
@@ -811,15 +762,6 @@ export async function* streamLines(
   yield* gcsUtils.streamLines(bucket, key, chunkSize, encoding);
 }
 
-/**
- * Splits all lines
- * @param data - The data to process
- * @param encoding - The encoding
- * @returns The list of results
- */
-export function splitAllLines(data: Buffer, encoding = "utf-8"): [string, number, number][] {
-  return gcsUtils.splitAllLines(data, encoding);
-}
 
 /**
  * Performs the sha256 hex operation.
@@ -830,6 +772,5 @@ export function sha256Hex(data: Buffer): string {
   return gcsUtils.sha256Hex(data);
 }
 
-export { parseGcsUrl as parseS3Url };
 
 function Enforce(): void {}
