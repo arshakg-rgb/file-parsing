@@ -16,12 +16,8 @@ export class ServiceManager
   protected static instance: ServiceManager | undefined;
   protected readonly config: Config;
 
-  protected constructor(enforce: () => void)
+  protected constructor(_enforce: () => void)
   {
-    if (enforce !== Enforce)
-    {
-      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate ServiceManager directly. Use getInstance()");
-    }
     this.config = Config.getInstance();
   }
 
