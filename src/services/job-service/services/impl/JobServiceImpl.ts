@@ -6,7 +6,6 @@ import { settings } from "@shared/Settings.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { ParseJobRow } from "@shared/DatabaseManager.js";
 import { SourceType, JobStatus, JobTimings, JobCounts } from "@shared/models/job.js";
-import { sendRaw } from "@shared/QueueService.js";
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
@@ -15,6 +14,7 @@ import {HttpError} from "@errors/HttpError.js";
 import {ServerError} from "@errors/ServerError.js";
 import {ParseJob, IParseJob, ParseJobAttributes} from "@config/db/models";
 import {GcsUtils} from "@shared/GcsUtils";
+import {QueueService} from "@shared/QueueService";
 
 /**
  * Singleton implementation of the Job Service business layer.
@@ -25,16 +25,19 @@ export class JobServiceImpl implements JobService
   private readonly postgreSqlManager: PostgreSqlManager;
   private readonly logger: pino.Logger;
   private gcsUtils: GcsUtils;
+  private queueService: QueueService;
 
   /**
    * Private constructor to enforce a Singleton pattern.
    *
    * @param enforce - Function to enforce a Singleton pattern.
-   * @param postgreSqlManager - The Redis service instance.
+   * @param postgreSqlManager
+   * @param gcsUtisl
+   * @param queueService
    * @throws Error if instantiation is attempted directly.
    */
 
-  private constructor(enforce: () => void, postgreSqlManager: PostgreSqlManager, gcsUtisl: GcsUtils)
+  private constructor(enforce: () => void, postgreSqlManager: PostgreSqlManager, gcsUtisl: GcsUtils, queueService: QueueService)
   {
     if (enforce !== Enforce)
     {
@@ -42,6 +45,7 @@ export class JobServiceImpl implements JobService
     }
 
     this.gcsUtils = gcsUtisl;
+    this.queueService = queueService;
     this.postgreSqlManager = postgreSqlManager;
     this.logger = createLogger(module);
   }
@@ -56,7 +60,7 @@ export class JobServiceImpl implements JobService
   {
     if (!JobServiceImpl.instance)
     {
-      JobServiceImpl.instance = new JobServiceImpl(Enforce, PostgreSqlManager.getInstance(), GcsUtils.getInstance());
+      JobServiceImpl.instance = new JobServiceImpl(Enforce, PostgreSqlManager.getInstance(), GcsUtils.getInstance(), QueueService.getInstance());
     }
 
     return JobServiceImpl.instance;
@@ -218,7 +222,7 @@ export class JobServiceImpl implements JobService
     this.logger.info("job_created", { job_id: jobId, queue_url: settings.INGEST_QUEUE_URL });
     await ParseJob.create(row);
 
-    const messageId: string = await sendRaw(settings.INGEST_QUEUE_URL, {
+    const messageId: string = await this.queueService.sendRaw(settings.INGEST_QUEUE_URL, {
       job_id: jobId,
       source_type,
       source_ref: source_ref || s3Url,
@@ -334,7 +338,7 @@ export class JobServiceImpl implements JobService
     this.logger.info("upload_job_created", { job_id: jobId, queue_url: settings.INGEST_QUEUE_URL, bytes: source_buffer.length });
     await ParseJob.create(row);
 
-    const messageId: string = await sendRaw(settings.INGEST_QUEUE_URL, {
+    const messageId: string = await this.queueService.sendRaw(settings.INGEST_QUEUE_URL, {
       job_id: jobId,
       source_type: SourceType.UPLOAD,
       source_ref: s3Url,
@@ -462,7 +466,7 @@ export class JobServiceImpl implements JobService
       throw new ServerError(ServerError.CONFLICT, `Job is not awaiting a password (status=${row.status})`);
     }
 
-    await sendRaw(settings.INGEST_QUEUE_URL, {
+    await this.queueService.sendRaw(settings.INGEST_QUEUE_URL, {
       job_id: jobId,
       action: "provide_password",
       password: request.password,
@@ -489,7 +493,7 @@ export class JobServiceImpl implements JobService
       throw new ServerError(ServerError.CONFLICT, err instanceof Error ? err.message : String(err));
     }
 
-    await sendRaw(settings.LOAD_QUEUE_URL, { job_id: jobId, manual_override: true });
+    await this.queueService.sendRaw(settings.LOAD_QUEUE_URL, { job_id: jobId, manual_override: true });
   }
 
   /**
@@ -587,7 +591,7 @@ export class JobServiceImpl implements JobService
     {
       throw new ServerError(ServerError.CONFLICT, err instanceof Error ? err.message : String(err));
     }
-    await sendRaw(queueUrl, message);
+    await this.queueService.sendRaw(queueUrl, message);
   }
 
   /**

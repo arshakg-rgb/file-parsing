@@ -2,9 +2,10 @@ import pino from "pino";
 import { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryConsumerOptions } from "@service/archive-entry-consumer/io/IArchiveEntryConsumer.js";
 import ArchiveEntryConsumerServiceImpl from "@service/archive-entry-consumer/impl/ArchiveEntryConsumerServiceImpl.js";
 import { settings } from "@shared/Settings.js";
-import { receiveMessages, deleteMessage, QueueMessage } from "@shared/QueueService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {DatabaseService} from "@shared/DatabaseManager";
+import {QueueMessage} from "@shared/io/IQueueService";
+import {QueueService} from "@shared/QueueService";
 
 /**
  * Consumes archive entry jobs from a queue and processes them one at a time.
@@ -186,7 +187,7 @@ export class ArchiveEntryConsumer
     {
       while (this.running)
       {
-        const messages: QueueMessage<ArchiveEntryRequest>[] = await receiveMessages<ArchiveEntryRequest>(
+        const messages: QueueMessage<ArchiveEntryRequest>[] = await QueueService.getInstance().receiveMessages<ArchiveEntryRequest>(
             this.queueUrl,
             (body) => JSON.parse(body) as ArchiveEntryRequest,
             this.maxMessages
@@ -214,7 +215,7 @@ export class ArchiveEntryConsumer
       try
       {
         await this.service.processEntry(payload);
-        await deleteMessage(this.queueUrl, receiptHandle);
+        await QueueService.getInstance().deleteMessage(this.queueUrl, receiptHandle);
       }
       catch (err)
       {

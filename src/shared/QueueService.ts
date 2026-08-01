@@ -3,11 +3,7 @@ import type { SQSClient, SQSClientConfig, SendMessageCommandInput } from "@aws-s
 import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { createLogger } from "@utils/logger/Log.js";
-
-export interface QueueMessage<T> {
-  payload: T;
-  receiptHandle: string;
-}
+import {QueueMessage} from "@shared/io/IQueueService";
 
 /**
  * QueueService is a singleton class responsible for managing the queue
@@ -27,7 +23,6 @@ export interface QueueMessage<T> {
  * respectively, so the entire public surface of this module is the
  * QueueService class itself.
  */
-
 export class QueueService extends ServiceManager
 {
   /**
@@ -673,10 +668,3 @@ export class QueueService extends ServiceManager
     return QueueService.getInstance().publishEvent(event);
   }
 }
-
-export const sendMessage = QueueService.sendMessage;
-export const sendRaw = QueueService.sendRaw;
-export const receiveMessages = QueueService.receiveMessages;
-export const deleteMessage = QueueService.deleteMessage;
-export const modifyAckDeadline = QueueService.modifyAckDeadline;
-export const publishEvent = QueueService.publishEvent;

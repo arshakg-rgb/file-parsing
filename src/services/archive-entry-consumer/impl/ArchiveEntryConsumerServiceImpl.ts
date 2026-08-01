@@ -13,12 +13,12 @@ import { ArchiveEntryConsumerService } from "@service/archive-entry-consumer/Arc
 import { ArchiveEntryRequest, ArchiveEntryResponse, LogEvent, NestedArchiveEntry } from "@service/archive-entry-consumer/io/IArchiveEntryConsumer.js";
 import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
-import { publishEvent } from "@shared/QueueService.js";
 import {Readable} from "node:stream";
 import {IngestServiceImpl} from "@service/ingest/IngestServiceImpl";
 import HealthService from "@utils/response/Health";
 import {DatabaseService} from "@shared/DatabaseManager";
 import {GcsUtils} from "@shared/GcsUtils";
+import {QueueService} from "@shared/QueueService";
 
 /**
  * ArchiveEntryConsumerServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -200,7 +200,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
             nestedEntries.map((entry) =>
                 entry.pending
                     ? DatabaseService.getInstance().createPendingArchiveEntry(jobId, entry.entry_name as string, entry.entry_size as number)
-                    : publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "archive-entry-consumer", entry as Record<string, unknown>))
+                    : QueueService.getInstance().publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "archive-entry-consumer", entry as Record<string, unknown>))
             ),
         );
       }
@@ -218,7 +218,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
 
     private async publishDiscoveredEntry(jobId: string, batchId: string, s3Url: string, entryName: string, size: number, fieldSpec: unknown): Promise<void>
     {
-      await publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "archive-entry-consumer", {
+      await QueueService.getInstance().publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "archive-entry-consumer", {
         parent_job_id: jobId, batch_id: batchId, entry_s3_url: s3Url, entry_name: entryName, entry_size: size, field_spec: fieldSpec,
       }));
     }

@@ -6,7 +6,6 @@ import { InstantiationError } from "@errors/InstantiationError.js";
 import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ClassifyMessage, ParseMessage } from "@shared/models/job.js";
-import { sendRaw, publishEvent } from "@shared/QueueService.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { mockClassify } from "@service/ai-classifier/mock.js";
@@ -20,6 +19,7 @@ import {
 import EncodingService from "@utils/normalizers/Encoding";
 import {MetricsUtils} from "@utils/response/Metrics";
 import {AiClassifierServiceImpl, aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierServiceImpl";
+import {QueueService} from "@shared/QueueService";
 
 /**
  * DetectBootstrapServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -445,7 +445,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
 
     const config = this.getConfig();
     try {
-      await sendRaw(config.settings.PARSE_QUEUE_URL, parseMsg as unknown as Record<string, unknown>);
+      await QueueService.getInstance().sendRaw(config.settings.PARSE_QUEUE_URL, parseMsg as unknown as Record<string, unknown>);
     } catch (sendErr) {
       this.logger.error(
           "detect_send_to_parse_failed",
@@ -499,7 +499,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
    * @param data - The data to process
    */
   private emit(jobId: string, eventType: EventType, data: Record<string, unknown>) {
-    publishEvent(makeJobEvent(eventType, jobId, "detect-bootstrap", data));
+    QueueService.getInstance().publishEvent(makeJobEvent(eventType, jobId, "detect-bootstrap", data));
   }
 
   private extractTemplateId(template: unknown): string | null
@@ -510,7 +510,5 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     return null;
   }
 }
-
-export default DetectBootstrapServiceImpl;
 
 function Enforce(): void {}

@@ -18,13 +18,13 @@ import {
   EntryDiscoveredData,
   StatusChangedData,
 } from "@shared/models/events.js";
-import { sendRaw } from "@shared/QueueService.js";
 import { settings } from "@shared/Settings.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {finalizeOutput, FinalizeResult} from "./FinalizationService.js";
 import { EMPTY_COUNTS, TIMING_FIELD_BY_STATUS } from "@service/job-service/io/IStateMachine.js";
 import {StateMachine} from "@service/job-service/StateMachine";
 import {IParseJob} from "@config/db/models";
+import {QueueService} from "@shared/QueueService";
 
 /**
  * Singleton implementation of the State Machine business layer.
@@ -40,7 +40,7 @@ export class StateMachineImpl implements StateMachine
   private readonly jobsRepo;
   private readonly jobLogsRepo;
   private readonly finalize: typeof finalizeOutput;
-  private readonly enqueue: typeof sendRaw;
+  private readonly enqueue;
 
   /**
    * Private constructor to enforce a Singleton pattern.
@@ -53,7 +53,7 @@ export class StateMachineImpl implements StateMachine
    * @throws InstantiationError if instantiation is attempted directly.
    */
 
-  private constructor(enforce: () => void, jobsRepo, jobLogsRepo, finalize: typeof finalizeOutput, enqueue: typeof sendRaw, logger: pino.Logger)
+  private constructor(enforce: () => void, jobsRepo, jobLogsRepo, finalize: typeof finalizeOutput, enqueue, logger: pino.Logger)
   {
     if (enforce !== Enforce)
     {
@@ -77,7 +77,7 @@ export class StateMachineImpl implements StateMachine
   {
     if (!StateMachineImpl.instance)
     {
-      StateMachineImpl.instance = new StateMachineImpl(Enforce, DatabaseService.getInstance().repositories.jobs, DatabaseService.getInstance().repositories.jobLogs, finalizeOutput, sendRaw, createLogger(module));
+      StateMachineImpl.instance = new StateMachineImpl(Enforce, DatabaseService.getInstance().repositories.jobs, DatabaseService.getInstance().repositories.jobLogs, finalizeOutput, QueueService.getInstance().sendRaw, createLogger(module));
     }
 
     return StateMachineImpl.instance;

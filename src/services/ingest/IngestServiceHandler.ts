@@ -2,7 +2,6 @@ import pino from "pino";
 import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, SourceType, IngestMessage } from "@shared/models/job.js";
-import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "@shared/QueueService.js";
 import { BombError } from "@errors/BombError.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {PasswordError} from "@errors/PasswordError";
@@ -21,6 +20,8 @@ import HealthService from "@utils/response/Health";
 import { MetricsUtils } from "@utils/response/Metrics";
 import {DatabaseService} from "@shared/DatabaseManager";
 import {GcsUtils} from "@shared/GcsUtils";
+import {QueueService} from "@shared/QueueService";
+import {QueueMessage} from "@shared/io/IQueueService";
 
 
 export class IngestService
@@ -82,6 +83,8 @@ export class IngestService
 
   private gcsUtils: GcsUtils;
 
+  private queueService: QueueService;
+
   /**
    * Private constructor to enforce a Singleton pattern.
    *
@@ -91,7 +94,7 @@ export class IngestService
    * @throws Error if instantiation is attempted directly.
    */
 
-  private constructor(enforce: () => void, ingestServiceImpl: IngestServiceImpl, gcsUtils: GcsUtils)
+  private constructor(enforce: () => void, ingestServiceImpl: IngestServiceImpl, gcsUtils: GcsUtils, queueService: QueueService)
   {
     if (enforce !== Enforce)
     {
@@ -100,6 +103,8 @@ export class IngestService
 
     this.gcsUtils = gcsUtils;
     this.ingestServiceImpl = ingestServiceImpl;
+    this.queueService = queueService;
+
     this.startHealthCheckServers();
   }
 
@@ -113,7 +118,7 @@ export class IngestService
   {
     if (!IngestService.instance)
     {
-      IngestService.instance = new IngestService(Enforce, IngestServiceImpl.getInstance(), GcsUtils.getInstance());
+      IngestService.instance = new IngestService(Enforce, IngestServiceImpl.getInstance(), GcsUtils.getInstance(), QueueService.getInstance());
     }
 
     return IngestService.instance;
@@ -209,7 +214,7 @@ export class IngestService
 
   private emit(jobId: string, eventType: EventType, data: Record<string, unknown>): void
   {
-    publishEvent(makeJobEvent(eventType, jobId, "ingest", data));
+    this.queueService.publishEvent(makeJobEvent(eventType, jobId, "ingest", data));
   }
 
   /**
@@ -322,7 +327,7 @@ export class IngestService
         return;
       }
 
-      await sendRaw(settings.CLASSIFY_QUEUE_URL,
+      await this.queueService.sendRaw(settings.CLASSIFY_QUEUE_URL,
       {
         job_id: jobId,
         s3_url: s3Url,
@@ -446,7 +451,7 @@ export class IngestService
 
       for (const [objUrl, objSize] of objects)
       {
-        await publishEvent(
+        await this.queueService.publishEvent(
             makeJobEvent(EventType.ENTRY_DISCOVERED, msg.job_id, "ingest", {
               parent_job_id: msg.job_id,
               batch_id: msg.batch_id || msg.job_id,
@@ -670,7 +675,7 @@ export class IngestService
       return true;
     }
 
-    await publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "ingest", entry));
+    await this.queueService.publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "ingest", entry));
     return false;
   }
 
@@ -731,7 +736,7 @@ export class IngestService
       return;
     }
 
-    await sendRaw(settings.INGEST_QUEUE_URL, {
+    await this.queueService.sendRaw(settings.INGEST_QUEUE_URL, {
       job_id: jobId,
       source_type: row.source_type,
       source_ref: row.source_ref,
@@ -766,7 +771,7 @@ export class IngestService
       {
         await this.handleIngest(payload);
       }
-      await deleteMessage(settings.INGEST_QUEUE_URL, receiptHandle);
+      await this.queueService.deleteMessage(settings.INGEST_QUEUE_URL, receiptHandle);
     }
     catch (exc)
     {
@@ -776,7 +781,7 @@ export class IngestService
       {
         this.logger.error("ingest_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
         MetricsUtils.increment("ingest.message_error_ack", 1);
-        await deleteMessage(settings.INGEST_QUEUE_URL, receiptHandle);
+        await this.queueService.deleteMessage(settings.INGEST_QUEUE_URL, receiptHandle);
       }
       else
       {
@@ -807,7 +812,7 @@ export class IngestService
         while (this.running)
         {
           this.logger.info("ingest_waiting_for_messages");
-          const messages = await receiveMessages<IngestMessage>(
+          const messages: QueueMessage<IngestMessage>[] = await this.queueService.receiveMessages<IngestMessage>(
               settings.INGEST_QUEUE_URL,
               (body) => JSON.parse(body) as IngestMessage,
               5

@@ -5,7 +5,6 @@ import path from "path";
 import { spawn } from "child_process";
 import pino from "pino";
 import { settings } from "@shared/Settings.js";
-import { sendRaw } from "@shared/QueueService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { GcsEntryStore } from "../GcsEntryStore.js";
 import { ArchiveTypeDetector } from "../ArchiveTypeDetector.js";
@@ -16,6 +15,7 @@ import {IngestServiceImpl} from "@service/ingest/IngestServiceImpl";
 import {InstantiationError} from "@errors/InstantiationError";
 import {DatabaseService} from "@shared/DatabaseManager";
 import {GcsUtils} from "@shared/GcsUtils";
+import {QueueService} from "@shared/QueueService";
 
 const logger: pino.Logger = createLogger(module);
 
@@ -215,7 +215,7 @@ export class RarExtractor
 
             if (created)
             {
-                await sendRaw(settings.ARCHIVE_ENTRY_QUEUE_URL, {
+                await QueueService.getInstance().sendRaw(settings.ARCHIVE_ENTRY_QUEUE_URL, {
                     job_id: jobId,
                     batchId: batchId,
                     archive_s3_url: s3Url,

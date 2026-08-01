@@ -7,7 +7,7 @@ import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ReportMessage, JobCounts, JobTimings } from "@shared/models/job.js";
 import type {IParseJob, ParseJobAttributes} from "@config/db/models/ParseJob.js";
 import type { OutputPartAttributes } from "@config/db/models/OutputPart.js";
-import {receiveMessages, deleteMessage, publishEvent, QueueMessage} from "@shared/QueueService.js";
+import {QueueService} from "@shared/QueueService.js";
 import {QualityGate} from "@shared/QualityGate.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { ReportService } from "@service/report/ReportService.js";
@@ -16,39 +16,50 @@ import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
 import Config from "@config/system-config/Config";
 import {QualityMetrics} from "@shared/io/IQualityGate";
+import {QueueMessage} from "@shared/io/IQueueService";
 
 /**
  * ReportServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
  */
-class ReportServiceImpl extends ServiceManager implements ReportService {
+class ReportServiceImpl extends ServiceManager implements ReportService
+{
     /**
    * Singleton instance
    * @private
    */
+
   protected static instance: ReportServiceImpl;
+
     /**
    * Logger instance
    * @private
    */
+
   private logger: pino.Logger;
+
     /**
    * Gcs Utils
    * @private
    */
+
   private gcsUtils: FirestoreCacheUtils;
     /**
    * Db Manager
    * @private
    */
+
   private dbManager: PostgreSqlManager;
+
+  private queueService: QueueService;
 
     /**
    * Constructs a new ReportServiceImpl instance.
    * @param enforce - A function to enforce the Singleton pattern
+     * @param queueService
    * @throws Error if instantiated directly
    */
 
-  protected constructor(enforce: () => void)
+  protected constructor(enforce: () => void, queueService: QueueService)
   {
     if (enforce !== Enforce)
     {
@@ -60,6 +71,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
     this.logger = createLogger(module);
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.dbManager = PostgreSqlManager.getInstance();
+    this.queueService = queueService;
 
     if (process.env.HEALTH_CHECK_PORT)
     {
@@ -76,7 +88,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
   {
     if (!ReportServiceImpl.instance)
     {
-      ReportServiceImpl.instance = new ReportServiceImpl(Enforce);
+      ReportServiceImpl.instance = new ReportServiceImpl(Enforce, QueueService.getInstance());
     }
     return ReportServiceImpl.instance;
   }
@@ -112,7 +124,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
 
     while (true)
     {
-      const messages: QueueMessage<ReportMessage>[] = await receiveMessages<ReportMessage>(
+      const messages: QueueMessage<ReportMessage>[] = await this.queueService.receiveMessages<ReportMessage>(
           config.settings.REPORT_QUEUE_URL,
           (body) => JSON.parse(body) as ReportMessage,
           5
@@ -123,7 +135,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
         try
         {
           await this.generateReport(payload);
-          await deleteMessage(config.settings.REPORT_QUEUE_URL, receiptHandle);
+          await this.queueService.deleteMessage(config.settings.REPORT_QUEUE_URL, receiptHandle);
         }
         catch (exc)
         {
@@ -132,7 +144,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
           {
             this.logger.error("report_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
             MetricsUtils.increment("report.error_ack", 1);
-            await deleteMessage(config.settings.REPORT_QUEUE_URL, receiptHandle);
+            await this.queueService.deleteMessage(config.settings.REPORT_QUEUE_URL, receiptHandle);
           }
           else
           {
@@ -232,9 +244,10 @@ class ReportServiceImpl extends ServiceManager implements ReportService {
    * @param eventType - The event type
    * @param data - The data to process
    */
+
   private emit(jobId: string, eventType: EventType, data: Record<string, unknown>)
   {
-    publishEvent(makeJobEvent(eventType, jobId, "report", data));
+    this.queueService.publishEvent(makeJobEvent(eventType, jobId, "report", data));
   }
 
     /**

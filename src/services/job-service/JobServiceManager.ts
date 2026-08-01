@@ -5,7 +5,6 @@ import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import { createLogger } from "@utils/logger/Log.js";
-import {receiveMessages, deleteMessage, QueueMessage} from "@shared/QueueService.js";
 import { JobEvent } from "@shared/models/events.js";
 import { handleEvent } from "@service/job-service/StateMachineImpl.js";
 import { JobServiceRouter } from "@service/job-service/JobServiceRouter.js";
@@ -19,6 +18,8 @@ import {
 } from "@service/job-service/io/IJobService.js";
 import Config from "@config/system-config/Config";
 import {DatabaseService} from "@shared/DatabaseManager";
+import {QueueService} from "@shared/QueueService";
+import {QueueMessage} from "@shared/io/IQueueService";
 
 /**
  * JobServiceManager is a singleton class responsible for managing the job service. It wires up
@@ -57,13 +58,16 @@ class JobServiceManager extends ServiceManager implements IJobService
 
   private readonly logger: pino.Logger;
 
+  private queueService: QueueService;
+
   /**
    * Constructs a new JobServiceManager instance.
    * @param enforce - A function to enforce the Singleton pattern
+   * @param queueService
    * @throws {InstantiationError} if instantiated directly instead of via {@link getInstance}
    */
 
-  protected constructor(enforce: () => void)
+  protected constructor(enforce: () => void, queueService: QueueService)
   {
     if (enforce !== Enforce)
     {
@@ -74,6 +78,7 @@ class JobServiceManager extends ServiceManager implements IJobService
     this.app = express();
     this.dbManager = PostgreSqlManager.getInstance();
     this.logger = createLogger(module);
+    this.queueService = queueService;
 
     this.setupApp();
   }
@@ -87,7 +92,7 @@ class JobServiceManager extends ServiceManager implements IJobService
   {
     if (!JobServiceManager.instance)
     {
-      JobServiceManager.instance = new JobServiceManager(Enforce);
+      JobServiceManager.instance = new JobServiceManager(Enforce, QueueService.getInstance());
     }
 
     return JobServiceManager.instance;
@@ -178,7 +183,7 @@ class JobServiceManager extends ServiceManager implements IJobService
     try
     {
       await handleEvent(payload);
-      await deleteMessage(queueUrl, receiptHandle);
+      await this.queueService.deleteMessage(queueUrl, receiptHandle);
     }
     catch (exc)
     {
@@ -187,7 +192,7 @@ class JobServiceManager extends ServiceManager implements IJobService
       if (this.isNonRetryableJobError(errorStr))
       {
         this.logger.error({ error: errorStr, body: payload, action: "ack_to_prevent_retry" }, "event_processing_error_ack");
-        await deleteMessage(queueUrl, receiptHandle);
+        await this.queueService.deleteMessage(queueUrl, receiptHandle);
       }
       else
       {
@@ -209,7 +214,7 @@ class JobServiceManager extends ServiceManager implements IJobService
     while (true)
     {
       try {
-        const messages: QueueMessage<JobEvent>[] = await receiveMessages<JobEvent>(
+        const messages: QueueMessage<JobEvent>[] = await this.queueService.receiveMessages<JobEvent>(
             config.settings.JOB_EVENTS_QUEUE_URL,
             (body) => JSON.parse(body) as JobEvent,
             EVENT_BATCH_SIZE,

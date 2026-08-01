@@ -4,7 +4,6 @@ import { InstantiationError } from "@errors/InstantiationError.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type {DeadLetterAttributes, IDeadLetter} from "@config/db/models/DeadLetter.js";
 import { DLQMessage, FailureClass, LoadMessage } from "@shared/models/job.js";
-import {receiveMessages, deleteMessage, sendMessage, QueueMessage} from "@shared/QueueService.js";
 import {RecordTemplate, RubbishTemplate, templateRegistry } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { RetryService } from "@service/retry/RetryService.js";
@@ -14,6 +13,8 @@ import {MetricsUtils} from "@utils/response/Metrics";
 import {ClassifyResult} from "@service/stream-parser/io/IClassifier";
 import {LineClassifierServiceImpl} from "@service/stream-parser/impl/LineClassifierServiceImpl.js";
 import Config from "@config/system-config/Config";
+import {QueueService} from "@shared/QueueService";
+import {QueueMessage} from "@shared/io/IQueueService";
 
 /**
  * RetryServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -49,13 +50,16 @@ class RetryServiceImpl extends ServiceManager implements RetryService
 
   private ALT_ENCODINGS: string[] = ["utf-8", "iso-8859-1", "cp1252", "utf-16"];
 
+  private queueService: QueueService;
+
     /**
    * Constructs a new RetryServiceImpl instance.
    * @param enforce - A function to enforce the Singleton pattern
+     * @param queueService
    * @throws Error if instantiated directly
    */
 
-  protected constructor(enforce: () => void)
+  protected constructor(enforce: () => void, queueService: QueueService)
   {
     if (enforce !== Enforce)
     {
@@ -66,6 +70,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService
 
     this.logger = createLogger(module);
     this.dbManager = PostgreSqlManager.getInstance();
+    this.queueService = queueService;
 
     if (process.env.HEALTH_CHECK_PORT)
     {
@@ -82,7 +87,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService
   {
     if (!RetryServiceImpl.instance)
     {
-      RetryServiceImpl.instance = new RetryServiceImpl(Enforce);
+      RetryServiceImpl.instance = new RetryServiceImpl(Enforce, QueueService.getInstance());
     }
 
     return RetryServiceImpl.instance;
@@ -356,7 +361,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService
 
     const config: Config = this.getConfig();
 
-    await sendMessage(config.settings.LOAD_QUEUE_URL, loadMsg, 0, msg.job_id);
+    await this.queueService.sendMessage(config.settings.LOAD_QUEUE_URL, loadMsg, 0, msg.job_id);
   }
 
     /**
@@ -371,7 +376,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService
     const updated: DLQMessage = { ...msg, attempts: nextAttempts, status: "pending" };
 
     const config: Config = this.getConfig();
-    await sendMessage(config.settings.DLQ_QUEUE_URL, updated, delaySeconds, msg.job_id);
+    await this.queueService.sendMessage(config.settings.DLQ_QUEUE_URL, updated, delaySeconds, msg.job_id);
 
     this.logger.info("line_re_enqueued", {
       job_id: msg.job_id,
@@ -393,7 +398,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService
 
     while (true)
     {
-      const messages: QueueMessage<DLQMessage>[] = await receiveMessages<DLQMessage>(
+      const messages: QueueMessage<DLQMessage>[] = await this.queueService.receiveMessages<DLQMessage>(
         config.settings.DLQ_QUEUE_URL,
         (body) => JSON.parse(body) as DLQMessage,
         10
@@ -404,7 +409,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService
         try
         {
           await this.handleDlqEntry(payload);
-          await deleteMessage(config.settings.DLQ_QUEUE_URL, receiptHandle);
+          await this.queueService.deleteMessage(config.settings.DLQ_QUEUE_URL, receiptHandle);
         }
         catch (exc)
         {
@@ -414,7 +419,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService
           {
             this.logger.error("retry_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
             MetricsUtils.increment("retry.error_ack", 1);
-            await deleteMessage(config.settings.DLQ_QUEUE_URL, receiptHandle);
+            await this.queueService.deleteMessage(config.settings.DLQ_QUEUE_URL, receiptHandle);
           }
           else
           {

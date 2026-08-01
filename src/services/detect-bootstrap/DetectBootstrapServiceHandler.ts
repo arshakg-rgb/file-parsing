@@ -3,7 +3,6 @@ import jschardet, {IDetectedMap} from "jschardet";
 import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ClassifyMessage, ParseMessage } from "@shared/models/job.js";
-import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "@shared/QueueService.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {
@@ -18,6 +17,8 @@ import {MetricsUtils} from "@utils/response/Metrics";
 import {aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierServiceImpl";
 import {DatabaseService} from "@shared/DatabaseManager";
 import {GcsUtils} from "@shared/GcsUtils";
+import {QueueService} from "@shared/QueueService";
+import {InstantiationError} from "@errors/InstantiationError";
 
 
 export class DetectBootstrapService
@@ -65,18 +66,29 @@ export class DetectBootstrapService
 
   private gcsUtils: GcsUtils;
 
+  private queueService: QueueService;
+
   /**
+   * @param enforce - A function to enforce the Singleton pattern
+   * @param gcsUtils
+   * @param queueService
    * Private constructor for singleton pattern
    */
 
-  private constructor(enforce: () => void, gcsUtils: GcsUtils)
+  private constructor(enforce: () => void, gcsUtils: GcsUtils, queueService: QueueService)
   {
+    if (enforce !== Enforce)
+    {
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate RetryServiceImpl directly. Use getInstance()");
+    }
+
     if (process.env.HEALTH_CHECK_PORT)
     {
       HealthService.startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
 
-    this.gcsUtils =  gcsUtils;
+    this.gcsUtils = gcsUtils;
+    this.queueService = queueService;
     this.initializeClassifier();
   }
 
@@ -88,7 +100,7 @@ export class DetectBootstrapService
   {
     if (!DetectBootstrapService.instance)
     {
-      DetectBootstrapService.instance = new DetectBootstrapService(Enforce, GcsUtils.getInstance());
+      DetectBootstrapService.instance = new DetectBootstrapService(Enforce, GcsUtils.getInstance(), QueueService.getInstance());
     }
 
     return DetectBootstrapService.instance;
@@ -172,7 +184,7 @@ export class DetectBootstrapService
 
   private emit(jobId: string, eventType: EventType, data: Record<string, unknown>): void
   {
-    publishEvent(makeJobEvent(eventType, jobId, "detect-bootstrap", data));
+    this.queueService.publishEvent(makeJobEvent(eventType, jobId, "detect-bootstrap", data));
   }
 
   /**
@@ -579,7 +591,7 @@ export class DetectBootstrapService
 
     try
     {
-      await sendRaw(settings.PARSE_QUEUE_URL, parseMsg as unknown as Record<string, unknown>);
+      await this.queueService.sendRaw(settings.PARSE_QUEUE_URL, parseMsg as unknown as Record<string, unknown>);
       this.logger.info("detect_parse_message_sent", { job_id: jobId });
     }
     catch (sendErr)
@@ -688,7 +700,7 @@ export class DetectBootstrapService
 
     while (this.running)
     {
-      const messages = await receiveMessages<ClassifyMessage>(
+      const messages = await this.queueService.receiveMessages<ClassifyMessage>(
           settings.CLASSIFY_QUEUE_URL,
           (body) => JSON.parse(body) as ClassifyMessage,
           1
@@ -699,7 +711,7 @@ export class DetectBootstrapService
         try
         {
           await this.bootstrapJob(payload);
-          await deleteMessage(settings.CLASSIFY_QUEUE_URL, receiptHandle);
+          await this.queueService.deleteMessage(settings.CLASSIFY_QUEUE_URL, receiptHandle);
         }
         catch (exc)
         {
@@ -707,7 +719,7 @@ export class DetectBootstrapService
           this.logger.error("detect_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
           MetricsUtils.increment("detect.error", 1);
           this.emit(payload.job_id, EventType.ERROR_OCCURRED, { error: errMsg });
-          await deleteMessage(settings.CLASSIFY_QUEUE_URL, receiptHandle);
+          await this.queueService.deleteMessage(settings.CLASSIFY_QUEUE_URL, receiptHandle);
         }
       }
     }

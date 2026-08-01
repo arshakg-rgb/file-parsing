@@ -6,13 +6,14 @@ import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { LoadMessage } from "@shared/models/job.js";
-import {receiveMessages, deleteMessage, publishEvent, QueueMessage} from "@shared/QueueService.js";
 import { ParquetReader } from "@dsnp/parquetjs";
 import { createLogger } from "@utils/logger/Log.js";
 import { LoadService } from "@service/load/LoadService.js";
 import { LoadResponse } from "@service/load/io/ILoad.js";
 import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
+import {QueueService} from "@shared/QueueService";
+import {QueueMessage} from "@shared/io/IQueueService";
 
 /**
  * LoadServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -72,13 +73,16 @@ class LoadServiceImpl extends ServiceManager implements LoadService
 
   private UPSERT_BATCH: number;
 
+  private queueService: QueueService;
+
     /**
    * Constructs a new LoadServiceImpl instance.
    * @param enforce - A function to enforce the Singleton pattern
+     * @param queueService
    * @throws Error if instantiated directly
    */
 
-  protected constructor(enforce: () => void)
+  protected constructor(enforce: () => void, queueService: QueueService)
   {
     if (enforce !== Enforce)
     {
@@ -92,6 +96,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     this.logger = createLogger(module);
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.dbManager = PostgreSqlManager.getInstance();
+    this.queueService = queueService;
 
     if (process.env.HEALTH_CHECK_PORT)
     {
@@ -108,7 +113,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
   {
     if (!LoadServiceImpl.instance)
     {
-      LoadServiceImpl.instance = new LoadServiceImpl(Enforce);
+      LoadServiceImpl.instance = new LoadServiceImpl(Enforce, QueueService.getInstance());
     }
 
     return LoadServiceImpl.instance;
@@ -143,7 +148,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
 
   private emit(jobId: string, eventType: EventType, data: Record<string, unknown>)
   {
-    publishEvent(makeJobEvent(eventType, jobId, "load", data));
+    this.queueService.publishEvent(makeJobEvent(eventType, jobId, "load", data));
   }
 
     /**
@@ -307,14 +312,14 @@ class LoadServiceImpl extends ServiceManager implements LoadService
 
     while (true)
     {
-      const messages: QueueMessage<LoadMessage>[] = await receiveMessages<LoadMessage>(config.settings.LOAD_QUEUE_URL, (body) => JSON.parse(body) as LoadMessage, 1);
+      const messages: QueueMessage<LoadMessage>[] = await this.queueService.receiveMessages<LoadMessage>(config.settings.LOAD_QUEUE_URL, (body) => JSON.parse(body) as LoadMessage, 1);
 
       for (const { payload, receiptHandle } of messages)
       {
         try
         {
           await this.loadJob(payload);
-          await deleteMessage(config.settings.LOAD_QUEUE_URL, receiptHandle);
+          await this.queueService.deleteMessage(config.settings.LOAD_QUEUE_URL, receiptHandle);
         }
         catch (exc)
         {
@@ -324,7 +329,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
           {
             this.logger.error("load_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
             MetricsUtils.increment("load.message_error_ack", 1);
-            await deleteMessage(config.settings.LOAD_QUEUE_URL, receiptHandle);
+            await this.queueService.deleteMessage(config.settings.LOAD_QUEUE_URL, receiptHandle);
           }
           else
           {

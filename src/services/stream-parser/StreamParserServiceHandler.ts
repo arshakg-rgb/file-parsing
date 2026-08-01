@@ -1,7 +1,6 @@
 import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ParseMessage, FailureClass, JobCounts, totalFailed, ColumnMap } from "@shared/models/job.js";
-import { receiveMessages, deleteMessage, publishEvent, modifyAckDeadline } from "@shared/QueueService.js";
 import {RecordTemplate, RubbishTemplate, templateRegistry} from "@shared/TemplateRegistryService.js";
 import { OutputManager } from "@shared/OutputManager.js";
 import { CsvOutputWriter } from "@shared/CsvOutputWriter.js";
@@ -23,6 +22,7 @@ import {AIRateLimiterHandle} from "@service/stream-parser/io/IClassifier";
 import { DatabaseService } from "@shared/DatabaseManager";
 import {GcsUtils} from "@shared/GcsUtils";
 import {InstantiationError} from "@errors/InstantiationError";
+import {QueueService} from "@shared/QueueService";
 const JSON_SAFE = JSONbig({ storeAsString: true });
 
 
@@ -120,11 +120,13 @@ export class StreamParserService
 
   private gcsUtils: GcsUtils;
 
+  private queueService: QueueService;
+
   /**
    * Private constructor for singleton pattern
    */
 
-  private constructor(enforce: () => void, gcsUtisl: GcsUtils)
+  private constructor(enforce: () => void, gcsUtisl: GcsUtils, queueService: QueueService)
   {
 
     if (enforce !== Enforce)
@@ -137,7 +139,8 @@ export class StreamParserService
       HealthService.startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
 
-    this.gcsUtils = gcsUtisl;;
+    this.gcsUtils = gcsUtisl;
+    this.queueService = queueService;
     this.registerSignalHandlers();
   }
 
@@ -149,7 +152,7 @@ export class StreamParserService
   {
     if (!StreamParserService.instance)
     {
-      StreamParserService.instance = new StreamParserService(Enforce, GcsUtils.getInstance());
+      StreamParserService.instance = new StreamParserService(Enforce, GcsUtils.getInstance(), QueueService.getInstance());
     }
 
     return StreamParserService.instance;
@@ -432,7 +435,7 @@ export class StreamParserService
 
   private emit(jobId: string, eventType: EventType, data: Record<string, unknown>): void
   {
-    publishEvent(makeJobEvent(eventType, jobId, "stream-parser", data));
+    this.queueService.publishEvent(makeJobEvent(eventType, jobId, "stream-parser", data));
   }
 
   /**
@@ -635,7 +638,7 @@ export class StreamParserService
         try
         {
           this.logger.info("ack_deadline_extending", { job_id: jobId, receiptHandle: this.currentReceiptHandle.substring(0, 20) + "..." });
-          await modifyAckDeadline(settings.PARSE_QUEUE_URL, this.currentReceiptHandle, 60);
+          await this.queueService.modifyAckDeadline(settings.PARSE_QUEUE_URL, this.currentReceiptHandle, 60);
           this.lastDeadlineExtension = Date.now();
           this.logger.info("ack_deadline_extended", { job_id: jobId });
         }
@@ -1045,7 +1048,7 @@ export class StreamParserService
 
       const failedTotal: number = totalFailed(counts);
 
-      await publishEvent(makeJobEvent(EventType.PARSING_COMPLETED, jobId, "stream-parser", {
+      await this.queueService.publishEvent(makeJobEvent(EventType.PARSING_COMPLETED, jobId, "stream-parser", {
         parsed: counts.parsed,
         dropped_rubbish: counts.dropped_rubbish,
         failed: failedTotal,
@@ -1127,7 +1130,7 @@ export class StreamParserService
 
     while (this.running)
     {
-      const messages = await receiveMessages<ParseMessage>(
+      const messages = await this.queueService.receiveMessages<ParseMessage>(
           settings.PARSE_QUEUE_URL,
           (body) => JSON.parse(body) as ParseMessage,
           1,
@@ -1140,7 +1143,7 @@ export class StreamParserService
         try
         {
           await this.currentJob;
-          await deleteMessage(settings.PARSE_QUEUE_URL, receiptHandle);
+          await this.queueService.deleteMessage(settings.PARSE_QUEUE_URL, receiptHandle);
         }
         catch (exc)
         {
@@ -1150,7 +1153,7 @@ export class StreamParserService
           {
             this.logger.error("stream_parser_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
             MetricsUtils.increment("parse.message_error_ack", 1);
-            await deleteMessage(settings.PARSE_QUEUE_URL, receiptHandle);
+            await this.queueService.deleteMessage(settings.PARSE_QUEUE_URL, receiptHandle);
           }
           else
           {
