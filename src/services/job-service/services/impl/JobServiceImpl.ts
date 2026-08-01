@@ -7,7 +7,6 @@ import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { ParseJobRow } from "@shared/DatabaseManager.js";
 import { SourceType, JobStatus, JobTimings, JobCounts } from "@shared/models/job.js";
 import { sendRaw } from "@shared/QueueService.js";
-import { presignedPutUrl, presignedGetUrl, parseGcsUrl, objectSize, readFull, putObject } from "@shared/GcsUtils.js";
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
@@ -15,6 +14,7 @@ import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse
 import {HttpError} from "@errors/HttpError.js";
 import {ServerError} from "@errors/ServerError.js";
 import {ParseJob, IParseJob, ParseJobAttributes} from "@config/db/models";
+import {GcsUtils} from "@shared/GcsUtils";
 
 /**
  * Singleton implementation of the Job Service business layer.
@@ -24,6 +24,7 @@ export class JobServiceImpl implements JobService
   private static instance: JobServiceImpl;
   private readonly postgreSqlManager: PostgreSqlManager;
   private readonly logger: pino.Logger;
+  private gcsUtils: GcsUtils;
 
   /**
    * Private constructor to enforce a Singleton pattern.
@@ -33,13 +34,14 @@ export class JobServiceImpl implements JobService
    * @throws Error if instantiation is attempted directly.
    */
 
-  private constructor(enforce: () => void, postgreSqlManager: PostgreSqlManager)
+  private constructor(enforce: () => void, postgreSqlManager: PostgreSqlManager, gcsUtisl: GcsUtils)
   {
     if (enforce !== Enforce)
     {
       throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate JobServiceImpl directly. Use getInstance()");
     }
 
+    this.gcsUtils = gcsUtisl;
     this.postgreSqlManager = postgreSqlManager;
     this.logger = createLogger(module);
   }
@@ -54,7 +56,7 @@ export class JobServiceImpl implements JobService
   {
     if (!JobServiceImpl.instance)
     {
-      JobServiceImpl.instance = new JobServiceImpl(Enforce, PostgreSqlManager.getInstance());
+      JobServiceImpl.instance = new JobServiceImpl(Enforce, PostgreSqlManager.getInstance(), GcsUtils.getInstance());
     }
 
     return JobServiceImpl.instance;
@@ -74,6 +76,7 @@ export class JobServiceImpl implements JobService
     const { source_type, source_ref, field_spec, batch_id, column_map } = request;
 
     let columnMap: Record<string, number | number[]> | undefined;
+
     if (column_map)
     {
       const raw = typeof column_map === "string" ? (() => { try { return JSON.parse(column_map); } catch { return undefined; } })() : column_map;
@@ -122,9 +125,10 @@ export class JobServiceImpl implements JobService
 
       let bucket: string;
       let key: string;
+
       try
       {
-        [bucket, key] = parseGcsUrl(source_ref);
+        [bucket, key] = this.gcsUtils.parseGcsUrl(source_ref);
       }
       catch
       {
@@ -135,7 +139,7 @@ export class JobServiceImpl implements JobService
 
       try
       {
-        size = await objectSize(bucket, key);
+        size = await this.gcsUtils.objectSize(bucket, key);
 
       }
       catch (err)
@@ -189,7 +193,7 @@ export class JobServiceImpl implements JobService
     if (source_type === SourceType.UPLOAD)
     {
       const uploadKey = `uploads/${jobId}/source`;
-      putUrl = await presignedPutUrl(settings.DATA_BUCKET, uploadKey);
+      putUrl = await this.gcsUtils.presignedPutUrl(settings.DATA_BUCKET, uploadKey);
       s3Url = `gs://${settings.DATA_BUCKET}/${uploadKey}`;
     }
 
@@ -303,7 +307,7 @@ export class JobServiceImpl implements JobService
 
     try
     {
-      await putObject(settings.DATA_BUCKET, uploadKey, source_buffer, mimetype || "application/octet-stream");
+      await this.gcsUtils.putObject(settings.DATA_BUCKET, uploadKey, source_buffer, mimetype || "application/octet-stream");
     }
     catch (err)
     {
@@ -422,9 +426,9 @@ export class JobServiceImpl implements JobService
     {
       try
       {
-        const [bucket, key] = parseGcsUrl(csvOutputPath);
+        const [bucket, key] = this.gcsUtils.parseGcsUrl(csvOutputPath);
         const filename = key.split("/").pop() ?? `${jobId}.csv`;
-        timings.download_path = await presignedGetUrl(bucket, key, 3600, filename);
+        timings.download_path = await this.gcsUtils.presignedGetUrl(bucket, key, 3600, filename);
       }
       catch (err)
       {
@@ -654,16 +658,16 @@ export class JobServiceImpl implements JobService
     let dstKey: string;
     try
     {
-      [srcBucket, srcKey] = parseGcsUrl(csvOutputPath);
-      [dstBucket, dstKey] = parseGcsUrl(request.destination_url);
+      [srcBucket, srcKey] = this.gcsUtils.parseGcsUrl(csvOutputPath);
+      [dstBucket, dstKey] = this.gcsUtils.parseGcsUrl(request.destination_url);
     }
     catch
     {
       throw new ValidationError(ValidationError.INPUT, "Invalid source or destination URL");
     }
 
-    const body = await readFull(srcBucket, srcKey);
-    await putObject(dstBucket, dstKey, body, "text/csv");
+    const body: Buffer = await this.gcsUtils.readFull(srcBucket, srcKey);
+    await this.gcsUtils.putObject(dstBucket, dstKey, body, "text/csv");
 
     this.logger.info("csv_uploaded", { job_id: jobId, from: csvOutputPath, to: request.destination_url, bytes: body.length });
 
@@ -693,6 +697,7 @@ export class JobServiceImpl implements JobService
     }
 
     const csvOutputPath = (row.timings as JobTimings)?._csv_output_path as string | undefined;
+
     if (!csvOutputPath)
     {
       throw new ServerError(ServerError.CONFLICT, "Parsed CSV output is not yet available");
@@ -700,17 +705,18 @@ export class JobServiceImpl implements JobService
 
     let bucket: string;
     let key: string;
+
     try
     {
-      [bucket, key] = parseGcsUrl(csvOutputPath);
+      [bucket, key] = this.gcsUtils.parseGcsUrl(csvOutputPath);
     }
     catch
     {
       throw new ServerError(ServerError.INTERNAL, "Invalid CSV output path");
     }
 
-    const filename = key.split("/").pop() ?? `${jobId}.csv`;
-    const downloadUrl = await presignedGetUrl(bucket, key, 3600, filename);
+    const filename: string = key.split("/").pop() ?? `${jobId}.csv`;
+    const downloadUrl: string = await this.gcsUtils.presignedGetUrl(bucket, key, 3600, filename);
 
     this.logger.info("csv_download_url_generated", { job_id: jobId, path: csvOutputPath, filename });
 

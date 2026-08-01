@@ -1,5 +1,4 @@
 import { settings } from "@shared/Settings.js";
-import { parseGcsUrl as parseS3Url, readFull } from "@shared/GcsUtils.js";
 import { BombError } from "@errors/BombError.js";
 import { ArchiveTypeDetector } from "./ArchiveTypeDetector.js";
 import { GcsTransferService } from "./GcsTransferService.js";
@@ -9,6 +8,7 @@ import { TarExtractor } from "./extractors/TarExtractor.js";
 import { SevenZipExtractor } from "./extractors/SevenZipExtractor.js";
 import { RarExtractor } from "./extractors/RarExtractor.js";
 import {InstantiationError} from "@errors/InstantiationError";
+import {GcsUtils} from "@shared/GcsUtils";
 
 /**
  * Top-level orchestrator: wires together the transfer service and every
@@ -71,14 +71,14 @@ export class IngestServiceImpl
       throw new BombError(`Archive nesting depth ${depth} exceeds maximum ${settings.ARCHIVE_MAX_NESTING_DEPTH}`);
     }
 
-    const [bucket, key] = parseS3Url(s3Url);
+    const [bucket, key] = GcsUtils.getInstance().parseGcsUrl(s3Url);
 
     if (archiveType === "rar")
     {
       return RarExtractor.getInstance().extract(jobId, s3Url, bucket, key, fieldSpec, batchId, password, depth);
     }
 
-    const raw: Buffer = await readFull(bucket, key);
+    const raw: Buffer = await GcsUtils.getInstance().readFull(bucket, key);
     const compressedSize: number = raw.length;
 
     switch (archiveType)

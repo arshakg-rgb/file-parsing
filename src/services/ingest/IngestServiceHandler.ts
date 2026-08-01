@@ -3,7 +3,6 @@ import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, SourceType, IngestMessage } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "@shared/QueueService.js";
-import { parseGcsUrl, objectSize, readRange, copyObject } from "@shared/GcsUtils.js";
 import { BombError } from "@errors/BombError.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {PasswordError} from "@errors/PasswordError";
@@ -21,6 +20,7 @@ import {SSRFError} from "@errors/SSRFError";
 import HealthService from "@utils/response/Health";
 import { MetricsUtils } from "@utils/response/Metrics";
 import {DatabaseService} from "@shared/DatabaseManager";
+import {GcsUtils} from "@shared/GcsUtils";
 
 
 export class IngestService
@@ -80,21 +80,25 @@ export class IngestService
 
   private readonly EXTRACTION_TIMEOUT_MS = 50 * 60 * 1000;
 
+  private gcsUtils: GcsUtils;
+
   /**
    * Private constructor to enforce a Singleton pattern.
    *
    * @param enforce - Function to enforce a Singleton pattern.
    * @param ingestServiceImpl - The ingest service instance.
+   * @param gcsUtils - The gcs utils instance.
    * @throws Error if instantiation is attempted directly.
    */
 
-  private constructor(enforce: () => void, ingestServiceImpl: IngestServiceImpl)
+  private constructor(enforce: () => void, ingestServiceImpl: IngestServiceImpl, gcsUtils: GcsUtils)
   {
     if (enforce !== Enforce)
     {
       throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Error: Instantiation failed: Use IngestService.getInstance() instead of new.");
     }
 
+    this.gcsUtils = gcsUtils;
     this.ingestServiceImpl = ingestServiceImpl;
     this.startHealthCheckServers();
   }
@@ -109,7 +113,7 @@ export class IngestService
   {
     if (!IngestService.instance)
     {
-      IngestService.instance = new IngestService(Enforce, IngestServiceImpl.getInstance());
+      IngestService.instance = new IngestService(Enforce, IngestServiceImpl.getInstance(), GcsUtils.getInstance());
     }
 
     return IngestService.instance;
@@ -130,8 +134,13 @@ export class IngestService
     if (process.env.HEALTH_CHECK_PORT)
     {
       const p: number = parseInt(process.env.HEALTH_CHECK_PORT, 10);
-      if (!isNaN(p) && p !== cloudRunPort) ports.add(p);
+
+      if (!isNaN(p) && p !== cloudRunPort)
+      {
+        ports.add(p);
+      }
     }
+
     for (const port of ports)
     {
       try
@@ -183,7 +192,7 @@ export class IngestService
    * @returns Promise that rejects if timeout expires
    */
 
-  private withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T>
+  private async withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T>
   {
     let timer: NodeJS.Timeout;
     const timeout = new Promise<never>((_, reject) => {timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);});
@@ -297,14 +306,14 @@ export class IngestService
         this.logger.warn("ingest_s3_url_update_failed", { job_id: jobId, error: String(e) });
       }
 
-      const [bucket, key] = parseGcsUrl(s3Url);
+      const [bucket, key] = this.gcsUtils.parseGcsUrl(s3Url);
 
       if (size === 0)
       {
         throw new Error("Source file is empty");
       }
 
-      const header: Buffer = await readRange(bucket, key, 0, Math.min(511, size - 1));
+      const header: Buffer = await this.gcsUtils.readRange(bucket, key, 0, Math.min(511, size - 1));
       const archiveType: string = this.ingestServiceImpl.detectArchiveType(header);
 
       if (archiveType)
@@ -454,8 +463,8 @@ export class IngestService
       return null;
     }
 
-    const [bucket, key] = parseGcsUrl(url);
-    const size: number = await objectSize(bucket, key);
+    const [bucket, key] = this.gcsUtils.parseGcsUrl(url);
+    const size: number = await this.gcsUtils.objectSize(bucket, key);
     return { s3Url: url, size };
   }
 
@@ -487,7 +496,7 @@ export class IngestService
   private async resolveUploadSource(msg: IngestMessage): Promise<{ s3Url: string; size: number }>
   {
     this.assertUrlScheme(msg.source_ref, GCS_OR_S3_URL_PATTERN, "a gs:// or s3:// URL");
-    const [bucket, key] = parseGcsUrl(msg.source_ref);
+    const [bucket, key] = this.gcsUtils.parseGcsUrl(msg.source_ref);
     this.logger.debug("upload_source_debug", { job_id: msg.job_id, bucket, key, source_ref: msg.source_ref });
 
     const size: number = await this.retryObjectSize(bucket, key, msg.job_id);
@@ -520,7 +529,7 @@ export class IngestService
     {
       try
       {
-        return await objectSize(bucket, key);
+        return await this.gcsUtils.objectSize(bucket, key);
       }
       catch (err)
       {
@@ -554,7 +563,7 @@ export class IngestService
 
     try
     {
-      await copyObject(bucket, key, bucket, dstKey);
+      await this.gcsUtils.copyObject(bucket, key, bucket, dstKey);
       const ingestedUrl = `gs://${bucket}/${dstKey}`;
       this.logger.info("upload_copied_to_ingested", { job_id: msg.job_id, source_ref: msg.source_ref, ingested_url: ingestedUrl });
       return { s3Url: ingestedUrl, size };

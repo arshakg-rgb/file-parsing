@@ -2,7 +2,6 @@ import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ParseMessage, FailureClass, JobCounts, totalFailed, ColumnMap } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, publishEvent, modifyAckDeadline } from "@shared/QueueService.js";
-import { parseGcsUrl, streamLines, objectSize, readRange, readFull } from "@shared/GcsUtils.js";
 import {RecordTemplate, RubbishTemplate, templateRegistry} from "@shared/TemplateRegistryService.js";
 import { OutputManager } from "@shared/OutputManager.js";
 import { CsvOutputWriter } from "@shared/CsvOutputWriter.js";
@@ -21,7 +20,9 @@ import {aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierS
 import {Repositories} from "@config/db/repositories";
 import {OutputBuffer} from "@shared/OutputBuffer";
 import {AIRateLimiterHandle} from "@service/stream-parser/io/IClassifier";
-import {DatabaseManager, DatabaseService} from "@shared/DatabaseManager";
+import { DatabaseService } from "@shared/DatabaseManager";
+import {GcsUtils} from "@shared/GcsUtils";
+import {InstantiationError} from "@errors/InstantiationError";
 const JSON_SAFE = JSONbig({ storeAsString: true });
 
 
@@ -117,16 +118,26 @@ export class StreamParserService
 
   private logger = createLogger(module);
 
+  private gcsUtils: GcsUtils;
+
   /**
    * Private constructor for singleton pattern
    */
 
-  private constructor()
+  private constructor(enforce: () => void, gcsUtisl: GcsUtils)
   {
-    if (process.env.HEALTH_CHECK_PORT) {
+
+    if (enforce !== Enforce)
+    {
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Cannot instantiate StreamParserService directly. Use getInstance()");
+    }
+
+    if (process.env.HEALTH_CHECK_PORT)
+    {
       HealthService.startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
 
+    this.gcsUtils = gcsUtisl;;
     this.registerSignalHandlers();
   }
 
@@ -138,7 +149,7 @@ export class StreamParserService
   {
     if (!StreamParserService.instance)
     {
-      StreamParserService.instance = new StreamParserService();
+      StreamParserService.instance = new StreamParserService(Enforce, GcsUtils.getInstance());
     }
 
     return StreamParserService.instance;
@@ -456,7 +467,7 @@ export class StreamParserService
     this.logger.info("parse_start", { job_id: jobId, s3_url: msg.s3_url, size: msg.size });
     MetricsUtils.increment("parse.start", 1);
 
-    const [bucket, key] = parseGcsUrl(msg.s3_url);
+    const [bucket, key] = GcsUtils.getInstance().parseGcsUrl(msg.s3_url);
 
     let fieldSpec: string[] = [];
 
@@ -477,7 +488,7 @@ export class StreamParserService
       fieldSpec = msg.field_spec;
     }
 
-    const fileSize: number = msg.size || (await objectSize(bucket, key));
+    const fileSize: number = msg.size || (await this.gcsUtils.objectSize(bucket, key));
     const probing: AdaptiveProbing = AdaptiveProbing.getInstance();
     const probeCount: number = probing.calculateProbeCount(fileSize);
     const probeOffsets: number[] = probing.generateProbeOffsets(fileSize, probeCount);
@@ -495,7 +506,7 @@ export class StreamParserService
 
       try
       {
-        const buffer: Buffer = await readRange(bucket, key, offset, endOffset);
+        const buffer: Buffer = await this.gcsUtils.readRange(bucket, key, offset, endOffset);
 
         if (EncodingService.isLikelyUtf8(buffer))
         {
@@ -680,7 +691,7 @@ export class StreamParserService
     {
       try
       {
-        const buf: Buffer = await readFull(bucket, key);
+        const buf: Buffer = await this.gcsUtils.readFull(bucket, key);
         const text: string = buf.toString(detectedEncoding as BufferEncoding).replace(/\0/g, "");
         jsonRecords = this.extractJsonRecords(JSON_SAFE.parse(text));
       }
@@ -699,7 +710,7 @@ export class StreamParserService
               yield [line, i, line.length] as [string, number, number];
             }
           })()
-          : streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding);
+          : this.gcsUtils.streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding);
 
       let aiHeaderMapped: boolean = false;
 
@@ -1182,3 +1193,12 @@ if (process.env.STREAM_PARSER_AUTOSTART !== "false")
 {
   StreamParserService.bootstrap();
 }
+
+
+/**
+ * Private capability token. Only GcsUtils.getInstance() has a reference to
+ * this function, so it's the only call site that can satisfy the
+ * constructor's `enforce` check — `new GcsUtils(...)` from anywhere else
+ * fails fast with InstantiationError.
+ */
+function Enforce(): void {}

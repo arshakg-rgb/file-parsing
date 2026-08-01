@@ -3,8 +3,8 @@ import express, { Request, Response } from "express";
 import multer from "multer";
 import { settings } from "@shared/Settings.js";
 import { sendRaw } from "@shared/QueueService.js";
-import { putObject, parseGcsUrl } from "@shared/GcsUtils.js";
 import { createLogger } from "@utils/logger/Log.js";
+import {GcsUtils} from "@shared/GcsUtils";
 
 /**
  * Logger instance for the module
@@ -46,11 +46,11 @@ app.post("/upload", upload.single("file"), async (req: Request, res: Response) =
 
     // Generate unique filename
     const filename = `${Date.now()}-${req.file.originalname}`;
-    const [bucket, key] = parseGcsUrl(`gs://${settings.DATA_BUCKET}`);
+    const [bucket, key] = GcsUtils.getInstance().parseGcsUrl(`gs://${settings.DATA_BUCKET}`);
     const gcsKey = `${key}/${filename}`;
 
     // Upload file to GCS
-    await putObject(bucket, gcsKey, req.file.buffer);
+    await GcsUtils.getInstance().putObject(bucket, gcsKey, req.file.buffer);
     logger.info("file_uploaded", { filename, gcsKey, user_id });
 
     // Generate job ID

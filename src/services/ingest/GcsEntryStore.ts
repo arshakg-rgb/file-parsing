@@ -2,9 +2,9 @@ import { randomUUID } from "crypto";
 import fs from "fs/promises";
 import path from "path";
 import { settings } from "@shared/Settings.js";
-import { putObject } from "@shared/GcsUtils.js";
 import { CompressionGuard } from "./CompressionGuard.js";
 import {InstantiationError} from "@errors/InstantiationError";
+import {GcsUtils} from "@shared/GcsUtils";
 
 /**
  * Handles persisting extracted entries to GCS and building the resulting
@@ -50,7 +50,7 @@ export class GcsEntryStore
         const safeName: string = path.basename(entryName).replace(/[#\s]+/g, "_") || "entry";
         const entryId = randomUUID();
         const s3Key = `ingested/${jobId}/entries/${entryId}/${safeName}`;
-        await putObject(settings.DATA_BUCKET, s3Key, data);
+        await GcsUtils.getInstance().putObject(settings.DATA_BUCKET, s3Key, data);
         return [`gs://${settings.DATA_BUCKET}/${s3Key}`, data.length];
     }
 

@@ -5,7 +5,6 @@ import path from "path";
 import { spawn } from "child_process";
 import pino from "pino";
 import { settings } from "@shared/Settings.js";
-import { objectSize, readRange, gcsClient } from "@shared/GcsUtils.js";
 import { sendRaw } from "@shared/QueueService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { GcsEntryStore } from "../GcsEntryStore.js";
@@ -16,6 +15,7 @@ import {Readable} from "node:stream";
 import {IngestServiceImpl} from "@service/ingest/IngestServiceImpl";
 import {InstantiationError} from "@errors/InstantiationError";
 import {DatabaseService} from "@shared/DatabaseManager";
+import {GcsUtils} from "@shared/GcsUtils";
 
 const logger: pino.Logger = createLogger(module);
 
@@ -37,13 +37,16 @@ export class RarExtractor
 
     private readonly entryStore: GcsEntryStore;
 
-    private constructor(enforce: () => void)
+    private gcsUtils: GcsUtils;
+
+    private constructor(enforce: () => void, gcsUtils: GcsUtils)
     {
         if (enforce !== Enforce)
         {
             throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Error: Instantiation failed: Use RarExtractor.getInstance() instead of new.");
         }
 
+        this.gcsUtils =  gcsUtils;
         this.entryStore = GcsEntryStore.getInstance();
     }
 
@@ -57,7 +60,7 @@ export class RarExtractor
     {
         if (!RarExtractor.instance)
         {
-            RarExtractor.instance = new RarExtractor(Enforce);
+            RarExtractor.instance = new RarExtractor(Enforce, GcsUtils.getInstance());
         }
 
         return RarExtractor.instance;
@@ -183,7 +186,7 @@ export class RarExtractor
 
         logger.info("rar_download_starting", { jobId, tmpPath, mountPath });
 
-        const fileStream: Readable = gcsClient().bucket(bucket).file(key).createReadStream();
+        const fileStream: Readable = this.gcsUtils.getStorage().bucket(bucket).file(key).createReadStream();
         const writeStream = createWriteStream(tmpPath);
 
         fileStream.on("error", (err) => logger.error("rar_download_stream_error", { jobId, error: err.message }));
@@ -249,7 +252,7 @@ export class RarExtractor
         logger.info("rar_extracting_file", { jobId, name: file.name, size: file.size });
 
         const entryKey = `archive/${jobId}/${file.name}`;
-        const entryFile = gcsClient().bucket(bucket).file(entryKey);
+        const entryFile = this.gcsUtils.getStorage().bucket(bucket).file(entryKey);
         const writeStream = entryFile.createWriteStream();
 
         const extractArgs: string[] = ["p", "-inul", tmpPath, file.name];
@@ -283,7 +286,7 @@ export class RarExtractor
 
         try
         {
-            const header: Buffer = await readRange(bucket, entryKey, 0, 511);
+            const header: Buffer = await this.gcsUtils.readRange(bucket, entryKey, 0, 511);
             detectedArchiveType = ArchiveTypeDetector.detect(header);
         }
         catch (err)
@@ -308,7 +311,7 @@ export class RarExtractor
                     password,
                     depth + 1
                 );
-                await gcsClient().bucket(bucket).file(entryKey).delete();
+                await this.gcsUtils.getStorage().bucket(bucket).file(entryKey).delete();
                 result = nestedEntries;
             }
             catch (err)
@@ -335,7 +338,7 @@ export class RarExtractor
 
     async extract(jobId: string, s3Url: string, bucket: string, key: string, fieldSpec: string[], batchId: string, password: string | undefined, depth: number): Promise<Record<string, unknown>[]>
     {
-        const size: number = await objectSize(bucket, key);
+        const size: number = await this.gcsUtils.objectSize(bucket, key);
         logger.info("rar_streaming_extract", { jobId, bucket, key, size });
 
         if (size > RAR_MAX_ARCHIVE_SIZE)

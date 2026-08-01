@@ -14,11 +14,11 @@ import { ArchiveEntryRequest, ArchiveEntryResponse, LogEvent, NestedArchiveEntry
 import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { publishEvent } from "@shared/QueueService.js";
-import { readRange, gcsClient } from "@shared/GcsUtils.js";
 import {Readable} from "node:stream";
 import {IngestServiceImpl} from "@service/ingest/IngestServiceImpl";
 import HealthService from "@utils/response/Health";
 import {DatabaseService} from "@shared/DatabaseManager";
+import {GcsUtils} from "@shared/GcsUtils";
 
 /**
  * ArchiveEntryConsumerServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -166,7 +166,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
 
       try
       {
-        const header: Buffer = await readRange(bucket, key, 0, 511);
+        const header: Buffer = await GcsUtils.getInstance().readRange(bucket, key, 0, 511);
         return IngestServiceImpl.getInstance().detectArchiveType(header);
       }
       catch (e)
@@ -191,7 +191,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
       {
         const nestedEntries: NestedArchiveEntry[] = await IngestServiceImpl.getInstance().extractArchiveToS3(jobId, s3Url, detectedType, fieldSpec, batchId, password, nestingDepth + 1);
 
-        await gcsClient().bucket(bucket).file(key).delete().catch((err) =>
+        await GcsUtils.getInstance().getStorage().bucket(bucket).file(key).delete().catch((err) =>
         {
           this.logger.warn(LogEvent.NESTED_CLEANUP_FAILED, { job_id: jobId, entry_name: entryName, error: String(err) });
         });

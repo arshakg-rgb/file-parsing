@@ -1,17 +1,10 @@
 import pino from "pino";
 import { settings } from "@shared/Settings.js";
-import {
-    parseGcsUrl as parseS3Url,
-    objectSize,
-    readFull,
-    putObject,
-    listObjects,
-    copyObject,
-} from "@shared/GcsUtils.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { GcsEntryStore } from "./GcsEntryStore.js";
 import {InstantiationError} from "@errors/InstantiationError";
 import {SsrfGuard} from "@service/ingest/SsrfGuard";
+import {GcsUtils} from "@shared/GcsUtils";
 
 const logger: pino.Logger = createLogger(module);
 
@@ -21,13 +14,16 @@ export class GcsTransferService
 
     private readonly entryStore: GcsEntryStore;
 
-    private constructor(enforce: () => void)
+    private gcsUtils: GcsUtils;
+
+    private constructor(enforce: () => void, gcsUtils: GcsUtils)
     {
         if (enforce !== Enforce)
         {
             throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Error: Instantiation failed: Use GcsTransferService.getInstance() instead of new.");
         }
 
+        this.gcsUtils = gcsUtils;
         this.entryStore = GcsEntryStore.getInstance();
     }
 
@@ -41,7 +37,7 @@ export class GcsTransferService
     {
         if (!GcsTransferService.instance)
         {
-            GcsTransferService.instance = new GcsTransferService(Enforce);
+            GcsTransferService.instance = new GcsTransferService(Enforce, GcsUtils.getInstance());
         }
 
         return GcsTransferService.instance;
@@ -51,8 +47,8 @@ export class GcsTransferService
     {
         if (url.startsWith("gs://"))
         {
-            const [bucket, key] = parseS3Url(url);
-            const size: number = await objectSize(bucket, key);
+            const [bucket, key] = this.gcsUtils.parseGcsUrl(url);
+            const size: number = await this.gcsUtils.objectSize(bucket, key);
             const s3Key: string = this.entryStore.sourceKeyFor(jobId);
 
             if (size > settings.SMALL_FILE_SINGLE_GET_THRESHOLD)
@@ -62,8 +58,8 @@ export class GcsTransferService
             }
             else
             {
-                const data: Buffer = await readFull(bucket, key);
-                await putObject(settings.DATA_BUCKET, s3Key, data);
+                const data: Buffer = await this.gcsUtils.readFull(bucket, key);
+                await this.gcsUtils.putObject(settings.DATA_BUCKET, s3Key, data);
             }
 
             const s3Url = `gs://${settings.DATA_BUCKET}/${s3Key}`;
@@ -81,7 +77,7 @@ export class GcsTransferService
             chunks.push(chunk);
         }
         const body: Buffer<ArrayBuffer> = Buffer.concat(chunks);
-        await putObject(settings.DATA_BUCKET, s3Key, body);
+        await this.gcsUtils.putObject(settings.DATA_BUCKET, s3Key, body);
         const s3Url = `gs://${settings.DATA_BUCKET}/${s3Key}`;
         logger.info("url_fetched_to_gcs", { jobId, s3Url, bytes: total });
         return [s3Url, total];
@@ -89,14 +85,14 @@ export class GcsTransferService
 
     private async streamGcsToGcs(srcBucket: string, srcKey: string, dstBucket: string, dstKey: string): Promise<void>
     {
-        await copyObject(srcBucket, srcKey, dstBucket, dstKey);
+        await this.gcsUtils.copyObject(srcBucket, srcKey, dstBucket, dstKey);
         logger.info("gcs_copy_complete", { srcBucket, srcKey, dstBucket, dstKey });
     }
 
     async listS3Prefix(prefixUrl: string): Promise<[string, number][]>
     {
-        const [bucket, prefix] = parseS3Url(prefixUrl);
-        return listObjects(bucket, prefix);
+        const [bucket, prefix] = this.gcsUtils.parseGcsUrl(prefixUrl);
+        return this.gcsUtils.listObjects(bucket, prefix);
     }
 }
 

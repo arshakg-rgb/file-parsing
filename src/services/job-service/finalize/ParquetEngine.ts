@@ -3,8 +3,8 @@ import os from "os";
 import path from "path";
 import { randomUUID } from "crypto";
 import { ParquetReader, ParquetWriter, ParquetSchema, type SchemaDefinition, type ParquetType } from "@dsnp/parquetjs";
-import { readFull, putObject } from "@shared/GcsUtils.js";
 import { StoragePath } from "./StoragePath.js";
+import {GcsUtils} from "@shared/GcsUtils";
 
 export interface ParquetRow {
   [key: string]: unknown;
@@ -135,7 +135,7 @@ export class ParquetEngine {
 
   static async readRows(storagePath: StoragePath): Promise<ParquetRow[]>
     {
-    const buffer: Buffer = await readFull(storagePath.bucket, storagePath.key);
+    const buffer: Buffer = await GcsUtils.getInstance().readFull(storagePath.bucket, storagePath.key);
     const reader: ParquetReader = await ParquetReader.openBuffer(buffer);
     const cursor = reader.getCursor();
     const rows: ParquetRow[] = [];
@@ -179,7 +179,7 @@ export class ParquetEngine {
     try
     {
       const buffer = await fs.readFile(tempFile);
-      await putObject(storagePath.bucket, storagePath.key, buffer, "application/octet-stream");
+      await GcsUtils.getInstance().putObject(storagePath.bucket, storagePath.key, buffer, "application/octet-stream");
     }
     finally
     {

@@ -1,4 +1,5 @@
-import { parseGcsUrl } from "@shared/GcsUtils.js";
+import {GcsUtils} from "@shared/GcsUtils";
+
 export type GcsProtocol = "gs" | "s3";
 
 /**
@@ -29,7 +30,7 @@ export class StoragePath
       throw new Error(`Expected gs:// or s3:// URL, got: ${url}`);
     }
 
-    const [bucket, key] = parseGcsUrl(url);
+    const [bucket, key] = GcsUtils.getInstance().parseGcsUrl(url);
     return new StoragePath(protocol, bucket, key);
   }
 

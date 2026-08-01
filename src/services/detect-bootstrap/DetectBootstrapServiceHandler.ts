@@ -1,11 +1,9 @@
-import pino from "pino";
 import crypto from "crypto";
 import jschardet, {IDetectedMap} from "jschardet";
 import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ClassifyMessage, ParseMessage } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "@shared/QueueService.js";
-import { parseGcsUrl, objectSize, readRange } from "@shared/GcsUtils.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {
@@ -19,6 +17,7 @@ import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
 import {aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierServiceImpl";
 import {DatabaseService} from "@shared/DatabaseManager";
+import {GcsUtils} from "@shared/GcsUtils";
 
 
 export class DetectBootstrapService
@@ -64,16 +63,20 @@ export class DetectBootstrapService
 
   private classify: ((req: ClassifyRequest) => Promise<ClassifyResponse>) | null = null;
 
+  private gcsUtils: GcsUtils;
+
   /**
    * Private constructor for singleton pattern
    */
-  private constructor()
+
+  private constructor(enforce: () => void, gcsUtils: GcsUtils)
   {
     if (process.env.HEALTH_CHECK_PORT)
     {
       HealthService.startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
 
+    this.gcsUtils =  gcsUtils;
     this.initializeClassifier();
   }
 
@@ -85,7 +88,7 @@ export class DetectBootstrapService
   {
     if (!DetectBootstrapService.instance)
     {
-      DetectBootstrapService.instance = new DetectBootstrapService();
+      DetectBootstrapService.instance = new DetectBootstrapService(Enforce, GcsUtils.getInstance());
     }
 
     return DetectBootstrapService.instance;
@@ -455,7 +458,7 @@ export class DetectBootstrapService
   private async processProbeWindow(bucket: string, key: string, offset: number, windowSize: number, fileSize: number, encoding: string, fieldSpecArray: string[], jobId: string, seen: Set<string>): Promise<ProbeResult | null>
   {
     const end: number = Math.min(offset + windowSize - 1, fileSize - 1);
-    const probeRaw: Buffer = await readRange(bucket, key, offset, end);
+    const probeRaw: Buffer = await this.gcsUtils.readRange(bucket, key, offset, end);
     const fingerprint: string = this.fingerprintProbe(probeRaw, encoding);
 
     if (seen.has(fingerprint))
@@ -545,7 +548,7 @@ export class DetectBootstrapService
   private async detectFileProperties(bucket: string, key: string, fileSize: number): Promise<{ encoding: string; windowSize: number }>
   {
     const headEnd: number = Math.min(settings.PROBE_WINDOW_MIN_BYTES - 1, fileSize - 1);
-    const headRaw: Buffer = await readRange(bucket, key, 0, headEnd);
+    const headRaw: Buffer = await this.gcsUtils.readRange(bucket, key, 0, headEnd);
     const encoding: string = this.detectEncoding(headRaw);
     const [avgRow, maxRow] = this.measureRowWidth(headRaw, encoding);
     const windowSize: number = this.computeWindowSize(avgRow, maxRow);
@@ -618,8 +621,8 @@ export class DetectBootstrapService
 
     this.logger.info("detect_start", { jobId, s3_url: msg.s3_url, size: msg.size });
 
-    const [bucket, key] = parseGcsUrl(msg.s3_url);
-    const fileSize: number = msg.size || (await objectSize(bucket, key));
+    const [bucket, key] = this.gcsUtils.parseGcsUrl(msg.s3_url);
+    const fileSize: number = msg.size || (await this.gcsUtils.objectSize(bucket, key));
 
     const { encoding, windowSize } = await this.detectFileProperties(bucket, key, fileSize);
 
@@ -719,3 +722,10 @@ DetectBootstrapService.getInstance()
       console.error("detect_bootstrap_start_failed", { error: String(err) });
       process.exit(1);
     });
+
+/**
+ * Function to enforce the Singleton pattern.
+ */
+function Enforce(): void
+{
+}

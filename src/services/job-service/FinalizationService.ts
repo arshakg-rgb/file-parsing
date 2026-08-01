@@ -1,20 +1,21 @@
 import pino from "pino";
 import { randomUUID } from "crypto";
 import { settings } from "@shared/Settings.js";
-import { readFull, putObject, objectSize, deleteObject } from "@shared/GcsUtils.js";
 import {DatabaseService, type DeadLetterRow} from "@shared/DatabaseManager.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { LineNumberMapper } from "@service/job-service/finalize/LineNumberMapper.js";
 import { ParquetEngine, type ParquetRow } from "@service/job-service/finalize/ParquetEngine.js";
 import { StoragePath, type GcsProtocol } from "@service/job-service/finalize/StoragePath.js";
 import type { FinalizeResult } from "@service/job-service/io/IFinalizationService.js";
+import {GcsUtils} from "@shared/GcsUtils";
 export type { FinalizeResult } from "@service/job-service/io/IFinalizationService.js";
 
 /**
  * High-level service that orchestrates output finalization.
  * Composes repository, storage, Parquet, and line-mapping concerns.
  */
-class FinalizationService {
+class FinalizationService
+{
   private readonly logger: pino.Logger = createLogger(module);
 
     /**
@@ -24,17 +25,21 @@ class FinalizationService {
    * @param bucket - The bucket
    * @returns A promise that resolves to the result
    */
-  async finalizeOutput(jobId: string, partPaths: string[], bucket: string): Promise<FinalizeResult> {
-    if (!partPaths.length) {
+  async finalizeOutput(jobId: string, partPaths: string[], bucket: string): Promise<FinalizeResult>
+  {
+    if (!partPaths.length)
+    {
       return { failed: false, paths: [] };
     }
 
     const groups = this.groupByTemplate(partPaths);
     const mergedPaths: string[] = [];
 
-    for (const group of groups.values()) {
-      try {
-        const groupPaths = await this.mergeGroup(jobId, group, bucket);
+    for (const group of groups.values())
+    {
+      try
+      {
+        const groupPaths: string[] = await this.mergeGroup(jobId, group, bucket);
         if (groupPaths?.length) mergedPaths.push(...groupPaths);
         await DatabaseService.getInstance().repositories.jobLogs.log({
           job_id: jobId,
@@ -81,7 +86,7 @@ class FinalizationService {
               try {
                 const storagePath = StoragePath.parse(p);
                 this.logger.info({ jobId, path: p }, "finalize_delete_part");
-                await deleteObject(storagePath.bucket, storagePath.key);
+                await GcsUtils.getInstance().deleteObject(storagePath.bucket, storagePath.key);
                 this.logger.info({ jobId, path: p }, "finalize_delete_part_success");
               } catch (err) {
                 this.logger.error({ path: p, error: String(err) }, "finalize_delete_part_failed");
@@ -94,7 +99,7 @@ class FinalizationService {
               try {
                 const storagePath = StoragePath.parse(p);
                 this.logger.info({ jobId, path: p }, "finalize_delete_merged");
-                await deleteObject(storagePath.bucket, storagePath.key);
+                await GcsUtils.getInstance().deleteObject(storagePath.bucket, storagePath.key);
                 this.logger.info({ jobId, path: p }, "finalize_delete_merged_success");
               } catch (err) {
                 this.logger.error({ path: p, error: String(err) }, "finalize_delete_merged_failed");
@@ -197,7 +202,7 @@ class FinalizationService {
   private async totalPartSize(paths: StoragePath[]): Promise<number> {
     let total = 0;
     for (const p of paths) {
-      total += await objectSize(p.bucket, p.key);
+      total += await GcsUtils.getInstance().objectSize(p.bucket, p.key);
     }
     return total;
   }
@@ -261,7 +266,7 @@ class FinalizationService {
     let source: Buffer | undefined;
     try {
       const sourcePath = StoragePath.parse(job.s3_url);
-      source = await readFull(sourcePath.bucket, sourcePath.key);
+      source = await GcsUtils.getInstance().readFull(sourcePath.bucket, sourcePath.key);
     } catch (e) {
       this.logger.warn({ jobId, error: String(e) }, "backfill_source_read_failed");
       return;
@@ -289,7 +294,7 @@ class FinalizationService {
     let rubbishEntries: Array<Record<string, unknown>> = [];
     if (rubbishLogPath) {
       try {
-        const raw = await readFull(StoragePath.parse(rubbishLogPath).bucket, StoragePath.parse(rubbishLogPath).key);
+        const raw = await GcsUtils.getInstance().readFull(StoragePath.parse(rubbishLogPath).bucket, StoragePath.parse(rubbishLogPath).key);
         const text = raw.toString("utf-8");
         rubbishEntries = text
           .split("\n")
@@ -354,7 +359,7 @@ class FinalizationService {
     const logPath = StoragePath.parse(rubbishLogPath);
     const body = Buffer.from(updated.map((e) => JSON.stringify(e)).join("\n"));
     try {
-      await putObject(logPath.bucket, logPath.key, body, "application/x-ndjson");
+      await GcsUtils.getInstance().putObject(logPath.bucket, logPath.key, body, "application/x-ndjson");
       this.logger.info({ jobId, entries: updated.length }, "rubbish_log_backfilled");
     } catch (e) {
       this.logger.warn({ jobId, error: String(e) }, "backfill_rubbish_write_failed");
