@@ -2,7 +2,7 @@ import pino from "pino";
 import { randomUUID } from "crypto";
 import { settings } from "@shared/Settings.js";
 import { readFull, putObject, objectSize, deleteObject } from "@shared/GcsUtils.js";
-import { getJob, repositories, type DeadLetterRow } from "@shared/DatabaseManager.js";
+import {DatabaseService, type DeadLetterRow} from "@shared/DatabaseManager.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { LineNumberMapper } from "@service/job-service/finalize/LineNumberMapper.js";
 import { ParquetEngine, type ParquetRow } from "@service/job-service/finalize/ParquetEngine.js";
@@ -36,7 +36,7 @@ class FinalizationService {
       try {
         const groupPaths = await this.mergeGroup(jobId, group, bucket);
         if (groupPaths?.length) mergedPaths.push(...groupPaths);
-        await repositories.jobLogs.log({
+        await DatabaseService.getInstance().repositories.jobLogs.log({
           job_id: jobId,
           event_type: "template_used",
           stage: "finalize",
@@ -46,7 +46,7 @@ class FinalizationService {
         });
       } catch (err) {
         this.logger.error({ jobId, templateId: group.templateId, error: String(err) }, "finalize_merge_failed");
-        await repositories.jobLogs.log({
+        await DatabaseService.getInstance().repositories.jobLogs.log({
           job_id: jobId,
           event_type: "crashed",
           stage: "finalize",
@@ -239,7 +239,7 @@ class FinalizationService {
    * @param mergedPaths - The merged paths
    */
   private async backfillLineNumbers(jobId: string, mergedPaths: StoragePath[]): Promise<void> {
-    const job = await getJob(jobId);
+    const job = await DatabaseService.getInstance().getJob(jobId);
     if (!job?.s3_url) {
       this.logger.info({ jobId }, "backfill_skip_no_source");
       return;
@@ -281,7 +281,7 @@ class FinalizationService {
       }
     }
 
-    const deadLetters: DeadLetterRow[] = await repositories.deadLetters.findByJob(jobId);
+    const deadLetters: DeadLetterRow[] = await DatabaseService.getInstance().repositories.deadLetters.findByJob(jobId);
     for (const dlq of deadLetters) {
       targetOffsets.add(Number(dlq.byte_offset));
     }
@@ -311,7 +311,7 @@ class FinalizationService {
     for (const dlq of deadLetters) {
       const line = lineMap.get(Number(dlq.byte_offset));
       if (line !== undefined) {
-        await repositories.deadLetters.updateLineNo(dlq.dlq_id, line);
+        await DatabaseService.getInstance().repositories.deadLetters.updateLineNo(dlq.dlq_id, line);
       }
     }
 

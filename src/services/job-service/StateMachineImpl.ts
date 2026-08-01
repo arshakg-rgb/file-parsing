@@ -2,7 +2,7 @@ import pino from "pino";
 import { randomUUID } from "crypto";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { TransitionError } from "@errors/TransitionError.js";
-import { repositories, ParseJobRow } from "@shared/DatabaseManager.js";
+import {DatabaseService, ParseJobRow} from "@shared/DatabaseManager.js";
 import {
   JobStatus,
   VALID_TRANSITIONS,
@@ -37,8 +37,8 @@ export class StateMachineImpl implements StateMachine
 {
   private static instance: StateMachineImpl;
   private readonly logger: pino.Logger;
-  private readonly jobsRepo: typeof repositories.jobs;
-  private readonly jobLogsRepo: typeof repositories.jobLogs;
+  private readonly jobsRepo;
+  private readonly jobLogsRepo;
   private readonly finalize: typeof finalizeOutput;
   private readonly enqueue: typeof sendRaw;
 
@@ -53,7 +53,7 @@ export class StateMachineImpl implements StateMachine
    * @throws InstantiationError if instantiation is attempted directly.
    */
 
-  private constructor(enforce: () => void, jobsRepo: typeof repositories.jobs, jobLogsRepo: typeof repositories.jobLogs, finalize: typeof finalizeOutput, enqueue: typeof sendRaw, logger: pino.Logger)
+  private constructor(enforce: () => void, jobsRepo, jobLogsRepo, finalize: typeof finalizeOutput, enqueue: typeof sendRaw, logger: pino.Logger)
   {
     if (enforce !== Enforce)
     {
@@ -77,7 +77,7 @@ export class StateMachineImpl implements StateMachine
   {
     if (!StateMachineImpl.instance)
     {
-      StateMachineImpl.instance = new StateMachineImpl(Enforce, repositories.jobs, repositories.jobLogs, finalizeOutput, sendRaw, createLogger(module));
+      StateMachineImpl.instance = new StateMachineImpl(Enforce, DatabaseService.getInstance().repositories.jobs, DatabaseService.getInstance().repositories.jobLogs, finalizeOutput, sendRaw, createLogger(module));
     }
 
     return StateMachineImpl.instance;
@@ -368,15 +368,15 @@ export class StateMachineImpl implements StateMachine
     const failedRatio: number = totalLines > 0 ? data.failed / totalLines : 0;
 
     const [droppedSummary, failedSummary, templateUsage] = await Promise.all([
-      repositories.rubbishLogs.getSummaryByJob(event.job_id).catch((err) => {
+      DatabaseService.getInstance().repositories.rubbishLogs.getSummaryByJob(event.job_id).catch((err) => {
         this.logger.warn({ job_id: event.job_id, error: String(err) }, "dropped_summary_failed");
         return { count: data.dropped_rubbish, line_numbers: [], line_numbers_truncated: false, by_template: {} };
       }),
-      repositories.deadLetters.getSummaryByJob(event.job_id).catch((err) => {
+      DatabaseService.getInstance().repositories.deadLetters.getSummaryByJob(event.job_id).catch((err) => {
         this.logger.warn({ job_id: event.job_id, error: String(err) }, "failed_summary_failed");
         return { count: data.failed, line_numbers: [], line_numbers_truncated: false, by_class: data.failed_by_class || {} };
       }),
-      repositories.parsedRecords.getTemplateUsageCounts(event.job_id).catch((err) => {
+      DatabaseService.getInstance().repositories.parsedRecords.getTemplateUsageCounts(event.job_id).catch((err) => {
         this.logger.warn({ job_id: event.job_id, error: String(err) }, "template_usage_failed");
         return [];
       }),

@@ -6,7 +6,6 @@ import { spawn } from "child_process";
 import pino from "pino";
 import { settings } from "@shared/Settings.js";
 import { objectSize, readRange, gcsClient } from "@shared/GcsUtils.js";
-import { createPendingArchiveEntry } from "@shared/DatabaseManager.js";
 import { sendRaw } from "@shared/QueueService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { GcsEntryStore } from "../GcsEntryStore.js";
@@ -16,6 +15,7 @@ import { RAR_MAX_ARCHIVE_SIZE, RAR_MAX_INLINE_FILE_SIZE, RAR_MAX_TOTAL_UNCOMPRES
 import {Readable} from "node:stream";
 import {IngestServiceImpl} from "@service/ingest/IngestServiceImpl";
 import {InstantiationError} from "@errors/InstantiationError";
+import {DatabaseService} from "@shared/DatabaseManager";
 
 const logger: pino.Logger = createLogger(module);
 
@@ -208,7 +208,7 @@ export class RarExtractor
 
         try
         {
-            const created: boolean = await createPendingArchiveEntry(jobId, file.name, file.size);
+            const created: boolean = await DatabaseService.getInstance().createPendingArchiveEntry(jobId, file.name, file.size);
 
             if (created)
             {

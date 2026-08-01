@@ -1,160 +1,182 @@
-// Re-export from PostgreSqlManager for backward compatibility
+import crypto from "crypto";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { ParseJobAttributes } from "@config/db/models/ParseJob.js";
 import type { OutputPartAttributes } from "@config/db/models/OutputPart.js";
 import type { DeadLetterAttributes } from "@config/db/models/DeadLetter.js";
-import type { PendingArchiveEntryAttributes } from "@config/db/models/PendingArchiveEntry.js";
-import type { JobLogAttributes } from "@config/db/models/JobLog.js";
-
-/**
- * Database manager instance
- */
-const dbManager = PostgreSqlManager.getInstance();
-/**
- * Repository accessors
- */
-const repos = dbManager.repositories;
-
-// Re-export pool for backward compatibility
-export const pool = dbManager.pool;
-
-/**
- * The models
- */
-export const models = dbManager.models;
-/**
- * The repositories
- */
-export const repositories = repos;
-
-// Legacy row shape aliases for minimal downstream churn
+import {IPendingArchiveEntry} from "@config/db/models";
+import {InstantiationError} from "@errors/InstantiationError";
 export type ParseJobRow = ParseJobAttributes;
 export type OutputPartRow = OutputPartAttributes;
 export type DeadLetterRow = DeadLetterAttributes;
-export type PendingArchiveEntryRow = PendingArchiveEntryAttributes;
-export type JobLogRow = JobLogAttributes;
-
-// Re-export functions as wrappers around the repository layer
-export async function waitForDb(): Promise<void> {
-  await dbManager.initialize();
-}
 
 /**
- * Gets job
- * @param jobId - The job identifier
- * @returns A promise that resolves to the result
+ * DatabaseService is a thin, typed facade over PostgreSqlManager's
+ * repositories and models — job lookups, pending-archive-entry lifecycle,
+ * and schema sync.
+ *
+ * This IS a true singleton (unlike per-job classes such as CsvOutputWriter):
+ * there is exactly one Postgres connection and one repository set for the
+ * whole process, so caching a single instance behind getInstance() is
+ * correct and safe — there's no per-caller state that concurrent callers
+ * could corrupt by sharing it.
  */
-export async function getJob(jobId: string): Promise<ParseJobRow | null> {
-  return repos.jobs.findById(jobId);
+
+export class DatabaseService
+{
+  private static instance: DatabaseService;
+
+  private readonly dbManager: PostgreSqlManager;
+  public readonly repositories: PostgreSqlManager["repositories"];
+
+  /**
+   * @param enforce - Capability token; must be the module-private Enforce
+   *   function. Callers cannot obtain a reference to it, so this constructor
+   *   is effectively only reachable via DatabaseService.getInstance().
+   * @param dbManager - The underlying PostgreSqlManager singleton instance.
+   */
+
+  private constructor(enforce: () => void, dbManager: PostgreSqlManager)
+  {
+    if (enforce !== Enforce)
+    {
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Error: Instantiation failed: Use DatabaseService.getInstance() instead of new.");
+    }
+
+    this.dbManager = dbManager;
+    this.repositories = dbManager.repositories;
+  }
+
+  /**
+   * Gets the singleton instance of DatabaseService.
+   *
+   * @returns The singleton instance of DatabaseService.
+   */
+
+  public static getInstance(): DatabaseService
+  {
+    if (!DatabaseService.instance)
+    {
+      DatabaseService.instance = new DatabaseService(Enforce, PostgreSqlManager.getInstance());
+    }
+
+    return DatabaseService.instance;
+  }
+
+  /**
+   * Waits for the underlying database connection/pool to be ready.
+   */
+
+  public async waitForDb(): Promise<void>
+  {
+    await this.dbManager.initialize();
+  }
+
+  /**
+   * Gets a single parse job by id.
+   * @param jobId - The job identifier.
+   * @returns The job row, or null if not found.
+   */
+
+  public async getJob(jobId: string): Promise<ParseJobRow | null>
+  {
+    return this.repositories.jobs.findById(jobId);
+  }
+
+  /**
+   * Gets all parse jobs belonging to a batch.
+   * @param batchId - The batch identifier.
+   * @returns The matching job rows.
+   */
+
+  public async getBatchJobs(batchId: string): Promise<ParseJobRow[]>
+  {
+    return this.repositories.jobs.findByBatchId(batchId);
+  }
+
+  /**
+   * Creates a pending archive entry row in the "pending" state.
+   * @param jobId - The job identifier.
+   * @param entryName - The archive entry name.
+   * @param entrySize - The archive entry size, in bytes.
+   * @returns True if the row was created successfully.
+   */
+
+  public async createPendingArchiveEntry(jobId: string, entryName: string, entrySize: number): Promise<boolean>
+  {
+    const row: IPendingArchiveEntry = await this.repositories.pendingArchiveEntries.create({
+      id: crypto.randomUUID(),
+      job_id: jobId,
+      entry_name: entryName,
+      entry_size: entrySize,
+      status: "pending",
+    });
+
+    return row !== null;
+  }
+
+  /**
+   * Marks a pending archive entry as "processing".
+   * @param jobId - The job identifier.
+   * @param entryName - The archive entry name.
+   */
+
+  public async markPendingEntryProcessing(jobId: string, entryName: string): Promise<void> {
+    const entry = await this.findPendingEntry(jobId, entryName);
+    if (entry) await this.repositories.pendingArchiveEntries.markStatus(entry.id, "processing");
+  }
+
+  /**
+   * Marks a pending archive entry as "completed".
+   * @param jobId - The job identifier.
+   * @param entryName - The archive entry name.
+   */
+
+  public async markPendingEntryCompleted(jobId: string, entryName: string): Promise<void> {
+    const entry = await this.findPendingEntry(jobId, entryName);
+    if (entry) await this.repositories.pendingArchiveEntries.markStatus(entry.id, "completed");
+  }
+
+  /**
+   * Marks a pending archive entry as "failed".
+   * @param jobId - The job identifier.
+   * @param entryName - The archive entry name.
+   * @param error - The error message describing the failure.
+   */
+
+  public async markPendingEntryFailed(jobId: string, entryName: string, error: string): Promise<void> {
+    const entry = await this.findPendingEntry(jobId, entryName);
+    if (entry) await this.repositories.pendingArchiveEntries.markStatus(entry.id, "failed", error);
+  }
+
+  /**
+   * Syncs the database schema without dropping existing tables.
+   */
+
+  public async createTables(): Promise<void> {
+    await this.dbManager.sequelize.sync({ force: false });
+  }
+
+  /**
+   * Looks up a pending archive entry by job id + entry name. Shared by the
+   * three markPendingEntry* methods to avoid repeating the same query.
+   * @param jobId - The job identifier.
+   * @param entryName - The archive entry name.
+   */
+
+  private async findPendingEntry(jobId: string, entryName: string)
+  {
+    return this.dbManager.models.PendingArchiveEntry.findOne({
+      where: { job_id: jobId, entry_name: entryName },
+    });
+  }
 }
 
-/**
- * Gets batch jobs
- * @param batchId - The batch identifier
- * @returns A promise that resolves to the list
- */
-export async function getBatchJobs(batchId: string): Promise<ParseJobRow[]> {
-  return repos.jobs.findByBatchId(batchId);
-}
-
-/**
- * Gets job parts
- * @param jobId - The job identifier
- * @returns A promise that resolves to the list
- */
-export async function getJobParts(jobId: string): Promise<OutputPartRow[]> {
-  return repos.outputParts.findByJob(jobId);
-}
-
-/**
- * Creates pending archive entry
- * @param jobId - The job identifier
- * @param entryName - The entry name
- * @param entrySize - The entry size
- */
-export async function createPendingArchiveEntry(
-  jobId: string,
-  entryName: string,
-  entrySize: number
-): Promise<boolean> {
-  const row = await repos.pendingArchiveEntries.create({ id: crypto.randomUUID(), job_id: jobId, entry_name: entryName, entry_size: entrySize, status: "pending" });
-  return row !== null;
-}
-
-/**
- * Marks pending entry processing
- * @param jobId - The job identifier
- * @param entryName - The entry name
- */
-export async function markPendingEntryProcessing(
-  jobId: string,
-  entryName: string
-): Promise<void> {
-  const entry = await dbManager.models.PendingArchiveEntry.findOne({ where: { job_id: jobId, entry_name: entryName } });
-  if (entry) await repos.pendingArchiveEntries.markStatus(entry.id, "processing");
-}
-
-/**
- * Marks pending entry completed
- * @param jobId - The job identifier
- * @param entryName - The entry name
- */
-export async function markPendingEntryCompleted(
-  jobId: string,
-  entryName: string
-): Promise<void> {
-  const entry = await dbManager.models.PendingArchiveEntry.findOne({ where: { job_id: jobId, entry_name: entryName } });
-  if (entry) await repos.pendingArchiveEntries.markStatus(entry.id, "completed");
-}
-
-/**
- * Marks pending entry failed
- * @param jobId - The job identifier
- * @param entryName - The entry name
- * @param error - The error that occurred
- */
-export async function markPendingEntryFailed(
-  jobId: string,
-  entryName: string,
-  error: string
-): Promise<void> {
-  const entry = await dbManager.models.PendingArchiveEntry.findOne({ where: { job_id: jobId, entry_name: entryName } });
-  if (entry) await repos.pendingArchiveEntries.markStatus(entry.id, "failed", error);
-}
-
-/**
- * Gets pending entries
- * @param jobId - The job identifier
- * @returns A promise that resolves to the list
- */
-export async function getPendingEntries(jobId: string): Promise<PendingArchiveEntryRow[]> {
-  return repos.pendingArchiveEntries.findByJob(jobId);
-}
-
-/**
- * Gets pending entry count
- * @param jobId - The job identifier
- * @returns A promise that resolves to the result
- */
-export async function getPendingEntryCount(jobId: string): Promise<{ pending: number; completed: number; failed: number }> {
-  return repos.pendingArchiveEntries.getCountByJob(jobId);
-}
-
-/**
- * Gets pending entry total size
- * @param jobId - The job identifier
- * @returns A promise that resolves to the result
- */
-export async function getPendingEntryTotalSize(jobId: string): Promise<number> {
-  return repos.pendingArchiveEntries.getTotalSize(jobId);
-}
-
-/**
- * Creates tables
- */
-export async function createTables(): Promise<void> {
-  await dbManager.sequelize.sync({ force: false });
-}
-
-// Export the manager class for direct use
 export { default as DatabaseManager } from "@config/db/PostgreSqlManager.js";
+
+/**
+ * Private capability token. Only DatabaseService.getInstance() has a
+ * reference to this function, so it's the only call site that can satisfy
+ * the constructor's `enforce` check — `new DatabaseService(...)` from
+ * anywhere else fails fast with InstantiationError.
+ */
+function Enforce(): void {}

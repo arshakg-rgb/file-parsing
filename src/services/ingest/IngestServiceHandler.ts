@@ -4,7 +4,6 @@ import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, SourceType, IngestMessage } from "@shared/models/job.js";
 import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "@shared/QueueService.js";
 import { parseGcsUrl, objectSize, readRange, copyObject } from "@shared/GcsUtils.js";
-import { getJob, repositories, waitForDb, createPendingArchiveEntry } from "@shared/DatabaseManager.js";
 import { BombError } from "@errors/BombError.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {PasswordError} from "@errors/PasswordError";
@@ -21,6 +20,7 @@ import { InstantiationError } from "@errors/InstantiationError.js";
 import {SSRFError} from "@errors/SSRFError";
 import HealthService from "@utils/response/Health";
 import { MetricsUtils } from "@utils/response/Metrics";
+import {DatabaseService} from "@shared/DatabaseManager";
 
 
 export class IngestService
@@ -151,7 +151,7 @@ export class IngestService
 
   async initialize(): Promise<void>
   {
-    await waitForDb();
+    await DatabaseService.getInstance().waitForDb();
     this.logger.info("ingest_initialized");
   }
 
@@ -255,7 +255,7 @@ export class IngestService
 
     const jobId: string = msg.job_id;
 
-    const currentStatus: string = await repositories.jobs.getStatus(jobId);
+    const currentStatus: string = await DatabaseService.getInstance().repositories.jobs.getStatus(jobId);
 
     if (currentStatus === JobStatus.INGESTING)
     {
@@ -290,7 +290,7 @@ export class IngestService
 
       try
       {
-        await repositories.jobs.updateS3Url(jobId, s3Url, size);
+        await DatabaseService.getInstance().repositories.jobs.updateS3Url(jobId, s3Url, size);
       }
       catch (e)
       {
@@ -657,7 +657,7 @@ export class IngestService
     {
       this.logger.info("archive_entry_pending", { job_id: jobId, entry_name: entryName, entry_size: entrySize });
       MetricsUtils.increment("ingest.entry_pending", 1);
-      await createPendingArchiveEntry(jobId, entryName, entrySize);
+      await DatabaseService.getInstance().createPendingArchiveEntry(jobId, entryName, entrySize);
       return true;
     }
 
@@ -714,7 +714,7 @@ export class IngestService
     this.passwordCache.set(jobId, Buffer.from(password));
     this.logger.info("password_received", { job_id: jobId });
 
-    const row: IParseJob = await getJob(jobId);
+    const row: IParseJob = await DatabaseService.getInstance().getJob(jobId);
 
     if (!row)
     {
@@ -792,7 +792,7 @@ export class IngestService
     {
       try
       {
-        await waitForDb();
+        await DatabaseService.getInstance().waitForDb();
         this.logger.info("ingest_consumer_started", { queue_url: settings.INGEST_QUEUE_URL, queue_backend: settings.QUEUE_BACKEND });
 
         while (this.running)
@@ -816,7 +816,7 @@ export class IngestService
       {
         this.logger.error("database_connection_lost", { error: String(dbError) }, dbError instanceof Error ? dbError : new Error(String(dbError)));
         MetricsUtils.increment("ingest.db_connection_lost", 1);
-        await waitForDb();
+        await DatabaseService.getInstance().waitForDb();
         await new Promise((r) => setTimeout(r, 5000));
       }
     }

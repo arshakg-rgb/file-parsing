@@ -15,10 +15,10 @@ import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { publishEvent } from "@shared/QueueService.js";
 import { readRange, gcsClient } from "@shared/GcsUtils.js";
-import { markPendingEntryProcessing, markPendingEntryCompleted, markPendingEntryFailed, createPendingArchiveEntry } from "@shared/DatabaseManager.js";
 import {Readable} from "node:stream";
 import {IngestServiceImpl} from "@service/ingest/IngestServiceImpl";
 import HealthService from "@utils/response/Health";
+import {DatabaseService} from "@shared/DatabaseManager";
 
 /**
  * ArchiveEntryConsumerServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -117,7 +117,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
 
       this.logger.info(LogEvent.PROCESSING, { job_id: jobId, entry_name: entryName, nesting_depth: nestingDepth, archive_type: archiveType });
 
-      await markPendingEntryProcessing(jobId, entryName);
+      await DatabaseService.getInstance().markPendingEntryProcessing(jobId, entryName);
 
       try
       {
@@ -136,7 +136,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
           await this.publishDiscoveredEntry(jobId, batchId, s3Url, entryName, size, fieldSpec);
         }
 
-        await markPendingEntryCompleted(jobId, entryName);
+        await DatabaseService.getInstance().markPendingEntryCompleted(jobId, entryName);
         this.logger.info(LogEvent.COMPLETED, { job_id: jobId, entry_name: entryName });
         return { success: true };
       }
@@ -144,7 +144,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
       {
         const errMsg: string = err instanceof Error ? err.message : String(err);
         this.logger.error(LogEvent.FAILED, { job_id: jobId, entry_name: entryName, error: errMsg });
-        await markPendingEntryFailed(jobId, entryName, errMsg);
+        await DatabaseService.getInstance().markPendingEntryFailed(jobId, entryName, errMsg);
         return { success: false, error: errMsg };
       }
     }
@@ -199,7 +199,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
         await Promise.all(
             nestedEntries.map((entry) =>
                 entry.pending
-                    ? createPendingArchiveEntry(jobId, entry.entry_name as string, entry.entry_size as number)
+                    ? DatabaseService.getInstance().createPendingArchiveEntry(jobId, entry.entry_name as string, entry.entry_size as number)
                     : publishEvent(makeJobEvent(EventType.ENTRY_DISCOVERED, jobId, "archive-entry-consumer", entry as Record<string, unknown>))
             ),
         );

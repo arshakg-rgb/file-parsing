@@ -8,7 +8,6 @@ import { receiveMessages, deleteMessage, sendRaw, publishEvent } from "@shared/Q
 import { parseGcsUrl, objectSize, readRange } from "@shared/GcsUtils.js";
 import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
-import { waitForDb } from "@shared/DatabaseManager.js";
 import {
   ClassifyKind,
   ClassifyRequest, ClassifyResponse, CSV_DELIMITERS, HEADER_PATTERNS,
@@ -19,6 +18,7 @@ import EncodingService from "@utils/normalizers/Encoding";
 import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
 import {aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierServiceImpl";
+import {DatabaseService} from "@shared/DatabaseManager";
 
 
 export class DetectBootstrapService
@@ -132,7 +132,7 @@ export class DetectBootstrapService
 
   async initialize(): Promise<void>
   {
-    await waitForDb();
+    await DatabaseService.getInstance().waitForDb();
     await templateRegistry.loadFromDatabase();
     await this.initializeClassifier();
     this.logger.info("detect_bootstrap_initialized");
@@ -679,7 +679,7 @@ export class DetectBootstrapService
 
   private async consumerLoop(): Promise<void>
   {
-    await waitForDb();
+    await DatabaseService.getInstance().waitForDb();
     await templateRegistry.loadFromDatabase();
     this.logger.info("detect_bootstrap_consumer_started");
 

@@ -9,7 +9,6 @@ import { CsvOutputWriter } from "@shared/CsvOutputWriter.js";
 import { QualityGate } from "@shared/QualityGate.js";
 import { AdaptiveProbing } from "@shared/AdaptiveProbing.js";
 import { createLogger } from "@utils/logger/Log.js";
-import { waitForDb } from "@shared/DatabaseManager.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import jschardet, { IDetectedMap } from "jschardet";
 import JSONbig from "json-bigint";
@@ -22,6 +21,7 @@ import {aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierS
 import {Repositories} from "@config/db/repositories";
 import {OutputBuffer} from "@shared/OutputBuffer";
 import {AIRateLimiterHandle} from "@service/stream-parser/io/IClassifier";
+import {DatabaseManager, DatabaseService} from "@shared/DatabaseManager";
 const JSON_SAFE = JSONbig({ storeAsString: true });
 
 
@@ -178,7 +178,7 @@ export class StreamParserService
    */
   async initialize(): Promise<void>
   {
-    await waitForDb();
+    await DatabaseService.getInstance().waitForDb();
     await templateRegistry.loadFromDatabase();
     this.logger.info("stream_parser_initialized");
   }
@@ -1110,7 +1110,7 @@ export class StreamParserService
 
   private async consumerLoop(): Promise<void>
   {
-    await waitForDb();
+    await DatabaseService.getInstance().waitForDb();
     await templateRegistry.loadFromDatabase();
     this.logger.info("stream_parser_consumer_started");
 

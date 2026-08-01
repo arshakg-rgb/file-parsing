@@ -3,8 +3,8 @@ import { IArchiveEntryConsumer, ArchiveEntryRequest, ArchiveEntryConsumerOptions
 import ArchiveEntryConsumerServiceImpl from "@service/archive-entry-consumer/impl/ArchiveEntryConsumerServiceImpl.js";
 import { settings } from "@shared/Settings.js";
 import { receiveMessages, deleteMessage, QueueMessage } from "@shared/QueueService.js";
-import { waitForDb } from "@shared/DatabaseManager.js";
 import { createLogger } from "@utils/logger/Log.js";
+import {DatabaseService} from "@shared/DatabaseManager";
 
 /**
  * Consumes archive entry jobs from a queue and processes them one at a time.
@@ -159,7 +159,7 @@ export class ArchiveEntryConsumer
       {
         try
         {
-          await waitForDb();
+          await DatabaseService.getInstance().waitForDb();
           this.logger.info("archive_entry_consumer_started", { queue_url: this.queueUrl });
           await this.consumeLoop();
         }

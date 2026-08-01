@@ -9,7 +9,6 @@ import {receiveMessages, deleteMessage, QueueMessage} from "@shared/QueueService
 import { JobEvent } from "@shared/models/events.js";
 import { handleEvent } from "@service/job-service/StateMachineImpl.js";
 import { JobServiceRouter } from "@service/job-service/JobServiceRouter.js";
-import { createTables } from "@shared/DatabaseManager.js";
 import {
   DEFAULT_PORT,
   EVENT_BATCH_SIZE,
@@ -19,6 +18,7 @@ import {
   NON_RETRYABLE_JOB_ERROR_MARKERS
 } from "@service/job-service/io/IJobService.js";
 import Config from "@config/system-config/Config";
+import {DatabaseService} from "@shared/DatabaseManager";
 
 /**
  * JobServiceManager is a singleton class responsible for managing the job service. It wires up
@@ -249,7 +249,7 @@ class JobServiceManager extends ServiceManager implements IJobService
     {
       this.logger.info("Running database migration...");
       await this.dbManager.initialize();
-      await createTables();
+      await DatabaseService.getInstance().createTables();
       this.logger.info("Database migration completed successfully");
     }
     catch (err)
