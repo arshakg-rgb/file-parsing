@@ -3,39 +3,41 @@ import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import { createLogger } from "@utils/logger/Log.js";
-import { totalFailed } from "@shared/models/job.js";
+import {JobCounts, totalFailed} from "@shared/models/job.js";
+import {QualityMetrics} from "@shared/io/IQualityGate";
 
-export interface QualityMetrics {
-  totalLines: number;
-  parsedLines: number;
-  droppedRubbishLines: number;
-  failedLines: number;
-  failedLineRatio: number;
-}
 
 /**
  * QualityGate is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
  */
-export class QualityGate extends ServiceManager {
+export class QualityGate extends ServiceManager
+{
     /**
    * Singleton instance
    * @private
    */
+
   protected static instance: QualityGate;
+
     /**
    * Logger instance
    * @private
    */
+
   private logger: pino.Logger;
+
     /**
    * Db Manager
    * @private
    */
+
   private dbManager: PostgreSqlManager;
+
     /**
-   * F A I L E D_ L I N E_ R A T I O_ T H R E S H O L D
+   * FAILED LINE RATIO THRESHOLD
    * @private
    */
+
   private readonly FAILED_LINE_RATIO_THRESHOLD: number;
 
     /**
@@ -43,8 +45,11 @@ export class QualityGate extends ServiceManager {
    * @param enforce - A function to enforce the Singleton pattern
    * @throws Error if instantiated directly
    */
-  private constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
+
+  private constructor(enforce: () => void)
+  {
+    if (enforce !== Enforce)
+    {
       throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate QualityGate directly. Use getInstance()");
     }
     super(enforce);
@@ -58,10 +63,14 @@ export class QualityGate extends ServiceManager {
    * Gets the single instance of the QualityGate class.
    * @returns The single instance of the class
    */
-  public static getInstance(): QualityGate {
-    if (!QualityGate.instance) {
+
+  public static getInstance(): QualityGate
+  {
+    if (!QualityGate.instance)
+    {
       QualityGate.instance = new QualityGate(Enforce);
     }
+
     return QualityGate.instance;
   }
 
@@ -70,16 +79,19 @@ export class QualityGate extends ServiceManager {
    * @param jobId - The job identifier
    * @returns A promise that resolves to the result
    */
-  public async calculateMetrics(jobId: string): Promise<QualityMetrics> {
-    const counts = await this.dbManager.repositories.jobs.getCounts(jobId);
 
-    if (!counts) {
+  public async calculateMetrics(jobId: string): Promise<QualityMetrics>
+  {
+    const counts: JobCounts = await this.dbManager.repositories.jobs.getCounts(jobId);
+
+    if (!counts)
+    {
       throw new Error(`Job not found: ${jobId}`);
     }
 
-    const failed = totalFailed(counts);
-    const totalLines = counts.parsed + counts.dropped_rubbish + failed;
-    const failedLineRatio = totalLines > 0 ? failed / totalLines : 0;
+    const failed: number = totalFailed(counts);
+    const totalLines: number = counts.parsed + counts.dropped_rubbish + failed;
+    const failedLineRatio: number = totalLines > 0 ? failed / totalLines : 0;
 
     return {
       totalLines,
@@ -95,8 +107,10 @@ export class QualityGate extends ServiceManager {
    * @param jobId - The job identifier
    * @returns A promise that resolves to the result
    */
-  public async passesQualityGate(jobId: string): Promise<{ passes: boolean; reason?: string }> {
-    const metrics = await this.calculateMetrics(jobId);
+
+  public async passesQualityGate(jobId: string): Promise<{ passes: boolean; reason?: string }>
+  {
+    const metrics: QualityMetrics = await this.calculateMetrics(jobId);
 
     this.logger.info("quality_gate_check", {
       job_id: jobId,
@@ -104,7 +118,8 @@ export class QualityGate extends ServiceManager {
       threshold: this.FAILED_LINE_RATIO_THRESHOLD
     });
 
-    if (metrics.failedLineRatio > this.FAILED_LINE_RATIO_THRESHOLD) {
+    if (metrics.failedLineRatio > this.FAILED_LINE_RATIO_THRESHOLD)
+    {
       return {
         passes: false,
         reason: `Failed line ratio ${metrics.failedLineRatio.toFixed(2)} exceeds threshold ${this.FAILED_LINE_RATIO_THRESHOLD}`

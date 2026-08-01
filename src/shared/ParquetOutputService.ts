@@ -7,35 +7,47 @@ import { createLogger } from "@utils/logger/Log.js";
 /**
  * ParquetOutputService is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
  */
-class ParquetOutputService extends ServiceManager {
+
+class ParquetOutputService extends ServiceManager
+{
     /**
    * Singleton instance
    * @private
    */
+
   protected static instance: ParquetOutputService;
-    /**
+
+  /**
    * Logger instance
    * @private
    */
+
   private logger: pino.Logger;
-    /**
+
+  /**
    * Gcs Utils
    * @private
    */
+
   private gcsUtils: FirestoreCacheUtils;
-    /**
-   * F L U S H_ L I N E_ T H R E S H O L D
+
+  /**
+   * FLUSH LINE THRESHOLD
    * @private
    */
+
   private FLUSH_LINE_THRESHOLD: number;
 
-    /**
+  /**
    * Constructs a new ParquetOutputService instance.
    * @param enforce - A function to enforce the Singleton pattern
    * @throws Error if instantiated directly
    */
-  private constructor(enforce: () => void) {
-    if (enforce !== Enforce) {
+
+  private constructor(enforce: () => void)
+  {
+    if (enforce !== Enforce)
+    {
       throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate ParquetOutputService directly. Use getInstance()");
     }
     super(enforce);
@@ -49,10 +61,13 @@ class ParquetOutputService extends ServiceManager {
    * Gets the single instance of the ParquetOutputService class.
    * @returns The single instance of the class
    */
-  public static getInstance(): ParquetOutputService {
-    if (!ParquetOutputService.instance) {
+  public static getInstance(): ParquetOutputService
+  {
+    if (!ParquetOutputService.instance)
+    {
       ParquetOutputService.instance = new ParquetOutputService(Enforce);
     }
+
     return ParquetOutputService.instance;
   }
 
@@ -60,7 +75,9 @@ class ParquetOutputService extends ServiceManager {
    * Gets logger
    * @returns The logger result
    */
-  public getLogger(): pino.Logger {
+
+  public getLogger(): pino.Logger
+  {
     return this.logger;
   }
 
@@ -68,20 +85,12 @@ class ParquetOutputService extends ServiceManager {
    * Gets gcs utils
    * @returns The firestore cache utils result
    */
-  public getGcsUtils(): FirestoreCacheUtils {
+
+  public getGcsUtils(): FirestoreCacheUtils
+  {
     return this.gcsUtils;
   }
-
-    /**
-   * Gets flush line threshold
-   * @returns The numeric result
-   */
-  public getFlushLineThreshold(): number {
-    return this.FLUSH_LINE_THRESHOLD;
-  }
 }
-
-export default ParquetOutputService;
 
 /**
  * The parquet output service

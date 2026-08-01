@@ -8,13 +8,14 @@ import { JobStatus, ReportMessage, JobCounts, JobTimings } from "@shared/models/
 import type {IParseJob, ParseJobAttributes} from "@config/db/models/ParseJob.js";
 import type { OutputPartAttributes } from "@config/db/models/OutputPart.js";
 import {receiveMessages, deleteMessage, publishEvent, QueueMessage} from "@shared/QueueService.js";
-import {QualityGate, QualityMetrics} from "@shared/QualityGate.js";
+import {QualityGate} from "@shared/QualityGate.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { ReportService } from "@service/report/ReportService.js";
 import { ReportResponse } from "@service/report/io/IReport.js";
 import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
 import Config from "@config/system-config/Config";
+import {QualityMetrics} from "@shared/io/IQualityGate";
 
 /**
  * ReportServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
