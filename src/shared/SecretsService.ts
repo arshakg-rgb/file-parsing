@@ -131,30 +131,11 @@ class SecretsService {
 }
 
 
-export default SecretsService;
 
 /**
  * The secrets service
  */
 const secretsService = SecretsService.getInstance();
-
-/**
- * Gets secret
- * @param secretName - The secret name
- * @returns A promise that resolves to the result
- */
-export async function getSecret(secretName: string): Promise<string | null> {
-  return secretsService.getSecret(secretName);
-}
-
-/**
- * Gets secret json
- * @param secretName - The secret name
- * @returns A promise that resolves to the result
- */
-export async function getSecretJson<T = Record<string, unknown>>(secretName: string): Promise<T | null> {
-  return secretsService.getSecretJson<T>(secretName);
-}
 
 /**
  * Loads all secrets

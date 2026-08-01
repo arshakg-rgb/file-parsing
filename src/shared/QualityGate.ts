@@ -113,37 +113,6 @@ export class QualityGate extends ServiceManager {
 
     return { passes: true };
   }
-
-    /**
-   * Performs the apply quality gate operation.
-   * @param jobId - The job identifier
-   */
-  public async applyQualityGate(jobId: string): Promise<void> {
-    const { passes, reason } = await this.passesQualityGate(jobId);
-
-    if (!passes) {
-      await this.dbManager.repositories.jobs.hold(jobId, reason);
-      this.logger.warn("quality_gate_failed", { job_id: jobId, reason });
-    } else {
-      this.logger.info("quality_gate_passed", { job_id: jobId });
-    }
-  }
-
-    /**
-   * Gets batch quality stats
-   * @param batchId - The batch identifier
-   * @returns A promise that resolves to the result
-   */
-  public async getBatchQualityStats(batchId: string): Promise<{
-    totalJobs: number;
-    passedJobs: number;
-    heldJobs: number;
-    failedJobs: number;
-  }> {
-    return this.dbManager.repositories.jobs.getBatchStats(batchId);
-  }
 }
 
 function Enforce(): void {}
-
-export default QualityGate;
