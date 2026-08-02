@@ -43,6 +43,7 @@ export class JobServiceRouter extends CustomRouter
     const upload = multer({ storage: multer.memoryStorage() });
 
     this.route("/jobs")
+      .get(this.controller.getAllJobs)
       .post(this.controller.createJob);
 
     this.route("/jobs/upload")

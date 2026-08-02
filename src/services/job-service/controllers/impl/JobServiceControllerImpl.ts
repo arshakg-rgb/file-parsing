@@ -202,6 +202,19 @@ export class JobControllerImpl implements JobServiceController
     }
   };
 
+  public getAllJobs: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      const result: IJobResponse[] = await this.service.getAllJobs();
+      this.handleSuccessResponse(res, result);
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  };
+
   /**
    * @param req - The request object.
    * @param res - The response object.

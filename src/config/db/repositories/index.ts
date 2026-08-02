@@ -61,6 +61,15 @@ export class JobRepository {
   }
 
     /**
+   * Finds all jobs
+   * @returns A promise that resolves to the list
+   */
+  async findAll(): Promise<ParseJobAttributes[]>
+  {
+    return (await this.ParseJob.findAll({ order: [["created_at", "DESC"]], raw: true })) as ParseJobAttributes[];
+  }
+
+    /**
    * Creates the operation
    * @param data - The data to process
    * @returns A promise that resolves to the result

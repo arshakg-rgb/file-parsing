@@ -420,6 +420,30 @@ export class JobServiceImpl implements JobService
   }
 
   /**
+   * Retrieves all jobs.
+   *
+   * @returns A list of all jobs.
+   */
+  public async getAllJobs(): Promise<IJobResponse[]>
+  {
+    const rows: ParseJobAttributes[] = await this.postgreSqlManager.repositories.jobs.findAll();
+
+    return await Promise.all(rows.map(async (row: ParseJobRow) =>
+    {
+      const timings = await this.buildTimingsWithDownload(row.job_id, row.timings as JobTimings);
+
+      return {
+        job_id: row.job_id,
+        batch_id: row.batch_id,
+        status: row.status,
+        counts: row.counts as JobCounts,
+        timings,
+        error: row.error,
+      };
+    }));
+  }
+
+  /**
    * Builds job timings with a presigned download URL for the parsed CSV.
    */
   private async buildTimingsWithDownload(jobId: string, rawTimings: JobTimings): Promise<JobTimings>
