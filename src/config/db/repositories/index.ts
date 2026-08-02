@@ -13,7 +13,7 @@ import type { TemplateAttributes, TemplateCreationAttributes } from "@config/db/
 import type { SchemaMigrationAttributes, SchemaMigrationCreationAttributes } from "@config/db/models/SchemaMigration.js";
 import type { JobLogAttributes, JobLogCreationAttributes } from "@config/db/models/JobLog.js";
 import type { JobCounts } from "@shared/models/job.js";
-import type { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
+import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
 
 /**
  * JobRepository is responsible for job repository operations.

@@ -1,6 +1,6 @@
 import crypto from "crypto";
-import { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import type { MockClassifyRequest, MockClassifyResponse } from "@service/ai-classifier/io/IMockClassifier.js";
+import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
 
 /**
  * MockClassifier is responsible for mock classifier operations.

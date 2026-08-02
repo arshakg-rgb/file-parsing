@@ -1,7 +1,7 @@
 import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ParseMessage, FailureClass, JobCounts, totalFailed, ColumnMap } from "@shared/models/job.js";
-import {RecordTemplate, RubbishTemplate, templateRegistry} from "@shared/TemplateRegistryService.js";
+import {templateRegistry} from "@shared/TemplateRegistryService.js";
 import { OutputManager } from "@shared/OutputManager.js";
 import { CsvOutputWriter } from "@shared/CsvOutputWriter.js";
 import { QualityGate } from "@shared/QualityGate.js";
@@ -23,6 +23,7 @@ import { DatabaseService } from "@shared/DatabaseManager";
 import {GcsUtils} from "@shared/GcsUtils";
 import {InstantiationError} from "@errors/InstantiationError";
 import {QueueService} from "@shared/QueueService";
+import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
 const JSON_SAFE = JSONbig({ storeAsString: true });
 
 

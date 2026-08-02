@@ -1,5 +1,5 @@
 import { FailureClass } from "@shared/models/job.js";
-import { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
+import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
 
 export interface ClassifyRequest {
   unknown_line: string;

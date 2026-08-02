@@ -3,10 +3,11 @@ import crypto from "crypto";
 import {GenerateContentResponse, GoogleGenAI} from "@google/genai";
 import { settings } from "@shared/Settings.js";
 import { createLogger } from "@utils/logger/Log.js";
-import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
+import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { ClassifyRequest, ClassifyResponse, CSVParseResult, AIVerdict } from "@service/ai-classifier/io/IAiClassifier.js";
 import {IClassifierStats, PersistKind} from "@service/ai-classifier/io/IClassifierStats.js";
 import {Constants} from "@common/io/Constants.js";
+import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
 
 export class AiClassifierServiceImpl
 {
@@ -410,7 +411,7 @@ Output:`;
     this.stats.cacheMisses++;
     this.logger.info("ai_classifier_fingerprint_miss", { job_id: req.job_id, fingerprint });
 
-    const recordMatch: RecordTemplate | null = templateRegistry.matchRecordTemplate(req.unknown_line, req.field_spec);
+    const recordMatch: RecordTemplate | null = templateRegistry.matchRecordTemplate(req.unknown_line);
 
     if (recordMatch)
     {

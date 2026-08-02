@@ -3,12 +3,12 @@ import JSONbig from "json-bigint";
 import { settings } from "@shared/Settings.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { FailureClass, ColumnMap } from "@shared/models/job.js";
-import { RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
 import { AIVerdict, ClassifyRequest } from "@service/ai-classifier/io/IAiClassifier.js";
 import {AiRateLimiter, ClassifyResponse, ClassifyResult, IClassifier} from "@service/stream-parser/io/IClassifier.js";
 import SafeRegexUtils from "@utils/validator/SafeRegex";
 import {InstantiationError} from "@errors/InstantiationError.js";
 import {aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierServiceImpl";
+import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
 
 export type { ClassifyResult } from "@service/stream-parser/io/IClassifier.js";
 

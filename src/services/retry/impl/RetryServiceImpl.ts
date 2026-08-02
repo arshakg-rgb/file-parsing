@@ -4,7 +4,7 @@ import { InstantiationError } from "@errors/InstantiationError.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type {DeadLetterAttributes, IDeadLetter} from "@config/db/models/DeadLetter.js";
 import { DLQMessage, FailureClass, LoadMessage } from "@shared/models/job.js";
-import {RecordTemplate, RubbishTemplate, templateRegistry } from "@shared/TemplateRegistryService.js";
+import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { RetryService } from "@service/retry/RetryService.js";
 import { RetryResponse } from "@service/retry/io/IRetry.js";
@@ -15,6 +15,7 @@ import {LineClassifierServiceImpl} from "@service/stream-parser/impl/LineClassif
 import Config from "@config/system-config/Config";
 import {QueueService} from "@shared/QueueService";
 import {QueueMessage} from "@shared/io/IQueueService";
+import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
 
 /**
  * RetryServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.

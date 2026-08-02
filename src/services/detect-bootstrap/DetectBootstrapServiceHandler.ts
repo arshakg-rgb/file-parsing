@@ -3,7 +3,7 @@ import jschardet, {IDetectedMap} from "jschardet";
 import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ClassifyMessage, ParseMessage } from "@shared/models/job.js";
-import { templateRegistry, RecordTemplate, RubbishTemplate } from "@shared/TemplateRegistryService.js";
+import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {
   ClassifyKind,
@@ -19,6 +19,7 @@ import {DatabaseService} from "@shared/DatabaseManager";
 import {GcsUtils} from "@shared/GcsUtils";
 import {QueueService} from "@shared/QueueService";
 import {InstantiationError} from "@errors/InstantiationError";
+import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
 
 
 export class DetectBootstrapService
