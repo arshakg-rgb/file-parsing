@@ -1,15 +1,15 @@
 import "reflect-metadata";
 import dotenv from "dotenv";
+import {SecretsService} from "@shared/SecretsService";
 dotenv.config();
 
-import { loadAllSecrets } from "@shared/SecretsService.js";
 
 /**
  * Entry point of the application.
  * Loads secrets first, then initializes the App with required managers.
  */
 async function bootstrap(): Promise<void> {
-  await loadAllSecrets();
+  await SecretsService.getInstance().loadAllSecrets();
 
   const [{ App }, { default: MySqlManager }, { default: FirestoreManager }] = await Promise.all([
     import("./app.js"),
