@@ -19,6 +19,7 @@
     "setup:localstack": "tsx src/scripts/setup_localstack.ts",
     "setup:gcp": "tsx src/scripts/setup_gcp.ts",
     "test:local": "tsx src/scripts/local_test.ts",
+    "test:streamlines": "tsx src/scripts/streamlines_test.ts",
     "test:upload": "tsx src/scripts/test_upload.ts",
     "test:integration": "tsx src/scripts/integration_test.ts",
     "test:perf": "tsx src/scripts/perf_test_backfill.ts",

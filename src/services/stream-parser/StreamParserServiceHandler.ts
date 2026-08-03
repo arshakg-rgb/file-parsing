@@ -580,6 +580,8 @@ export class StreamParserService
     const RAM_WATERMARK_HIGH: number = settings.RAM_FLUSH_WATERMARK;
     const RAM_WATERMARK_LOW: number = settings.RAM_FLUSH_WATERMARK * 0.7;
     let overWatermark: boolean = false;
+    const HOUSEKEEPING_INTERVAL_LINES: number = 1000;
+    let sinceHousekeeping: number = 0;
 
     const drainIfReady = async (): Promise<void> =>
     {
@@ -618,6 +620,13 @@ export class StreamParserService
       {
         bgFlushes.push(Promise.all(flushTasks).then(() => {}));
       }
+
+      if (++sinceHousekeeping < HOUSEKEEPING_INTERVAL_LINES)
+      {
+        return;
+      }
+
+      sinceHousekeeping = 0;
 
       const mem = process.memoryUsage();
 

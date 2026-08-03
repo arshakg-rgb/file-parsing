@@ -502,21 +502,64 @@ export class GcsUtils extends ServiceManager
       return;
     }
 
-    let fetchOffset: number = 0;
     let remainder: Buffer<ArrayBuffer> = Buffer.alloc(0);
     let remainderStart: number = 0;
 
-    while (fetchOffset < total)
+    type PendingRead = { offset: number; expectedLength: number; promise: Promise<Buffer> };
+
+    const startRead = (offset: number): PendingRead | null =>
     {
-      const end: number = Math.min(fetchOffset + chunkSize - 1, total - 1);
-      const chunk: Buffer = await this.readRange(bucket, key, fetchOffset, end);
+      if (offset >= total)
+      {
+        return null;
+      }
+
+      const end: number = Math.min(offset + chunkSize - 1, total - 1);
+
+      return { offset, expectedLength: end - offset + 1, promise: this.readRange(bucket, key, offset, end) };
+    };
+
+    const discardRead = (read: PendingRead | null): void =>
+    {
+      read?.promise.catch(() => undefined);
+    };
+
+    let pending: PendingRead | null = startRead(0);
+
+    while (pending)
+    {
+      const current: PendingRead = pending;
+
+      // Speculatively begin the next range read while the current chunk is still
+      // being parsed, so the network round-trip overlaps with CPU work.
+      let next: PendingRead | null = startRead(current.offset + current.expectedLength);
+
+      const chunk: Buffer = await current.promise;
+
+      // A short read invalidates the speculative offset; discard it and re-issue
+      // from the true next offset so byte offsets stay exact.
+      if (chunk.length !== current.expectedLength)
+      {
+        discardRead(next);
+        next = startRead(current.offset + chunk.length);
+      }
+
       const data: Buffer<ArrayBuffer> = Buffer.concat([remainder, chunk]);
       const dataBase: number = remainderStart;
 
-      const result = yield* this.scanLines(data, dataBase, encoding, state);
-      remainder = data.slice(result.lineStart);
-      remainderStart = dataBase + result.lineStart;
-      fetchOffset += chunk.length;
+      try
+      {
+        const result = yield* this.scanLines(data, dataBase, encoding, state);
+        remainder = data.slice(result.lineStart);
+        remainderStart = dataBase + result.lineStart;
+      }
+      catch (error)
+      {
+        discardRead(next);
+        throw error;
+      }
+
+      pending = next;
     }
 
     if (remainder.length > 0)
