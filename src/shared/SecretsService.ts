@@ -166,6 +166,7 @@ export class SecretsService
       FIRESTORE_CREDENTIALS: "firestore-credentials",
       BEDROCK_API_KEY: "bedrock-api-key",
       CORS_DOMAINS: "CORS_DOMAINS",
+      CORS_ENABLED: "CORS_ENABLED",
     };
 
     for (const [envKey, secretName] of Object.entries(secretMappings))
