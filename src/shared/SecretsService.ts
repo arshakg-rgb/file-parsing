@@ -163,8 +163,8 @@ export class SecretsService
   {
     const secretMappings: Record<string, string> = {
       FILE_DATABASE_URL: "FILE_DATABASE_URL",
-      FIRESTORE_CREDENTIALS: "firestore-credentials",
-      BEDROCK_API_KEY: "bedrock-api-key",
+      // FIRESTORE_CREDENTIALS: "firestore-credentials",
+      // BEDROCK_API_KEY: "bedrock-api-key",
       CORS_DOMAINS: "CORS_DOMAINS",
       CORS_ENABLED: "CORS_ENABLED",
     };
