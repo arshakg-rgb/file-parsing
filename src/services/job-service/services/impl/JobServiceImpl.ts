@@ -77,7 +77,7 @@ export class JobServiceImpl implements JobService
 
   public async createJob(request: ICreateJobRequest): Promise<ICreateJobResponse>
   {
-    const { source_type, source_ref, field_spec, batch_id, column_map } = request;
+    const { source_type, source_ref, field_spec, batch_id, column_map, content_type } = request;
 
     let columnMap: Record<string, number | number[]> | undefined;
 
@@ -193,11 +193,12 @@ export class JobServiceImpl implements JobService
     const batchId: string = batch_id || randomUUID();
     let putUrl: string | undefined;
     let s3Url: string | undefined;
+    const uploadContentType: string = content_type || "application/octet-stream";
 
     if (source_type === SourceType.UPLOAD)
     {
       const uploadKey = `uploads/${jobId}/source`;
-      putUrl = await this.gcsUtils.presignedPutUrl(settings.DATA_BUCKET, uploadKey);
+      putUrl = await this.gcsUtils.presignedPutUrl(settings.DATA_BUCKET, uploadKey, 3600, uploadContentType);
       s3Url = `gs://${settings.DATA_BUCKET}/${uploadKey}`;
     }
 
@@ -233,7 +234,13 @@ export class JobServiceImpl implements JobService
 
     this.logger.info("job_queued", { job_id: jobId, message_id: messageId });
 
-    return { job_id: jobId, status: JobStatus.QUEUED, presigned_put_url: putUrl, message_id: messageId };
+    return {
+      job_id: jobId,
+      status: JobStatus.QUEUED,
+      presigned_put_url: putUrl,
+      presigned_put_content_type: putUrl ? uploadContentType : undefined,
+      message_id: messageId,
+    };
   }
 
   /**

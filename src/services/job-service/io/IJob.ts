@@ -9,6 +9,7 @@ export interface ICreateJobRequest {
   field_spec: unknown;
   batch_id?: string;
   column_map?: unknown;
+  content_type?: string;
 }
 
 /**
@@ -18,6 +19,7 @@ export interface ICreateJobResponse {
   job_id: string;
   status: JobStatus;
   presigned_put_url?: string;
+  presigned_put_content_type?: string;
   message_id?: string;
 }
 
