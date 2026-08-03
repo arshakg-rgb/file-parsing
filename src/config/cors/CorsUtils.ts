@@ -29,7 +29,7 @@ export class CorsUtils
 
             const corsOptions: CorsOptions = {
                 optionsSuccessStatus: 200,
-                origin: allowCors.length > 0 ? allowCors : "*",
+                origin: allowCors.length > 0 ? allowCors : true,
                 credentials: true
             };
 
@@ -55,7 +55,7 @@ export class CorsUtils
             const allowCors: RegExp[] = this.getAllowedDomainsRegExp();
 
             return {
-                origin: allowCors.length > 0 ? allowCors : "*",
+                origin: allowCors.length > 0 ? allowCors : true,
                 credentials: true
             };
         }
@@ -63,7 +63,7 @@ export class CorsUtils
         {
             logger.error(`Error setting up CORS for Socket.IO ${error instanceof Error ? error.message : String(error)}`);
 
-            return { origin: "*", credentials: true };
+            return { origin: true, credentials: true };
         }
     }
 
@@ -113,7 +113,11 @@ export class CorsUtils
             {
                 try
                 {
-                    allowCors.push(new RegExp(regex.trim()));
+                    const pattern: string = regex.trim().replace(/^["']|["']$/g, "");
+                    if (pattern.length > 0)
+                    {
+                        allowCors.push(new RegExp(pattern));
+                    }
                 }
                 catch (exception)
                 {
