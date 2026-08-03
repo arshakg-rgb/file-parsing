@@ -20,6 +20,8 @@ import Config from "@config/system-config/Config";
 import {DatabaseService} from "@shared/DatabaseManager";
 import {QueueService} from "@shared/QueueService";
 import {QueueMessage} from "@shared/io/IQueueService";
+import {SecretsService} from "@shared/SecretsService";
+import CorsUtils from "@config/cors/CorsUtils.js";
 
 /**
  * JobServiceManager is a singleton class responsible for managing the job service. It wires up
@@ -79,8 +81,6 @@ class JobServiceManager extends ServiceManager implements IJobService
     this.dbManager = PostgreSqlManager.getInstance();
     this.logger = createLogger(module);
     this.queueService = queueService;
-
-    this.setupApp();
   }
 
   /**
@@ -104,6 +104,7 @@ class JobServiceManager extends ServiceManager implements IJobService
 
   private setupApp(): void
   {
+    this.app.use(CorsUtils.setupCors());
     this.app.use(express.json());
     this.app.use("/v1", JobServiceRouter.getInstance().getRouter());
 
@@ -327,6 +328,8 @@ class JobServiceManager extends ServiceManager implements IJobService
    */
   public async start(): Promise<void>
   {
+    await SecretsService.getInstance().loadAllSecrets();
+    this.setupApp();
     await this.initialize();
     await this.initializeDatabase();
     this.logger.info("Database initialized successfully");
