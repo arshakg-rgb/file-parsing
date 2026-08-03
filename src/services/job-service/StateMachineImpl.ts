@@ -77,7 +77,14 @@ export class StateMachineImpl implements StateMachine
   {
     if (!StateMachineImpl.instance)
     {
-      StateMachineImpl.instance = new StateMachineImpl(Enforce, DatabaseService.getInstance().repositories.jobs, DatabaseService.getInstance().repositories.jobLogs, finalizeOutput, QueueService.getInstance().sendRaw, createLogger(module));
+      StateMachineImpl.instance = new StateMachineImpl(
+          Enforce,
+          DatabaseService.getInstance().repositories.jobs,
+          DatabaseService.getInstance().repositories.jobLogs,
+          finalizeOutput,
+          (queueUrl: string, body: Record<string, unknown>, delaySeconds?: number) => QueueService.getInstance().sendRaw(queueUrl, body, delaySeconds),
+          createLogger(module)
+      );
     }
 
     return StateMachineImpl.instance;
