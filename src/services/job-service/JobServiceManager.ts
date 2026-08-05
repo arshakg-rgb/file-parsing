@@ -185,6 +185,7 @@ class JobServiceManager extends ServiceManager implements IJobService
 
   private async processEventMessage(queueUrl: string, payload: JobEvent, receiptHandle: string): Promise<void>
   {
+    this.logger.info({ event_type: payload.event_type, job_id: payload.job_id, queue_url: queueUrl }, "event_received");
     try
     {
       await handleEvent(payload);

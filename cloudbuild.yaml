@@ -161,7 +161,7 @@ steps:
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
           --memory 2Gi \
-          --cpu 1 \
+          --cpu 4 \
           --timeout 3600s \
           --max-instances 5 \
           --min-instances 1 \
@@ -269,8 +269,8 @@ steps:
           --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 2Gi \
-          --cpu 1 \
+          --memory 4Gi \
+          --cpu 4 \
           --timeout 3600s \
           --max-instances 5 \
           --min-instances 1 \
@@ -341,8 +341,8 @@ steps:
           --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 500Mi \
-          --cpu 1 \
+          --memory 1Gi \
+          --cpu 2 \
           --timeout 3600s \
           --max-instances 5 \
           --min-instances 1 \
@@ -357,8 +357,8 @@ steps:
           --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 1Gi \
-          --cpu 2 \
+          --memory 2Gi \
+          --cpu 4 \
           --timeout 3600s \
           --max-instances 5 \
           --min-instances 1 \
@@ -373,7 +373,7 @@ steps:
           --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 2Gi \
+          --memory 4Gi \
           --cpu 4 \
           --timeout 3600s \
           --max-instances 5 \

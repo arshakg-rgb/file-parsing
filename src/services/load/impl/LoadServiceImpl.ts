@@ -174,9 +174,9 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     }
     if (sizeMb <= 100)
     {
-      return Math.max(100, Math.floor(base / 2));
+      return Math.max(100, Math.floor(base * 0.75));
     }
-    return Math.max(100, Math.floor(base / 4));
+    return Math.max(100, Math.floor(base * 0.5));
   }
 
   public async loadJob(msg: LoadMessage): Promise<void>

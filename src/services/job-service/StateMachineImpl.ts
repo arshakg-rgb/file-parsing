@@ -337,7 +337,11 @@ export class StateMachineImpl implements StateMachine
 
   private async onParsingCompleted(event: JobEvent): Promise<void>
   {
-    const data = event.data as unknown as ParsingCompletedData;
+    const rawData = event.data as unknown as ParsingCompletedData;
+    const data: ParsingCompletedData = {
+      ...rawData,
+      part_s3_paths: rawData.part_s3_paths ?? [],
+    };
 
     this.logger.info(
         {
