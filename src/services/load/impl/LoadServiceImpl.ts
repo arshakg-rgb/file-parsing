@@ -1,4 +1,8 @@
 import pino from "pino";
+import { randomUUID } from "crypto";
+import { tmpdir } from "os";
+import { join } from "path";
+import { unlink } from "fs/promises";
 import Config from "@config/system-config/Config.js";
 import { settings } from "@shared/Settings.js";
 import ServiceManager from "@config/ServiceManager.js";
@@ -180,20 +184,21 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     {
       for (const s3Path of msg.output_paths || [])
       {
-        const rows: Record<string, unknown>[] = await this.readParquet(s3Path);
+        let partRows = 0;
+        for await (const batch of this.readParquetBatches(s3Path, this.UPSERT_BATCH))
+        {
+          await this.upsertRows(jobId, batch);
+          partRows += batch.length;
+        }
 
-        if (!rows.length)
+        if (!partRows)
         {
           continue;
         }
 
-        await this.upsertRows(jobId, rows);
-        totalRows += rows.length;
+        this.logger.info("load_part_complete", { job_id: jobId, path: s3Path, rows: partRows });
+        totalRows += partRows;
       }
-
-      this.logger.info("load_complete", { job_id: jobId, total_rows: totalRows });
-      MetricsUtils.set("load.rows_loaded", totalRows);
-      this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: totalRows });
     }
     catch (exc)
     {
@@ -234,23 +239,48 @@ class LoadServiceImpl extends ServiceManager implements LoadService
    * @returns A promise that resolves to the list
    */
 
-  private async readParquet(s3Path: string): Promise<Record<string, unknown>[]>
+  private async *readParquetBatches(s3Path: string, batchSize: number): AsyncGenerator<Record<string, unknown>[], void, unknown>
   {
     const [bucket, key] = this.gcsUtils.parseGcsUrl(s3Path);
-    const raw: Buffer = await this.gcsUtils.readFull(bucket, key);
-    const reader: ParquetReader = await ParquetReader.openBuffer(raw);
-    const cursor = reader.getCursor();
-    const rows: Record<string, unknown>[] = [];
-    let row: unknown;
+    const tmpPath = join(tmpdir(), `load-${randomUUID()}.parquet`);
 
-    while ((row = await cursor.next()))
+    try
     {
-      rows.push(row as Record<string, unknown>);
+      await this.gcsUtils.downloadToFile(bucket, key, tmpPath);
+      const reader: ParquetReader = await ParquetReader.openFile(tmpPath);
+      const cursor = reader.getCursor();
+      const batch: Record<string, unknown>[] = [];
+      let row: unknown;
+
+      while ((row = await cursor.next()))
+      {
+        batch.push(row as Record<string, unknown>);
+
+        if (batch.length >= batchSize)
+        {
+          yield batch.slice();
+          batch.length = 0;
+        }
+      }
+
+      if (batch.length)
+      {
+        yield batch.slice();
+      }
+
+      await reader.close();
     }
-
-    await reader.close();
-
-    return rows;
+    finally
+    {
+      try
+      {
+        await unlink(tmpPath);
+      }
+      catch
+      {
+        // best-effort cleanup
+      }
+    }
   }
 
     /**
@@ -314,7 +344,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     const pool = new QueueConsumerPool<LoadMessage>(this.queueService, this.logger, {
       queueUrl: config.settings.LOAD_QUEUE_URL,
       parser: (body) => JSON.parse(body) as LoadMessage,
-      concurrency: settings.QUEUE_CONCURRENCY,
+      concurrency: 1,
       memorySoftLimit: settings.QUEUE_MEMORY_SOFT_LIMIT_MB * 1024 * 1024,
     });
 

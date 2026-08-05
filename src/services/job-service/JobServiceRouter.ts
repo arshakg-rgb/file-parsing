@@ -49,9 +49,6 @@ export class JobServiceRouter extends CustomRouter
     this.route("/jobs/upload")
       .post(upload.single("file"), this.controller.uploadAndCreateJob);
 
-    this.route("/jobs/stuck")
-      .get(this.controller.findStuckJobs);
-
     this.route("/jobs/statuses")
       .get(this.controller.getAllStatuses);
 

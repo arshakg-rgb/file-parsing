@@ -204,6 +204,21 @@ export class FirestoreCacheUtils {
   }
 
     /**
+   * Downloads an object to a local file path.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param filePath - The destination file path
+   */
+  public async downloadToFile(bucket: string, key: string, filePath: string): Promise<void> {
+    return this.withRetry(
+      () => this.withTimeout(async () => {
+        await this.storage.bucket(bucket).file(key).download({ destination: filePath });
+      }, GCS_TIMEOUT_MS),
+      GCS_RETRIES
+    );
+  }
+
+    /**
    * Performs the put object operation.
    * @param bucket - The bucket
    * @param key - The key
