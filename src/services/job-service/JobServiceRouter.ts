@@ -52,6 +52,9 @@ export class JobServiceRouter extends CustomRouter
     this.route("/jobs/stuck")
       .get(this.controller.findStuckJobs);
 
+    this.route("/jobs/statuses")
+      .get(this.controller.getAllStatuses);
+
     this.route("/jobs/:job_id")
       .get(this.controller.getJob);
 

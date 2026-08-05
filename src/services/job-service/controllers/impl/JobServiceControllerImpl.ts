@@ -8,7 +8,7 @@ import {
   ICreateJobRequest,
   IProvidePasswordRequest,
   IMarkFailedRequest,
-  IRetryJobRequest, ICreateJobResponse, IStuckJobsResponse, IJobResponse, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest, IDownloadCsvResponse,
+  IRetryJobRequest, ICreateJobResponse, IStuckJobsResponse, IJobResponse, IStatusesResponse, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest, IDownloadCsvResponse,
 } from "@service/job-service/io/IJob.js";
 import { ServiceResponse } from "@utils/response/ServiceResponse.js";
 import { HttpError } from "@errors/HttpError.js";
@@ -214,6 +214,19 @@ export class JobControllerImpl implements JobServiceController
               : undefined;
 
       const result: IJobResponse[] = await this.service.getAllJobs(statuses);
+      this.handleSuccessResponse(res, result);
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  };
+
+  public getAllStatuses: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      const result: IStatusesResponse = await this.service.getAllStatuses();
       this.handleSuccessResponse(res, result);
     }
     catch (err)

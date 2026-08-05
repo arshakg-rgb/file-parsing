@@ -13,6 +13,7 @@ export interface JobServiceController {
   getJob(req: Request, res: Response, next: NextFunction): Promise<void>;
   getBatchJobs(req: Request, res: Response, next: NextFunction): Promise<void>;
   getAllJobs(req: Request, res: Response, next: NextFunction): Promise<void>;
+  getAllStatuses(req: Request, res: Response, next: NextFunction): Promise<void>;
   providePassword(req: Request, res: Response, next: NextFunction): Promise<void>;
   releaseHold(req: Request, res: Response, next: NextFunction): Promise<void>;
   markFailed(req: Request, res: Response, next: NextFunction): Promise<void>;

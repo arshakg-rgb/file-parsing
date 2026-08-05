@@ -9,7 +9,7 @@ import { SourceType, JobStatus, JobTimings, JobCounts, totalFailed } from "@shar
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
-import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest, IDownloadCsvResponse } from "@service/job-service/io/IJob.js";
+import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IStatusesResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest, IDownloadCsvResponse } from "@service/job-service/io/IJob.js";
 import {HttpError} from "@errors/HttpError.js";
 import {ServerError} from "@errors/ServerError.js";
 import {ParseJob, IParseJob, ParseJobAttributes} from "@config/db/models";
@@ -415,6 +415,16 @@ export class JobServiceImpl implements JobService
     const rows: ParseJobAttributes[] = await this.postgreSqlManager.repositories.jobs.findAll(statuses);
 
     return await Promise.all(rows.map((row: ParseJobAttributes) => this.buildJobResponse(row)));
+  }
+
+  /**
+   * Returns all supported job statuses.
+   *
+   * @returns The list of status values.
+   */
+  public async getAllStatuses(): Promise<IStatusesResponse>
+  {
+    return { statuses: Object.values(JobStatus) };
   }
 
   /**

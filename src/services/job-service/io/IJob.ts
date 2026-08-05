@@ -125,3 +125,10 @@ export interface IJobLogEntry {
   metadata: Record<string, unknown> | null | undefined;
   created_at: Date | undefined;
 }
+
+/**
+ * List of all supported job statuses.
+ */
+export interface IStatusesResponse {
+  statuses: string[];
+}
