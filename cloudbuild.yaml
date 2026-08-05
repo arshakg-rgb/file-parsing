@@ -334,7 +334,39 @@ steps:
           --no-traffic \
           --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
 
+        gcloud run deploy load-small \
+          --image $_LOAD_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --allow-unauthenticated \
+          --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
+          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
+          --memory 500Mi \
+          --cpu 1 \
+          --timeout 3600s \
+          --max-instances 5 \
+          --min-instances 1 \
+          --no-cpu-throttling \
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,LOAD_QUEUE_URL=fpp-load-small \
+          --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+
         gcloud run deploy load \
+          --image $_LOAD_IMAGE \
+          --region $_REGION \
+          --platform managed \
+          --allow-unauthenticated \
+          --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
+          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
+          --memory 1Gi \
+          --cpu 2 \
+          --timeout 3600s \
+          --max-instances 5 \
+          --min-instances 1 \
+          --no-cpu-throttling \
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,LOAD_QUEUE_URL=fpp-load \
+          --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+
+        gcloud run deploy load-large \
           --image $_LOAD_IMAGE \
           --region $_REGION \
           --platform managed \
@@ -347,7 +379,7 @@ steps:
           --max-instances 5 \
           --min-instances 1 \
           --no-cpu-throttling \
-          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
+          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,LOAD_QUEUE_URL=fpp-load-large \
           --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'

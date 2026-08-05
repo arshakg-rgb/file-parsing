@@ -486,7 +486,15 @@ export class StateMachineImpl implements StateMachine
     this.logger.info({ job_id: jobId, merged_paths_count: mergedPaths.length }, "transitioning_to_loading");
     await this.transition(jobId, JobStatus.SAVING_TO_DATABASE, undefined, { output_paths: mergedPaths, counts });
 
-    await this.enqueue(settings.LOAD_QUEUE_URL, {
+    const sizeMb = (row.size ?? 0) / (1024 * 1024);
+    const queueUrl = sizeMb <= 25
+      ? settings.LOAD_QUEUE_URL_SMALL
+      : sizeMb > 100
+        ? settings.LOAD_QUEUE_URL_LARGE
+        : settings.LOAD_QUEUE_URL;
+    this.logger.info({ job_id: jobId, size_mb: sizeMb, queue: queueUrl }, "routing_to_load_queue");
+
+    await this.enqueue(queueUrl, {
       job_id: jobId,
       output_paths: mergedPaths,
       field_spec: Array.isArray(row.field_spec) ? row.field_spec : [],
