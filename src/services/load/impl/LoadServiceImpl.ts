@@ -199,6 +199,9 @@ class LoadServiceImpl extends ServiceManager implements LoadService
         this.logger.info("load_part_complete", { job_id: jobId, path: s3Path, rows: partRows });
         totalRows += partRows;
       }
+
+      this.logger.info("load_complete", { job_id: jobId, total_rows: totalRows });
+      this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: totalRows });
     }
     catch (exc)
     {
@@ -348,11 +351,19 @@ class LoadServiceImpl extends ServiceManager implements LoadService
       memorySoftLimit: settings.QUEUE_MEMORY_SOFT_LIMIT_MB * 1024 * 1024,
     });
 
+    const queueUrl = config.settings.LOAD_QUEUE_URL;
+
     await pool.run(async (payload, receiptHandle) => {
+      const heartbeat = setInterval(() => {
+        void this.queueService.modifyAckDeadline(queueUrl, receiptHandle, 600)
+          .catch((err) => this.logger.warn("load_ack_heartbeat_failed", { job_id: payload.job_id, error: String(err) }));
+      }, 60_000);
+
       try
       {
+        await this.queueService.modifyAckDeadline(queueUrl, receiptHandle, 600);
         await this.loadJob(payload);
-        await this.queueService.deleteMessage(config.settings.LOAD_QUEUE_URL, receiptHandle);
+        await this.queueService.deleteMessage(queueUrl, receiptHandle);
       }
       catch (exc)
       {
@@ -362,13 +373,17 @@ class LoadServiceImpl extends ServiceManager implements LoadService
         {
           this.logger.error("load_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
           MetricsUtils.increment("load.message_error_ack", 1);
-          await this.queueService.deleteMessage(config.settings.LOAD_QUEUE_URL, receiptHandle);
+          await this.queueService.deleteMessage(queueUrl, receiptHandle);
         }
         else
         {
           this.logger.error("load_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
           MetricsUtils.increment("load.message_error", 1);
         }
+      }
+      finally
+      {
+        clearInterval(heartbeat);
       }
     });
   }
