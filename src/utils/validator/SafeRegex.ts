@@ -17,6 +17,12 @@ class SafeRegexUtils {
   private static readonly MAX_REGEX_LINE_LENGTH = 64 * 1024;
 
   /**
+   * Compiled regex cache keyed by source pattern.
+   * @private
+   */
+  private static readonly regexCache: Map<string, RegExp | null> = new Map();
+
+  /**
    * Private constructor to prevent instantiation. This class is
    * intended to be used statically only.
    * @private
@@ -75,10 +81,20 @@ class SafeRegexUtils {
    * @returns The reg exp | null result
    */
   public static safeRegex(source: string): RegExp | null {
-    if (!SafeRegexUtils.isSafeRegexSource(source)) return null;
+    const cached = SafeRegexUtils.regexCache.get(source);
+    if (cached !== undefined) return cached;
+
+    if (!SafeRegexUtils.isSafeRegexSource(source)) {
+      SafeRegexUtils.regexCache.set(source, null);
+      return null;
+    }
+
     try {
-      return new RegExp(source);
+      const re = new RegExp(source);
+      SafeRegexUtils.regexCache.set(source, re);
+      return re;
     } catch {
+      SafeRegexUtils.regexCache.set(source, null);
       return null;
     }
   }
