@@ -16,4 +16,9 @@ SET timings = timings
        'completed_at', timings->'done_at',
        'on_hold_at', timings->'held_at'
      )
-WHERE timings IS NOT NULL;
+WHERE timings ? 'queued_at'
+   OR timings ? 'awaiting_password_at'
+   OR timings ? 'finalizing_at'
+   OR timings ? 'loading_at'
+   OR timings ? 'done_at'
+   OR timings ? 'held_at';
