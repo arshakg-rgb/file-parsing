@@ -433,9 +433,9 @@ export class StreamParserService
    * @param data - Event payload data
    */
 
-  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>): void
+  private async emit(jobId: string, eventType: EventType, data: Record<string, unknown>): Promise<void>
   {
-    this.queueService.publishEvent(makeJobEvent(eventType, jobId, "stream-parser", data));
+    await this.queueService.publishEvent(makeJobEvent(eventType, jobId, "stream-parser", data));
   }
 
   /**
@@ -466,7 +466,7 @@ export class StreamParserService
     await templateRegistry.loadFromDatabase();
 
     const jobId: string = msg.job_id;
-    this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.PARSING });
+    await this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.PARSING });
     this.logger.info("parse_start", { job_id: jobId, s3_url: msg.s3_url, size: msg.size });
     MetricsUtils.increment("parse.start", 1);
 
@@ -1061,7 +1061,7 @@ export class StreamParserService
       if (!qualityCheck.passes)
       {
         this.logger.warn("quality_gate_failed", { job_id: jobId, reason: qualityCheck.reason });
-        this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.FAILED, reason: qualityCheck.reason });
+        await this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.FAILED, reason: qualityCheck.reason });
         return;
       }
 
@@ -1102,7 +1102,7 @@ export class StreamParserService
       fatal = exc instanceof Error ? exc : new Error(String(exc));
       this.logger.error("parse_failed", { job_id: jobId }, fatal);
       MetricsUtils.increment("parse.error", 1);
-      this.emit(jobId, EventType.ERROR_OCCURRED, { error: String(exc) });
+      await this.emit(jobId, EventType.ERROR_OCCURRED, { error: String(exc) });
     }
     finally
     {
@@ -1127,7 +1127,7 @@ export class StreamParserService
 
       if (fatal)
       {
-        this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.FAILED, error: String(fatal) });
+        await this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.FAILED, error: String(fatal) });
       }
     }
   }

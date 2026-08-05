@@ -184,9 +184,9 @@ export class DetectBootstrapService
    * @param data - Event payload data
    */
 
-  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>): void
+  private async emit(jobId: string, eventType: EventType, data: Record<string, unknown>): Promise<void>
   {
-    this.queueService.publishEvent(makeJobEvent(eventType, jobId, "detect-bootstrap", data));
+    await this.queueService.publishEvent(makeJobEvent(eventType, jobId, "detect-bootstrap", data));
   }
 
   /**
@@ -631,7 +631,7 @@ export class DetectBootstrapService
     await templateRegistry.loadFromDatabase();
 
     const jobId: string = msg.job_id;
-    this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.DETECTING });
+    await this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.DETECTING });
 
     this.logger.info("detect_start", { jobId, s3_url: msg.s3_url, size: msg.size });
 
@@ -719,7 +719,7 @@ export class DetectBootstrapService
         const errMsg: string = String(exc);
         this.logger.error("detect_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
         MetricsUtils.increment("detect.error", 1);
-        this.emit(payload.job_id, EventType.ERROR_OCCURRED, { error: errMsg });
+        await this.emit(payload.job_id, EventType.ERROR_OCCURRED, { error: errMsg });
         await this.queueService.deleteMessage(settings.CLASSIFY_QUEUE_URL, receiptHandle);
       }
     });

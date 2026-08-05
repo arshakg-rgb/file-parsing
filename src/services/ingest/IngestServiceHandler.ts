@@ -67,6 +67,12 @@ export class IngestService
 
   private passwordAttempts: Map<string, number> = new Map();
 
+  /**
+   *  Active Ingests @private
+   */
+
+  private activeIngests: Set<string> = new Set();
+
   private stats = {
     s3PrefixFanouts: 0,
     urlFetches: 0,
@@ -212,9 +218,9 @@ export class IngestService
    * @param data - Event payload data
    */
 
-  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>): void
+  private async emit(jobId: string, eventType: EventType, data: Record<string, unknown>): Promise<void>
   {
-    this.queueService.publishEvent(makeJobEvent(eventType, jobId, "ingest", data));
+    await this.queueService.publishEvent(makeJobEvent(eventType, jobId, "ingest", data));
   }
 
   /**
@@ -225,9 +231,9 @@ export class IngestService
    * @param error - Optional error message
    */
 
-  private transition(jobId: string, newStatus: JobStatus, error?: string): void
+  private async transition(jobId: string, newStatus: JobStatus, error?: string): Promise<void>
   {
-    this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: newStatus, ...(error ? { error } : {}) });
+    await this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: newStatus, ...(error ? { error } : {}) });
   }
 
   /**
@@ -269,33 +275,36 @@ export class IngestService
 
     const jobId: string = msg.job_id;
 
-    const currentStatus: string = await DatabaseService.getInstance().repositories.jobs.getStatus(jobId);
-
-    if (currentStatus === JobStatus.INGESTING)
+    if (this.activeIngests.has(jobId))
     {
-      this.logger.info("ingest_already_ingesting", { job_id: jobId });
+      this.logger.info("ingest_already_in_progress", { job_id: jobId });
       return;
     }
 
-    if (currentStatus === JobStatus.FAILED)
-    {
-      this.logger.info("ingest_job_failed", { job_id: jobId });
-      return;
-    }
-
-    this.transition(jobId, JobStatus.INGESTING);
-    this.logger.info("ingest_start", { job_id: jobId, source_type: msg.source_type });
-    MetricsUtils.increment("ingest.start", 1, { source_type: msg.source_type });
+    this.activeIngests.add(jobId);
 
     try
     {
+      const currentStatus: JobStatus = await DatabaseService.getInstance().repositories.jobs.getStatus(jobId) as JobStatus;
+
+      if (currentStatus !== JobStatus.QUEUED && currentStatus !== JobStatus.AWAITING_PASSWORD)
+      {
+        this.logger.info("ingest_unexpected_status", { job_id: jobId, current_status: currentStatus });
+        return;
+      }
+
+      await this.transition(jobId, JobStatus.INGESTING);
+      this.logger.info("ingest_start", { job_id: jobId, source_type: msg.source_type });
+      MetricsUtils.increment("ingest.start", 1, { source_type: msg.source_type });
+
+      try {
       const resolved: { s3Url: string; size: number } = await this.resolveSource(msg);
 
       if (!resolved)
       {
         if (msg.source_type === SourceType.S3 && msg.source_ref.endsWith("/"))
         {
-          this.transition(jobId, JobStatus.DONE);
+          await this.transition(jobId, JobStatus.DONE);
         }
         return;
       }
@@ -341,10 +350,12 @@ export class IngestService
     }
     catch (exc)
     {
-      this.handleIngestError(exc, jobId);
+      await this.handleIngestError(exc, jobId);
+    }
     }
     finally
     {
+      this.activeIngests.delete(jobId);
       const ingestDuration: number = Date.now() - ingestStartTime;
       MetricsUtils.set("ingest.duration_ms", ingestDuration);
     }
@@ -360,14 +371,14 @@ export class IngestService
    * @private
    */
 
-  private handleIngestError(exc: unknown, jobId: string): void
+  private async handleIngestError(exc: unknown, jobId: string): Promise<void>
   {
     if (exc instanceof SSRFError)
     {
       this.logger.error("ssrf_blocked", { job_id: jobId }, exc);
       this.stats.ssrfBlocks++;
       MetricsUtils.increment("ingest.ssrf_blocked", 1);
-      this.transition(jobId, JobStatus.FAILED, `SSRF blocked: ${exc}`);
+      await this.transition(jobId, JobStatus.FAILED, `SSRF blocked: ${exc}`);
       return;
     }
 
@@ -380,13 +391,13 @@ export class IngestService
       {
         this.logger.error("archive_password_exhausted", { job_id: jobId, attempts });
         MetricsUtils.increment("ingest.password_exhausted", 1);
-        this.transition(jobId, JobStatus.FAILED, `password_unavailable: ${exc}`);
+        await this.transition(jobId, JobStatus.FAILED, `password_unavailable: ${exc}`);
       }
       else
       {
         this.passwordAttempts.set(jobId, attempts + 1);
         this.logger.info("archive_password_required", { job_id: jobId, attempts: attempts + 1 });
-        this.transition(jobId, JobStatus.AWAITING_PASSWORD);
+        await this.transition(jobId, JobStatus.AWAITING_PASSWORD);
       }
 
       return;
@@ -394,7 +405,7 @@ export class IngestService
 
     this.logger.error("ingest_error", { job_id: jobId }, exc instanceof Error ? exc : new Error(String(exc)));
     MetricsUtils.increment("ingest.error", 1);
-    this.transition(jobId, JobStatus.FAILED, String(exc));
+    await this.transition(jobId, JobStatus.FAILED, String(exc));
   }
 
   /**
@@ -619,7 +630,7 @@ export class IngestService
       {
         this.logger.warn("archive_empty", { job_id: jobId, s3_url: s3Url });
         MetricsUtils.increment("ingest.archive_empty", 1);
-        this.transition(jobId, JobStatus.FAILED, "Archive contained no extractable files");
+        await this.transition(jobId, JobStatus.FAILED, "Archive contained no extractable files");
         return;
       }
 
@@ -642,12 +653,12 @@ export class IngestService
       }
       else
       {
-        this.transition(jobId, JobStatus.DONE);
+        await this.transition(jobId, JobStatus.DONE);
       }
     }
     catch (exc)
     {
-      this.handleArchiveError(exc, jobId);
+      await this.handleArchiveError(exc, jobId);
     }
   }
 
@@ -690,7 +701,7 @@ export class IngestService
    * @private
    */
 
-  private handleArchiveError(exc: unknown, jobId: string): void
+  private async handleArchiveError(exc: unknown, jobId: string): Promise<void>
   {
     const errStr: string = String(exc).toLowerCase();
 
@@ -704,13 +715,13 @@ export class IngestService
       this.stats.archiveBombs++;
       this.logger.error("archive_bomb_detected", { job_id: jobId }, exc);
       MetricsUtils.increment("ingest.archive_bomb", 1);
-      this.transition(jobId, JobStatus.FAILED, `Archive bomb: ${exc}`);
+      await this.transition(jobId, JobStatus.FAILED, `Archive bomb: ${exc}`);
       return;
     }
 
     this.logger.error("archive_extraction_failed", { job_id: jobId }, exc instanceof Error ? exc : new Error(String(exc)));
     MetricsUtils.increment("ingest.archive_error", 1);
-    this.transition(jobId, JobStatus.FAILED, String(exc));
+    await this.transition(jobId, JobStatus.FAILED, String(exc));
   }
 
   /**
