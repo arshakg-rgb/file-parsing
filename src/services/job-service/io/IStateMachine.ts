@@ -6,8 +6,8 @@ export const TIMING_FIELD_BY_STATUS: Partial<Record<JobStatus, string>> = {
     [JobStatus.INGESTING]: "ingesting_at",
     [JobStatus.DETECTING]: "detecting_at",
     [JobStatus.PARSING]: "parsing_at",
-    [JobStatus.FINALIZING]: "finalizing_at",
-    [JobStatus.LOADING]: "loading_at",
+    [JobStatus.MERGING_OUTPUT]: "finalizing_at",
+    [JobStatus.SAVING_TO_DATABASE]: "loading_at",
     [JobStatus.REPORTING]: "reporting_at",
 };
 

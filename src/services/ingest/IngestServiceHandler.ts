@@ -288,7 +288,7 @@ export class IngestService
       const moved = await DatabaseService.getInstance().repositories.jobs.tryTransitionStatus(
           jobId,
           JobStatus.INGESTING,
-          [JobStatus.QUEUED, JobStatus.AWAITING_PASSWORD],
+          [JobStatus.CREATED, JobStatus.NEEDS_PASSWORD],
           {
             timings: { ingesting_at: new Date().toISOString() },
           }
@@ -310,7 +310,7 @@ export class IngestService
       {
         if (msg.source_type === SourceType.S3 && msg.source_ref.endsWith("/"))
         {
-          await this.transition(jobId, JobStatus.DONE);
+          await this.transition(jobId, JobStatus.COMPLETED);
         }
         return;
       }
@@ -403,7 +403,7 @@ export class IngestService
       {
         this.passwordAttempts.set(jobId, attempts + 1);
         this.logger.info("archive_password_required", { job_id: jobId, attempts: attempts + 1 });
-        await this.transition(jobId, JobStatus.AWAITING_PASSWORD);
+        await this.transition(jobId, JobStatus.NEEDS_PASSWORD);
       }
 
       return;
@@ -659,7 +659,7 @@ export class IngestService
       }
       else
       {
-        await this.transition(jobId, JobStatus.DONE);
+        await this.transition(jobId, JobStatus.COMPLETED);
       }
     }
     catch (exc)

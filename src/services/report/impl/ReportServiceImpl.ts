@@ -224,7 +224,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService
     if (batchSiblings.length && jobRow.batch_id)
     {
       const allTerminal: boolean = batchSiblings.every((j) =>
-          [JobStatus.DONE, JobStatus.PARTIAL, JobStatus.HELD, JobStatus.FAILED].includes(j.status as JobStatus)
+          [JobStatus.COMPLETED, JobStatus.PARTIAL, JobStatus.ON_HOLD, JobStatus.FAILED].includes(j.status as JobStatus)
       );
 
       if (allTerminal)
@@ -304,9 +304,9 @@ class ReportServiceImpl extends ServiceManager implements ReportService
       batch_id: batchId,
       generated_at: new Date().toISOString(),
       total_jobs: jobs.length,
-      done: jobs.filter((j: IParseJob) => j.status === JobStatus.DONE).length,
+      done: jobs.filter((j: IParseJob) => j.status === JobStatus.COMPLETED).length,
       partial: jobs.filter((j: IParseJob) => j.status === JobStatus.PARTIAL).length,
-      held: jobs.filter((j: IParseJob) => j.status === JobStatus.HELD).length,
+      held: jobs.filter((j: IParseJob) => j.status === JobStatus.ON_HOLD).length,
       failed: jobs.filter((j: IParseJob) => j.status === JobStatus.FAILED).length,
       total_parsed: jobs.reduce((a: number, j: IParseJob) => a + (j.counts.parsed || 0), 0),
       total_dropped: jobs.reduce((a: number, j: IParseJob) => a + (j.counts.dropped_rubbish || 0), 0),

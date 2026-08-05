@@ -5,33 +5,6 @@ export { SourceType } from "@common/enum/SourceType.js";
 export { ExecPath } from "@common/enum/ExecPath.js";
 export { JobStatus } from "@common/enum/JobStatus.js";
 
-/**
- * User-facing one/two-word labels for each job status.
- */
-export const JobStatusDisplayName: Record<JobStatus, string> = {
-  [JobStatus.QUEUED]: "Created",
-  [JobStatus.INGESTING]: "Ingesting",
-  [JobStatus.AWAITING_PASSWORD]: "Needs Password",
-  [JobStatus.DETECTING]: "Detecting",
-  [JobStatus.PARSING]: "Parsing",
-  [JobStatus.FINALIZING]: "Merging Output",
-  [JobStatus.LOADING]: "Saving to Database",
-  [JobStatus.REPORTING]: "Reporting",
-  [JobStatus.DONE]: "Completed",
-  [JobStatus.PARTIAL]: "Partial",
-  [JobStatus.HELD]: "On Hold",
-  [JobStatus.FAILED]: "Failed",
-};
-
-/**
- * Reverse lookup from display name to internal status code.
- */
-export const JobStatusCodeByDisplayName: Record<string, JobStatus> = {};
-for (const code of Object.values(JobStatus) as JobStatus[])
-{
-  JobStatusCodeByDisplayName[JobStatusDisplayName[code]] = code;
-}
-
 export { FailureClass } from "@common/enum/FailureClass.js";
 export { DLQStatus } from "@common/enum/DLQStatus.js";
 
@@ -39,17 +12,17 @@ export { DLQStatus } from "@common/enum/DLQStatus.js";
  * The v a l i d_ t r a n s i t i o n s
  */
 export const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
-  [JobStatus.QUEUED]: [JobStatus.INGESTING, JobStatus.DETECTING, JobStatus.FAILED],
-  [JobStatus.INGESTING]: [JobStatus.AWAITING_PASSWORD, JobStatus.DETECTING, JobStatus.DONE, JobStatus.FAILED],
-  [JobStatus.AWAITING_PASSWORD]: [JobStatus.DETECTING, JobStatus.FAILED],
+  [JobStatus.CREATED]: [JobStatus.INGESTING, JobStatus.DETECTING, JobStatus.FAILED],
+  [JobStatus.INGESTING]: [JobStatus.NEEDS_PASSWORD, JobStatus.DETECTING, JobStatus.COMPLETED, JobStatus.FAILED],
+  [JobStatus.NEEDS_PASSWORD]: [JobStatus.DETECTING, JobStatus.FAILED],
   [JobStatus.DETECTING]: [JobStatus.DETECTING, JobStatus.PARSING, JobStatus.FAILED],
-  [JobStatus.PARSING]: [JobStatus.FINALIZING, JobStatus.FAILED],
-  [JobStatus.FINALIZING]: [JobStatus.LOADING, JobStatus.HELD, JobStatus.FAILED],
-  [JobStatus.LOADING]: [JobStatus.REPORTING, JobStatus.FAILED],
-  [JobStatus.REPORTING]: [JobStatus.DONE, JobStatus.PARTIAL, JobStatus.FAILED],
-  [JobStatus.DONE]: [],
+  [JobStatus.PARSING]: [JobStatus.MERGING_OUTPUT, JobStatus.FAILED],
+  [JobStatus.MERGING_OUTPUT]: [JobStatus.SAVING_TO_DATABASE, JobStatus.ON_HOLD, JobStatus.FAILED],
+  [JobStatus.SAVING_TO_DATABASE]: [JobStatus.REPORTING, JobStatus.FAILED],
+  [JobStatus.REPORTING]: [JobStatus.COMPLETED, JobStatus.PARTIAL, JobStatus.FAILED],
+  [JobStatus.COMPLETED]: [],
   [JobStatus.PARTIAL]: [],
-  [JobStatus.HELD]: [JobStatus.LOADING],
+  [JobStatus.ON_HOLD]: [JobStatus.SAVING_TO_DATABASE],
   [JobStatus.FAILED]: [],
 };
 
@@ -57,9 +30,9 @@ export const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
  * The t e r m i n a l_ s t a t u s e s
  */
 export const TERMINAL_STATUSES = new Set([
-  JobStatus.DONE,
+  JobStatus.COMPLETED,
   JobStatus.PARTIAL,
-  JobStatus.HELD,
+  JobStatus.ON_HOLD,
   JobStatus.FAILED,
 ]);
 

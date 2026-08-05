@@ -48,7 +48,7 @@ async function reconcileStuckJobs(): Promise<void> {
         // All pending entries processed (completed or failed) - transition to DONE
         logger.info("reconciler_job_all_pending_processed_transitioning_to_done", { job_id: jobId, completed: counts.completed, failed: counts.failed });
         await publishEvent(makeJobEvent(EventType.JOB_STATUS_CHANGED, jobId, "reconciler", {
-          new_status: JobStatus.DONE,
+          new_status: JobStatus.COMPLETED,
         }));
       } else {
         // Still has pending entries - check if they're stale
@@ -70,7 +70,7 @@ async function reconcileStuckJobs(): Promise<void> {
           if (newCounts.pending === 0) {
             logger.info("reconciler_job_resolved_after_stale_cleanup_transitioning_to_done", { job_id: jobId });
             await publishEvent(makeJobEvent(EventType.JOB_STATUS_CHANGED, jobId, "reconciler", {
-              new_status: JobStatus.DONE,
+              new_status: JobStatus.COMPLETED,
             }));
           }
         } else {

@@ -5,7 +5,7 @@ import { ValidationError } from "@errors/ValidationError.js";
 import { settings } from "@shared/Settings.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { ParseJobRow } from "@shared/DatabaseManager.js";
-import { SourceType, JobStatus, JobTimings, JobCounts, totalFailed, JobStatusDisplayName, JobStatusCodeByDisplayName } from "@shared/models/job.js";
+import { SourceType, JobStatus, JobTimings, JobCounts, totalFailed } from "@shared/models/job.js";
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
@@ -211,7 +211,7 @@ export class JobServiceImpl implements JobService
       s3_url: s3Url,
       field_spec: fieldNames,
       exec_path: "stream",
-      status: JobStatus.QUEUED,
+      status: JobStatus.CREATED,
       output_paths: [],
       counts: { parsed: 0, dropped_rubbish: 0, failed_by_class: {} },
       timings: { queued_at: now },
@@ -236,7 +236,7 @@ export class JobServiceImpl implements JobService
 
     return {
       job_id: jobId,
-      status: JobStatus.QUEUED,
+      status: JobStatus.CREATED,
       presigned_put_url: putUrl,
       presigned_put_content_type: putUrl ? uploadContentType : undefined,
       message_id: messageId,
@@ -333,7 +333,7 @@ export class JobServiceImpl implements JobService
       s3_url: s3Url,
       field_spec: fieldNames,
       exec_path: "stream",
-      status: JobStatus.QUEUED,
+      status: JobStatus.CREATED,
       output_paths: [],
       counts: { parsed: 0, dropped_rubbish: 0, failed_by_class: {} },
       timings: { queued_at: now },
@@ -356,7 +356,7 @@ export class JobServiceImpl implements JobService
 
     this.logger.info("upload_job_queued", { job_id: jobId, message_id: messageId });
 
-    return { job_id: jobId, status: JobStatus.QUEUED, message_id: messageId };
+    return { job_id: jobId, status: JobStatus.CREATED, message_id: messageId };
   }
 
   /**
@@ -412,9 +412,7 @@ export class JobServiceImpl implements JobService
    */
   public async getAllJobs(statuses?: string[]): Promise<IJobResponse[]>
   {
-    const normalizedStatuses = statuses?.map((s) => JobStatusCodeByDisplayName[s] ?? s)
-      .filter((s): s is JobStatus => Object.values(JobStatus).includes(s as JobStatus));
-    const rows: ParseJobAttributes[] = await this.postgreSqlManager.repositories.jobs.findAll(normalizedStatuses as string[]);
+    const rows: ParseJobAttributes[] = await this.postgreSqlManager.repositories.jobs.findAll(statuses);
 
     return await Promise.all(rows.map((row: ParseJobAttributes) => this.buildJobResponse(row)));
   }
@@ -426,9 +424,7 @@ export class JobServiceImpl implements JobService
    */
   public async getAllStatuses(): Promise<IStatusesResponse>
   {
-    return {
-      statuses: Object.values(JobStatus).map((code) => JobStatusDisplayName[code as JobStatus]),
-    };
+    return { statuses: Object.values(JobStatus) };
   }
 
   /**
@@ -474,7 +470,7 @@ export class JobServiceImpl implements JobService
     return {
       job_id: row.job_id,
       batch_id: row.batch_id,
-      status: JobStatusDisplayName[row.status as JobStatus],
+      status: row.status as string,
       counts,
       timings,
       error: row.error,
@@ -510,7 +506,7 @@ export class JobServiceImpl implements JobService
       throw new HttpError(HttpError.NOT_FOUND, "Job not found");
     }
 
-    if (row.status !== JobStatus.AWAITING_PASSWORD)
+    if (row.status !== JobStatus.NEEDS_PASSWORD)
     {
       throw new ServerError(ServerError.CONFLICT, `Job is not awaiting a password (status=${row.status})`);
     }
@@ -535,7 +531,7 @@ export class JobServiceImpl implements JobService
   {
     try
     {
-      await transition(jobId, JobStatus.LOADING);
+      await transition(jobId, JobStatus.SAVING_TO_DATABASE);
     }
     catch (err)
     {
@@ -622,7 +618,7 @@ export class JobServiceImpl implements JobService
           manual_override: true,
         };
         break;
-      case JobStatus.LOADING:
+      case JobStatus.SAVING_TO_DATABASE:
         queueUrl = settings.LOAD_QUEUE_URL;
         break;
       case JobStatus.REPORTING:

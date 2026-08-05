@@ -267,7 +267,7 @@ export class StateMachineImpl implements StateMachine
   {
     const row: IParseJob = await this.getJob(event.job_id);
     const counts: JobCounts = ((event.data as Record<string, unknown>).counts as JobCounts) || row?.counts;
-    await this.transition(event.job_id, JobStatus.DONE, undefined, { counts });
+    await this.transition(event.job_id, JobStatus.COMPLETED, undefined, { counts });
   }
 
   /**
@@ -311,7 +311,7 @@ export class StateMachineImpl implements StateMachine
       size: data.entry_size,
       field_spec: fieldSpec,
       exec_path: "stream",
-      status: JobStatus.QUEUED,
+      status: JobStatus.CREATED,
       output_paths: [],
       counts: { ...EMPTY_COUNTS },
       timings: { queued_at: now },
@@ -406,7 +406,7 @@ export class StateMachineImpl implements StateMachine
     });
 
     this.logger.info({ job_id: event.job_id, failed_ratio: failedRatio }, "transitioning_to_finalizing");
-    await this.transition(event.job_id, JobStatus.FINALIZING, undefined, { counts, timings });
+    await this.transition(event.job_id, JobStatus.MERGING_OUTPUT, undefined, { counts, timings });
 
     this.logger.info({ job_id: event.job_id, part_paths: data.part_s3_paths }, "starting_finalization");
 
@@ -462,7 +462,7 @@ export class StateMachineImpl implements StateMachine
     if (failedRatio > settings.FAILED_LINE_RATIO_THRESHOLD)
     {
       this.logger.warn({ job_id: jobId, failed_ratio: failedRatio, threshold: settings.FAILED_LINE_RATIO_THRESHOLD }, "quality_gate_held");
-      await this.transition(jobId, JobStatus.HELD, undefined, { output_paths: mergedPaths });
+      await this.transition(jobId, JobStatus.ON_HOLD, undefined, { output_paths: mergedPaths });
       return;
     }
 
@@ -479,12 +479,12 @@ export class StateMachineImpl implements StateMachine
     if (mergedPaths.length === 0 && data.parsed === 0)
     {
       this.logger.info({ job_id: jobId }, "no_output_no_data");
-      await this.transition(jobId, JobStatus.DONE, undefined, { output_paths: [] });
+      await this.transition(jobId, JobStatus.COMPLETED, undefined, { output_paths: [] });
       return;
     }
 
     this.logger.info({ job_id: jobId, merged_paths_count: mergedPaths.length }, "transitioning_to_loading");
-    await this.transition(jobId, JobStatus.LOADING, undefined, { output_paths: mergedPaths, counts });
+    await this.transition(jobId, JobStatus.SAVING_TO_DATABASE, undefined, { output_paths: mergedPaths, counts });
 
     await this.enqueue(settings.LOAD_QUEUE_URL, {
       job_id: jobId,
