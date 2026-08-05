@@ -22,6 +22,7 @@ import {QueueService} from "@shared/QueueService";
 import {QueueMessage} from "@shared/io/IQueueService";
 import {SecretsService} from "@shared/SecretsService";
 import CorsUtils from "@config/cors/CorsUtils.js";
+import { error404Handler } from "@common/middleware/CommonMiddleware.js";
 
 /**
  * JobServiceManager is a singleton class responsible for managing the job service. It wires up
@@ -116,9 +117,12 @@ class JobServiceManager extends ServiceManager implements IJobService
       void this.handleDbHealthCheck(res);
     });
 
+    this.app.use(error404Handler);
+
     this.app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
       this.logger.error({ error: err.message, stack: err.stack }, "express_error");
-      res.status(500).json({ detail: err.message });
+      const status = (err as any).status || 500;
+      res.status(status).json({ detail: err.message });
     });
   }
 
