@@ -54,14 +54,18 @@ export function totalFailed(counts: JobCounts): number {
 }
 
 export interface JobTimings {
-  queued_at?: string;
+  created_at?: string;
   ingesting_at?: string;
+  needs_password_at?: string;
   detecting_at?: string;
   parsing_at?: string;
-  finalizing_at?: string;
-  loading_at?: string;
+  merging_output_at?: string;
+  saving_to_database_at?: string;
   reporting_at?: string;
   completed_at?: string;
+  partial_at?: string;
+  on_hold_at?: string;
+  failed_at?: string;
   [key: string]: unknown;
 }
 

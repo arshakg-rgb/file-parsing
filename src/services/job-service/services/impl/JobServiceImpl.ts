@@ -462,7 +462,7 @@ export class JobServiceImpl implements JobService
 
     const startedAt = rawTimings.ingesting_at
         || rawTimings.parsing_at
-        || rawTimings.queued_at
+        || rawTimings.created_at
         || row.created_at?.toISOString();
 
     const finishedAt = rawTimings.completed_at || undefined;
