@@ -8,6 +8,8 @@ import { settings } from "@shared/Settings.js";
 import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
+import { ParsedRecord, IParsedRecord } from "@config/db/models";
+import ParseJob from "@config/db/models/ParseJob.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { LoadMessage } from "@shared/models/job.js";
@@ -161,8 +163,24 @@ class LoadServiceImpl extends ServiceManager implements LoadService
    * @param msg - The msg
    */
 
-  public async loadJob(msg: LoadMessage): Promise<void>
+  private deriveBatchSize(sizeBytes: number | null | undefined): number
+  {
+    const sizeMb = (sizeBytes || 0) / (1024 * 1024);
+    const base = Math.max(100, Math.floor(60000 / this.PARAMS_PER_ROW));
+
+    if (sizeMb <= 10)
     {
+      return base;
+    }
+    if (sizeMb <= 100)
+    {
+      return Math.max(100, Math.floor(base / 2));
+    }
+    return Math.max(100, Math.floor(base / 4));
+  }
+
+  public async loadJob(msg: LoadMessage): Promise<void>
+  {
     const jobId: string = msg.job_id;
 
     if (msg.recovered_row)
@@ -175,7 +193,10 @@ class LoadServiceImpl extends ServiceManager implements LoadService
       return;
     }
 
-    this.logger.info("load_start", { job_id: jobId, parts: (msg.output_paths || []).length });
+    const parseJob = await ParseJob.findByPk(jobId, { attributes: ["size"] });
+    this.UPSERT_BATCH = this.deriveBatchSize(parseJob?.size);
+
+    this.logger.info("load_start", { job_id: jobId, parts: (msg.output_paths || []).length, size: parseJob?.size, batch: this.UPSERT_BATCH });
     MetricsUtils.increment("load.start", 1, { parts: String((msg.output_paths || []).length) });
 
     let totalRows: number = 0;
