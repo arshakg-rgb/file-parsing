@@ -230,6 +230,11 @@ export class StreamParserService
 
   private sanitizeForPg(str: string): string
   {
+    if (str.indexOf("\u0000") === -1 && str.indexOf("\\u") === -1)
+    {
+      return str;
+    }
+
     return str
         .replace(/\u0000/g, "")
         .replace(/\\u(?![0-9a-fA-F]{4})/g, "\\\\u");
@@ -883,6 +888,7 @@ export class StreamParserService
 
             const idx: number = recordIndex++;
             const outputBuffer: OutputBuffer = outputManager.getBuffer(jobId, result.template_id || "default");
+            const parsedAt: Date = new Date();
 
             const maybeFlush = outputBuffer.addRow({
               ...sanitizedRow,
@@ -894,7 +900,7 @@ export class StreamParserService
               _template_id: result.template_id,
               _template_version: result.template_version ?? 1,
               _checksum: "",
-              _parsed_at: new Date(),
+              _parsed_at: parsedAt,
               _part_id: "auto",
             });
 
@@ -907,7 +913,7 @@ export class StreamParserService
               _template_id: result.template_id || "default",
               _template_version: result.template_version || 1,
               _checksum: "",
-              _parsed_at: new Date(),
+              _parsed_at: parsedAt,
               _part_id: "auto",
               fields: { s3_url: msg.s3_url, ...sanitizedRow }
             });

@@ -320,7 +320,7 @@ export class DeadLetterRepository {
    * @param rows - The rows
    */
   async bulkCreate(rows: DeadLetterCreationAttributes[]): Promise<void> {
-    await this.DeadLetter.bulkCreate(rows, { ignoreDuplicates: true });
+    await this.DeadLetter.bulkCreate(rows, { ignoreDuplicates: true, validate: false, returning: false });
   }
 
     /**
@@ -739,7 +739,7 @@ export class RubbishLogRepository {
    * @param rows - The rows
    */
   async bulkCreate(rows: RubbishLogCreationAttributes[]): Promise<void> {
-    await this.RubbishLog.bulkCreate(rows, { ignoreDuplicates: true });
+    await this.RubbishLog.bulkCreate(rows, { ignoreDuplicates: true, validate: false, returning: false });
   }
 
     /**
