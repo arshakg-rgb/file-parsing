@@ -574,7 +574,7 @@ export class StreamParserService
     let aiBudgetFlagged: boolean = false;
     const recentLines: string[] = [];
 
-    const BATCH_SIZE = 2000;
+    const BATCH_SIZE: number = Math.max(1, settings.PARSE_DB_FLUSH_BATCH_SIZE);
     let parsedBatch: Record<string, unknown>[] = [];
     let rubbishBatch: Record<string, unknown>[] = [];
     let dlqBatch: Record<string, unknown>[] = [];
@@ -589,7 +589,7 @@ export class StreamParserService
 
     const drainIfReady = async (): Promise<void> =>
     {
-      if (bgFlushes.length >= 4)
+      if (bgFlushes.length >= settings.PARSE_BG_FLUSH_QUEUE_DEPTH)
       {
         await bgFlushes.shift();
       }
