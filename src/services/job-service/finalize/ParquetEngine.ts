@@ -106,18 +106,16 @@ export class ParquetEngine {
       {
         if (!schemaObj[k])
         {
-          const value: unknown = ParquetEngine.sanitizeValue(v, false);
-
           const type: ParquetType =
-            value === null || value === undefined
+            v === null || v === undefined
               ? "UTF8"
-              : typeof value === "boolean"
+              : typeof v === "boolean"
               ? "BOOLEAN"
-              : typeof value === "number"
-              ? Number.isInteger(value) && Number.isSafeInteger(value)
+              : typeof v === "number"
+              ? Number.isInteger(v) && Number.isSafeInteger(v)
                 ? "INT64"
                 : "DOUBLE"
-              : value instanceof Date
+              : v instanceof Date
               ? "TIMESTAMP_MILLIS"
               : "UTF8";
           schemaObj[k] = { type, optional: true };

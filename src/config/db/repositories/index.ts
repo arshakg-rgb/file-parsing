@@ -652,7 +652,7 @@ export class ParsedRecordRepository {
    * @param ignoreDuplicates - The ignore duplicates
    */
   async bulkCreate(rows: ParsedRecordCreationAttributes[], ignoreDuplicates = true): Promise<void> {
-    await this.ParsedRecord.bulkCreate(rows, { ignoreDuplicates });
+    await this.ParsedRecord.bulkCreate(rows, { ignoreDuplicates, validate: false, returning: false });
   }
 
     /**

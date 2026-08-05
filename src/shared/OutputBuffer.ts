@@ -61,8 +61,6 @@ export class OutputBuffer
    * Pending bytes
    * @private
    */
-  private pendingBytes: number = 0;
-
   /**
    * Pending flushes
    * @private
@@ -85,7 +83,6 @@ export class OutputBuffer
   {
     this.partId = jobId;
     this.totalFlushed = 0;
-    this.pendingBytes = 0;
   }
 
   /**
@@ -202,24 +199,22 @@ export class OutputBuffer
 
   private static typeForValue(v: unknown): ParquetType
   {
-    const value: unknown = OutputBuffer.sanitizeParquetValue(v, false);
-
-    if (value === null || value === undefined)
+    if (v === null || v === undefined)
     {
       return "UTF8";
     }
 
-    if (typeof value === "boolean")
+    if (typeof v === "boolean")
     {
       return "BOOLEAN";
     }
 
-    if (typeof value === "number")
+    if (typeof v === "number")
     {
-      return Number.isInteger(value) && Number.isSafeInteger(value) ? "INT64" : "DOUBLE";
+      return Number.isInteger(v) && Number.isSafeInteger(v) ? "INT64" : "DOUBLE";
     }
 
-    if (value instanceof Date)
+    if (v instanceof Date)
     {
       return "TIMESTAMP_MILLIS";
     }
@@ -240,9 +235,7 @@ export class OutputBuffer
 
     for (const row of rows)
     {
-      const sanitized = OutputBuffer.sanitizeParquetValue(row, true) as Record<string, unknown>;
-
-      for (const [k, v] of Object.entries(sanitized))
+      for (const [k, v] of Object.entries(row))
       {
         if (!schemaObj[k])
         {
@@ -263,7 +256,6 @@ export class OutputBuffer
   public addRow(row: OutputRow): Promise<void> | undefined
   {
     this.rows.push(row);
-    this.pendingBytes += this.estimateSize(row);
 
     if (!this.shouldFlush())
     {
@@ -271,16 +263,14 @@ export class OutputBuffer
     }
 
     const rowsToFlush: OutputRow[] = this.rows;
-    const bytesToFlush: number = this.pendingBytes;
     this.rows = [];
-    this.pendingBytes = 0;
 
     const startRow: number = this.totalFlushed;
     this.totalFlushed += rowsToFlush.length;
     const endRow: number = this.totalFlushed;
 
     const partName: string = `${this.partId}-${startRow}-${endRow}`;
-    const flush: Promise<void> = this.flushPart(rowsToFlush, partName, bytesToFlush).catch((error) => {
+    const flush: Promise<void> = this.flushPart(rowsToFlush, partName, 0).catch((error) => {
       parquetOutputService.getLogger().error("parquet_flush_error", { part_name: partName, error: String(error) });
       throw error;
     });
@@ -297,28 +287,6 @@ export class OutputBuffer
   }
 
   /**
-   * Estimates the byte size of a row.
-   * @param row - The row
-   * @returns The estimated size in bytes
-   * @private
-   */
-
-  private estimateSize(row: OutputRow): number
-  {
-    let size = 0;
-    for (const v of Object.values(row))
-    {
-      if (v === null || v === undefined) { size += 4; }
-      else if (typeof v === "number") { size += 8; }
-      else if (typeof v === "boolean") { size += 1; }
-      else if (v instanceof Date) { size += 8; }
-      else if (typeof v === "string") { size += Buffer.byteLength(v, "utf8"); }
-      else { size += Buffer.byteLength(JSON.stringify(v), "utf8"); }
-    }
-    return size;
-  }
-
-  /**
    * Returns whether the buffer should flush.
    * @returns True if the buffer should flush
    * @private
@@ -326,7 +294,7 @@ export class OutputBuffer
 
   private shouldFlush(): boolean
   {
-    return this.rows.length >= settings.OUTPUT_BUFFER_FLUSH_THRESHOLD_ROWS || this.pendingBytes >= settings.OUTPUT_BUFFER_FLUSH_THRESHOLD_BYTES;
+    return this.rows.length >= settings.OUTPUT_BUFFER_FLUSH_THRESHOLD_ROWS;
   }
 
   /**
@@ -349,7 +317,6 @@ export class OutputBuffer
 
     const rowsToFlush: OutputRow[] = this.rows;
     this.rows = [];
-    this.pendingBytes = 0;
 
     const startRow: number = this.totalFlushed;
     this.totalFlushed += rowsToFlush.length;

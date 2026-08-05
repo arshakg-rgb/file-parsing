@@ -82,7 +82,7 @@ export class CsvOutputWriter {
    * The f l u s h_ t h r e s h o l d_ b y t e s value
    * @private
    */
-  private static readonly FLUSH_THRESHOLD_BYTES = 8 * 1024 * 1024;
+  private static readonly FLUSH_THRESHOLD_BYTES = 32 * 1024 * 1024;
 
     /**
    * Constructs a new CsvOutputWriter instance.
