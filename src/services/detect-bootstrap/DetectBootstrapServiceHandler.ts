@@ -18,6 +18,7 @@ import {aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierS
 import {DatabaseService} from "@shared/DatabaseManager";
 import {GcsUtils} from "@shared/GcsUtils";
 import {QueueService} from "@shared/QueueService";
+import {QueueConsumerPool} from "@shared/QueueConsumerPool.js";
 import {InstantiationError} from "@errors/InstantiationError";
 import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
 
@@ -699,31 +700,28 @@ export class DetectBootstrapService
     await templateRegistry.loadFromDatabase();
     this.logger.info("detect_bootstrap_consumer_started");
 
-    while (this.running)
-    {
-      const messages = await this.queueService.receiveMessages<ClassifyMessage>(
-          settings.CLASSIFY_QUEUE_URL,
-          (body) => JSON.parse(body) as ClassifyMessage,
-          1
-      );
+    const pool = new QueueConsumerPool<ClassifyMessage>(this.queueService, this.logger, {
+      queueUrl: settings.CLASSIFY_QUEUE_URL,
+      parser: (body) => JSON.parse(body) as ClassifyMessage,
+      concurrency: settings.QUEUE_CONCURRENCY,
+      isRunning: () => this.running,
+    });
 
-      for (const { payload, receiptHandle } of messages)
+    await pool.run(async (payload, receiptHandle) => {
+      try
       {
-        try
-        {
-          await this.bootstrapJob(payload);
-          await this.queueService.deleteMessage(settings.CLASSIFY_QUEUE_URL, receiptHandle);
-        }
-        catch (exc)
-        {
-          const errMsg: string = String(exc);
-          this.logger.error("detect_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
-          MetricsUtils.increment("detect.error", 1);
-          this.emit(payload.job_id, EventType.ERROR_OCCURRED, { error: errMsg });
-          await this.queueService.deleteMessage(settings.CLASSIFY_QUEUE_URL, receiptHandle);
-        }
+        await this.bootstrapJob(payload);
+        await this.queueService.deleteMessage(settings.CLASSIFY_QUEUE_URL, receiptHandle);
       }
-    }
+      catch (exc)
+      {
+        const errMsg: string = String(exc);
+        this.logger.error("detect_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
+        MetricsUtils.increment("detect.error", 1);
+        this.emit(payload.job_id, EventType.ERROR_OCCURRED, { error: errMsg });
+        await this.queueService.deleteMessage(settings.CLASSIFY_QUEUE_URL, receiptHandle);
+      }
+    });
 
     this.logger.info("detect_bootstrap_consumer_stopped");
   }

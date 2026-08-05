@@ -21,7 +21,7 @@ import { MetricsUtils } from "@utils/response/Metrics";
 import {DatabaseService} from "@shared/DatabaseManager";
 import {GcsUtils} from "@shared/GcsUtils";
 import {QueueService} from "@shared/QueueService";
-import {QueueMessage} from "@shared/io/IQueueService";
+import {QueueConsumerPool} from "@shared/QueueConsumerPool.js";
 
 
 export class IngestService
@@ -809,22 +809,14 @@ export class IngestService
         await DatabaseService.getInstance().waitForDb();
         this.logger.info("ingest_consumer_started", { queue_url: settings.INGEST_QUEUE_URL, queue_backend: settings.QUEUE_BACKEND });
 
-        while (this.running)
-        {
-          this.logger.info("ingest_waiting_for_messages");
-          const messages: QueueMessage<IngestMessage>[] = await this.queueService.receiveMessages<IngestMessage>(
-              settings.INGEST_QUEUE_URL,
-              (body) => JSON.parse(body) as IngestMessage,
-              5
-          );
+        const pool = new QueueConsumerPool<IngestMessage>(this.queueService, this.logger, {
+          queueUrl: settings.INGEST_QUEUE_URL,
+          parser: (body) => JSON.parse(body) as IngestMessage,
+          concurrency: settings.QUEUE_CONCURRENCY,
+          isRunning: () => this.running,
+        });
 
-          this.logger.info("ingest_messages_received", { count: messages.length });
-
-          for (const { payload, receiptHandle } of messages)
-          {
-            await this.handleQueueMessage(payload, receiptHandle);
-          }
-        }
+        await pool.run((payload, receiptHandle) => this.handleQueueMessage(payload, receiptHandle));
       }
       catch (dbError)
       {

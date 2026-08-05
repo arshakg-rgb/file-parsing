@@ -1,5 +1,6 @@
 import pino from "pino";
 import Config from "@config/system-config/Config.js";
+import { settings } from "@shared/Settings.js";
 import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
@@ -13,7 +14,7 @@ import { LoadResponse } from "@service/load/io/ILoad.js";
 import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
 import {QueueService} from "@shared/QueueService";
-import {QueueMessage} from "@shared/io/IQueueService";
+import {QueueConsumerPool} from "@shared/QueueConsumerPool.js";
 
 /**
  * LoadServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -310,35 +311,35 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     this.logger.info("load_consumer_started");
     const config: Config = this.getConfig();
 
-    while (true)
-    {
-      const messages: QueueMessage<LoadMessage>[] = await this.queueService.receiveMessages<LoadMessage>(config.settings.LOAD_QUEUE_URL, (body) => JSON.parse(body) as LoadMessage, 1);
+    const pool = new QueueConsumerPool<LoadMessage>(this.queueService, this.logger, {
+      queueUrl: config.settings.LOAD_QUEUE_URL,
+      parser: (body) => JSON.parse(body) as LoadMessage,
+      concurrency: settings.QUEUE_CONCURRENCY,
+    });
 
-      for (const { payload, receiptHandle } of messages)
+    await pool.run(async (payload, receiptHandle) => {
+      try
       {
-        try
+        await this.loadJob(payload);
+        await this.queueService.deleteMessage(config.settings.LOAD_QUEUE_URL, receiptHandle);
+      }
+      catch (exc)
+      {
+        const errorStr: string = String(exc);
+
+        if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition")))
         {
-          await this.loadJob(payload);
+          this.logger.error("load_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
+          MetricsUtils.increment("load.message_error_ack", 1);
           await this.queueService.deleteMessage(config.settings.LOAD_QUEUE_URL, receiptHandle);
         }
-        catch (exc)
+        else
         {
-          const errorStr: string = String(exc);
-
-          if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition")))
-          {
-            this.logger.error("load_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
-            MetricsUtils.increment("load.message_error_ack", 1);
-            await this.queueService.deleteMessage(config.settings.LOAD_QUEUE_URL, receiptHandle);
-          }
-          else
-          {
-            this.logger.error("load_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
-            MetricsUtils.increment("load.message_error", 1);
-          }
+          this.logger.error("load_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
+          MetricsUtils.increment("load.message_error", 1);
         }
       }
-    }
+    });
   }
 }
 

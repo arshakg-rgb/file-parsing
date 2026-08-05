@@ -56,25 +56,16 @@ export class StreamParserService
   private running: boolean = false;
 
   /**
-   * Current Job
+   * Maximum number of parse jobs to process concurrently.
    * @private
    */
-
-  private currentJob: Promise<void> | null = null;
+  private readonly concurrency: number = Math.max(1, settings.STREAM_PARSER_CONCURRENCY);
 
   /**
-   * Current message receipt handle for deadline extension
+   * In-flight parse job promises keyed by receipt handle.
    * @private
    */
-
-  private currentReceiptHandle: string | null = null;
-
-  /**
-   * Last deadline extension timestamp
-   * @private
-   */
-
-  private lastDeadlineExtension: number = 0;
+  private activeJobs: Map<string, Promise<void>> = new Map();
 
   /**
    * Deadline extension interval (30 seconds)
@@ -178,9 +169,10 @@ export class StreamParserService
     this.logger.warn("stream_parser_shutting_down", { signal });
     this.running = false;
 
-    if (this.currentJob)
+    const active = Array.from(this.activeJobs.values());
+    if (active.length > 0)
     {
-      this.currentJob.then(() => process.exit(0)).catch(() => process.exit(1));
+      Promise.all(active).then(() => process.exit(0)).catch(() => process.exit(1));
     }
     else
     {
@@ -461,8 +453,8 @@ export class StreamParserService
     const parseStartTime: number = Date.now();
     this.parseCount++;
 
-    this.currentReceiptHandle = receiptHandle || null;
-    this.lastDeadlineExtension = Date.now();
+    const activeReceiptHandle: string | null = receiptHandle || null;
+    let lastDeadlineExtension: number = Date.now();
 
     await templateRegistry.loadFromDatabase();
 
@@ -643,13 +635,13 @@ export class StreamParserService
         overWatermark = false;
       }
 
-      if (this.currentReceiptHandle && Date.now() - this.lastDeadlineExtension > this.DEADLINE_EXTEND_INTERVAL_MS)
+      if (activeReceiptHandle && Date.now() - lastDeadlineExtension > this.DEADLINE_EXTEND_INTERVAL_MS)
       {
         try
         {
-          this.logger.info("ack_deadline_extending", { job_id: jobId, receiptHandle: this.currentReceiptHandle.substring(0, 20) + "..." });
-          await this.queueService.modifyAckDeadline(settings.PARSE_QUEUE_URL, this.currentReceiptHandle, 60);
-          this.lastDeadlineExtension = Date.now();
+          this.logger.info("ack_deadline_extending", { job_id: jobId, receiptHandle: activeReceiptHandle.substring(0, 20) + "..." });
+          await this.queueService.modifyAckDeadline(settings.PARSE_QUEUE_URL, activeReceiptHandle, 60);
+          lastDeadlineExtension = Date.now();
           this.logger.info("ack_deadline_extended", { job_id: jobId });
         }
         catch (err)
@@ -1132,54 +1124,89 @@ export class StreamParserService
    * @throws Error if database connection fails
    */
 
+  /**
+   * Process a single parse message, deleting the queue entry on
+   * success and acking known bad messages to prevent retry loops.
+   * @private
+   */
+  private async processMessage(payload: ParseMessage, receiptHandle: string): Promise<void>
+  {
+    try
+    {
+      await this.parseJob(payload, receiptHandle);
+      await this.queueService.deleteMessage(settings.PARSE_QUEUE_URL, receiptHandle);
+    }
+    catch (exc)
+    {
+      const errorStr: string = String(exc);
+
+      if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition")))
+      {
+        this.logger.error("stream_parser_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
+        MetricsUtils.increment("parse.message_error_ack", 1);
+        await this.queueService.deleteMessage(settings.PARSE_QUEUE_URL, receiptHandle);
+      }
+      else
+      {
+        this.logger.error("stream_parser_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
+        MetricsUtils.increment("parse.message_error", 1);
+      }
+    }
+  }
+
   private async consumerLoop(): Promise<void>
   {
     await DatabaseService.getInstance().waitForDb();
     await templateRegistry.loadFromDatabase();
-    this.logger.info("stream_parser_consumer_started");
+    this.logger.info("stream_parser_consumer_started", { concurrency: this.concurrency });
 
     while (this.running)
     {
-      const messages = await this.queueService.receiveMessages<ParseMessage>(
-          settings.PARSE_QUEUE_URL,
-          (body) => JSON.parse(body) as ParseMessage,
-          1,
-          5
-      );
+      const freeSlots = this.concurrency - this.activeJobs.size;
 
-      for (const { payload, receiptHandle } of messages)
+      if (freeSlots > 0)
       {
-        this.currentJob = this.parseJob(payload, receiptHandle);
-        try
-        {
-          await this.currentJob;
-          await this.queueService.deleteMessage(settings.PARSE_QUEUE_URL, receiptHandle);
-        }
-        catch (exc)
-        {
-          const errorStr: string = String(exc);
+        const messages = await this.queueService.receiveMessages<ParseMessage>(
+            settings.PARSE_QUEUE_URL,
+            (body) => JSON.parse(body) as ParseMessage,
+            Math.min(freeSlots, 10),
+            5
+        );
 
-          if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition")))
-          {
-            this.logger.error("stream_parser_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
-            MetricsUtils.increment("parse.message_error_ack", 1);
-            await this.queueService.deleteMessage(settings.PARSE_QUEUE_URL, receiptHandle);
-          }
-          else
-          {
-            this.logger.error("stream_parser_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
-            MetricsUtils.increment("parse.message_error", 1);
-          }
-        }
-        finally
+        if (messages.length > 0)
         {
-          this.currentJob = null;
-          this.currentReceiptHandle = null;
+          for (const { payload, receiptHandle } of messages)
+          {
+            const jobPromise = this.processMessage(payload, receiptHandle)
+                .finally(() => { this.activeJobs.delete(receiptHandle); });
+            this.activeJobs.set(receiptHandle, jobPromise);
+          }
+          continue;
         }
+      }
+
+      if (this.activeJobs.size > 0)
+      {
+        if (freeSlots > 0)
+        {
+          // Free slots but queue empty; back off briefly and re-poll.
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+        else
+        {
+          // At concurrency limit, wait for any slot to free up.
+          await Promise.race(Array.from(this.activeJobs.values()));
+        }
+      }
+      else if (this.running)
+      {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
 
     this.logger.info("stream_parser_consumer_stopped");
+
+    await Promise.all(Array.from(this.activeJobs.values()));
   }
 
   /**

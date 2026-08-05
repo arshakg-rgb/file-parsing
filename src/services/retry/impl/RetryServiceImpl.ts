@@ -13,8 +13,9 @@ import {MetricsUtils} from "@utils/response/Metrics";
 import {ClassifyResult} from "@service/stream-parser/io/IClassifier";
 import {LineClassifierServiceImpl} from "@service/stream-parser/impl/LineClassifierServiceImpl.js";
 import Config from "@config/system-config/Config";
+import { settings } from "@shared/Settings.js";
 import {QueueService} from "@shared/QueueService";
-import {QueueMessage} from "@shared/io/IQueueService";
+import {QueueConsumerPool} from "@shared/QueueConsumerPool.js";
 import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
 
 /**
@@ -397,39 +398,35 @@ class RetryServiceImpl extends ServiceManager implements RetryService
     this.logger.info("retry_consumer_started");
     const config: Config = this.getConfig();
 
-    while (true)
-    {
-      const messages: QueueMessage<DLQMessage>[] = await this.queueService.receiveMessages<DLQMessage>(
-        config.settings.DLQ_QUEUE_URL,
-        (body) => JSON.parse(body) as DLQMessage,
-        10
-      );
+    const pool = new QueueConsumerPool<DLQMessage>(this.queueService, this.logger, {
+      queueUrl: config.settings.DLQ_QUEUE_URL,
+      parser: (body) => JSON.parse(body) as DLQMessage,
+      concurrency: settings.QUEUE_CONCURRENCY,
+    });
 
-      for (const { payload, receiptHandle } of messages)
+    await pool.run(async (payload, receiptHandle) => {
+      try
       {
-        try
+        await this.handleDlqEntry(payload);
+        await this.queueService.deleteMessage(config.settings.DLQ_QUEUE_URL, receiptHandle);
+      }
+      catch (exc)
+      {
+        const errorStr: string = String(exc);
+
+        if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition")))
         {
-          await this.handleDlqEntry(payload);
+          this.logger.error("retry_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
+          MetricsUtils.increment("retry.error_ack", 1);
           await this.queueService.deleteMessage(config.settings.DLQ_QUEUE_URL, receiptHandle);
         }
-        catch (exc)
+        else
         {
-          const errorStr: string = String(exc);
-
-          if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition")))
-          {
-            this.logger.error("retry_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
-            MetricsUtils.increment("retry.error_ack", 1);
-            await this.queueService.deleteMessage(config.settings.DLQ_QUEUE_URL, receiptHandle);
-          }
-          else
-          {
-            this.logger.error("retry_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
-            MetricsUtils.increment("retry.error", 1);
-          }
+          this.logger.error("retry_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
+          MetricsUtils.increment("retry.error", 1);
         }
       }
-    }
+    });
   }
 }
 

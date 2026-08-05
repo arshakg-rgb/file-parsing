@@ -8,6 +8,7 @@ import { JobStatus, ReportMessage, JobCounts, JobTimings } from "@shared/models/
 import type {IParseJob, ParseJobAttributes} from "@config/db/models/ParseJob.js";
 import type { OutputPartAttributes } from "@config/db/models/OutputPart.js";
 import {QueueService} from "@shared/QueueService.js";
+import {QueueConsumerPool} from "@shared/QueueConsumerPool.js";
 import {QualityGate} from "@shared/QualityGate.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { ReportService } from "@service/report/ReportService.js";
@@ -15,8 +16,8 @@ import { ReportResponse } from "@service/report/io/IReport.js";
 import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
 import Config from "@config/system-config/Config";
+import { settings } from "@shared/Settings.js";
 import {QualityMetrics} from "@shared/io/IQualityGate";
-import {QueueMessage} from "@shared/io/IQueueService";
 
 /**
  * ReportServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -122,38 +123,34 @@ class ReportServiceImpl extends ServiceManager implements ReportService
     this.logger.info("report_consumer_started");
     const config: Config = this.getConfig();
 
-    while (true)
-    {
-      const messages: QueueMessage<ReportMessage>[] = await this.queueService.receiveMessages<ReportMessage>(
-          config.settings.REPORT_QUEUE_URL,
-          (body) => JSON.parse(body) as ReportMessage,
-          5
-      );
+    const pool = new QueueConsumerPool<ReportMessage>(this.queueService, this.logger, {
+      queueUrl: config.settings.REPORT_QUEUE_URL,
+      parser: (body) => JSON.parse(body) as ReportMessage,
+      concurrency: settings.QUEUE_CONCURRENCY,
+    });
 
-      for (const { payload, receiptHandle } of messages)
+    await pool.run(async (payload, receiptHandle) => {
+      try
       {
-        try
+        await this.generateReport(payload);
+        await this.queueService.deleteMessage(config.settings.REPORT_QUEUE_URL, receiptHandle);
+      }
+      catch (exc)
+      {
+        const errorStr: string = String(exc);
+        if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition")))
         {
-          await this.generateReport(payload);
+          this.logger.error("report_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
+          MetricsUtils.increment("report.error_ack", 1);
           await this.queueService.deleteMessage(config.settings.REPORT_QUEUE_URL, receiptHandle);
         }
-        catch (exc)
+        else
         {
-          const errorStr: string = String(exc);
-          if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition")))
-          {
-            this.logger.error("report_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
-            MetricsUtils.increment("report.error_ack", 1);
-            await this.queueService.deleteMessage(config.settings.REPORT_QUEUE_URL, receiptHandle);
-          }
-          else
-          {
-            this.logger.error("report_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
-            MetricsUtils.increment("report.error", 1);
-          }
+          this.logger.error("report_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
+          MetricsUtils.increment("report.error", 1);
         }
       }
-    }
+    });
   }
 
 

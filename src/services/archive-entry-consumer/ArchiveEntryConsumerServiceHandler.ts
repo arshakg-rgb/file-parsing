@@ -4,7 +4,7 @@ import ArchiveEntryConsumerServiceImpl from "@service/archive-entry-consumer/imp
 import { settings } from "@shared/Settings.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {DatabaseService} from "@shared/DatabaseManager";
-import {QueueMessage} from "@shared/io/IQueueService";
+import {QueueConsumerPool} from "@shared/QueueConsumerPool.js";
 import {QueueService} from "@shared/QueueService";
 
 /**
@@ -38,7 +38,7 @@ export class ArchiveEntryConsumer
     {
       this.service = service;
       this.queueUrl = options.queueUrl;
-      this.maxMessages = options.maxMessages ?? 3;
+      this.maxMessages = options.maxMessages ?? settings.QUEUE_CONCURRENCY;
       this.errorBackoffMs = options.errorBackoffMs ?? 5000;
       this.logger = logger;
     }
@@ -185,19 +185,14 @@ export class ArchiveEntryConsumer
 
     private async consumeLoop(): Promise<void>
     {
-      while (this.running)
-      {
-        const messages: QueueMessage<ArchiveEntryRequest>[] = await QueueService.getInstance().receiveMessages<ArchiveEntryRequest>(
-            this.queueUrl,
-            (body) => JSON.parse(body) as ArchiveEntryRequest,
-            this.maxMessages
-        );
+      const pool = new QueueConsumerPool<ArchiveEntryRequest>(QueueService.getInstance(), this.logger, {
+        queueUrl: this.queueUrl,
+        parser: (body) => JSON.parse(body) as ArchiveEntryRequest,
+        concurrency: this.maxMessages,
+        isRunning: () => this.running,
+      });
 
-        for (const { payload, receiptHandle } of messages)
-        {
-          await this.processMessage(payload, receiptHandle);
-        }
-      }
+      await pool.run((payload, receiptHandle) => this.processMessage(payload, receiptHandle));
     }
 
     /**
