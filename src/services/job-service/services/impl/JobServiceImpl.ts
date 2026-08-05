@@ -5,7 +5,7 @@ import { ValidationError } from "@errors/ValidationError.js";
 import { settings } from "@shared/Settings.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { ParseJobRow } from "@shared/DatabaseManager.js";
-import { SourceType, JobStatus, JobTimings, JobCounts, totalFailed } from "@shared/models/job.js";
+import { SourceType, JobStatus, JobTimings, JobCounts, totalFailed, JobStatusDisplayName, JobStatusCodeByDisplayName } from "@shared/models/job.js";
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
@@ -412,7 +412,9 @@ export class JobServiceImpl implements JobService
    */
   public async getAllJobs(statuses?: string[]): Promise<IJobResponse[]>
   {
-    const rows: ParseJobAttributes[] = await this.postgreSqlManager.repositories.jobs.findAll(statuses);
+    const normalizedStatuses = statuses?.map((s) => JobStatusCodeByDisplayName[s] ?? s)
+      .filter((s): s is JobStatus => Object.values(JobStatus).includes(s as JobStatus));
+    const rows: ParseJobAttributes[] = await this.postgreSqlManager.repositories.jobs.findAll(normalizedStatuses as string[]);
 
     return await Promise.all(rows.map((row: ParseJobAttributes) => this.buildJobResponse(row)));
   }
@@ -424,7 +426,9 @@ export class JobServiceImpl implements JobService
    */
   public async getAllStatuses(): Promise<IStatusesResponse>
   {
-    return { statuses: Object.values(JobStatus) };
+    return {
+      statuses: Object.values(JobStatus).map((code) => JobStatusDisplayName[code as JobStatus]),
+    };
   }
 
   /**
@@ -470,7 +474,7 @@ export class JobServiceImpl implements JobService
     return {
       job_id: row.job_id,
       batch_id: row.batch_id,
-      status: row.status,
+      status: JobStatusDisplayName[row.status as JobStatus],
       counts,
       timings,
       error: row.error,

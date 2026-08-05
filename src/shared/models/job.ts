@@ -4,6 +4,34 @@ import { FailureClass } from "@common/enum/FailureClass.js";
 export { SourceType } from "@common/enum/SourceType.js";
 export { ExecPath } from "@common/enum/ExecPath.js";
 export { JobStatus } from "@common/enum/JobStatus.js";
+
+/**
+ * User-facing one/two-word labels for each job status.
+ */
+export const JobStatusDisplayName: Record<JobStatus, string> = {
+  [JobStatus.QUEUED]: "Created",
+  [JobStatus.INGESTING]: "Ingesting",
+  [JobStatus.AWAITING_PASSWORD]: "Needs Password",
+  [JobStatus.DETECTING]: "Detecting",
+  [JobStatus.PARSING]: "Parsing",
+  [JobStatus.FINALIZING]: "Merging Output",
+  [JobStatus.LOADING]: "Saving to Database",
+  [JobStatus.REPORTING]: "Reporting",
+  [JobStatus.DONE]: "Completed",
+  [JobStatus.PARTIAL]: "Partial",
+  [JobStatus.HELD]: "On Hold",
+  [JobStatus.FAILED]: "Failed",
+};
+
+/**
+ * Reverse lookup from display name to internal status code.
+ */
+export const JobStatusCodeByDisplayName: Record<string, JobStatus> = {};
+for (const code of Object.values(JobStatus) as JobStatus[])
+{
+  JobStatusCodeByDisplayName[JobStatusDisplayName[code]] = code;
+}
+
 export { FailureClass } from "@common/enum/FailureClass.js";
 export { DLQStatus } from "@common/enum/DLQStatus.js";
 
