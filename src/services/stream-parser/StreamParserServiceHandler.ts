@@ -62,6 +62,13 @@ export class StreamParserService
   private readonly concurrency: number = Math.max(1, settings.STREAM_PARSER_CONCURRENCY);
 
   /**
+   * RSS soft limit in bytes. When passed, the consumer will not start new
+   * parse jobs until the process is back under the limit.
+   * @private
+   */
+  private readonly memorySoftLimit: number = settings.STREAM_PARSER_MEMORY_SOFT_LIMIT_MB * 1024 * 1024;
+
+  /**
    * In-flight parse job promises keyed by receipt handle.
    * @private
    */
@@ -877,7 +884,7 @@ export class StreamParserService
             const idx: number = recordIndex++;
             const outputBuffer: OutputBuffer = outputManager.getBuffer(jobId, result.template_id || "default");
 
-            outputBuffer.addRow({
+            const maybeFlush = outputBuffer.addRow({
               ...sanitizedRow,
               _job_id: jobId,
               _byte_offset: byteOffset,
@@ -904,6 +911,11 @@ export class StreamParserService
               _part_id: "auto",
               fields: { s3_url: msg.s3_url, ...sanitizedRow }
             });
+
+            if (maybeFlush)
+            {
+              await maybeFlush;
+            }
 
             counts.parsed++;
             csvWriter.addRow(sanitizedRow, lineNo);
@@ -964,7 +976,7 @@ export class StreamParserService
               const idx: number = recordIndex++;
               const outputBuffer: OutputBuffer = outputManager.getBuffer(jobId, result.template_id || "default");
 
-              outputBuffer.addRow({
+              const maybeFlush = outputBuffer.addRow({
                 ...sanitizedRow,
                 _job_id: jobId,
                 _byte_offset: byteOffset,
@@ -991,6 +1003,11 @@ export class StreamParserService
                 _part_id: "auto",
                 fields: { s3_url: msg.s3_url, ...sanitizedRow }
               });
+
+              if (maybeFlush)
+              {
+                await maybeFlush;
+              }
 
               counts.parsed++;
               csvWriter.addRow(sanitizedRow, lineNo);
@@ -1162,7 +1179,17 @@ export class StreamParserService
 
     while (this.running)
     {
-      const freeSlots = this.concurrency - this.activeJobs.size;
+      let freeSlots = this.concurrency - this.activeJobs.size;
+
+      if (freeSlots > 0 && this.memorySoftLimit && process.memoryUsage().rss >= this.memorySoftLimit)
+      {
+        this.logger.warn("stream_parser_memory_high", {
+          rss: process.memoryUsage().rss,
+          limit: this.memorySoftLimit,
+          active: this.activeJobs.size,
+        });
+        freeSlots = 0;
+      }
 
       if (freeSlots > 0)
       {

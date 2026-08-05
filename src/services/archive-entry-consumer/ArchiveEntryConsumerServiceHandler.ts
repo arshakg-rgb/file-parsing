@@ -189,6 +189,7 @@ export class ArchiveEntryConsumer
         queueUrl: this.queueUrl,
         parser: (body) => JSON.parse(body) as ArchiveEntryRequest,
         concurrency: this.maxMessages,
+        memorySoftLimit: settings.QUEUE_MEMORY_SOFT_LIMIT_MB * 1024 * 1024,
         isRunning: () => this.running,
       });
 

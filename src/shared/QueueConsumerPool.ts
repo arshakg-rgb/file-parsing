@@ -12,6 +12,7 @@ export interface QueueConsumerPoolOptions<TPayload extends object>
   concurrency?: number;
   waitSeconds?: number;
   pollBackoffMs?: number;
+  memorySoftLimit?: number;
   isRunning?: () => boolean;
 }
 
@@ -38,7 +39,17 @@ export class QueueConsumerPool<TPayload extends object>
 
     while (isRunning())
     {
-      const freeSlots: number = concurrency - this.activeJobs.size;
+      let freeSlots: number = Math.max(0, concurrency - this.activeJobs.size);
+
+      if (freeSlots > 0 && this.options.memorySoftLimit && process.memoryUsage().rss >= this.options.memorySoftLimit)
+      {
+        this.logger.warn("queue_memory_high", {
+          rss: process.memoryUsage().rss,
+          limit: this.options.memorySoftLimit,
+          active: this.activeJobs.size,
+        });
+        freeSlots = 0;
+      }
 
       if (freeSlots > 0)
       {

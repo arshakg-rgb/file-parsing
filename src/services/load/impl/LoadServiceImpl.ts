@@ -315,6 +315,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
       queueUrl: config.settings.LOAD_QUEUE_URL,
       parser: (body) => JSON.parse(body) as LoadMessage,
       concurrency: settings.QUEUE_CONCURRENCY,
+      memorySoftLimit: settings.QUEUE_MEMORY_SOFT_LIMIT_MB * 1024 * 1024,
     });
 
     await pool.run(async (payload, receiptHandle) => {

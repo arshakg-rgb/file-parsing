@@ -1,4 +1,6 @@
 import { OutputBuffer } from "./OutputBuffer.js";
+import { parquetOutputService } from "./ParquetOutputService.js";
+import { settings } from "./Settings.js";
 
 /**
  * OutputManager manages the resource lifecycle of OutputBuffer instances
@@ -54,6 +56,17 @@ export class OutputManager
       if (flushedPaths.length > 0)
       {
         paths.push(...flushedPaths);
+
+        const manifest: Record<string, unknown> = {
+          job_id: jobId,
+          parts: flushedPaths,
+          completed_at: new Date().toISOString(),
+        };
+        await parquetOutputService.getGcsUtils().putJson(
+            settings.DATA_BUCKET,
+            `output/${jobId}/_MANIFEST.json`,
+            manifest,
+        );
       }
 
       OutputBuffer.releaseInstance(jobId);

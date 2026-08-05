@@ -704,6 +704,7 @@ export class DetectBootstrapService
       queueUrl: settings.CLASSIFY_QUEUE_URL,
       parser: (body) => JSON.parse(body) as ClassifyMessage,
       concurrency: settings.QUEUE_CONCURRENCY,
+      memorySoftLimit: settings.QUEUE_MEMORY_SOFT_LIMIT_MB * 1024 * 1024,
       isRunning: () => this.running,
     });
 

@@ -1,7 +1,10 @@
 import crypto from "crypto";
+import { createReadStream } from "fs";
+import { pipeline } from "stream/promises";
 import { Storage } from "@google-cloud/storage";
 import Config from "@config/system-config/Config.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
+import { settings } from "../../shared/Settings.js";
 import {GCS_RETRIES, GCS_TIMEOUT_MS, LineState} from "@utils/cache/io/IFirestoreCache";
 import NormalizerUtils from "@utils/normalizers/Normalizer";
 
@@ -25,6 +28,18 @@ export class FirestoreCacheUtils {
    * @private
    */
   private config: Config;
+
+  /**
+   * In-flight upload counter (shared across all instances in the process).
+   * @private
+   */
+  private static activeUploads: number = 0;
+
+  /**
+   * Queue of upload waiters.
+   * @private
+   */
+  private static uploadQueue: Array<() => void> = [];
 
     /**
    * Constructs a new FirestoreCacheUtils instance.
@@ -210,6 +225,67 @@ export class FirestoreCacheUtils {
       }, GCS_TIMEOUT_MS),
       GCS_RETRIES
     );
+  }
+
+    /**
+   * Performs the put file operation by streaming a local file to GCS.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param filePath - The local file path to stream
+   * @param contentType - The content type
+   */
+  public async putFile(
+    bucket: string,
+    key: string,
+    filePath: string,
+    contentType = "application/octet-stream"
+  ): Promise<void> {
+    await this.withUploadLimit(async () => {
+      await this.withRetry(
+        () => this.withTimeout(async () => {
+          const source = createReadStream(filePath);
+          const destination = this.storage
+            .bucket(bucket)
+            .file(key)
+            .createWriteStream({ resumable: true, metadata: { contentType } });
+          await pipeline(source, destination);
+        }, GCS_TIMEOUT_MS),
+        GCS_RETRIES
+      );
+    });
+  }
+
+    /**
+   * Acquires an upload slot, limiting total concurrent GCS uploads.
+   * @param fn - The upload function to run
+   * @returns A promise that resolves to the result
+   * @private
+   */
+
+  private async withUploadLimit<T>(fn: () => Promise<T>): Promise<T>
+  {
+    while (FirestoreCacheUtils.activeUploads >= settings.GCS_UPLOAD_CONCURRENCY)
+    {
+      await new Promise<void>((resolve) => {
+        FirestoreCacheUtils.uploadQueue.push(resolve);
+      });
+    }
+
+    FirestoreCacheUtils.activeUploads++;
+
+    try
+    {
+      return await fn();
+    }
+    finally
+    {
+      FirestoreCacheUtils.activeUploads--;
+      const next = FirestoreCacheUtils.uploadQueue.shift();
+      if (next)
+      {
+        next();
+      }
+    }
   }
 
     /**

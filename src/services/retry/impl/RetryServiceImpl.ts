@@ -402,6 +402,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService
       queueUrl: config.settings.DLQ_QUEUE_URL,
       parser: (body) => JSON.parse(body) as DLQMessage,
       concurrency: settings.QUEUE_CONCURRENCY,
+      memorySoftLimit: settings.QUEUE_MEMORY_SOFT_LIMIT_MB * 1024 * 1024,
     });
 
     await pool.run(async (payload, receiptHandle) => {

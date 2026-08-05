@@ -813,6 +813,7 @@ export class IngestService
           queueUrl: settings.INGEST_QUEUE_URL,
           parser: (body) => JSON.parse(body) as IngestMessage,
           concurrency: settings.QUEUE_CONCURRENCY,
+          memorySoftLimit: settings.QUEUE_MEMORY_SOFT_LIMIT_MB * 1024 * 1024,
           isRunning: () => this.running,
         });
 

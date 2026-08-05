@@ -127,6 +127,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService
       queueUrl: config.settings.REPORT_QUEUE_URL,
       parser: (body) => JSON.parse(body) as ReportMessage,
       concurrency: settings.QUEUE_CONCURRENCY,
+      memorySoftLimit: settings.QUEUE_MEMORY_SOFT_LIMIT_MB * 1024 * 1024,
     });
 
     await pool.run(async (payload, receiptHandle) => {

@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs/promises";
 import { ParquetSchema, ParquetWriter, type SchemaDefinition, type ParquetType } from "@dsnp/parquetjs";
 import { parquetOutputService } from "./ParquetOutputService.js";
+import { settings } from "./Settings.js";
 import Config from "@config/system-config/Config";
 import {OutputRow} from "@shared/io/IOutputBuffer";
 
@@ -51,24 +52,27 @@ export class OutputBuffer
   private readonly partId: string;
 
   /**
-   * Flush Promise
+   * Total flushed rows
    * @private
    */
-
-  private flushPromise: Promise<string | null> | null = null;
+  private totalFlushed: number = 0;
 
   /**
-   * Flush Counter
+   * Pending bytes
    * @private
    */
+  private pendingBytes: number = 0;
 
-  private flushCounter: number = 0;
+  /**
+   * Pending flushes
+   * @private
+   */
+  private pendingFlushes: Promise<void>[] = [];
 
   /**
    * Flushed Paths
    * @private
    */
-
   private flushedPaths: string[] = [];
 
   /**
@@ -80,6 +84,8 @@ export class OutputBuffer
   private constructor(jobId: string)
   {
     this.partId = jobId;
+    this.totalFlushed = 0;
+    this.pendingBytes = 0;
   }
 
   /**
@@ -248,22 +254,94 @@ export class OutputBuffer
   }
 
   /**
-   * Adds row
+   * Adds row and flushes when the threshold is reached.
+   * Returns a promise only when backpressure forces the caller to await.
    * @param row - The row
+   * @returns A promise if the caller must wait for pending flushes, otherwise undefined
    */
 
-  public addRow(row: OutputRow): void
+  public addRow(row: OutputRow): Promise<void> | undefined
   {
     this.rows.push(row);
+    this.pendingBytes += this.estimateSize(row);
+
+    if (!this.shouldFlush())
+    {
+      return undefined;
+    }
+
+    const rowsToFlush: OutputRow[] = this.rows;
+    const bytesToFlush: number = this.pendingBytes;
+    this.rows = [];
+    this.pendingBytes = 0;
+
+    const startRow: number = this.totalFlushed;
+    this.totalFlushed += rowsToFlush.length;
+    const endRow: number = this.totalFlushed;
+
+    const partName: string = `${this.partId}-${startRow}-${endRow}`;
+    const flush: Promise<void> = this.flushPart(rowsToFlush, partName, bytesToFlush).catch((error) => {
+      parquetOutputService.getLogger().error("parquet_flush_error", { part_name: partName, error: String(error) });
+      throw error;
+    });
+    this.pendingFlushes.push(flush);
+
+    if (this.pendingFlushes.length >= settings.OUTPUT_BUFFER_MAX_PENDING_FLUSHES)
+    {
+      const pending: Promise<void>[] = this.pendingFlushes;
+      this.pendingFlushes = [];
+      return Promise.all(pending).then(() => {});
+    }
+
+    return undefined;
   }
 
   /**
-   * Flushes the operation
-   * @returns A promise that resolves to the result
+   * Estimates the byte size of a row.
+   * @param row - The row
+   * @returns The estimated size in bytes
+   * @private
+   */
+
+  private estimateSize(row: OutputRow): number
+  {
+    let size = 0;
+    for (const v of Object.values(row))
+    {
+      if (v === null || v === undefined) { size += 4; }
+      else if (typeof v === "number") { size += 8; }
+      else if (typeof v === "boolean") { size += 1; }
+      else if (v instanceof Date) { size += 8; }
+      else if (typeof v === "string") { size += Buffer.byteLength(v, "utf8"); }
+      else { size += Buffer.byteLength(JSON.stringify(v), "utf8"); }
+    }
+    return size;
+  }
+
+  /**
+   * Returns whether the buffer should flush.
+   * @returns True if the buffer should flush
+   * @private
+   */
+
+  private shouldFlush(): boolean
+  {
+    return this.rows.length >= settings.OUTPUT_BUFFER_FLUSH_THRESHOLD_ROWS || this.pendingBytes >= settings.OUTPUT_BUFFER_FLUSH_THRESHOLD_BYTES;
+  }
+
+  /**
+   * Flushes the remaining rows and waits for all pending flushes.
+   * @returns A promise that resolves to the last flushed path, or null
    */
 
   public async flush(): Promise<string | null>
   {
+    if (this.pendingFlushes.length > 0)
+    {
+      await Promise.all(this.pendingFlushes);
+      this.pendingFlushes = [];
+    }
+
     if (this.rows.length === 0)
     {
       return null;
@@ -271,71 +349,72 @@ export class OutputBuffer
 
     const rowsToFlush: OutputRow[] = this.rows;
     this.rows = [];
+    this.pendingBytes = 0;
 
-    const flushPartId: string = this.flushCounter === 0 ? this.partId : `${this.partId}-${this.flushCounter}`;
-    this.flushCounter++;
+    const startRow: number = this.totalFlushed;
+    this.totalFlushed += rowsToFlush.length;
+    const endRow: number = this.totalFlushed;
+    const partName: string = `${this.partId}-${startRow}-${endRow}`;
 
-    const flushOperation = async (): Promise<string | null> =>
-    {
-      parquetOutputService.getLogger().info("parquet_flush", {
-        part_id: flushPartId,
-        row_count: rowsToFlush.length,
-      });
-
-      try
-      {
-        const sanitizedRows: Record<string, unknown>[] = rowsToFlush.map(
-            (row) => OutputBuffer.sanitizeParquetValue(row, true) as Record<string, unknown>,
-        );
-        const schema: ParquetSchema = OutputBuffer.buildSchema(sanitizedRows);
-        const tempFile: string = path.join(os.tmpdir(), `${flushPartId}.parquet`);
-        const writer: ParquetWriter = await ParquetWriter.openFile(schema, tempFile);
-
-        for (const row of sanitizedRows)
-        {
-          await writer.appendRow(row);
-        }
-
-        await writer.close();
-
-        const buffer = await fs.readFile(tempFile);
-        const config: Config = parquetOutputService.getGcsUtils().getConfig();
-        const gcsPath = `gs://${config.settings.DATA_BUCKET}/output/${flushPartId}.parquet`;
-        await parquetOutputService.getGcsUtils().putObject(config.settings.DATA_BUCKET, `output/${flushPartId}.parquet`, buffer);
-        this.flushedPaths.push(gcsPath);
-
-        await fs.unlink(tempFile).catch(() => {});
-
-        return gcsPath;
-      }
-      catch (error)
-      {
-        parquetOutputService.getLogger().error("parquet_flush_error", { part_id: flushPartId, error: String(error) });
-        throw error;
-      }
-    };
-
-    this.flushPromise = flushOperation();
-
-    try
-    {
-      return await this.flushPromise;
-    }
-    finally
-    {
-      this.flushPromise = null;
-    }
+    await this.flushPart(rowsToFlush, partName, 0);
+    return this.flushedPaths[this.flushedPaths.length - 1] ?? null;
   }
 
   /**
-   * Waits for for pending flush
+   * Writes a single part to GCS.
+   * @param rowsToFlush - The rows to write
+   * @param partName - The part name
+   * @param _bytesToFlush - The original pending bytes (for diagnostics)
+   * @private
+   */
+
+  private async flushPart(rowsToFlush: OutputRow[], partName: string, _bytesToFlush: number): Promise<void>
+  {
+    parquetOutputService.getLogger().info("parquet_flush", {
+      part_name: partName,
+      row_count: rowsToFlush.length,
+    });
+
+    const sanitizedRows: Record<string, unknown>[] = rowsToFlush.map(
+        (row) => OutputBuffer.sanitizeParquetValue(row, true) as Record<string, unknown>,
+    );
+
+    const schema: ParquetSchema = OutputBuffer.buildSchema(sanitizedRows);
+    const tempFile: string = path.join(os.tmpdir(), `${partName}.parquet`);
+    const writer: ParquetWriter = await ParquetWriter.openFile(schema, tempFile);
+
+    for (const row of sanitizedRows)
+    {
+      await writer.appendRow(row);
+    }
+
+    await writer.close();
+
+    const config: Config = parquetOutputService.getGcsUtils().getConfig();
+    const gcsPath = `gs://${config.settings.DATA_BUCKET}/output/${partName}.parquet`;
+    try
+    {
+      await parquetOutputService.getGcsUtils().putFile(config.settings.DATA_BUCKET, `output/${partName}.parquet`, tempFile, "application/octet-stream");
+    }
+    finally
+    {
+      await fs.unlink(tempFile).catch(() => {});
+    }
+
+    this.flushedPaths.push(gcsPath);
+    parquetOutputService.getLogger().info("parquet_flush_complete", { part_name: partName, path: gcsPath, row_count: rowsToFlush.length });
+  }
+
+  /**
+   * Waits for pending flushes
    */
 
   public async waitForPendingFlush(): Promise<void>
   {
-    if (this.flushPromise)
+    if (this.pendingFlushes.length > 0)
     {
-      await this.flushPromise;
+      await Promise.all(this.pendingFlushes);
+      this.pendingFlushes = [];
     }
   }
 
