@@ -285,15 +285,21 @@ export class IngestService
 
     try
     {
-      const currentStatus: JobStatus = await DatabaseService.getInstance().repositories.jobs.getStatus(jobId) as JobStatus;
+      const moved = await DatabaseService.getInstance().repositories.jobs.tryTransitionStatus(
+          jobId,
+          JobStatus.INGESTING,
+          [JobStatus.QUEUED, JobStatus.AWAITING_PASSWORD],
+          {
+            timings: { ingesting_at: new Date().toISOString() },
+          }
+      );
 
-      if (currentStatus !== JobStatus.QUEUED && currentStatus !== JobStatus.AWAITING_PASSWORD)
+      if (!moved)
       {
-        this.logger.info("ingest_unexpected_status", { job_id: jobId, current_status: currentStatus });
+        this.logger.info("ingest_unexpected_status", { job_id: jobId });
         return;
       }
 
-      await this.transition(jobId, JobStatus.INGESTING);
       this.logger.info("ingest_start", { job_id: jobId, source_type: msg.source_type });
       MetricsUtils.increment("ingest.start", 1, { source_type: msg.source_type });
 

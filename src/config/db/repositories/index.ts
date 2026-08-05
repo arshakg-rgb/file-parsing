@@ -104,6 +104,50 @@ export class JobRepository {
   }
 
     /**
+   * Atomically transitions status from an allowed set of source statuses.
+   * Returns true if the row was updated (the CAS succeeded), false otherwise.
+   *
+   * @param jobId - The job identifier
+   * @param newStatus - The desired status
+   * @param allowedFromStatuses - Source statuses that permit the move
+   * @param extraFields - Additional fields to merge into the update
+   * @returns true if the transition was applied, false if it was already moved
+   */
+  async tryTransitionStatus(
+    jobId: string,
+    newStatus: string,
+    allowedFromStatuses: string[],
+    extraFields: Partial<ParseJobAttributes> = {}
+  ): Promise<boolean>
+  {
+    const row = await this.findById(jobId);
+
+    if (!row || !allowedFromStatuses.includes(row.status))
+    {
+      return false;
+    }
+
+    const timings = row.timings ? { ...row.timings, ...(extraFields.timings || {}) } : (extraFields.timings || {});
+
+    const [affected] = await this.ParseJob.update(
+      {
+        ...extraFields,
+        status: newStatus,
+        timings,
+        updated_at: new Date(),
+      },
+      {
+        where: {
+          job_id: jobId,
+          status: { [Op.in]: allowedFromStatuses },
+        },
+      }
+    );
+
+    return affected > 0;
+  }
+
+    /**
    * Gets field spec
    * @param jobId - The job identifier
    * @returns A promise that resolves to the list
