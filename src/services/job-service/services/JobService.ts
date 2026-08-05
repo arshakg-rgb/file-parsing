@@ -10,7 +10,7 @@ export interface JobService
   findStuckJobs(thresholdMinutes: number): Promise<IStuckJobsResponse>;
   getJob(jobId: string): Promise<IJobResponse | null>;
   getBatchJobs(batchId: string): Promise<IJobResponse[]>;
-  getAllJobs(): Promise<IJobResponse[]>;
+  getAllJobs(statuses?: string[]): Promise<IJobResponse[]>;
   providePassword(jobId: string, request: IProvidePasswordRequest): Promise<void>;
   releaseHold(jobId: string): Promise<void>;
   markFailed(jobId: string, request: IMarkFailedRequest): Promise<void>;

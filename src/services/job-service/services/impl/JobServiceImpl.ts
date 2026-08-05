@@ -5,7 +5,7 @@ import { ValidationError } from "@errors/ValidationError.js";
 import { settings } from "@shared/Settings.js";
 import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import type { ParseJobRow } from "@shared/DatabaseManager.js";
-import { SourceType, JobStatus, JobTimings, JobCounts } from "@shared/models/job.js";
+import { SourceType, JobStatus, JobTimings, JobCounts, totalFailed } from "@shared/models/job.js";
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
@@ -388,16 +388,7 @@ export class JobServiceImpl implements JobService
       return null;
     }
 
-    const timings = await this.buildTimingsWithDownload(row.job_id, row.timings as JobTimings);
-
-    return {
-      job_id: row.job_id,
-      batch_id: row.batch_id,
-      status: row.status,
-      counts: row.counts as JobCounts,
-      timings,
-      error: row.error,
-    };
+    return await this.buildJobResponse(row as ParseJobAttributes);
   }
 
   /**
@@ -411,19 +402,7 @@ export class JobServiceImpl implements JobService
   {
     const rows: ParseJobAttributes[] = await this.postgreSqlManager.repositories.jobs.findByBatchId(batchId);
 
-    return await Promise.all(rows.map(async (row: ParseJobRow) =>
-    {
-      const timings = await this.buildTimingsWithDownload(row.job_id, row.timings as JobTimings);
-
-      return {
-        job_id: row.job_id,
-        batch_id: row.batch_id,
-        status: row.status,
-        counts: row.counts as JobCounts,
-        timings,
-        error: row.error,
-      };
-    }));
+    return await Promise.all(rows.map((row: ParseJobAttributes) => this.buildJobResponse(row)));
   }
 
   /**
@@ -431,23 +410,11 @@ export class JobServiceImpl implements JobService
    *
    * @returns A list of all jobs.
    */
-  public async getAllJobs(): Promise<IJobResponse[]>
+  public async getAllJobs(statuses?: string[]): Promise<IJobResponse[]>
   {
-    const rows: ParseJobAttributes[] = await this.postgreSqlManager.repositories.jobs.findAll();
+    const rows: ParseJobAttributes[] = await this.postgreSqlManager.repositories.jobs.findAll(statuses);
 
-    return await Promise.all(rows.map(async (row: ParseJobRow) =>
-    {
-      const timings = await this.buildTimingsWithDownload(row.job_id, row.timings as JobTimings);
-
-      return {
-        job_id: row.job_id,
-        batch_id: row.batch_id,
-        status: row.status,
-        counts: row.counts as JobCounts,
-        timings,
-        error: row.error,
-      };
-    }));
+    return await Promise.all(rows.map((row: ParseJobAttributes) => this.buildJobResponse(row)));
   }
 
   /**
@@ -472,6 +439,43 @@ export class JobServiceImpl implements JobService
       }
     }
     return timings;
+  }
+
+  /**
+   * Builds a full job response including input, fields, derived timings and counts.
+   */
+  private async buildJobResponse(row: ParseJobAttributes): Promise<IJobResponse>
+  {
+    const counts = row.counts as JobCounts;
+    const rawTimings = row.timings as JobTimings;
+    const timings = await this.buildTimingsWithDownload(row.job_id, rawTimings);
+
+    const startedAt = rawTimings.ingesting_at
+        || rawTimings.parsing_at
+        || rawTimings.queued_at
+        || row.created_at?.toISOString();
+
+    const finishedAt = rawTimings.completed_at || undefined;
+
+    return {
+      job_id: row.job_id,
+      batch_id: row.batch_id,
+      status: row.status,
+      counts,
+      timings,
+      error: row.error,
+      input: {
+        source_type: row.source_type,
+        source_ref: row.source_ref,
+        s3_url: row.s3_url,
+        size: row.size,
+      },
+      fields: row.field_spec as string[],
+      started_at: startedAt,
+      finished_at: finishedAt,
+      parsed: counts.parsed,
+      failed: totalFailed(counts),
+    };
   }
 
   /**

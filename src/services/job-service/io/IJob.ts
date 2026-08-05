@@ -37,6 +37,13 @@ export interface IUploadAndCreateJobRequest {
 /**
  * Job response payload.
  */
+export interface IJobInput {
+  source_type: string;
+  source_ref: string;
+  s3_url?: string | null | undefined;
+  size?: number | null | undefined;
+}
+
 export interface IJobResponse {
   job_id: string;
   batch_id: string | null | undefined;
@@ -44,6 +51,12 @@ export interface IJobResponse {
   counts: JobCounts;
   timings: JobTimings;
   error: string | null | undefined;
+  input: IJobInput;
+  fields: string[];
+  started_at: string | null | undefined;
+  finished_at: string | null | undefined;
+  parsed: number;
+  failed: number;
 }
 
 /**

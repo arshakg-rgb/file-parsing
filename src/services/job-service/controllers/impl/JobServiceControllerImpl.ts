@@ -206,7 +206,14 @@ export class JobControllerImpl implements JobServiceController
   {
     try
     {
-      const result: IJobResponse[] = await this.service.getAllJobs();
+      const raw = req.query.statuses;
+      const statuses: string[] | undefined = typeof raw === "string"
+          ? raw.split(",").map((s) => s.trim()).filter(Boolean)
+          : Array.isArray(raw)
+              ? raw.map(String).map((s) => s.trim()).filter(Boolean)
+              : undefined;
+
+      const result: IJobResponse[] = await this.service.getAllJobs(statuses);
       this.handleSuccessResponse(res, result);
     }
     catch (err)

@@ -61,12 +61,14 @@ export class JobRepository {
   }
 
     /**
-   * Finds all jobs
+   * Finds all jobs, optionally filtered by statuses
+   * @param statuses - Optional list of statuses to filter by
    * @returns A promise that resolves to the list
    */
-  async findAll(): Promise<ParseJobAttributes[]>
+  async findAll(statuses?: string[]): Promise<ParseJobAttributes[]>
   {
-    return (await this.ParseJob.findAll({ order: [["created_at", "DESC"]], raw: true })) as ParseJobAttributes[];
+    const where = statuses && statuses.length > 0 ? { status: { [Op.in]: statuses } } : undefined;
+    return (await this.ParseJob.findAll({ where, order: [["created_at", "DESC"]], raw: true })) as ParseJobAttributes[];
   }
 
     /**
