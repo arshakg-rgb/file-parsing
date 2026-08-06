@@ -98,12 +98,14 @@ export class JobRepository
    */
   async findById(jobId: string, _options?: { attributes?: (keyof ParseJobAttributes)[] }): Promise<ParseJobAttributes | null>
   {
-    const [row] = await this.bq().query<Record<string, unknown>>(
+    console.log("[DEBUG] findById", { table: FULL_TABLE, jobId });
+    const rows = await this.bq().query<Record<string, unknown>>(
       `SELECT * FROM ${FULL_TABLE} WHERE job_id = @job_id LIMIT 1`,
       { job_id: jobId }
     );
+    console.log("[DEBUG] findById result", { jobId, rowCount: rows.length, first: rows[0] });
 
-    return row ? fromRow(row) : null;
+    return rows[0] ? fromRow(rows[0]) : null;
   }
 
   /**
