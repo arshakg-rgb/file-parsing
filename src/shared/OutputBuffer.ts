@@ -346,11 +346,39 @@ export class OutputBuffer
         (row) => OutputBuffer.sanitizeParquetValue(row, true) as Record<string, unknown>,
     );
 
-    const schema: ParquetSchema = OutputBuffer.buildSchema(sanitizedRows);
+    const baseTime = Date.now();
+    const loadRows: Record<string, unknown>[] = sanitizedRows.map((row, i) => {
+      const fields: Record<string, unknown> = {};
+
+      for (const [k, v] of Object.entries(row))
+      {
+        if (!k.startsWith("_"))
+        {
+          fields[k] = v;
+        }
+      }
+
+      return {
+        id: baseTime + i,
+        _job_id: row._job_id,
+        _byte_offset: row._byte_offset,
+        _byte_length: row._byte_length,
+        _record_index: row._record_index,
+        _line_no: row._line_no,
+        _template_id: row._template_id,
+        _template_version: row._template_version,
+        _checksum: row._checksum,
+        _parsed_at: row._parsed_at,
+        _part_id: row._part_id,
+        fields: JSON.stringify(fields),
+      };
+    });
+
+    const schema: ParquetSchema = OutputBuffer.buildSchema(loadRows);
     const tempFile: string = path.join(os.tmpdir(), `${partName}.parquet`);
     const writer: ParquetWriter = await ParquetWriter.openFile(schema, tempFile);
 
-    for (const row of sanitizedRows)
+    for (const row of loadRows)
     {
       await writer.appendRow(row);
     }

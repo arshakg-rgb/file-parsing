@@ -1,6 +1,5 @@
 import pino from "pino";
 import { BigQuery, Dataset, Table, Job } from "@google-cloud/bigquery";
-import { randomUUID } from "crypto";
 import { settings } from "@shared/Settings.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import ServiceManager from "../ServiceManager.js";
@@ -324,17 +323,11 @@ export class BigQueryManager extends ServiceManager
   }
 
   /**
-   * Bulk-loads a Parquet file from GCS into `parsed_records` by loading it
-   * into a temporary staging table and then running an INSERT ... SELECT
-   * that collapses all non-system columns into the JSON `fields` column.
+   * Bulk-loads a Parquet file from GCS directly into `parsed_records`.
    */
   public async bulkLoadFromGcs(gcsUri: string): Promise<number>
   {
-    const stagingName = `parsed_records_staging_${randomUUID().replace(/-/g, "_")}`;
-    const stagingFull = this.fullTableName(stagingName);
-    const targetFull = this.fullTableName("parsed_records");
-
-    this.logger.info({ source: gcsUri, staging: stagingName }, "bigquery_bulk_load_start");
+    this.logger.info({ source: gcsUri }, "bigquery_bulk_load_start");
 
     const [job] = await this.client.createJob({
       configuration: {
@@ -343,64 +336,23 @@ export class BigQueryManager extends ServiceManager
           destinationTable: {
             projectId: settings.BIGQUERY_PROJECT_ID,
             datasetId: settings.BIGQUERY_DATASET,
-            tableId: stagingName,
+            tableId: "parsed_records",
           },
           sourceFormat: "PARQUET",
           autodetect: true,
-          writeDisposition: "WRITE_TRUNCATE",
+          writeDisposition: "WRITE_APPEND",
         },
       },
     });
 
-    await this.waitForJob(job);
+    const metadata = await this.waitForJob(job);
+    const outputRows = Number((metadata as { statistics?: { load?: { outputRows?: string | number } } }).statistics?.load?.outputRows ?? 0);
 
-    const schema = await this.getTableSchema(stagingName);
-    const systemCols = new Set<string>([
-      "id", "_job_id", "_byte_offset", "_byte_length", "_record_index",
-      "_line_no", "_template_id", "_template_version", "_checksum", "_parsed_at", "_part_id",
-    ]);
-    const userCols = schema.map((f) => f.name).filter((n) => !systemCols.has(n));
-    const fieldsExpr = userCols.length
-      ? `TO_JSON_STRING(STRUCT(${userCols.map((c) => this.escapeIdentifier(c)).join(", ")}))`
-      : `'{}'`;
-
-    const insertSql = `
-      INSERT INTO ${targetFull}
-        (id, _job_id, _byte_offset, _byte_length, _record_index, _line_no, _template_id, _template_version, _checksum, _parsed_at, _part_id, fields)
-      SELECT
-        FARM_FINGERPRINT(GENERATE_UUID()) AS id,
-        _job_id,
-        _byte_offset,
-        _byte_length,
-        _record_index,
-        _line_no,
-        _template_id,
-        _template_version,
-        _checksum,
-        _parsed_at,
-        _part_id,
-        ${fieldsExpr} AS fields
-      FROM ${stagingFull}
-    `;
-
-    const inserted = await this.execute(insertSql);
-
-    await this.client.query({
-      query: `DROP TABLE IF EXISTS ${stagingFull}`,
-      useLegacySql: false,
-      location: settings.BIGQUERY_LOCATION,
-    });
-
-    this.logger.info({ source: gcsUri, staging: stagingName, inserted }, "bigquery_bulk_load_complete");
-    return inserted;
+    this.logger.info({ source: gcsUri, outputRows }, "bigquery_bulk_load_complete");
+    return outputRows;
   }
 
-  private escapeIdentifier(name: string): string
-  {
-    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name : `\`${name.replace(/`/g, "``")}\``;
-  }
-
-  private async waitForJob(job: Job): Promise<void>
+  private async waitForJob(job: Job): Promise<unknown>
   {
     while (true)
     {
@@ -413,7 +365,7 @@ export class BigQueryManager extends ServiceManager
         {
           throw new Error(`BigQuery load job failed: ${JSON.stringify(status.errorResult)}`);
         }
-        return;
+        return metadata;
       }
 
       await new Promise((r) => setTimeout(r, 500));
