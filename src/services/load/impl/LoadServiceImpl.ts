@@ -205,12 +205,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     {
       for (const s3Path of msg.output_paths || [])
       {
-        let partRows = 0;
-        for await (const batch of this.readParquetBatches(s3Path, this.UPSERT_BATCH))
-        {
-          await this.upsertRows(jobId, batch);
-          partRows += batch.length;
-        }
+        const partRows = await this.dbManager.repositories.parsedRecords.bulkLoadFromGcs(s3Path);
 
         if (!partRows)
         {

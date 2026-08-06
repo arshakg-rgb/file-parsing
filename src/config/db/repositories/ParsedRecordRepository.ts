@@ -67,6 +67,14 @@ export class ParsedRecordRepository
   }
 
   /**
+   * Bulk-loads a Parquet file from GCS into the parsed_records table.
+   */
+  async bulkLoadFromGcs(gcsPath: string): Promise<number>
+  {
+    return BigQueryManager.getInstance().bulkLoadFromGcs(gcsPath);
+  }
+
+  /**
    * Streaming-inserts rows into the parsed_records table.
    */
   async bulkCreate(rows: ParsedRecordCreationAttributes[], _ignoreDuplicates = true): Promise<void>
