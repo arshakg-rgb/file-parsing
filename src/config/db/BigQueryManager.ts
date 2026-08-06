@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import pino from "pino";
 import { BigQuery, Dataset, Table, Job } from "@google-cloud/bigquery";
 import { settings } from "@shared/Settings.js";
@@ -323,11 +324,17 @@ export class BigQueryManager extends ServiceManager
   }
 
   /**
-   * Bulk-loads a Parquet file from GCS directly into `parsed_records`.
+   * Bulk-loads a Parquet file from GCS into a temporary staging table, then
+   * uses a DML INSERT ... SELECT to cast the STRING `fields` column into the
+   * target `JSON` column of `parsed_records`.
    */
   public async bulkLoadFromGcs(gcsUri: string): Promise<number>
   {
-    this.logger.info({ source: gcsUri }, "bigquery_bulk_load_start");
+    const stagingName = `parsed_records_staging_${randomUUID().replace(/-/g, "_")}`;
+    const stagingFull = this.fullTableName(stagingName);
+    const targetFull = this.fullTableName("parsed_records");
+
+    this.logger.info({ source: gcsUri, staging: stagingName }, "bigquery_bulk_load_start");
 
     const [job] = await this.client.createJob({
       configuration: {
@@ -336,11 +343,11 @@ export class BigQueryManager extends ServiceManager
           destinationTable: {
             projectId: settings.BIGQUERY_PROJECT_ID,
             datasetId: settings.BIGQUERY_DATASET,
-            tableId: "parsed_records",
+            tableId: stagingName,
           },
           sourceFormat: "PARQUET",
           autodetect: true,
-          writeDisposition: "WRITE_APPEND",
+          writeDisposition: "WRITE_TRUNCATE",
         },
       },
     });
@@ -348,8 +355,35 @@ export class BigQueryManager extends ServiceManager
     const metadata = await this.waitForJob(job);
     const outputRows = Number((metadata as { statistics?: { load?: { outputRows?: string | number } } }).statistics?.load?.outputRows ?? 0);
 
-    this.logger.info({ source: gcsUri, outputRows }, "bigquery_bulk_load_complete");
-    return outputRows;
+    const insertSql = `
+      INSERT INTO ${targetFull}
+        (id, _job_id, _byte_offset, _byte_length, _record_index, _line_no, _template_id, _template_version, _checksum, _parsed_at, _part_id, fields)
+      SELECT
+        id,
+        _job_id,
+        _byte_offset,
+        _byte_length,
+        _record_index,
+        _line_no,
+        _template_id,
+        _template_version,
+        _checksum,
+        _parsed_at,
+        _part_id,
+        PARSE_JSON(fields) AS fields
+      FROM ${stagingFull}
+    `;
+
+    const inserted = await this.execute(insertSql);
+
+    await this.client.query({
+      query: `DROP TABLE IF EXISTS ${stagingFull}`,
+      useLegacySql: false,
+      location: settings.BIGQUERY_LOCATION,
+    });
+
+    this.logger.info({ source: gcsUri, staging: stagingName, outputRows, inserted }, "bigquery_bulk_load_complete");
+    return inserted;
   }
 
   private async waitForJob(job: Job): Promise<unknown>
