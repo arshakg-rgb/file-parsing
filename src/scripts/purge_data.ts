@@ -1,5 +1,5 @@
-import pino from "pino";
-import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
+import { BigQueryManager } from "@config/db/BigQueryManager.js";
+import { settings } from "@shared/Settings.js";
 import { createLogger } from "@utils/logger/Log.js";
 
 /**
@@ -10,28 +10,26 @@ const logger = createLogger(module);
 /**
  * Performs the purge database operation.
  */
+const TABLES = [
+  "parse_jobs",
+  "output_parts",
+  "rubbish_log",
+  "dead_letters",
+  "pending_archive_entries",
+  "parsed_records",
+];
+
 export async function purgeDatabase(): Promise<void> {
   logger.info("Starting database purge...");
 
-  const dbManager = PostgreSqlManager.getInstance();
-  await dbManager.initialize();
-  const { ParseJob, OutputPart, RubbishLog, DeadLetter, PendingArchiveEntry, ParsedRecord } = dbManager.models;
+  const bq = BigQueryManager.getInstance();
+  await bq.initialize();
 
-  // The schema does not define foreign keys, so purge in dependency order
-  const deletedParseJobs = await ParseJob.destroy({ where: {}, truncate: false });
-  logger.info(`Deleted ${deletedParseJobs} jobs from parse_jobs`);
-
-  const [outputCount, rubbishCount, dlqCount, pendingCount, parsedCount] = await Promise.all([
-    OutputPart.count(),
-    RubbishLog.count(),
-    DeadLetter.count(),
-    PendingArchiveEntry.count(),
-    ParsedRecord.count(),
-  ]);
-
-  logger.info(
-    `Remaining records - output_parts: ${outputCount}, rubbish_log: ${rubbishCount}, dead_letters: ${dlqCount}, pending_archive_entries: ${pendingCount}, parsed_records: ${parsedCount}`
-  );
+  for (const table of TABLES) {
+    const fullTable = `\`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASET}.${table}\``;
+    const deleted = await bq.execute(`DELETE FROM ${fullTable} WHERE TRUE`);
+    logger.info(`Deleted ${deleted} rows from ${table}`);
+  }
 
   logger.info("Database purge complete");
 }
@@ -40,11 +38,7 @@ export async function purgeDatabase(): Promise<void> {
  * Main entry point of the application
  */
 async function main() {
-  try {
-    await purgeDatabase();
-  } finally {
-    await PostgreSqlManager.getInstance().shutdown();
-  }
+  await purgeDatabase();
 }
 
 main().catch(console.error);

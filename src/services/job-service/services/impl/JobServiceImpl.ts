@@ -12,7 +12,7 @@ import {JobService } from "@service/job-service/services/JobService.js";
 import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IStatusesResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest, IDownloadCsvResponse } from "@service/job-service/io/IJob.js";
 import {HttpError} from "@errors/HttpError.js";
 import {ServerError} from "@errors/ServerError.js";
-import {ParseJob, IParseJob, ParseJobAttributes} from "@config/db/models";
+import type {IParseJob, ParseJobAttributes} from "@config/db/models";
 import {GcsUtils} from "@shared/GcsUtils";
 import {QueueService} from "@shared/QueueService";
 
@@ -221,7 +221,7 @@ export class JobServiceImpl implements JobService
     };
 
     this.logger.info("job_created", { job_id: jobId, queue_url: settings.INGEST_QUEUE_URL });
-    await ParseJob.create(row);
+    await this.dbManager.repositories.jobs.create(row);
 
     const messageId: string = await this.queueService.sendRaw(settings.INGEST_QUEUE_URL, {
       job_id: jobId,
@@ -343,7 +343,7 @@ export class JobServiceImpl implements JobService
     };
 
     this.logger.info("upload_job_created", { job_id: jobId, queue_url: settings.INGEST_QUEUE_URL, bytes: source_buffer.length });
-    await ParseJob.create(row);
+    await this.dbManager.repositories.jobs.create(row);
 
     const messageId: string = await this.queueService.sendRaw(settings.INGEST_QUEUE_URL, {
       job_id: jobId,

@@ -8,8 +8,6 @@ import { settings } from "@shared/Settings.js";
 import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
-import { ParsedRecord, IParsedRecord } from "@config/db/models";
-import ParseJob from "@config/db/models/ParseJob.js";
 import { DatabaseManager } from "@shared/DatabaseManager.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { LoadMessage } from "@shared/models/job.js";
@@ -193,8 +191,8 @@ class LoadServiceImpl extends ServiceManager implements LoadService
       return;
     }
 
-    const parseJob = await ParseJob.findByPk(jobId, { attributes: ["size"] });
-    this.UPSERT_BATCH = this.deriveBatchSize(parseJob?.size);
+    const parseJob = await this.dbManager.repositories.jobs.findById(jobId);
+    this.UPSERT_BATCH = this.deriveBatchSize(parseJob?.size ?? undefined);
 
     this.logger.info("load_start", { job_id: jobId, parts: (msg.output_paths || []).length, size: parseJob?.size, batch: this.UPSERT_BATCH });
     MetricsUtils.increment("load.start", 1, { parts: String((msg.output_paths || []).length) });
