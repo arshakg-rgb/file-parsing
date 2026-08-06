@@ -1,4 +1,4 @@
-import { BigQueryManager, paramTypes } from "../BigQueryManager.js";
+import { BigQueryManager } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   SchemaMigrationAttributes,
@@ -50,7 +50,7 @@ export class SchemaMigrationRepository
       `INSERT INTO ${FULL_TABLE} (version, applied_at, description)
       VALUES (@version, CURRENT_TIMESTAMP(), @description)`,
       params,
-      paramTypes(params, { description: "STRING" })
+      await BigQueryManager.getInstance().inferTypes(params, TABLE)
     );
   }
 }

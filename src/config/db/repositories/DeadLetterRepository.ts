@@ -40,8 +40,8 @@ export class DeadLetterRepository
   {
     if (options?.conflictOn === "job_id_line_no")
     {
-      const [existing] = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-        `SELECT * FROM ${FULL_TABLE} WHERE job_id = @job_id AND line_no = @line_no LIMIT 1`,
+      const existing = await BigQueryManager.getInstance().queryOne<Record<string, unknown>>(
+        TABLE,
         { job_id: data.job_id, line_no: data.line_no }
       );
       if (existing) return null;
@@ -51,29 +51,20 @@ export class DeadLetterRepository
 
     try
     {
-      await BigQueryManager.getInstance().execute(
-        `INSERT INTO ${FULL_TABLE} (
-          dlq_id, job_id, byte_offset, byte_length, line_no, raw_bytes,
-          failure_class, error, attempts, status, created_at, updated_at
-        ) VALUES (
-          @dlq_id, @job_id, @byte_offset, @byte_length, @line_no, @raw_bytes,
-          @failure_class, @error, @attempts, @status, @created_at, @updated_at
-        )`,
-        {
-          dlq_id: data.dlq_id,
-          job_id: data.job_id,
-          byte_offset: data.byte_offset,
-          byte_length: data.byte_length,
-          line_no: data.line_no,
-          raw_bytes: data.raw_bytes,
-          failure_class: data.failure_class,
-          error: data.error,
-          attempts: data.attempts ?? 0,
-          status: data.status,
-          created_at: now,
-          updated_at: now,
-        }
-      );
+      await BigQueryManager.getInstance().insertOne(TABLE, {
+        dlq_id: data.dlq_id,
+        job_id: data.job_id,
+        byte_offset: data.byte_offset,
+        byte_length: data.byte_length,
+        line_no: data.line_no,
+        raw_bytes: data.raw_bytes,
+        failure_class: data.failure_class,
+        error: data.error,
+        attempts: data.attempts ?? 0,
+        status: data.status,
+        created_at: now,
+        updated_at: now,
+      });
     }
     catch
     {
@@ -102,11 +93,7 @@ export class DeadLetterRepository
    */
   async findById(dlqId: string): Promise<DeadLetterAttributes | null>
   {
-    const [row] = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE dlq_id = @dlq_id LIMIT 1`,
-      { dlq_id: dlqId }
-    );
-
+    const row = await BigQueryManager.getInstance().queryOne<Record<string, unknown>>(TABLE, { dlq_id: dlqId });
     return row ? this.fromRow(row) : null;
   }
 
@@ -115,9 +102,10 @@ export class DeadLetterRepository
    */
   async findByJobAndStatus(jobId: string, status: string): Promise<DeadLetterAttributes[]>
   {
-    const rows = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE job_id = @job_id AND status = @status ORDER BY byte_offset ASC`,
-      { job_id: jobId, status }
+    const rows = await BigQueryManager.getInstance().queryMany<Record<string, unknown>>(
+      TABLE,
+      { job_id: jobId, status },
+      { column: "byte_offset", direction: "ASC" }
     );
 
     return rows.map((r) => this.fromRow(r));
@@ -128,9 +116,10 @@ export class DeadLetterRepository
    */
   async findByJob(jobId: string): Promise<DeadLetterAttributes[]>
   {
-    const rows = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE job_id = @job_id ORDER BY byte_offset ASC`,
-      { job_id: jobId }
+    const rows = await BigQueryManager.getInstance().queryMany<Record<string, unknown>>(
+      TABLE,
+      { job_id: jobId },
+      { column: "byte_offset", direction: "ASC" }
     );
 
     return rows.map((r) => this.fromRow(r));

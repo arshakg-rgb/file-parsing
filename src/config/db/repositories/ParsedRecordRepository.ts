@@ -39,11 +39,10 @@ export class ParsedRecordRepository
   async create(data: ParsedRecordCreationAttributes): Promise<ParsedRecordAttributes | null>
   {
     const id = Date.now();
-    const now = new Date();
 
     try
     {
-      const params = {
+      await BigQueryManager.getInstance().insertOne(TABLE, {
         id,
         _job_id: data._job_id,
         _byte_offset: data._byte_offset,
@@ -56,30 +55,14 @@ export class ParsedRecordRepository
         _parsed_at: data._parsed_at,
         _part_id: data._part_id,
         fields: data.fields ?? {},
-      };
-
-      await BigQueryManager.getInstance().execute(
-        `INSERT INTO ${FULL_TABLE} (
-          id, _job_id, _byte_offset, _byte_length, _record_index, _line_no,
-          _template_id, _template_version, _checksum, _parsed_at, _part_id, fields
-        ) VALUES (
-          @id, @_job_id, @_byte_offset, @_byte_length, @_record_index, @_line_no,
-          @_template_id, @_template_version, @_checksum, @_parsed_at, @_part_id, @fields
-        )`,
-        params,
-        { fields: "JSON" }
-      );
+      });
     }
     catch
     {
       return null;
     }
 
-    const [row] = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE id = @id LIMIT 1`,
-      { id }
-    );
-
+    const row = await BigQueryManager.getInstance().queryOne<Record<string, unknown>>(TABLE, { id });
     return row ? this.fromRow(row) : null;
   }
 
@@ -103,9 +86,10 @@ export class ParsedRecordRepository
    */
   async findByJob(jobId: string): Promise<ParsedRecordAttributes[]>
   {
-    const rows = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE _job_id = @_job_id ORDER BY _byte_offset ASC`,
-      { _job_id: jobId }
+    const rows = await BigQueryManager.getInstance().queryMany<Record<string, unknown>>(
+      TABLE,
+      { _job_id: jobId },
+      { column: "_byte_offset", direction: "ASC" }
     );
 
     return rows.map((r) => this.fromRow(r));

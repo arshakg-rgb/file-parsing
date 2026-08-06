@@ -1,4 +1,4 @@
-import { BigQueryManager, paramTypes, toDate } from "../BigQueryManager.js";
+import { BigQueryManager, toDate } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   PendingArchiveEntryAttributes,
@@ -7,10 +7,6 @@ import type {
 
 const TABLE = "pending_archive_entries";
 const FULL_TABLE = `\`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASET}.${TABLE}\``;
-
-const NULLABLE_TYPES: Record<string, string> = {
-  error: "STRING",
-};
 
 /**
  * BigQuery-backed repository for pending_archive_entries.
@@ -40,7 +36,7 @@ export class PendingArchiveEntryRepository
   {
     const now = new Date();
 
-    const params = {
+    await BigQueryManager.getInstance().insertOne(TABLE, {
       id: data.id,
       job_id: data.job_id,
       entry_name: data.entry_name,
@@ -49,17 +45,7 @@ export class PendingArchiveEntryRepository
       error: data.error ?? null,
       created_at: now,
       updated_at: now,
-    };
-
-    await BigQueryManager.getInstance().execute(
-      `INSERT INTO ${FULL_TABLE} (
-        id, job_id, entry_name, entry_size, status, error, created_at, updated_at
-      ) VALUES (
-        @id, @job_id, @entry_name, @entry_size, @status, @error, @created_at, @updated_at
-      )`,
-      params,
-      paramTypes(params, NULLABLE_TYPES)
-    );
+    });
 
     return this.findById(data.id);
   }
@@ -69,11 +55,7 @@ export class PendingArchiveEntryRepository
    */
   async findById(id: string): Promise<PendingArchiveEntryAttributes | null>
   {
-    const [row] = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE id = @id LIMIT 1`,
-      { id }
-    );
-
+    const row = await BigQueryManager.getInstance().queryOne<Record<string, unknown>>(TABLE, { id });
     return row ? this.fromRow(row) : null;
   }
 
@@ -94,7 +76,7 @@ export class PendingArchiveEntryRepository
     await BigQueryManager.getInstance().execute(
       `UPDATE ${FULL_TABLE} SET ${setParts.join(", ")} WHERE id = @id`,
       params,
-      paramTypes(params, NULLABLE_TYPES)
+      await BigQueryManager.getInstance().inferTypes(params, TABLE)
     );
   }
 
@@ -103,9 +85,10 @@ export class PendingArchiveEntryRepository
    */
   async findByJob(jobId: string): Promise<PendingArchiveEntryAttributes[]>
   {
-    const rows = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE job_id = @job_id ORDER BY created_at DESC`,
-      { job_id: jobId }
+    const rows = await BigQueryManager.getInstance().queryMany<Record<string, unknown>>(
+      TABLE,
+      { job_id: jobId },
+      { column: "created_at", direction: "DESC" }
     );
 
     return rows.map((r) => this.fromRow(r));

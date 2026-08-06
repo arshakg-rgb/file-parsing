@@ -1,4 +1,4 @@
-import { BigQueryManager, paramTypes, toDate } from "../BigQueryManager.js";
+import { BigQueryManager, toDate } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   ParseJobAttributes,
@@ -8,14 +8,6 @@ import type { JobCounts, JobTimings } from "@shared/models/job.js";
 
 const TABLE = "parse_jobs";
 const FULL_TABLE = `\`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASET}.${TABLE}\``;
-
-const NULLABLE_TYPES: Record<string, string> = {
-  batch_id: "STRING",
-  parent_job_id: "STRING",
-  s3_url: "STRING",
-  size: "INT64",
-  error: "STRING",
-};
 
 function toJson(value: unknown): string
 {
@@ -94,14 +86,10 @@ export class JobRepository
   /**
    * Finds a job by id.
    */
-  async findById(jobId: string, _options?: { attributes?: (keyof ParseJobAttributes)[] }): Promise<ParseJobAttributes | null>
+  async findById(jobId: string): Promise<ParseJobAttributes | null>
   {
-    const rows = await this.bq().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE job_id = @job_id LIMIT 1`,
-      { job_id: jobId }
-    );
-
-    return rows[0] ? fromRow(rows[0]) : null;
+    const row = await this.bq().queryOne<Record<string, unknown>>(TABLE, { job_id: jobId });
+    return row ? fromRow(row) : null;
   }
 
   /**
@@ -109,9 +97,10 @@ export class JobRepository
    */
   async findByBatchId(batchId: string): Promise<ParseJobAttributes[]>
   {
-    const rows = await this.bq().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE batch_id = @batch_id ORDER BY created_at DESC`,
-      { batch_id: batchId }
+    const rows = await this.bq().queryMany<Record<string, unknown>>(
+      TABLE,
+      { batch_id: batchId },
+      { column: "created_at", direction: "DESC" }
     );
 
     return rows.map(fromRow);
@@ -141,7 +130,7 @@ export class JobRepository
   {
     const now = new Date();
 
-    const params: Record<string, unknown> = {
+    await this.bq().insertOne(TABLE, {
       job_id: data.job_id,
       batch_id: data.batch_id ?? null,
       parent_job_id: data.parent_job_id ?? null,
@@ -150,7 +139,7 @@ export class JobRepository
       s3_url: data.s3_url ?? null,
       size: data.size ?? null,
       field_spec: toJson(data.field_spec),
-      exec_path: data.exec_path,
+      exec_path: data.exec_path ?? "",
       status: data.status,
       output_paths: toJson(data.output_paths),
       counts: toJson(data.counts),
@@ -158,21 +147,7 @@ export class JobRepository
       error: data.error ?? null,
       created_at: now,
       updated_at: now,
-    };
-
-    await this.bq().execute(
-      `INSERT INTO ${FULL_TABLE} (
-        job_id, batch_id, parent_job_id, source_type, source_ref, s3_url, size,
-        field_spec, exec_path, status, output_paths, counts, timings, error,
-        created_at, updated_at
-      ) VALUES (
-        @job_id, @batch_id, @parent_job_id, @source_type, @source_ref, @s3_url, @size,
-        @field_spec, @exec_path, @status, @output_paths, @counts, @timings, @error,
-        @created_at, @updated_at
-      )`,
-      params,
-      paramTypes(params, NULLABLE_TYPES)
-    );
+    });
 
     const created = await this.findById(data.job_id);
     return created as ParseJobAttributes;
@@ -205,7 +180,7 @@ export class JobRepository
     await this.bq().execute(
       `UPDATE ${FULL_TABLE} SET ${setParts.join(", ")} WHERE job_id = @job_id`,
       params,
-      paramTypes(params, NULLABLE_TYPES)
+      await this.bq().inferTypes(params, TABLE)
     );
   }
 
@@ -214,7 +189,7 @@ export class JobRepository
    */
   async getStatus(jobId: string): Promise<string | undefined>
   {
-    const row = await this.findById(jobId, { attributes: ["status"] });
+    const row = await this.findById(jobId);
     return row?.status;
   }
 
@@ -265,7 +240,7 @@ export class JobRepository
     const affected = await this.bq().execute(
       `UPDATE ${FULL_TABLE} SET ${setParts.join(", ")} WHERE job_id = @job_id AND status IN UNNEST(@allowed_from_statuses)`,
       params,
-      paramTypes(params, NULLABLE_TYPES)
+      await this.bq().inferTypes(params, TABLE)
     );
 
     return affected > 0;
@@ -276,7 +251,7 @@ export class JobRepository
    */
   async getFieldSpec(jobId: string): Promise<string[]>
   {
-    const row = await this.findById(jobId, { attributes: ["field_spec"] });
+    const row = await this.findById(jobId);
     return row?.field_spec || [];
   }
 
@@ -309,7 +284,7 @@ export class JobRepository
    */
   async hold(jobId: string, reason?: string): Promise<void>
   {
-    const existing = await this.findById(jobId, { attributes: ["error"] });
+    const existing = await this.findById(jobId);
     await this.updateFields(jobId, { status: "held", error: reason || existing?.error });
   }
 
@@ -379,7 +354,7 @@ export class JobRepository
    */
   async getCounts(jobId: string): Promise<JobCounts>
   {
-    const row = await this.findById(jobId, { attributes: ["counts"] });
+    const row = await this.findById(jobId);
     return row?.counts || { parsed: 0, dropped_rubbish: 0, dlq_count: 0, failed_by_class: {} };
   }
 }

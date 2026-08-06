@@ -34,31 +34,19 @@ export class RubbishLogRepository
   async create(data: RubbishLogCreationAttributes): Promise<RubbishLogAttributes>
   {
     const id = Date.now();
-    const now = new Date();
 
-    await BigQueryManager.getInstance().execute(
-      `INSERT INTO ${FULL_TABLE} (
-        id, job_id, byte_offset, line_no, raw_bytes, matched_template_id, logged_at
-      ) VALUES (
-        @id, @job_id, @byte_offset, @line_no, @raw_bytes, @matched_template_id, @logged_at
-      )`,
-      {
-        id,
-        job_id: data.job_id,
-        byte_offset: data.byte_offset,
-        line_no: data.line_no,
-        raw_bytes: data.raw_bytes,
-        matched_template_id: data.matched_template_id,
-        logged_at: now,
-      }
-    );
+    await BigQueryManager.getInstance().insertOne(TABLE, {
+      id,
+      job_id: data.job_id,
+      byte_offset: data.byte_offset,
+      line_no: data.line_no,
+      raw_bytes: data.raw_bytes,
+      matched_template_id: data.matched_template_id,
+      logged_at: new Date(),
+    });
 
-    const [row] = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE id = @id LIMIT 1`,
-      { id }
-    );
-
-    return this.fromRow(row);
+    const row = await BigQueryManager.getInstance().queryOne<Record<string, unknown>>(TABLE, { id });
+    return this.fromRow(row as Record<string, unknown>);
   }
 
   /**
@@ -80,9 +68,10 @@ export class RubbishLogRepository
    */
   async findByJob(jobId: string): Promise<RubbishLogAttributes[]>
   {
-    const rows = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE job_id = @job_id ORDER BY byte_offset ASC`,
-      { job_id: jobId }
+    const rows = await BigQueryManager.getInstance().queryMany<Record<string, unknown>>(
+      TABLE,
+      { job_id: jobId },
+      { column: "byte_offset", direction: "ASC" }
     );
 
     return rows.map((r) => this.fromRow(r));

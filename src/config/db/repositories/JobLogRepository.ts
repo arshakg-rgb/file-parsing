@@ -1,18 +1,10 @@
-import { BigQueryManager, paramTypes, toDate } from "../BigQueryManager.js";
-import { settings } from "@shared/Settings.js";
+import { BigQueryManager, toDate } from "../BigQueryManager.js";
 import type {
   JobLogAttributes,
   JobLogCreationAttributes,
 } from "../models/JobLog.js";
 
 const TABLE = "job_logs";
-const FULL_TABLE = `\`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASET}.${TABLE}\``;
-
-const NULLABLE_TYPES: Record<string, string> = {
-  stage: "STRING",
-  template_id: "STRING",
-  message: "STRING",
-};
 
 /**
  * BigQuery-backed repository for job_logs.
@@ -43,7 +35,7 @@ export class JobLogRepository
     const id = Date.now();
     const now = new Date();
 
-    const params = {
+    await BigQueryManager.getInstance().insertOne(TABLE, {
       id,
       job_id: data.job_id,
       event_type: data.event_type,
@@ -52,17 +44,7 @@ export class JobLogRepository
       message: data.message ?? null,
       metadata: data.metadata ?? {},
       created_at: now,
-    };
-
-    await BigQueryManager.getInstance().execute(
-      `INSERT INTO ${FULL_TABLE} (
-        id, job_id, event_type, stage, template_id, message, metadata, created_at
-      ) VALUES (
-        @id, @job_id, @event_type, @stage, @template_id, @message, @metadata, @created_at
-      )`,
-      params,
-      { ...paramTypes(params, NULLABLE_TYPES), metadata: "JSON" }
-    );
+    });
 
     return this.findById(id);
   }
@@ -72,22 +54,19 @@ export class JobLogRepository
    */
   private async findById(id: number): Promise<JobLogAttributes>
   {
-    const [row] = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE id = @id LIMIT 1`,
-      { id }
-    );
-
-    return this.fromRow(row);
+    const row = await BigQueryManager.getInstance().queryOne<Record<string, unknown>>(TABLE, { id });
+    return this.fromRow(row ?? {});
   }
 
   /**
-   * Finds all log entries for a job, oldest first.
+   * Finds all logs for a job.
    */
   async findByJob(jobId: string): Promise<JobLogAttributes[]>
   {
-    const rows = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE job_id = @job_id ORDER BY created_at ASC`,
-      { job_id: jobId }
+    const rows = await BigQueryManager.getInstance().queryMany<Record<string, unknown>>(
+      TABLE,
+      { job_id: jobId },
+      { column: "created_at", direction: "ASC" }
     );
 
     return rows.map((r) => this.fromRow(r));

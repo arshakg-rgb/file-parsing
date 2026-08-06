@@ -33,9 +33,10 @@ export class OutputPartRepository
    */
   async findByJob(jobId: string): Promise<OutputPartAttributes[]>
   {
-    const rows = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE job_id = @job_id ORDER BY created_at DESC`,
-      { job_id: jobId }
+    const rows = await BigQueryManager.getInstance().queryMany<Record<string, unknown>>(
+      TABLE,
+      { job_id: jobId },
+      { column: "created_at", direction: "DESC" }
     );
 
     return rows.map((r) => this.fromRow(r));
@@ -46,11 +47,7 @@ export class OutputPartRepository
    */
   private async findById(partId: string): Promise<OutputPartAttributes | null>
   {
-    const [row] = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE part_id = @part_id LIMIT 1`,
-      { part_id: partId }
-    );
-
+    const row = await BigQueryManager.getInstance().queryOne<Record<string, unknown>>(TABLE, { part_id: partId });
     return row ? this.fromRow(row) : null;
   }
 
@@ -65,24 +62,15 @@ export class OutputPartRepository
       return existing;
     }
 
-    const now = new Date();
-
-    await BigQueryManager.getInstance().execute(
-      `INSERT INTO ${FULL_TABLE} (
-        part_id, job_id, template_id, s3_path, row_count, byte_size, created_at
-      ) VALUES (
-        @part_id, @job_id, @template_id, @s3_path, @row_count, @byte_size, @created_at
-      )`,
-      {
-        part_id: data.part_id,
-        job_id: data.job_id,
-        template_id: data.template_id,
-        s3_path: data.s3_path,
-        row_count: data.row_count,
-        byte_size: data.byte_size,
-        created_at: now,
-      }
-    );
+    await BigQueryManager.getInstance().insertOne(TABLE, {
+      part_id: data.part_id,
+      job_id: data.job_id,
+      template_id: data.template_id,
+      s3_path: data.s3_path,
+      row_count: data.row_count,
+      byte_size: data.byte_size,
+      created_at: new Date(),
+    });
 
     return this.findById(data.part_id);
   }

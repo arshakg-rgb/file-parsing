@@ -1,4 +1,4 @@
-import { BigQueryManager, paramTypes, toDate } from "../BigQueryManager.js";
+import { BigQueryManager, toDate } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   TemplateAttributes,
@@ -9,14 +9,6 @@ import type { FieldLocator } from "@shared/models/template.js";
 
 const TABLE = "templates";
 const FULL_TABLE = `\`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASET}.${TABLE}\``;
-
-const NULLABLE_TYPES: Record<string, string> = {
-  field_map: "STRING",
-  structure: "STRING",
-  length_hint: "INT64",
-  signature: "STRING",
-  confidence: "FLOAT64",
-};
 
 /**
  * BigQuery-backed repository for templates.
@@ -47,9 +39,10 @@ export class TemplateRepository
    */
   async findByKind(kind: string): Promise<TemplateAttributes[]>
   {
-    const rows = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE kind = @kind ORDER BY created_at DESC`,
-      { kind }
+    const rows = await BigQueryManager.getInstance().queryMany<Record<string, unknown>>(
+      TABLE,
+      { kind },
+      { column: "created_at", direction: "DESC" }
     );
 
     return rows.map((r) => this.fromRow(r));
@@ -60,11 +53,7 @@ export class TemplateRepository
    */
   async findByFingerprint(fingerprint: string): Promise<TemplateAttributes | null>
   {
-    const [row] = await BigQueryManager.getInstance().query<Record<string, unknown>>(
-      `SELECT * FROM ${FULL_TABLE} WHERE fingerprint = @fingerprint LIMIT 1`,
-      { fingerprint }
-    );
-
+    const row = await BigQueryManager.getInstance().queryOne<Record<string, unknown>>(TABLE, { fingerprint });
     return row ? this.fromRow(row) : null;
   }
 
@@ -127,24 +116,14 @@ export class TemplateRepository
           source = @source
         WHERE fingerprint = @fingerprint`,
         data,
-        { ...paramTypes(data, NULLABLE_TYPES), field_map: "JSON" }
+        await BigQueryManager.getInstance().inferTypes(data, TABLE)
       );
     }
     else
     {
       const insertParams = { ...data, created_at: now };
 
-      await BigQueryManager.getInstance().execute(
-        `INSERT INTO ${FULL_TABLE} (
-          template_id, fingerprint, version, kind, field_map, structure,
-          length_hint, signature, confidence, source, created_at
-        ) VALUES (
-          @template_id, @fingerprint, @version, @kind, @field_map, @structure,
-          @length_hint, @signature, @confidence, @source, @created_at
-        )`,
-        insertParams,
-        { ...paramTypes(insertParams, NULLABLE_TYPES), field_map: "JSON" }
-      );
+      await BigQueryManager.getInstance().insertOne(TABLE, insertParams);
     }
   }
 }
