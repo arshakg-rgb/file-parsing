@@ -59,7 +59,7 @@ export class BigQueryManager
   /**
    * Runs a parameterized BigQuery SQL query and returns typed rows.
    */
-  public async query<T = unknown>(sql: string, params?: unknown[]): Promise<T[]>
+  public async query<T = unknown>(sql: string, params?: unknown[] | Record<string, unknown>): Promise<T[]>
   {
     const [rows] = await this.client.query({
       query: sql,
@@ -103,6 +103,26 @@ export class BigQueryManager
     }
 
     this.logger.debug({ table: tableName, count: rows.length }, "BigQuery insert succeeded");
+  }
+
+  /**
+   * Runs a DML statement (INSERT, UPDATE, DELETE) and returns the number of
+   * affected rows. Uses createQueryJob so the job is executed synchronously.
+   */
+  public async execute(sql: string, params?: Record<string, unknown>): Promise<number>
+  {
+    const [job] = await this.client.createQueryJob({
+      query: sql,
+      params,
+      location: settings.BIGQUERY_LOCATION,
+      useLegacySql: false,
+    });
+
+    await job.getQueryResults();
+    const rawMetadata = await job.getMetadata();
+    const metadata = Array.isArray(rawMetadata) ? rawMetadata[0] : rawMetadata;
+
+    return Number((metadata as { statistics?: { query?: { numDmlAffectedRows?: string | number } } }).statistics?.query?.numDmlAffectedRows ?? 0);
   }
 
   public async stop(): Promise<void>
