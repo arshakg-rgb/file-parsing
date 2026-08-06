@@ -1,4 +1,4 @@
-import { BigQueryManager, paramTypes } from "../BigQueryManager.js";
+import { BigQueryManager, paramTypes, toDate } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   JobLogAttributes,
@@ -31,7 +31,7 @@ export class JobLogRepository
       template_id: (row.template_id as string | null) ?? null,
       message: (row.message as string | null) ?? null,
       metadata: (typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata) as Record<string, unknown> ?? {},
-      created_at: new Date(row.created_at as string),
+      created_at: toDate(row.created_at),
     };
   }
 

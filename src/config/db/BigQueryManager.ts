@@ -10,6 +10,12 @@ import ServiceManager from "../ServiceManager.js";
  * migration. Tables are expected to exist in the configured dataset; this
  * manager does not run schema migrations.
  */
+interface TableSchemaField {
+  name: string;
+  type: string;
+  mode: string;
+}
+
 export class BigQueryManager extends ServiceManager
 {
   protected static instance: BigQueryManager;
@@ -17,6 +23,7 @@ export class BigQueryManager extends ServiceManager
   private readonly client: BigQuery;
   private readonly dataset: Dataset;
   private readonly logger: pino.Logger;
+  private schemaCache: Record<string, TableSchemaField[]> = {};
 
   protected constructor(enforce: () => void)
   {
@@ -133,6 +140,183 @@ export class BigQueryManager extends ServiceManager
     return Number((metadata as { statistics?: { query?: { numDmlAffectedRows?: string | number } } }).statistics?.query?.numDmlAffectedRows ?? 0);
   }
 
+  public async queryOne<T = Record<string, unknown>>(tableName: string, where: Record<string, unknown>): Promise<T | null>
+  {
+    const [row] = await this.query<T>(
+      `SELECT * FROM ${this.fullTableName(tableName)} WHERE ${this.whereClause(Object.keys(where))} LIMIT 1`,
+      where,
+      await this.inferTypes(where, tableName)
+    );
+
+    return row ?? null;
+  }
+
+  public async queryMany<T = Record<string, unknown>>(
+    tableName: string,
+    where: Record<string, unknown> = {},
+    orderBy?: { column: string; direction?: "ASC" | "DESC" },
+    limit?: number
+  ): Promise<T[]>
+  {
+    let sql = `SELECT * FROM ${this.fullTableName(tableName)}`;
+    const types = await this.inferTypes(where, tableName);
+
+    if (Object.keys(where).length)
+    {
+      sql += ` WHERE ${this.whereClause(Object.keys(where))}`;
+    }
+
+    if (orderBy)
+    {
+      sql += ` ORDER BY ${orderBy.column} ${orderBy.direction ?? "ASC"}`;
+    }
+
+    if (limit !== undefined)
+    {
+      sql += ` LIMIT @limit`;
+    }
+
+    return this.query<T>(sql, { ...where, ...(limit !== undefined ? { limit } : {}) }, types);
+  }
+
+  public async insertOne(tableName: string, data: Record<string, unknown>): Promise<number>
+  {
+    const columns = Object.keys(data);
+    const placeholders = columns.map((c) => `@${c}`).join(", ");
+    const sql = `INSERT INTO ${this.fullTableName(tableName)} (${columns.join(", ")}) VALUES (${placeholders})`;
+
+    return this.execute(sql, data, await this.inferTypes(data, tableName));
+  }
+
+  public async updateOne(tableName: string, data: Record<string, unknown>, where: Record<string, unknown>): Promise<number>
+  {
+    const setParts = Object.keys(data).map((c) => `${c} = @${c}`);
+    const whereParts = Object.keys(where).map((c) => `${c} = @where_${c}`);
+    const params: Record<string, unknown> = { ...data };
+
+    for (const key of Object.keys(where))
+    {
+      params[`where_${key}`] = where[key];
+    }
+
+    const sql = `UPDATE ${this.fullTableName(tableName)} SET ${setParts.join(", ")} WHERE ${whereParts.join(" AND ")}`;
+
+    return this.execute(sql, params, await this.inferTypes(params, tableName));
+  }
+
+  public async deleteOne(tableName: string, where: Record<string, unknown>): Promise<number>
+  {
+    const whereParts = Object.keys(where).map((c) => `${c} = @where_${c}`);
+    const params: Record<string, unknown> = {};
+
+    for (const key of Object.keys(where))
+    {
+      params[`where_${key}`] = where[key];
+    }
+
+    const sql = `DELETE FROM ${this.fullTableName(tableName)} WHERE ${whereParts.join(" AND ")}`;
+
+    return this.execute(sql, params, await this.inferTypes(params, tableName));
+  }
+
+  private fullTableName(tableName: string): string
+  {
+    return `\`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASET}.${tableName}\``;
+  }
+
+  private whereClause(columns: string[]): string
+  {
+    return columns.map((c) => `${c} = @${c}`).join(" AND ");
+  }
+
+  public async getTableSchema(tableName: string): Promise<TableSchemaField[]>
+  {
+    const cached = this.schemaCache[tableName];
+    if (cached)
+    {
+      return cached;
+    }
+
+    const table = this.dataset.table(tableName);
+    const [metadata] = await table.getMetadata();
+    const fields = (metadata.schema?.fields ?? []) as TableSchemaField[];
+
+    this.schemaCache[tableName] = fields;
+    return fields;
+  }
+
+  /**
+   * Builds a BigQuery `types` map for params that are null or JSON-typed,
+   * inferring types from the live table schema. This removes the need for
+   * each repository to maintain hand-written NULLABLE_TYPES maps.
+   */
+  public async inferTypes(params: Record<string, unknown>, tableName: string): Promise<Record<string, string> | undefined>
+  {
+    const fields = await this.getTableSchema(tableName);
+
+    const types: Record<string, string> = {};
+
+    for (const key of Object.keys(params))
+    {
+      const field = fields.find((f) => f.name === key);
+      if (!field)
+      {
+        continue;
+      }
+
+      const value = params[key];
+      if (value === null || field.type === "JSON")
+      {
+        types[key] = this.mapBigQueryType(field.type);
+      }
+    }
+
+    return Object.keys(types).length ? types : undefined;
+  }
+
+  private mapBigQueryType(type: string): string
+  {
+    switch (type.toUpperCase())
+    {
+      case "STRING":
+        return "STRING";
+      case "INT64":
+      case "INTEGER":
+        return "INT64";
+      case "FLOAT64":
+      case "FLOAT":
+        return "FLOAT64";
+      case "BOOL":
+      case "BOOLEAN":
+        return "BOOL";
+      case "TIMESTAMP":
+        return "TIMESTAMP";
+      case "DATETIME":
+        return "DATETIME";
+      case "DATE":
+        return "DATE";
+      case "TIME":
+        return "TIME";
+      case "JSON":
+        return "JSON";
+      case "BYTES":
+        return "BYTES";
+      case "NUMERIC":
+        return "NUMERIC";
+      case "BIGNUMERIC":
+        return "BIGNUMERIC";
+      case "GEOGRAPHY":
+        return "GEOGRAPHY";
+      case "STRUCT":
+      case "RECORD":
+        return "STRUCT";
+      case "ARRAY":
+        return "ARRAY<STRING>";
+      default:
+        return "STRING";
+    }
+  }
+
   public async gracefulStop(): Promise<void>
   {
     // BigQuery client is stateless; nothing to close.
@@ -158,6 +342,37 @@ export function paramTypes(params: Record<string, unknown>, typeMap: Record<stri
   }
 
   return Object.keys(types).length ? types : undefined;
+}
+
+/**
+ * Converts a BigQuery row timestamp value into a JavaScript Date.
+ * BigQuery's client can return DATE/TIMESTAMP/DATETIME fields as
+ * BigQueryTimestamp / BigQueryDate / BigQueryDatetime wrapper objects,
+ * plain strings, numbers, or already-instantiated Date objects.
+ */
+export function toDate(value: unknown): Date
+{
+  if (value instanceof Date && !isNaN(value.getTime()))
+  {
+    return value;
+  }
+
+  if (value === null || value === undefined || value === "")
+  {
+    return new Date();
+  }
+
+  const raw: unknown = (typeof value === "object" && value !== null && "value" in value)
+    ? (value as { value: unknown }).value
+    : value;
+
+  const date = new Date(raw as string | number | Date);
+  if (isNaN(date.getTime()))
+  {
+    return new Date();
+  }
+
+  return date;
 }
 
 function Enforce(): void {}

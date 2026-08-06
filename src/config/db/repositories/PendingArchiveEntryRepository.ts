@@ -1,4 +1,4 @@
-import { BigQueryManager, paramTypes } from "../BigQueryManager.js";
+import { BigQueryManager, paramTypes, toDate } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   PendingArchiveEntryAttributes,
@@ -28,8 +28,8 @@ export class PendingArchiveEntryRepository
       entry_size: Number(row.entry_size ?? 0),
       status: row.status as string,
       error: (row.error as string | null) ?? null,
-      created_at: new Date(row.created_at as string),
-      updated_at: new Date(row.updated_at as string),
+      created_at: toDate(row.created_at),
+      updated_at: toDate(row.updated_at),
     };
   }
 

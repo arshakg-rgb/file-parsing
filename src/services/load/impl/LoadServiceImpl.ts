@@ -9,6 +9,7 @@ import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import { DatabaseManager } from "@shared/DatabaseManager.js";
+import { toDate } from "@config/db/BigQueryManager.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { LoadMessage } from "@shared/models/job.js";
 import { ParquetReader } from "@dsnp/parquetjs";
@@ -342,7 +343,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
           _template_id: row._template_id as string,
           _template_version: row._template_version as number,
           _checksum: row._checksum as string,
-          _parsed_at: typeof row._parsed_at === "number" ? new Date(row._parsed_at) : (row._parsed_at as Date),
+          _parsed_at: toDate(row._parsed_at),
           _part_id: row._part_id as string,
           fields,
         };

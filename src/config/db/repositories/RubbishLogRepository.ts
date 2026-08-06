@@ -1,4 +1,4 @@
-import { BigQueryManager } from "../BigQueryManager.js";
+import { BigQueryManager, toDate } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   RubbishLogAttributes,
@@ -24,7 +24,7 @@ export class RubbishLogRepository
       line_no: Number(row.line_no ?? 0),
       raw_bytes: row.raw_bytes as string,
       matched_template_id: row.matched_template_id as string,
-      logged_at: new Date(row.logged_at as string),
+      logged_at: toDate(row.logged_at),
     };
   }
 

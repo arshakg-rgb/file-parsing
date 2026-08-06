@@ -1,4 +1,4 @@
-import { BigQueryManager, paramTypes } from "../BigQueryManager.js";
+import { BigQueryManager, paramTypes, toDate } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   TemplateAttributes,
@@ -38,7 +38,7 @@ export class TemplateRepository
       signature: (row.signature as string | null) ?? null,
       confidence: (row.confidence as number | null) ?? null,
       source: row.source as string,
-      created_at: new Date(row.created_at as string),
+      created_at: toDate(row.created_at),
     };
   }
 

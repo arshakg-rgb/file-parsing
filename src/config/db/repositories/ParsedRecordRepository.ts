@@ -1,4 +1,4 @@
-import { BigQueryManager } from "../BigQueryManager.js";
+import { BigQueryManager, toDate } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   ParsedRecordAttributes,
@@ -27,7 +27,7 @@ export class ParsedRecordRepository
       _template_id: row._template_id as string,
       _template_version: Number(row._template_version ?? 1),
       _checksum: row._checksum as string,
-      _parsed_at: new Date(row._parsed_at as string),
+      _parsed_at: toDate(row._parsed_at),
       _part_id: row._part_id as string,
       fields: (typeof row.fields === "string" ? JSON.parse(row.fields) : row.fields) as Record<string, unknown> ?? {},
     };

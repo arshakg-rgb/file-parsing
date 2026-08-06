@@ -1,4 +1,4 @@
-import { BigQueryManager } from "../BigQueryManager.js";
+import { BigQueryManager, toDate } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   DeadLetterAttributes,
@@ -28,8 +28,8 @@ export class DeadLetterRepository
       error: row.error as string,
       attempts: Number(row.attempts ?? 0),
       status: row.status as string,
-      created_at: new Date(row.created_at as string),
-      updated_at: new Date(row.updated_at as string),
+      created_at: toDate(row.created_at),
+      updated_at: toDate(row.updated_at),
     };
   }
 

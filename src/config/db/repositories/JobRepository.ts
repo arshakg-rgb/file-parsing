@@ -1,4 +1,4 @@
-import { BigQueryManager, paramTypes } from "../BigQueryManager.js";
+import { BigQueryManager, paramTypes, toDate } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   ParseJobAttributes,
@@ -27,11 +27,11 @@ function toJson(value: unknown): string
   return JSON.stringify(value);
 }
 
-function fromJson<T>(value: unknown): T | undefined
+function fromJson<T>(value: unknown): T | null
 {
-  if (value === undefined || value === null || value === "")
+  if (!value || value === "{}")
   {
-    return undefined;
+    return null;
   }
 
   try
@@ -40,18 +40,8 @@ function fromJson<T>(value: unknown): T | undefined
   }
   catch
   {
-    return undefined;
+    return null;
   }
-}
-
-function toDate(value: unknown): Date
-{
-  if (!value)
-  {
-    return new Date();
-  }
-
-  return new Date(value as string | number | Date);
 }
 
 function fromRow(row: Record<string, unknown>): ParseJobAttributes

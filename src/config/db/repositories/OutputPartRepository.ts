@@ -1,4 +1,4 @@
-import { BigQueryManager } from "../BigQueryManager.js";
+import { BigQueryManager, toDate } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   OutputPartAttributes,
@@ -24,7 +24,7 @@ export class OutputPartRepository
       s3_path: row.s3_path as string,
       row_count: Number(row.row_count ?? 0),
       byte_size: Number(row.byte_size ?? 0),
-      created_at: new Date(row.created_at as string),
+      created_at: toDate(row.created_at),
     };
   }
 
