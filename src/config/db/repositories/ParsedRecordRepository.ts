@@ -29,7 +29,7 @@ export class ParsedRecordRepository
       _checksum: row._checksum as string,
       _parsed_at: new Date(row._parsed_at as string),
       _part_id: row._part_id as string,
-      fields: (row.fields ? JSON.parse(row.fields as string) : {}) as Record<string, unknown>,
+      fields: (typeof row.fields === "string" ? JSON.parse(row.fields) : row.fields) as Record<string, unknown> ?? {},
     };
   }
 
@@ -43,6 +43,21 @@ export class ParsedRecordRepository
 
     try
     {
+      const params = {
+        id,
+        _job_id: data._job_id,
+        _byte_offset: data._byte_offset,
+        _byte_length: data._byte_length,
+        _record_index: data._record_index,
+        _line_no: data._line_no,
+        _template_id: data._template_id,
+        _template_version: data._template_version,
+        _checksum: data._checksum,
+        _parsed_at: data._parsed_at,
+        _part_id: data._part_id,
+        fields: data.fields ?? {},
+      };
+
       await BigQueryManager.getInstance().execute(
         `INSERT INTO ${FULL_TABLE} (
           id, _job_id, _byte_offset, _byte_length, _record_index, _line_no,
@@ -51,20 +66,8 @@ export class ParsedRecordRepository
           @id, @_job_id, @_byte_offset, @_byte_length, @_record_index, @_line_no,
           @_template_id, @_template_version, @_checksum, @_parsed_at, @_part_id, @fields
         )`,
-        {
-          id,
-          _job_id: data._job_id,
-          _byte_offset: data._byte_offset,
-          _byte_length: data._byte_length,
-          _record_index: data._record_index,
-          _line_no: data._line_no,
-          _template_id: data._template_id,
-          _template_version: data._template_version,
-          _checksum: data._checksum,
-          _parsed_at: data._parsed_at,
-          _part_id: data._part_id,
-          fields: JSON.stringify(data.fields),
-        }
+        params,
+        { fields: "JSON" }
       );
     }
     catch
@@ -89,7 +92,7 @@ export class ParsedRecordRepository
       ...r,
       id: (r as { id?: number }).id ?? Date.now() + i,
       _parsed_at: r._parsed_at,
-      fields: JSON.stringify(r.fields),
+      fields: JSON.stringify(r.fields ?? {}),
     })) as Record<string, unknown>[];
 
     await BigQueryManager.getInstance().insert(TABLE, bqRows);

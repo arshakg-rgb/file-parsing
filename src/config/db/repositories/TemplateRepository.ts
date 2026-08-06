@@ -1,4 +1,4 @@
-import { BigQueryManager } from "../BigQueryManager.js";
+import { BigQueryManager, paramTypes } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   TemplateAttributes,
@@ -9,6 +9,14 @@ import type { FieldLocator } from "@shared/models/template.js";
 
 const TABLE = "templates";
 const FULL_TABLE = `\`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASET}.${TABLE}\``;
+
+const NULLABLE_TYPES: Record<string, string> = {
+  field_map: "STRING",
+  structure: "STRING",
+  length_hint: "INT64",
+  signature: "STRING",
+  confidence: "FLOAT64",
+};
 
 /**
  * BigQuery-backed repository for templates.
@@ -24,7 +32,7 @@ export class TemplateRepository
       fingerprint: row.fingerprint as string,
       version: Number(row.version ?? 1),
       kind: row.kind as string,
-      field_map: (row.field_map ? JSON.parse(row.field_map as string) : null) as Record<string, FieldLocator> | null,
+      field_map: (row.field_map == null ? null : typeof row.field_map === "string" ? JSON.parse(row.field_map) : row.field_map) as Record<string, FieldLocator> | null,
       structure: (row.structure as string | null) ?? null,
       length_hint: (row.length_hint as number | null) ?? null,
       signature: (row.signature as string | null) ?? null,
@@ -83,7 +91,7 @@ export class TemplateRepository
       data = {
         ...base,
         template_id: existing ? existing.template_id : rt.template_id,
-        field_map: JSON.stringify(rt.field_map ?? {}),
+        field_map: rt.field_map ?? {},
         structure: rt.structure ?? null,
         length_hint: rt.length_hint ?? null,
         signature: null,
@@ -118,11 +126,14 @@ export class TemplateRepository
           confidence = @confidence,
           source = @source
         WHERE fingerprint = @fingerprint`,
-        data
+        data,
+        { ...paramTypes(data, NULLABLE_TYPES), field_map: "JSON" }
       );
     }
     else
     {
+      const insertParams = { ...data, created_at: now };
+
       await BigQueryManager.getInstance().execute(
         `INSERT INTO ${FULL_TABLE} (
           template_id, fingerprint, version, kind, field_map, structure,
@@ -131,7 +142,8 @@ export class TemplateRepository
           @template_id, @fingerprint, @version, @kind, @field_map, @structure,
           @length_hint, @signature, @confidence, @source, @created_at
         )`,
-        { ...data, created_at: now }
+        insertParams,
+        { ...paramTypes(insertParams, NULLABLE_TYPES), field_map: "JSON" }
       );
     }
   }

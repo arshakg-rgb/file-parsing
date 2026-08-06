@@ -15,6 +15,7 @@
     "dev:report": "tsx src/services/report/ReportServiceHandler.ts",
     "dev:retry": "tsx src/services/retry/RetryServiceHandler.ts",
     "init:db": "tsx src/scripts/init_db.ts",
+    "test:bigquery": "tsx src/scripts/test_bigquery.ts",
     "migrate": "tsx src/scripts/migrate.ts",
     "setup:localstack": "tsx src/scripts/setup_localstack.ts",
     "setup:gcp": "tsx src/scripts/setup_gcp.ts",

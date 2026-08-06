@@ -1,4 +1,4 @@
-import { BigQueryManager } from "../BigQueryManager.js";
+import { BigQueryManager, paramTypes } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   PendingArchiveEntryAttributes,
@@ -7,6 +7,10 @@ import type {
 
 const TABLE = "pending_archive_entries";
 const FULL_TABLE = `\`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASET}.${TABLE}\``;
+
+const NULLABLE_TYPES: Record<string, string> = {
+  error: "STRING",
+};
 
 /**
  * BigQuery-backed repository for pending_archive_entries.
@@ -36,22 +40,25 @@ export class PendingArchiveEntryRepository
   {
     const now = new Date();
 
+    const params = {
+      id: data.id,
+      job_id: data.job_id,
+      entry_name: data.entry_name,
+      entry_size: data.entry_size,
+      status: data.status,
+      error: data.error ?? null,
+      created_at: now,
+      updated_at: now,
+    };
+
     await BigQueryManager.getInstance().execute(
       `INSERT INTO ${FULL_TABLE} (
         id, job_id, entry_name, entry_size, status, error, created_at, updated_at
       ) VALUES (
         @id, @job_id, @entry_name, @entry_size, @status, @error, @created_at, @updated_at
       )`,
-      {
-        id: data.id,
-        job_id: data.job_id,
-        entry_name: data.entry_name,
-        entry_size: data.entry_size,
-        status: data.status,
-        error: data.error ?? null,
-        created_at: now,
-        updated_at: now,
-      }
+      params,
+      paramTypes(params, NULLABLE_TYPES)
     );
 
     return this.findById(data.id);
@@ -86,7 +93,8 @@ export class PendingArchiveEntryRepository
 
     await BigQueryManager.getInstance().execute(
       `UPDATE ${FULL_TABLE} SET ${setParts.join(", ")} WHERE id = @id`,
-      params
+      params,
+      paramTypes(params, NULLABLE_TYPES)
     );
   }
 

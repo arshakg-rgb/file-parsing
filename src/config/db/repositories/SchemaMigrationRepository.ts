@@ -1,4 +1,4 @@
-import { BigQueryManager } from "../BigQueryManager.js";
+import { BigQueryManager, paramTypes } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   SchemaMigrationAttributes,
@@ -44,10 +44,13 @@ export class SchemaMigrationRepository
    */
   async addVersion(version: number, description?: string): Promise<void>
   {
+    const params = { version, description: description ?? null };
+
     await BigQueryManager.getInstance().execute(
       `INSERT INTO ${FULL_TABLE} (version, applied_at, description)
       VALUES (@version, CURRENT_TIMESTAMP(), @description)`,
-      { version, description: description ?? null }
+      params,
+      paramTypes(params, { description: "STRING" })
     );
   }
 }

@@ -1,4 +1,4 @@
-import { BigQueryManager } from "../BigQueryManager.js";
+import { BigQueryManager, paramTypes } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   ParseJobAttributes,
@@ -8,6 +8,14 @@ import type { JobCounts, JobTimings } from "@shared/models/job.js";
 
 const TABLE = "parse_jobs";
 const FULL_TABLE = `\`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASET}.${TABLE}\``;
+
+const NULLABLE_TYPES: Record<string, string> = {
+  batch_id: "STRING",
+  parent_job_id: "STRING",
+  s3_url: "STRING",
+  size: "INT64",
+  error: "STRING",
+};
 
 function toJson(value: unknown): string
 {
@@ -172,7 +180,8 @@ export class JobRepository
         @field_spec, @exec_path, @status, @output_paths, @counts, @timings, @error,
         @created_at, @updated_at
       )`,
-      params
+      params,
+      paramTypes(params, NULLABLE_TYPES)
     );
 
     const created = await this.findById(data.job_id);
@@ -205,7 +214,8 @@ export class JobRepository
 
     await this.bq().execute(
       `UPDATE ${FULL_TABLE} SET ${setParts.join(", ")} WHERE job_id = @job_id`,
-      params
+      params,
+      paramTypes(params, NULLABLE_TYPES)
     );
   }
 
@@ -264,7 +274,8 @@ export class JobRepository
 
     const affected = await this.bq().execute(
       `UPDATE ${FULL_TABLE} SET ${setParts.join(", ")} WHERE job_id = @job_id AND status IN UNNEST(@allowed_from_statuses)`,
-      params
+      params,
+      paramTypes(params, NULLABLE_TYPES)
     );
 
     return affected > 0;

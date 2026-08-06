@@ -61,12 +61,16 @@ export class BigQueryManager extends ServiceManager
 
   /**
    * Runs a parameterized BigQuery SQL query and returns typed rows.
+   *
+   * BigQuery cannot infer a parameter's type when its value is null, so any
+   * null-valued parameter must have an explicit entry in `types`.
    */
-  public async query<T = unknown>(sql: string, params?: unknown[] | Record<string, unknown>): Promise<T[]>
+  public async query<T = unknown>(sql: string, params?: unknown[] | Record<string, unknown>, types?: Record<string, string>): Promise<T[]>
   {
     const [rows] = await this.client.query({
       query: sql,
       params,
+      types: types && Object.keys(types).length ? types : undefined,
       location: settings.BIGQUERY_LOCATION,
       useLegacySql: false,
     });
@@ -112,11 +116,12 @@ export class BigQueryManager extends ServiceManager
    * Runs a DML statement (INSERT, UPDATE, DELETE) and returns the number of
    * affected rows. Uses createQueryJob so the job is executed synchronously.
    */
-  public async execute(sql: string, params?: Record<string, unknown>): Promise<number>
+  public async execute(sql: string, params?: Record<string, unknown>, types?: Record<string, string>): Promise<number>
   {
     const [job] = await this.client.createQueryJob({
       query: sql,
       params,
+      types: types && Object.keys(types).length ? types : undefined,
       location: settings.BIGQUERY_LOCATION,
       useLegacySql: false,
     });
@@ -132,6 +137,27 @@ export class BigQueryManager extends ServiceManager
   {
     // BigQuery client is stateless; nothing to close.
   }
+}
+
+/**
+ * Builds a BigQuery `types` map for any parameter whose value is null.
+ * BigQuery requires an explicit type for null-valued query parameters since
+ * it cannot infer one. Only keys present in `params` with a null value and a
+ * matching entry in `typeMap` are included.
+ */
+export function paramTypes(params: Record<string, unknown>, typeMap: Record<string, string>): Record<string, string> | undefined
+{
+  const types: Record<string, string> = {};
+
+  for (const key of Object.keys(params))
+  {
+    if (params[key] === null && typeMap[key])
+    {
+      types[key] = typeMap[key];
+    }
+  }
+
+  return Object.keys(types).length ? types : undefined;
 }
 
 function Enforce(): void {}

@@ -1,4 +1,4 @@
-import { BigQueryManager } from "../BigQueryManager.js";
+import { BigQueryManager, paramTypes } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
 import type {
   JobLogAttributes,
@@ -7,6 +7,12 @@ import type {
 
 const TABLE = "job_logs";
 const FULL_TABLE = `\`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASET}.${TABLE}\``;
+
+const NULLABLE_TYPES: Record<string, string> = {
+  stage: "STRING",
+  template_id: "STRING",
+  message: "STRING",
+};
 
 /**
  * BigQuery-backed repository for job_logs.
@@ -24,7 +30,7 @@ export class JobLogRepository
       stage: (row.stage as string | null) ?? null,
       template_id: (row.template_id as string | null) ?? null,
       message: (row.message as string | null) ?? null,
-      metadata: (row.metadata ? JSON.parse(row.metadata as string) : {}) as Record<string, unknown>,
+      metadata: (typeof row.metadata === "string" ? JSON.parse(row.metadata) : row.metadata) as Record<string, unknown> ?? {},
       created_at: new Date(row.created_at as string),
     };
   }
@@ -37,22 +43,25 @@ export class JobLogRepository
     const id = Date.now();
     const now = new Date();
 
+    const params = {
+      id,
+      job_id: data.job_id,
+      event_type: data.event_type,
+      stage: data.stage ?? null,
+      template_id: data.template_id ?? null,
+      message: data.message ?? null,
+      metadata: data.metadata ?? {},
+      created_at: now,
+    };
+
     await BigQueryManager.getInstance().execute(
       `INSERT INTO ${FULL_TABLE} (
         id, job_id, event_type, stage, template_id, message, metadata, created_at
       ) VALUES (
         @id, @job_id, @event_type, @stage, @template_id, @message, @metadata, @created_at
       )`,
-      {
-        id,
-        job_id: data.job_id,
-        event_type: data.event_type,
-        stage: data.stage ?? null,
-        template_id: data.template_id ?? null,
-        message: data.message ?? null,
-        metadata: JSON.stringify(data.metadata ?? {}),
-        created_at: now,
-      }
+      params,
+      { ...paramTypes(params, NULLABLE_TYPES), metadata: "JSON" }
     );
 
     return this.findById(id);
