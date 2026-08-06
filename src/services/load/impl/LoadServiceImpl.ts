@@ -163,9 +163,10 @@ class LoadServiceImpl extends ServiceManager implements LoadService
    * @param msg - The msg
    */
 
-  private deriveBatchSize(sizeBytes: number | null | undefined): number
+  private deriveBatchSize(sizeBytes: number | bigint | null | undefined): number
   {
-    const sizeMb = (sizeBytes || 0) / (1024 * 1024);
+    const size = Number(sizeBytes ?? 0);
+    const sizeMb = size / (1024 * 1024);
     const base = Math.max(100, Math.floor(60000 / this.PARAMS_PER_ROW));
 
     if (sizeMb <= 10)
@@ -196,7 +197,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     const parseJob = await this.dbManager.repositories.jobs.findById(jobId);
     this.UPSERT_BATCH = this.deriveBatchSize(parseJob?.size ?? undefined);
 
-    this.logger.info("load_start", { job_id: jobId, parts: (msg.output_paths || []).length, size: parseJob?.size, batch: this.UPSERT_BATCH });
+    this.logger.info("load_start", { job_id: jobId, parts: (msg.output_paths || []).length, size: Number(parseJob?.size ?? 0), batch: this.UPSERT_BATCH });
     MetricsUtils.increment("load.start", 1, { parts: String((msg.output_paths || []).length) });
 
     let totalRows: number = 0;
@@ -221,7 +222,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     }
     catch (exc)
     {
-      this.logger.error("load_failed", { job_id: jobId }, exc instanceof Error ? exc : new Error(String(exc)));
+      this.logger.error("load_failed", { job_id: jobId, error: exc instanceof Error ? exc.message : String(exc) });
       MetricsUtils.increment("load.error", 1);
       this.emit(jobId, EventType.ERROR_OCCURRED, { error: String(exc) });
     }

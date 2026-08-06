@@ -354,6 +354,7 @@ export class BigQueryManager extends ServiceManager
 
     const metadata = await this.waitForJob(job);
     const outputRows = Number((metadata as { statistics?: { load?: { outputRows?: string | number } } }).statistics?.load?.outputRows ?? 0);
+    this.logger.info({ source: gcsUri, staging: stagingName, outputRows }, "bigquery_staging_loaded");
 
     const insertSql = `
       INSERT INTO ${targetFull}
@@ -374,8 +375,11 @@ export class BigQueryManager extends ServiceManager
       FROM ${stagingFull}
     `;
 
+    this.logger.info({ source: gcsUri, staging: stagingName }, "bigquery_insert_start");
     const inserted = await this.execute(insertSql);
+    this.logger.info({ source: gcsUri, staging: stagingName, inserted }, "bigquery_insert_complete");
 
+    this.logger.info({ source: gcsUri, staging: stagingName }, "bigquery_drop_staging_start");
     await this.client.query({
       query: `DROP TABLE IF EXISTS ${stagingFull}`,
       useLegacySql: false,
@@ -397,7 +401,9 @@ export class BigQueryManager extends ServiceManager
       {
         if (status.errorResult)
         {
-          throw new Error(`BigQuery load job failed: ${JSON.stringify(status.errorResult)}`);
+          const { reason, message } = status.errorResult as { reason?: string; message?: string };
+          const detail = message ?? JSON.stringify(status.errorResult, (key, value) => typeof value === "bigint" ? value.toString() : value);
+          throw new Error(`BigQuery load job failed [${reason ?? "unknown"}]: ${detail}`);
         }
         return metadata;
       }
