@@ -18,6 +18,7 @@ import { LoadService } from "@service/load/LoadService.js";
 import { LoadResponse } from "@service/load/io/ILoad.js";
 import HealthService from "@utils/response/Health";
 import {MetricsUtils} from "@utils/response/Metrics";
+import { GcsUtils } from "@shared/GcsUtils.js";
 import {QueueService} from "@shared/QueueService";
 import {QueueConsumerPool} from "@shared/QueueConsumerPool.js";
 
@@ -264,17 +265,15 @@ class LoadServiceImpl extends ServiceManager implements LoadService
 
   private async *readParquetBatches(s3Path: string, batchSize: number): AsyncGenerator<Record<string, unknown>[], void, unknown>
   {
-    const [bucket, key] = this.gcsUtils.parseGcsUrl(s3Path);
-    const tmpPath = join(tmpdir(), `load-${randomUUID()}.parquet`);
+    const [bucket, key] = GcsUtils.getInstance().parseGcsUrl(s3Path);
+    const buffer = await GcsUtils.getInstance().readFull(bucket, key);
+    const reader: ParquetReader = await ParquetReader.openBuffer(buffer);
+    const cursor = reader.getCursor();
+    const batch: Record<string, unknown>[] = [];
+    let row: unknown;
 
     try
     {
-      await this.gcsUtils.downloadToFile(bucket, key, tmpPath);
-      const reader: ParquetReader = await ParquetReader.openFile(tmpPath);
-      const cursor = reader.getCursor();
-      const batch: Record<string, unknown>[] = [];
-      let row: unknown;
-
       while ((row = await cursor.next()))
       {
         batch.push(row as Record<string, unknown>);
@@ -290,19 +289,10 @@ class LoadServiceImpl extends ServiceManager implements LoadService
       {
         yield batch.slice();
       }
-
-      await reader.close();
     }
     finally
     {
-      try
-      {
-        await unlink(tmpPath);
-      }
-      catch
-      {
-        // best-effort cleanup
-      }
+      await reader.close();
     }
   }
 
@@ -367,7 +357,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     const pool = new QueueConsumerPool<LoadMessage>(this.queueService, this.logger, {
       queueUrl: config.settings.LOAD_QUEUE_URL,
       parser: (body) => JSON.parse(body) as LoadMessage,
-      concurrency: 1,
+      concurrency: 3,
       memorySoftLimit: settings.QUEUE_MEMORY_SOFT_LIMIT_MB * 1024 * 1024,
     });
 
