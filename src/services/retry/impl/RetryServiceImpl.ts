@@ -1,7 +1,7 @@
 import pino from "pino";
 import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
+import { DatabaseManager } from "@shared/DatabaseManager.js";
 import type {DeadLetterAttributes, IDeadLetter} from "@config/db/models/DeadLetter.js";
 import { DLQMessage, FailureClass, LoadMessage } from "@shared/models/job.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
@@ -43,7 +43,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService
    * @private
    */
 
-  private dbManager: PostgreSqlManager;
+  private dbManager: DatabaseManager;
 
     /**
    * ALT_ ENCODINGS
@@ -71,7 +71,7 @@ class RetryServiceImpl extends ServiceManager implements RetryService
     super(enforce);
 
     this.logger = createLogger(module);
-    this.dbManager = PostgreSqlManager.getInstance();
+    this.dbManager = DatabaseManager.getInstance();
     this.queueService = queueService;
 
     if (process.env.HEALTH_CHECK_PORT)

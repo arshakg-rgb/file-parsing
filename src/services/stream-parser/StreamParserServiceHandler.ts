@@ -7,7 +7,7 @@ import { CsvOutputWriter } from "@shared/CsvOutputWriter.js";
 import { QualityGate } from "@shared/QualityGate.js";
 import { AdaptiveProbing } from "@shared/AdaptiveProbing.js";
 import { createLogger } from "@utils/logger/Log.js";
-import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
+import { DatabaseManager } from "@shared/DatabaseManager.js";
 import jschardet, { IDetectedMap } from "jschardet";
 import JSONbig from "json-bigint";
 import crypto from "crypto";
@@ -578,7 +578,7 @@ export class StreamParserService
     let parsedBatch: Record<string, unknown>[] = [];
     let rubbishBatch: Record<string, unknown>[] = [];
     let dlqBatch: Record<string, unknown>[] = [];
-    const repositories: Repositories = PostgreSqlManager.getInstance().repositories;
+    const repositories: Repositories = DatabaseManager.getInstance().repositories;
     const bgFlushes: Promise<void>[] = [];
 
     const RAM_WATERMARK_HIGH: number = settings.RAM_FLUSH_WATERMARK;

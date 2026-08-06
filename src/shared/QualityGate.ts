@@ -1,7 +1,7 @@
 import pino from "pino";
 import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
+import { DatabaseManager } from "@shared/DatabaseManager.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobCounts, totalFailed} from "@shared/models/job.js";
 import {QualityMetrics} from "@shared/io/IQualityGate";
@@ -31,7 +31,7 @@ export class QualityGate extends ServiceManager
    * @private
    */
 
-  private dbManager: PostgreSqlManager;
+  private dbManager: DatabaseManager;
 
     /**
    * FAILED LINE RATIO THRESHOLD
@@ -55,7 +55,7 @@ export class QualityGate extends ServiceManager
     super(enforce);
 
     this.logger = createLogger(module);
-    this.dbManager = PostgreSqlManager.getInstance();
+    this.dbManager = DatabaseManager.getInstance();
     this.FAILED_LINE_RATIO_THRESHOLD = 0.1;
   }
 

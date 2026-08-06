@@ -3,7 +3,7 @@ import express, { Request, Response, NextFunction } from "express";
 import { Server as HttpServer } from "node:http";
 import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
+import { DatabaseManager } from "@shared/DatabaseManager.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { JobEvent } from "@shared/models/events.js";
 import { handleEvent } from "@service/job-service/StateMachineImpl.js";
@@ -53,7 +53,7 @@ class JobServiceManager extends ServiceManager implements IJobService
    *  Database manager.
    */
 
-  private readonly dbManager: PostgreSqlManager;
+  private readonly dbManager: DatabaseManager;
 
   /**
    * Logger scoped to this module.
@@ -79,7 +79,7 @@ class JobServiceManager extends ServiceManager implements IJobService
     super(enforce);
 
     this.app = express();
-    this.dbManager = PostgreSqlManager.getInstance();
+    this.dbManager = DatabaseManager.getInstance();
     this.logger = createLogger(module);
     this.queueService = queueService;
   }
@@ -135,7 +135,7 @@ class JobServiceManager extends ServiceManager implements IJobService
   {
     try
     {
-      await this.dbManager.sequelize.authenticate();
+      await this.dbManager.waitForDb();
       res.json({ status: "healthy", database: "connected", timestamp: new Date().toISOString() });
     }
     catch (err)
@@ -259,7 +259,7 @@ class JobServiceManager extends ServiceManager implements IJobService
     try
     {
       this.logger.info("Running database migration...");
-      await this.dbManager.initialize();
+      await this.dbManager.waitForDb();
       await DatabaseService.getInstance().createTables();
       this.logger.info("Database migration completed successfully");
     }

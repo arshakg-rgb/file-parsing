@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
+import { DatabaseManager } from "@shared/DatabaseManager.js";
 import { RecordTemplate, RubbishTemplate } from "./io/ITemplateRegistryService";
 import { TemplateAttributes} from "@config/db/models";
 import {createLogger} from "@utils/logger/Log";
@@ -68,7 +68,7 @@ export class TemplateRegistryService extends ServiceManager
    * @private
    */
 
-  private dbManager: PostgreSqlManager;
+  private dbManager: DatabaseManager;
 
     /**
    * Constructs a new TemplateRegistryService instance.
@@ -85,7 +85,7 @@ export class TemplateRegistryService extends ServiceManager
 
     super(enforce);
 
-    this.dbManager = PostgreSqlManager.getInstance();
+    this.dbManager = DatabaseManager.getInstance();
   }
 
     /**

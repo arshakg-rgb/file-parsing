@@ -117,7 +117,7 @@ export default class Config
     }
 
     /**
-     * Alias for postgresConfig to maintain compatibility with PostgreSqlManager.
+     * Alias for postgresConfig to maintain compatibility with DatabaseManager.
      * @returns The PostgreSQL configuration.
      */
 

@@ -3,7 +3,7 @@ import { randomUUID } from "crypto";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { ValidationError } from "@errors/ValidationError.js";
 import { settings } from "@shared/Settings.js";
-import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
+import { DatabaseManager } from "@shared/DatabaseManager.js";
 import type { ParseJobRow } from "@shared/DatabaseManager.js";
 import { SourceType, JobStatus, JobTimings, JobCounts, totalFailed } from "@shared/models/job.js";
 import { transition } from "@service/job-service/StateMachineImpl.js";
@@ -22,7 +22,7 @@ import {QueueService} from "@shared/QueueService";
 export class JobServiceImpl implements JobService
 {
   private static instance: JobServiceImpl;
-  private readonly postgreSqlManager: PostgreSqlManager;
+  private readonly dbManager: DatabaseManager;
   private readonly logger: pino.Logger;
   private gcsUtils: GcsUtils;
   private queueService: QueueService;
@@ -31,13 +31,13 @@ export class JobServiceImpl implements JobService
    * Private constructor to enforce a Singleton pattern.
    *
    * @param enforce - Function to enforce a Singleton pattern.
-   * @param postgreSqlManager
+   * @param dbManager
    * @param gcsUtisl
    * @param queueService
    * @throws Error if instantiation is attempted directly.
    */
 
-  private constructor(enforce: () => void, postgreSqlManager: PostgreSqlManager, gcsUtisl: GcsUtils, queueService: QueueService)
+  private constructor(enforce: () => void, dbManager: DatabaseManager, gcsUtisl: GcsUtils, queueService: QueueService)
   {
     if (enforce !== Enforce)
     {
@@ -46,7 +46,7 @@ export class JobServiceImpl implements JobService
 
     this.gcsUtils = gcsUtisl;
     this.queueService = queueService;
-    this.postgreSqlManager = postgreSqlManager;
+    this.dbManager = dbManager;
     this.logger = createLogger(module);
   }
 
@@ -60,7 +60,7 @@ export class JobServiceImpl implements JobService
   {
     if (!JobServiceImpl.instance)
     {
-      JobServiceImpl.instance = new JobServiceImpl(Enforce, PostgreSqlManager.getInstance(), GcsUtils.getInstance(), QueueService.getInstance());
+      JobServiceImpl.instance = new JobServiceImpl(Enforce, DatabaseManager.getInstance(), GcsUtils.getInstance(), QueueService.getInstance());
     }
 
     return JobServiceImpl.instance;
@@ -368,7 +368,7 @@ export class JobServiceImpl implements JobService
 
   public async findStuckJobs(thresholdMinutes: number): Promise<IStuckJobsResponse>
   {
-    const rows: ParseJobAttributes[] = await this.postgreSqlManager.repositories.jobs.findStuckJobs(thresholdMinutes);
+    const rows: ParseJobAttributes[] = await this.dbManager.repositories.jobs.findStuckJobs(thresholdMinutes);
     return { stuck_jobs: rows, count: rows.length, threshold_minutes: thresholdMinutes };
   }
 
@@ -381,7 +381,7 @@ export class JobServiceImpl implements JobService
 
   public async getJob(jobId: string): Promise<IJobResponse | null>
   {
-    const row: IParseJob = await this.postgreSqlManager.repositories.jobs.findById(jobId);
+    const row: IParseJob = await this.dbManager.repositories.jobs.findById(jobId);
 
     if (!row)
     {
@@ -400,7 +400,7 @@ export class JobServiceImpl implements JobService
 
   public async getBatchJobs(batchId: string): Promise<IJobResponse[]>
   {
-    const rows: ParseJobAttributes[] = await this.postgreSqlManager.repositories.jobs.findByBatchId(batchId);
+    const rows: ParseJobAttributes[] = await this.dbManager.repositories.jobs.findByBatchId(batchId);
 
     return await Promise.all(rows.map((row: ParseJobAttributes) => this.buildJobResponse(row)));
   }
@@ -412,7 +412,7 @@ export class JobServiceImpl implements JobService
    */
   public async getAllJobs(statuses?: string[]): Promise<IJobResponse[]>
   {
-    const rows: ParseJobAttributes[] = await this.postgreSqlManager.repositories.jobs.findAll(statuses);
+    const rows: ParseJobAttributes[] = await this.dbManager.repositories.jobs.findAll(statuses);
 
     return await Promise.all(rows.map((row: ParseJobAttributes) => this.buildJobResponse(row)));
   }
@@ -499,7 +499,7 @@ export class JobServiceImpl implements JobService
 
   public async providePassword(jobId: string, request: IProvidePasswordRequest): Promise<void>
   {
-    const row: IParseJob = await this.postgreSqlManager.repositories.jobs.findById(jobId);
+    const row: IParseJob = await this.dbManager.repositories.jobs.findById(jobId);
 
     if (!row)
     {
@@ -551,14 +551,14 @@ export class JobServiceImpl implements JobService
 
   public async markFailed(jobId: string, request: IMarkFailedRequest): Promise<void>
   {
-    const row: IParseJob = await this.postgreSqlManager.repositories.jobs.findById(jobId);
+    const row: IParseJob = await this.dbManager.repositories.jobs.findById(jobId);
 
     if (!row)
     {
       throw new HttpError(HttpError.NOT_FOUND, "Job not found");
     }
 
-    await this.postgreSqlManager.repositories.jobs.markFailed(jobId, request.reason || "manually_failed");
+    await this.dbManager.repositories.jobs.markFailed(jobId, request.reason || "manually_failed");
     this.logger.info("job_marked_failed", { job_id: jobId, reason: request.reason });
   }
 
@@ -576,7 +576,7 @@ export class JobServiceImpl implements JobService
   {
     const { target_status } = request;
 
-    const row: IParseJob = await this.postgreSqlManager.repositories.jobs.findById(jobId);
+    const row: IParseJob = await this.dbManager.repositories.jobs.findById(jobId);
 
     if (!row)
     {
@@ -650,14 +650,14 @@ export class JobServiceImpl implements JobService
 
   public async getJobLogs(jobId: string): Promise<IJobLogEntry[]>
   {
-    const row: IParseJob = await this.postgreSqlManager.repositories.jobs.findById(jobId);
+    const row: IParseJob = await this.dbManager.repositories.jobs.findById(jobId);
 
     if (!row)
     {
       throw new HttpError(HttpError.NOT_FOUND, "Job not found");
     }
 
-    const rows = await this.postgreSqlManager.repositories.jobLogs.findByJob(jobId);
+    const rows = await this.dbManager.repositories.jobLogs.findByJob(jobId);
 
     return rows.map((log) => ({
       event_type: log.event_type,
@@ -683,7 +683,7 @@ export class JobServiceImpl implements JobService
 
   public async uploadCsv(jobId: string, request: IUploadCsvRequest): Promise<IUploadCsvResponse>
   {
-    const row: IParseJob = await this.postgreSqlManager.repositories.jobs.findById(jobId);
+    const row: IParseJob = await this.dbManager.repositories.jobs.findById(jobId);
 
     if (!row)
     {
@@ -738,7 +738,7 @@ export class JobServiceImpl implements JobService
 
   public async downloadCsv(jobId: string): Promise<IDownloadCsvResponse>
   {
-    const row: IParseJob = await this.postgreSqlManager.repositories.jobs.findById(jobId);
+    const row: IParseJob = await this.dbManager.repositories.jobs.findById(jobId);
 
     if (!row)
     {

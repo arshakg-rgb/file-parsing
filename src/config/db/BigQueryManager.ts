@@ -2,14 +2,15 @@ import pino from "pino";
 import { BigQuery, Dataset, Table } from "@google-cloud/bigquery";
 import { settings } from "@shared/Settings.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
+import ServiceManager from "../ServiceManager.js";
 
 /**
  * BigQueryManager is a singleton responsible for all BigQuery client access.
- * It replaces PostgreSqlManager as the database layer for the full-BigQuery
+ * It replaces DatabaseManager as the database layer for the full-BigQuery
  * migration. Tables are expected to exist in the configured dataset; this
  * manager does not run schema migrations.
  */
-export class BigQueryManager
+export class BigQueryManager extends ServiceManager
 {
   protected static instance: BigQueryManager;
 
@@ -19,6 +20,8 @@ export class BigQueryManager
 
   protected constructor(enforce: () => void)
   {
+    super(enforce);
+
     if (enforce !== Enforce)
     {
       throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Cannot instantiate BigQueryManager directly. Use getInstance()");
@@ -125,7 +128,7 @@ export class BigQueryManager
     return Number((metadata as { statistics?: { query?: { numDmlAffectedRows?: string | number } } }).statistics?.query?.numDmlAffectedRows ?? 0);
   }
 
-  public async stop(): Promise<void>
+  public async gracefulStop(): Promise<void>
   {
     // BigQuery client is stateless; nothing to close.
   }

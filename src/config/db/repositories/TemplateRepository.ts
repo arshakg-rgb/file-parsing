@@ -1,6 +1,5 @@
 import { BigQueryManager } from "../BigQueryManager.js";
 import { settings } from "@shared/Settings.js";
-import type { DatabaseModels } from "../models/index.js";
 import type {
   TemplateAttributes,
   TemplateCreationAttributes,
@@ -16,7 +15,7 @@ const FULL_TABLE = `\`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASE
  */
 export class TemplateRepository
 {
-  constructor(private models: DatabaseModels) {}
+  constructor() {}
 
   private fromRow(row: Record<string, unknown>): TemplateAttributes
   {

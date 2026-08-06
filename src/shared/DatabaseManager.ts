@@ -1,82 +1,79 @@
 import crypto from "crypto";
-import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
+import { BigQueryManager } from "@config/db/BigQueryManager.js";
+import { Repositories } from "@config/db/repositories/index.js";
+import { settings } from "@shared/Settings.js";
 import type { ParseJobAttributes } from "@config/db/models/ParseJob.js";
 import type { OutputPartAttributes } from "@config/db/models/OutputPart.js";
 import type { DeadLetterAttributes } from "@config/db/models/DeadLetter.js";
-import {IPendingArchiveEntry} from "@config/db/models";
-import {InstantiationError} from "@errors/InstantiationError";
+import { InstantiationError } from "@errors/InstantiationError";
+
 export type ParseJobRow = ParseJobAttributes;
 export type OutputPartRow = OutputPartAttributes;
 export type DeadLetterRow = DeadLetterAttributes;
 
 /**
- * DatabaseService is a thin, typed facade over PostgreSqlManager's
- * repositories and models — job lookups, pending-archive-entry lifecycle,
- * and schema sync.
+ * DatabaseService is a thin, typed facade over BigQuery repositories.
  *
- * This IS a true singleton (unlike per-job classes such as CsvOutputWriter):
- * there is exactly one Postgres connection and one repository set for the
- * whole process, so caching a single instance behind getInstance() is
- * correct and safe — there's no per-caller state that concurrent callers
- * could corrupt by sharing it.
+ * This is the single point of access for all persisted state. It replaces
+ * the previous DatabaseManager-backed implementation.
  */
 
 export class DatabaseService
 {
   private static instance: DatabaseService;
 
-  private readonly dbManager: PostgreSqlManager;
-  public readonly repositories: PostgreSqlManager["repositories"];
+  public readonly repositories: Repositories;
 
-  /**
-   * @param enforce - Capability token; must be the module-private Enforce
-   *   function. Callers cannot obtain a reference to it, so this constructor
-   *   is effectively only reachable via DatabaseService.getInstance().
-   * @param dbManager - The underlying PostgreSqlManager singleton instance.
-   */
-
-  private constructor(enforce: () => void, dbManager: PostgreSqlManager)
+  private constructor(enforce: () => void)
   {
     if (enforce !== Enforce)
     {
-      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Error: Instantiation failed: Use DatabaseService.getInstance() instead of new.");
+      throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Error: Instantiation failed: Use DatabaseManager.getInstance() instead of new.");
     }
 
-    this.dbManager = dbManager;
-    this.repositories = dbManager.repositories;
+    this.repositories = new Repositories();
   }
 
   /**
-   * Gets the singleton instance of DatabaseService.
-   *
-   * @returns The singleton instance of DatabaseService.
+   * Gets the singleton instance of the database service.
    */
-
   public static getInstance(): DatabaseService
   {
     if (!DatabaseService.instance)
     {
-      DatabaseService.instance = new DatabaseService(Enforce, PostgreSqlManager.getInstance());
+      DatabaseService.instance = new DatabaseService(Enforce);
     }
 
     return DatabaseService.instance;
   }
 
   /**
-   * Waits for the underlying database connection/pool to be ready.
+   * Waits for the BigQuery client to be ready (dataset verified).
    */
-
   public async waitForDb(): Promise<void>
   {
-    await this.dbManager.initialize();
+    await BigQueryManager.getInstance().initialize();
+  }
+
+  /**
+   * Alias for waitForDb; keeps the previous lifecycle method names working.
+   */
+  public async initialize(): Promise<void>
+  {
+    await this.waitForDb();
+  }
+
+  /**
+   * No-op for BigQuery: tables must be created in the BigQuery console.
+   */
+  public async createTables(): Promise<void>
+  {
+    // Tables are managed out-of-band.
   }
 
   /**
    * Gets a single parse job by id.
-   * @param jobId - The job identifier.
-   * @returns The job row, or null if not found.
    */
-
   public async getJob(jobId: string): Promise<ParseJobRow | null>
   {
     return this.repositories.jobs.findById(jobId);
@@ -84,10 +81,7 @@ export class DatabaseService
 
   /**
    * Gets all parse jobs belonging to a batch.
-   * @param batchId - The batch identifier.
-   * @returns The matching job rows.
    */
-
   public async getBatchJobs(batchId: string): Promise<ParseJobRow[]>
   {
     return this.repositories.jobs.findByBatchId(batchId);
@@ -95,15 +89,10 @@ export class DatabaseService
 
   /**
    * Creates a pending archive entry row in the "pending" state.
-   * @param jobId - The job identifier.
-   * @param entryName - The archive entry name.
-   * @param entrySize - The archive entry size, in bytes.
-   * @returns True if the row was created successfully.
    */
-
   public async createPendingArchiveEntry(jobId: string, entryName: string, entrySize: number): Promise<boolean>
   {
-    const row: IPendingArchiveEntry = await this.repositories.pendingArchiveEntries.create({
+    const row = await this.repositories.pendingArchiveEntries.create({
       id: crypto.randomUUID(),
       job_id: jobId,
       entry_name: entryName,
@@ -116,67 +105,46 @@ export class DatabaseService
 
   /**
    * Marks a pending archive entry as "processing".
-   * @param jobId - The job identifier.
-   * @param entryName - The archive entry name.
    */
-
-  public async markPendingEntryProcessing(jobId: string, entryName: string): Promise<void> {
+  public async markPendingEntryProcessing(jobId: string, entryName: string): Promise<void>
+  {
     const entry = await this.findPendingEntry(jobId, entryName);
     if (entry) await this.repositories.pendingArchiveEntries.markStatus(entry.id, "processing");
   }
 
   /**
    * Marks a pending archive entry as "completed".
-   * @param jobId - The job identifier.
-   * @param entryName - The archive entry name.
    */
-
-  public async markPendingEntryCompleted(jobId: string, entryName: string): Promise<void> {
+  public async markPendingEntryCompleted(jobId: string, entryName: string): Promise<void>
+  {
     const entry = await this.findPendingEntry(jobId, entryName);
     if (entry) await this.repositories.pendingArchiveEntries.markStatus(entry.id, "completed");
   }
 
   /**
    * Marks a pending archive entry as "failed".
-   * @param jobId - The job identifier.
-   * @param entryName - The archive entry name.
-   * @param error - The error message describing the failure.
    */
-
-  public async markPendingEntryFailed(jobId: string, entryName: string, error: string): Promise<void> {
+  public async markPendingEntryFailed(jobId: string, entryName: string, error: string): Promise<void>
+  {
     const entry = await this.findPendingEntry(jobId, entryName);
     if (entry) await this.repositories.pendingArchiveEntries.markStatus(entry.id, "failed", error);
   }
 
   /**
-   * Syncs the database schema without dropping existing tables.
+   * Looks up a pending archive entry by job id + entry name.
    */
-
-  public async createTables(): Promise<void> {
-    await this.dbManager.sequelize.sync({ force: false });
-  }
-
-  /**
-   * Looks up a pending archive entry by job id + entry name. Shared by the
-   * three markPendingEntry* methods to avoid repeating the same query.
-   * @param jobId - The job identifier.
-   * @param entryName - The archive entry name.
-   */
-
-  private async findPendingEntry(jobId: string, entryName: string)
+  private async findPendingEntry(jobId: string, entryName: string): Promise<{ id: string } | null>
   {
-    return this.dbManager.models.PendingArchiveEntry.findOne({
-      where: { job_id: jobId, entry_name: entryName },
-    });
+    const [row] = await BigQueryManager.getInstance().query<Record<string, unknown>>(
+      `SELECT id FROM \`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASET}.pending_archive_entries\`
+       WHERE job_id = @job_id AND entry_name = @entry_name
+       LIMIT 1`,
+      { job_id: jobId, entry_name: entryName }
+    );
+    return row ? { id: row.id as string } : null;
   }
 }
 
-export { default as DatabaseManager } from "@config/db/PostgreSqlManager.js";
+export { DatabaseService as DatabaseManager };
 
-/**
- * Private capability token. Only DatabaseService.getInstance() has a
- * reference to this function, so it's the only call site that can satisfy
- * the constructor's `enforce` check — `new DatabaseService(...)` from
- * anywhere else fails fast with InstantiationError.
- */
 function Enforce(): void {}

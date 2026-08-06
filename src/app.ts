@@ -3,7 +3,6 @@ import { Request, Response } from "express";
 import { Server as HttpServer } from "node:http";
 import * as http from "node:http";
 import { createLogger  } from "@utils/logger/Log.js";
-import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
 import express, { Express } from "express";
 import ServiceManager from "@config/ServiceManager.js";
 import { Constants } from "@common/io/Constants.js";
@@ -68,13 +67,6 @@ export class App
       await ApiRouter.getInstance().initializeRoutes();
 
       this.server.listen(port, "0.0.0.0", async (): Promise<void> => {
-        await PostgreSqlManager.getInstance().sequelize
-          .sync({ force: false })
-          .then((): void => logger.info("Database & tables created!"))
-          .catch((error: Error): void =>
-            logger.error(`Failed to sync models: ${error.message}`)
-          );
-
         logger.info(`Server is running on port ${port}`);
       });
 

@@ -4,7 +4,6 @@ import type {
   ParseJobAttributes,
   ParseJobCreationAttributes,
 } from "../models/ParseJob.js";
-import type { DatabaseModels } from "../models/index.js";
 import type { JobCounts, JobTimings } from "@shared/models/job.js";
 
 const TABLE = "parse_jobs";
@@ -87,7 +86,7 @@ function serializeField(key: string, value: unknown): unknown
  */
 export class JobRepository
 {
-  constructor(private models: DatabaseModels) {}
+  constructor() {}
 
   private bq(): BigQueryManager
   {

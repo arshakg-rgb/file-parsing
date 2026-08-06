@@ -2,7 +2,7 @@ import pino from "pino";
 import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
-import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
+import { DatabaseManager } from "@shared/DatabaseManager.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ReportMessage, JobCounts, JobTimings } from "@shared/models/job.js";
 import type {IParseJob, ParseJobAttributes} from "@config/db/models/ParseJob.js";
@@ -49,7 +49,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService
    * @private
    */
 
-  private dbManager: PostgreSqlManager;
+  private dbManager: DatabaseManager;
 
   private queueService: QueueService;
 
@@ -71,7 +71,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService
 
     this.logger = createLogger(module);
     this.gcsUtils = FirestoreCacheUtils.getInstance();
-    this.dbManager = PostgreSqlManager.getInstance();
+    this.dbManager = DatabaseManager.getInstance();
     this.queueService = queueService;
 
     if (process.env.HEALTH_CHECK_PORT)
@@ -119,7 +119,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService
 
   public async consumerLoop(): Promise<void>
   {
-    await this.dbManager.initialize();
+    await this.dbManager.waitForDb();
     this.logger.info("report_consumer_started");
     const config: Config = this.getConfig();
 

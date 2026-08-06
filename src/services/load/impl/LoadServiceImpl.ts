@@ -10,7 +10,7 @@ import { InstantiationError } from "@errors/InstantiationError.js";
 import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import { ParsedRecord, IParsedRecord } from "@config/db/models";
 import ParseJob from "@config/db/models/ParseJob.js";
-import PostgreSqlManager from "@config/db/PostgreSqlManager.js";
+import { DatabaseManager } from "@shared/DatabaseManager.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { LoadMessage } from "@shared/models/job.js";
 import { ParquetReader } from "@dsnp/parquetjs";
@@ -53,7 +53,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
    * @private
    */
 
-  private dbManager: PostgreSqlManager;
+  private dbManager: DatabaseManager;
 
     /**
    * S Y S T E M_ C O L S
@@ -102,7 +102,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
 
     this.logger = createLogger(module);
     this.gcsUtils = FirestoreCacheUtils.getInstance();
-    this.dbManager = PostgreSqlManager.getInstance();
+    this.dbManager = DatabaseManager.getInstance();
     this.queueService = queueService;
 
     if (process.env.HEALTH_CHECK_PORT)

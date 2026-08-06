@@ -125,5 +125,5 @@
     "sourceMap": true,
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/scripts"]
+  "exclude": ["node_modules", "dist", "src/scripts", "src/db"]
 }

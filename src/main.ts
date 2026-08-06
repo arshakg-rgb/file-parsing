@@ -11,14 +11,14 @@ dotenv.config();
 async function bootstrap(): Promise<void> {
   await SecretsService.getInstance().loadAllSecrets();
 
-  const [{ App }, { default: MySqlManager }, { default: FirestoreManager }] = await Promise.all([
+  const [{ App }, { BigQueryManager }, { default: FirestoreManager }] = await Promise.all([
     import("./app.js"),
-    import("@config/db/PostgreSqlManager.js"),
+    import("@config/db/BigQueryManager.js"),
     import("@config/firestore/FirestoreManager.js"),
   ]);
 
   await new App(
-    MySqlManager.getInstance(),
+    BigQueryManager.getInstance(),
     FirestoreManager.getInstance()
   ).listen();
 }
