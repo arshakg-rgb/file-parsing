@@ -1,4 +1,5 @@
 import { Op, Sequelize } from "sequelize";
+import { BigQueryManager } from "../BigQueryManager.js";
 import type {DatabaseModels, IParseJob} from "@config/db/models/index.js";
 import type {
   ParseJobAttributes,
@@ -320,7 +321,13 @@ export class DeadLetterRepository {
    * @param rows - The rows
    */
   async bulkCreate(rows: DeadLetterCreationAttributes[]): Promise<void> {
-    await this.DeadLetter.bulkCreate(rows, { ignoreDuplicates: true, validate: false, returning: false });
+    const bqRows = rows.map((r) => ({
+      ...r,
+      created_at: new Date(),
+      updated_at: new Date(),
+    })) as Record<string, unknown>[];
+
+    await BigQueryManager.getInstance().insert("dead_letters", bqRows);
   }
 
     /**
@@ -651,8 +658,15 @@ export class ParsedRecordRepository {
    * @param rows - The rows
    * @param ignoreDuplicates - The ignore duplicates
    */
-  async bulkCreate(rows: ParsedRecordCreationAttributes[], ignoreDuplicates = true): Promise<void> {
-    await this.ParsedRecord.bulkCreate(rows, { ignoreDuplicates, validate: false, returning: false });
+  async bulkCreate(rows: ParsedRecordCreationAttributes[], _ignoreDuplicates = true): Promise<void> {
+    const bqRows = rows.map((r, i) => ({
+      ...r,
+      id: (r as { id?: number }).id ?? Date.now() + i,
+      _parsed_at: r._parsed_at,
+      fields: JSON.stringify(r.fields),
+    })) as Record<string, unknown>[];
+
+    await BigQueryManager.getInstance().insert("parsed_records", bqRows);
   }
 
     /**
@@ -739,7 +753,13 @@ export class RubbishLogRepository {
    * @param rows - The rows
    */
   async bulkCreate(rows: RubbishLogCreationAttributes[]): Promise<void> {
-    await this.RubbishLog.bulkCreate(rows, { ignoreDuplicates: true, validate: false, returning: false });
+    const bqRows = rows.map((r, i) => ({
+      ...r,
+      id: (r as { id?: number }).id ?? Date.now() + i,
+      logged_at: (r as { logged_at?: Date }).logged_at ?? new Date(),
+    })) as Record<string, unknown>[];
+
+    await BigQueryManager.getInstance().insert("rubbish_log", bqRows);
   }
 
     /**
