@@ -186,7 +186,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
 
     if (msg.recovered_row)
     {
-      this.logger.info("load_recovered_row", { job_id: jobId, byte_offset: msg.byte_offset });
+      this.logger.info({ job_id: jobId, byte_offset: msg.byte_offset }, "load_recovered_row");
       MetricsUtils.increment("load.recovered_row", 1);
       const row: Record<string, unknown> = this.buildRecoveredRow(msg);
       await this.upsertRows(jobId, [row]);
@@ -197,7 +197,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     const parseJob = await this.dbManager.repositories.jobs.findById(jobId);
     this.UPSERT_BATCH = this.deriveBatchSize(parseJob?.size ?? undefined);
 
-    this.logger.info("load_start", { job_id: jobId, parts: (msg.output_paths || []).length, size: Number(parseJob?.size ?? 0), batch: this.UPSERT_BATCH });
+    this.logger.info({ job_id: jobId, parts: (msg.output_paths || []).length, size: Number(parseJob?.size ?? 0), batch: this.UPSERT_BATCH }, "load_start");
     MetricsUtils.increment("load.start", 1, { parts: String((msg.output_paths || []).length) });
 
     let totalRows: number = 0;
@@ -213,16 +213,16 @@ class LoadServiceImpl extends ServiceManager implements LoadService
           continue;
         }
 
-        this.logger.info("load_part_complete", { job_id: jobId, path: s3Path, rows: partRows });
+        this.logger.info({ job_id: jobId, path: s3Path, rows: partRows }, "load_part_complete");
         totalRows += partRows;
       }
 
-      this.logger.info("load_complete", { job_id: jobId, total_rows: totalRows });
+      this.logger.info({ job_id: jobId, total_rows: totalRows }, "load_complete");
       this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: totalRows });
     }
     catch (exc)
     {
-      this.logger.error("load_failed", { job_id: jobId, error: exc instanceof Error ? exc.message : String(exc) });
+      this.logger.error({ job_id: jobId, error: exc instanceof Error ? exc.message : String(exc) }, "load_failed");
       MetricsUtils.increment("load.error", 1);
       this.emit(jobId, EventType.ERROR_OCCURRED, { error: String(exc) });
     }
@@ -377,13 +377,13 @@ class LoadServiceImpl extends ServiceManager implements LoadService
 
         if (errorStr.includes("Job") && (errorStr.includes("not found") || errorStr.includes("cannot transition")))
         {
-          this.logger.error("load_message_failed_ack", { job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" });
+          this.logger.error({ job_id: payload.job_id, error: errorStr, action: "ack_to_prevent_retry" }, "load_message_failed_ack");
           MetricsUtils.increment("load.message_error_ack", 1);
           await this.queueService.deleteMessage(queueUrl, receiptHandle);
         }
         else
         {
-          this.logger.error("load_message_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
+          this.logger.error({ job_id: payload.job_id, error: exc instanceof Error ? exc.message : String(exc) }, "load_message_failed");
           MetricsUtils.increment("load.message_error", 1);
         }
       }

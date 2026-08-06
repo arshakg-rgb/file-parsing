@@ -354,7 +354,7 @@ export class QueueService extends ServiceManager
       }
       catch (err)
       {
-        this.logger.warn("pub_receive_error", { error: String(err) });
+        this.logger.warn({ error: String(err) }, "pub_receive_error");
       }
       await new Promise((r) => setTimeout(r, 1500));
     }
