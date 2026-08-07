@@ -1,507 +1,300 @@
 options:
   logging: CLOUD_LOGGING_ONLY
-  # _AI_IMAGE/_RETRY_IMAGE/_ARCHIVE_ENTRY_IMAGE are defined below but currently unused
-  # (those services stay disabled). ALLOW_LOOSE stops Cloud Build's "substitution key not
-  # matched in the template" error for them. (load + report are now enabled.)
+  # _AI_IMAGE/_RETRY_IMAGE are defined below but currently unused (those services stay
+  # disabled). ALLOW_LOOSE stops Cloud Build's "substitution key not matched in the
+  # template" error for them. (load + report are enabled.)
   substitution_option: 'ALLOW_LOOSE'
+
 substitutions:
   _REGION: us-central1
-  _JOB_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/job-service:latest
-  _INGEST_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ingest:latest
-  _DETECT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/detect-bootstrap:latest
-  _STREAM_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/stream-parser:latest
-  _AI_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ai-classifier:latest
-  _LOAD_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/load:latest
-  _REPORT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/report:latest
-  _RETRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/retry:latest
-  _ARCHIVE_ENTRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/archive-entry-consumer:latest
+  # Images are tagged with the commit SHA for reproducibility/rollback. Falls back to
+  # "manual" when triggered without a source revision (e.g. local `gcloud builds submit`).
+  # Pass -_IMAGE_TAG=<tag> explicitly if you need a specific tag.
+  _IMAGE_TAG: ${SHORT_SHA}
+  _IMAGE_REPO: us-central1-docker.pkg.dev/data-etl-499916/file-parsing
+  _JOB_IMAGE: ${_IMAGE_REPO}/job-service:${_IMAGE_TAG}
+  _INGEST_IMAGE: ${_IMAGE_REPO}/ingest:${_IMAGE_TAG}
+  _DETECT_IMAGE: ${_IMAGE_REPO}/detect-bootstrap:${_IMAGE_TAG}
+  _STREAM_IMAGE: ${_IMAGE_REPO}/stream-parser:${_IMAGE_TAG}
+  _AI_IMAGE: ${_IMAGE_REPO}/ai-classifier:${_IMAGE_TAG}
+  _LOAD_IMAGE: ${_IMAGE_REPO}/load:${_IMAGE_TAG}
+  _REPORT_IMAGE: ${_IMAGE_REPO}/report:${_IMAGE_TAG}
+  _RETRY_IMAGE: ${_IMAGE_REPO}/retry:${_IMAGE_TAG}
+  _ARCHIVE_ENTRY_IMAGE: ${_IMAGE_REPO}/archive-entry-consumer:${_IMAGE_TAG}
+  _AI_INLINE_MODE: 'true'
+  _MAX_AI_CALLS_PER_JOB: '50'
 
 steps:
-  # Step 1: Load secrets into environment file
-  - name: 'gcr.io/cloud-builders/gcloud'
-    id: 'Create .env file from secrets'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        echo "GCP_PROJECT_ID=data-etl-499916" >> .env
-        echo "DATA_BUCKET=$(gcloud secrets versions access latest --secret=FILE_DATA_BUCKET)" >> .env
-        echo "FILE_DATABASE_URL=$(gcloud secrets versions access latest --secret=FILE_DATABASE_URL)" >> .env
-        echo "QUEUE_BACKEND=pubsub" >> .env
-        echo "FIRESTORE_DATABASE_ID=$(gcloud secrets versions access latest --secret=FILE_FIRESTORE_DATABASE_ID)" >> .env
-        echo "TEMPLATE_COLLECTION=file-parsing-templates" >> .env
-        echo "BEDROCK_MODEL_ID=$(gcloud secrets versions access latest --secret=FILE_BEDROCK_MODEL_ID)" >> .env
-        echo "HEALTH_CHECK_PORT=8080" >> .env
-        echo "NODE_ENV=production" >> .env
-        echo "LOKI_HOST=$(gcloud secrets versions access latest --secret=FILE_LOKI_HOST)" >> .env
-        echo "LOKI_USERNAME=$(gcloud secrets versions access latest --secret=FILE_LOKI_USERNAME)" >> .env
-        echo "LOKI_PASSWORD=$(gcloud secrets versions access latest --secret=FILE_LOKI_PASSWORD)" >> .env
-        echo "ARCHIVE_ENTRY_QUEUE_URL=$(gcloud secrets versions access latest --secret=FILE_ARCHIVE_ENTRY_QUEUE_URL)" >> .env
-        echo "LARGE_FILE_THRESHOLD_BYTES=524288000" >> .env
-
-  # Step 2: Use Node.js v20 to install and build
+  # ---------------------------------------------------------------------------------
+  # Step: install, lint, test, build. Fails fast (set -e) so a broken commit never
+  # reaches the docker build stage. Runs first because every later step depends on it.
+  # ---------------------------------------------------------------------------------
   - name: node:20
+    id: 'install-lint-test-build'
     entrypoint: bash
     args:
       - -c
       - |
-        npm install
+        set -euo pipefail
+        npm ci
+        npm run lint
+        npm test
         npm run build
 
-  # Step 3: Ensure Pub/Sub topics/subscriptions exist for the pipeline queues
-  - name: 'gcr.io/cloud-builders/gcloud'
+  # ---------------------------------------------------------------------------------
+  # Pub/Sub topics/subscriptions: independent of the node build, so it starts
+  # immediately in parallel. `|| true` here is intentional (not error-swallowing) —
+  # "already exists" is the expected steady-state outcome on every re-run.
+  # ---------------------------------------------------------------------------------
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'ensure-pubsub'
+    waitFor: ['-']
     entrypoint: bash
     args:
       - -c
       - |
+        set -uo pipefail
         for topic in fpp-ingest fpp-classify fpp-parse fpp-line-dlq fpp-load fpp-report fpp-job-events fpp-archive-entry; do
-          gcloud pubsub topics create $topic --project=data-etl-499916 || true
-          gcloud pubsub subscriptions create ${topic}-sub \
-            --topic=$topic \
+          gcloud pubsub topics create "$topic" --project=data-etl-499916 || true
+          gcloud pubsub subscriptions create "${topic}-sub" \
+            --topic="$topic" \
             --ack-deadline-seconds=60 \
             --project=data-etl-499916 || true
         done
 
-  # Step 4: Build and push Docker images
+  # ---------------------------------------------------------------------------------
+  # Docker builds — all fan out in parallel once install-lint-test-build finishes,
+  # instead of running one after another. Each push waits only on its own build.
+  # ---------------------------------------------------------------------------------
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-job'
+    waitFor: ['install-lint-test-build']
     args: ['build', '-f', 'Dockerfile.job', '-t', '$_JOB_IMAGE', '.']
-
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-job'
+    waitFor: ['build-job']
     args: ['push', '$_JOB_IMAGE']
 
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-ingest'
+    waitFor: ['install-lint-test-build']
     args: ['build', '-f', 'Dockerfile.ingest', '-t', '$_INGEST_IMAGE', '.']
-
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-ingest'
+    waitFor: ['build-ingest']
     args: ['push', '$_INGEST_IMAGE']
 
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-detect'
+    waitFor: ['install-lint-test-build']
     args: ['build', '-f', 'Dockerfile.detect', '-t', '$_DETECT_IMAGE', '.']
-
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-detect'
+    waitFor: ['build-detect']
     args: ['push', '$_DETECT_IMAGE']
 
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-stream'
+    waitFor: ['install-lint-test-build']
     args: ['build', '-f', 'Dockerfile.stream', '-t', '$_STREAM_IMAGE', '.']
-
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-stream'
+    waitFor: ['build-stream']
     args: ['push', '$_STREAM_IMAGE']
 
   # >>> DISABLED FOR FAST TEST BUILDS: ai-classifier (AI runs in-process in detect/stream;
   #     the standalone /classify HTTP service has no callers). Uncomment to restore. <<<
   # - name: 'gcr.io/cloud-builders/docker'
+  #   id: 'build-ai'
+  #   waitFor: ['install-lint-test-build']
   #   args: ['build', '-f', 'Dockerfile.ai', '-t', '$_AI_IMAGE', '.']
-  #
   # - name: 'gcr.io/cloud-builders/docker'
+  #   id: 'push-ai'
+  #   waitFor: ['build-ai']
   #   args: ['push', '$_AI_IMAGE']
 
   # load + report: required for jobs to progress past "loading"/"reporting" to "done".
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-load'
+    waitFor: ['install-lint-test-build']
     args: ['build', '-f', 'Dockerfile.load', '-t', '$_LOAD_IMAGE', '.']
-
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-load'
+    waitFor: ['build-load']
     args: ['push', '$_LOAD_IMAGE']
 
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-report'
+    waitFor: ['install-lint-test-build']
     args: ['build', '-f', 'Dockerfile.report', '-t', '$_REPORT_IMAGE', '.']
-
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-report'
+    waitFor: ['build-report']
     args: ['push', '$_REPORT_IMAGE']
 
   # >>> DISABLED FOR FAST TEST BUILDS: retry. Uncomment to restore. <<<
   # - name: 'gcr.io/cloud-builders/docker'
+  #   id: 'build-retry'
+  #   waitFor: ['install-lint-test-build']
   #   args: ['build', '-f', 'Dockerfile.retry', '-t', '$_RETRY_IMAGE', '.']
-  #
   # - name: 'gcr.io/cloud-builders/docker'
+  #   id: 'push-retry'
+  #   waitFor: ['build-retry']
   #   args: ['push', '$_RETRY_IMAGE']
 
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-archive-entry'
+    waitFor: ['install-lint-test-build']
     args: ['build', '-f', 'Dockerfile.archive-entry', '-t', '$_ARCHIVE_ENTRY_IMAGE', '.']
-
   - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-archive-entry'
+    waitFor: ['build-archive-entry']
     args: ['push', '$_ARCHIVE_ENTRY_IMAGE']
 
-  # Step 4: Deploy to Cloud Run
-  # Each service: (1) strip any conflicting plain env vars, (2) strip any conflicting
-  # secret-backed vars, (3) deploy with all four sensitive values as secret references.
-  # This makes future secret rotations always work without type-conflict errors.
+  # ---------------------------------------------------------------------------------
+  # Deploy to Cloud Run. All services are deployed from one data-driven script instead
+  # of 7 near-identical copy-pasted blocks, so adding a service or changing a shared
+  # flag (memory, timeout, secrets list) is a one-line change instead of a 7-place edit.
+  #
+  # Per service the script still does the same 3-phase dance as before:
+  #   1. --remove-env-vars   (strip any conflicting plain env var from a prior revision)
+  #   2. --remove-secrets    (strip any conflicting secret-backed var from a prior revision)
+  #   3. real deploy         (set all sensitive values as secret references)
+  # This keeps future secret rotations working without "type conflict" errors, on any
+  # service regardless of what its previous revision looked like.
   #
   # NOTE ON SCALING/CPU FLAGS:
-  # All backend/consumer services below now explicitly set --min-instances,
-  # --max-instances, and --no-cpu-throttling on every deploy. This is intentional
-  # and MUST stay in sync with any manual console changes — Cloud Run does NOT
-  # inherit settings between revisions. Whatever is in this file wins on every
-  # push. If you change these in the console, also update them here or they will
-  # be reverted on the next deploy.
-
+  # All backend/consumer services below explicitly set --min-instances, --max-instances,
+  # and --no-cpu-throttling on every deploy. This is intentional and MUST stay in sync
+  # with any manual console changes — Cloud Run does NOT inherit settings between
+  # revisions. Whatever is in this file wins on every push. If you change these in the
+  # console, also update them here or they will be reverted on the next deploy.
+  #
+  # A plain `gcloud run deploy` (no --no-traffic) already routes 100% of traffic to the
+  # new revision by default, so no separate "migrate traffic to latest" step is needed
+  # after this — that extra loop in the old config was redundant and has been removed.
+  # ---------------------------------------------------------------------------------
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-all'
+    waitFor:
+      - 'push-job'
+      - 'push-ingest'
+      - 'push-detect'
+      - 'push-stream'
+      - 'push-load'
+      - 'push-report'
+      - 'push-archive-entry'
     entrypoint: bash
     args:
       - -c
       - |
-        gcloud run deploy job-service \
-          --image $_JOB_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD,CORS_DOMAINS,CORS_ENABLED || true
+        set -euo pipefail
 
-        gcloud run deploy job-service \
-          --image $_JOB_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD,CORS_DOMAINS,CORS_ENABLED || true
+        REGION="$_REGION"
+        PROJECT_ID="data-etl-499916"
+        SA="datalead-osint@data-etl-499916.iam.gserviceaccount.com"
+        SQL_INSTANCE="data-etl-499916:us-central1:datalead-osint"
 
-        gcloud run deploy job-service \
-          --image $_JOB_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --allow-unauthenticated \
-          --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 2Gi \
-          --cpu 4 \
-          --timeout 3600s \
-          --max-instances 5 \
-          --min-instances 1 \
-          --no-cpu-throttling \
-          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
-          --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest,CORS_DOMAINS=CORS_DOMAINS:latest,CORS_ENABLED=CORS_ENABLED:latest
+        SECRETS="FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest"
+        SECRETS_WITH_CORS="${SECRETS},CORS_DOMAINS=CORS_DOMAINS:latest,CORS_ENABLED=CORS_ENABLED:latest"
+        CLEAR_VARS="DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD"
+        CLEAR_VARS_JOB="${CLEAR_VARS},CORS_DOMAINS,CORS_ENABLED"
 
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        gcloud run deploy ingest \
-          --image $_INGEST_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+        # Strips conflicting env vars / secrets left over from a prior revision of $1.
+        # A "does not exist" response here just means it's the service's first-ever
+        # deploy, which is expected and fine — anything else should still be visible.
+        clear_conflicts() {
+          local name="$1" clear_vars="$2"
+          gcloud run deploy "$name" --region "$REGION" --platform managed --no-traffic \
+            --image "$3" --remove-env-vars="$clear_vars" \
+            || echo "  [info] no prior env vars to clear for $name (first deploy?)"
+          gcloud run deploy "$name" --region "$REGION" --platform managed --no-traffic \
+            --image "$3" --remove-secrets="$clear_vars" \
+            || echo "  [info] no prior secrets to clear for $name (first deploy?)"
+        }
 
-        gcloud run deploy ingest \
-          --image $_INGEST_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+        # deploy <name> <image> <memory> <cpu> <min> <max> <secrets> <env-vars> [extra gcloud flags...]
+        deploy() {
+          local name="$1" image="$2" memory="$3" cpu="$4" min="$5" max="$6" secrets="$7" env_vars="$8"
+          shift 8
+          echo "=== Deploying ${name} ==="
+          gcloud run deploy "$name" \
+            --image "$image" \
+            --region "$REGION" \
+            --platform managed \
+            --allow-unauthenticated \
+            --service-account="$SA" \
+            --add-cloudsql-instances="$SQL_INSTANCE" \
+            --memory "$memory" \
+            --cpu "$cpu" \
+            --timeout 3600s \
+            --max-instances "$max" \
+            --min-instances "$min" \
+            --no-cpu-throttling \
+            --set-env-vars "$env_vars" \
+            --update-secrets="$secrets" \
+            "$@"
+        }
 
-        gcloud run deploy ingest \
-          --image $_INGEST_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --allow-unauthenticated \
-          --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 4Gi \
-          --cpu 1 \
-          --timeout 3600s \
-          --max-instances 5 \
-          --min-instances 1 \
-          --no-cpu-throttling \
+        # ---- job-service ----
+        clear_conflicts job-service "$CLEAR_VARS_JOB" "$_JOB_IMAGE"
+        deploy job-service "$_JOB_IMAGE" 2Gi 4 1 5 "$SECRETS_WITH_CORS" \
+          "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080"
+
+        # ---- ingest ----
+        clear_conflicts ingest "$CLEAR_VARS" "$_INGEST_IMAGE"
+        deploy ingest "$_INGEST_IMAGE" 4Gi 1 1 5 "$SECRETS" \
+          "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,RAR_TEMP_MOUNT=/mnt/scratch,ARCHIVE_ENTRY_QUEUE_URL=pubsub://projects/${PROJECT_ID}/topics/fpp-archive-entry,LARGE_FILE_THRESHOLD_BYTES=524288000" \
           --execution-environment gen2 \
           --session-affinity \
-          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,RAR_TEMP_MOUNT=/mnt/scratch,ARCHIVE_ENTRY_QUEUE_URL=pubsub://projects/data-etl-499916/topics/fpp-archive-entry,LARGE_FILE_THRESHOLD_BYTES=524288000 \
           --add-volume name=rar-temp,type=cloud-storage,bucket=datalead-osint \
-          --add-volume-mount volume=rar-temp,mount-path=/mnt/scratch \
-          --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+          --add-volume-mount volume=rar-temp,mount-path=/mnt/scratch
 
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        gcloud run deploy detect-bootstrap \
-          --image $_DETECT_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+        # ---- detect-bootstrap ----
+        clear_conflicts detect-bootstrap "$CLEAR_VARS" "$_DETECT_IMAGE"
+        deploy detect-bootstrap "$_DETECT_IMAGE" 512Mi 1 1 5 "$SECRETS" \
+          "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080"
 
-        gcloud run deploy detect-bootstrap \
-          --image $_DETECT_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+        # ---- stream-parser ----
+        clear_conflicts stream-parser "$CLEAR_VARS" "$_STREAM_IMAGE"
+        deploy stream-parser "$_STREAM_IMAGE" 4Gi 4 1 5 "$SECRETS" \
+          "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,AI_INLINE_MODE=${_AI_INLINE_MODE},MAX_AI_CALLS_PER_JOB=${_MAX_AI_CALLS_PER_JOB}" \
+          --concurrency 1
 
-        gcloud run deploy detect-bootstrap \
-          --image $_DETECT_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --allow-unauthenticated \
-          --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 512Mi \
-          --cpu 1 \
-          --timeout 3600s \
-          --max-instances 5 \
-          --min-instances 1 \
-          --no-cpu-throttling \
-          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
-          --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+        # >>> DISABLED FOR FAST TEST BUILDS: ai-classifier deploy. Uncomment to restore. <<<
+        # clear_conflicts ai-classifier "$CLEAR_VARS" "$_AI_IMAGE"
+        # deploy ai-classifier "$_AI_IMAGE" 512Mi 1 1 5 "$SECRETS" \
+        #   "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080"
 
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        gcloud run deploy stream-parser \
-          --image $_STREAM_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+        # ---- load / load-small / load-large ----
+        # Only "load" ever carried legacy conflicting vars, so it's the only one that
+        # needs the clear step; load-small/load-large were introduced clean.
+        clear_conflicts load "$CLEAR_VARS" "$_LOAD_IMAGE"
+        deploy load-small "$_LOAD_IMAGE" 1Gi 2 0 5 "$SECRETS" \
+          "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,LOAD_QUEUE_URL=fpp-load"
+        deploy load "$_LOAD_IMAGE" 2Gi 4 1 5 "$SECRETS" \
+          "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,LOAD_QUEUE_URL=fpp-load"
+        deploy load-large "$_LOAD_IMAGE" 4Gi 4 0 5 "$SECRETS" \
+          "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,LOAD_QUEUE_URL=fpp-load"
 
-        gcloud run deploy stream-parser \
-          --image $_STREAM_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
+        # ---- report ----
+        clear_conflicts report "$CLEAR_VARS" "$_REPORT_IMAGE"
+        deploy report "$_REPORT_IMAGE" 512Mi 1 1 5 "$SECRETS" \
+          "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080"
 
-        gcloud run deploy stream-parser \
-          --image $_STREAM_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --allow-unauthenticated \
-          --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 4Gi \
-          --cpu 4 \
-          --timeout 3600s \
-          --max-instances 5 \
-          --min-instances 1 \
-          --concurrency 1 \
-          --no-cpu-throttling \
-          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,AI_INLINE_MODE=${_AI_INLINE_MODE},MAX_AI_CALLS_PER_JOB=${_MAX_AI_CALLS_PER_JOB} \
-          --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
+        # >>> DISABLED FOR FAST TEST BUILDS: retry deploy. Uncomment to restore. <<<
+        # clear_conflicts retry "$CLEAR_VARS" "$_RETRY_IMAGE"
+        # deploy retry "$_RETRY_IMAGE" 512Mi 1 1 5 "$SECRETS" \
+        #   "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080"
 
-  # >>> DISABLED FOR FAST TEST BUILDS: ai-classifier deploy. Uncomment this whole step to restore. <<<
-  # - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  #   entrypoint: bash
-  #   args:
-  #     - -c
-  #     - |
-  #       gcloud run deploy ai-classifier \
-  #         --image $_AI_IMAGE \
-  #         --region $_REGION \
-  #         --platform managed \
-  #         --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
-  #
-  #       gcloud run deploy ai-classifier \
-  #         --image $_AI_IMAGE \
-  #         --region $_REGION \
-  #         --platform managed \
-  #         --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
-  #
-  #       gcloud run deploy ai-classifier \
-  #         --image $_AI_IMAGE \
-  #         --region $_REGION \
-  #         --platform managed \
-  #         --allow-unauthenticated \
-  #         --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-  #         --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-  #         --memory 512Mi \
-  #         --cpu 1 \
-  #         --timeout 3600s \
-  #         --max-instances 5 \
-  #         --min-instances 1 \
-  #         --no-cpu-throttling \
-  #         --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
-  #         --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
-
-  # load + report deploys: re-enabled so jobs reach "done" (load bulk-inserts parsed rows,
-  # report writes reports/<jobId>/report.json). Both services already have latestRevision:true.
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        gcloud run deploy load \
-          --image $_LOAD_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
-
-        gcloud run deploy load \
-          --image $_LOAD_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
-
-        gcloud run deploy load-small \
-          --image $_LOAD_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --allow-unauthenticated \
-          --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 1Gi \
-          --cpu 2 \
-          --timeout 3600s \
-          --max-instances 5 \
-          --min-instances 0 \
-          --no-cpu-throttling \
-          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,LOAD_QUEUE_URL=fpp-load \
-          --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
-
-        gcloud run deploy load \
-          --image $_LOAD_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --allow-unauthenticated \
-          --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 2Gi \
-          --cpu 4 \
-          --timeout 3600s \
-          --max-instances 5 \
-          --min-instances 1 \
-          --no-cpu-throttling \
-          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,LOAD_QUEUE_URL=fpp-load \
-          --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
-
-        gcloud run deploy load-large \
-          --image $_LOAD_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --allow-unauthenticated \
-          --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 4Gi \
-          --cpu 4 \
-          --timeout 3600s \
-          --max-instances 5 \
-          --min-instances 0 \
-          --no-cpu-throttling \
-          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,LOAD_QUEUE_URL=fpp-load \
-          --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
-
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        gcloud run deploy report \
-          --image $_REPORT_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
-
-        gcloud run deploy report \
-          --image $_REPORT_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
-
-        gcloud run deploy report \
-          --image $_REPORT_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --allow-unauthenticated \
-          --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 512Mi \
-          --cpu 1 \
-          --timeout 3600s \
-          --max-instances 5 \
-          --min-instances 1 \
-          --no-cpu-throttling \
-          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
-          --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
-
-  # >>> DISABLED FOR FAST TEST BUILDS: retry deploy. Uncomment to restore. <<<
-  # - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-  #   entrypoint: bash
-  #   args:
-  #     - -c
-  #     - |
-  #       gcloud run deploy retry \
-  #         --image $_RETRY_IMAGE \
-  #         --region $_REGION \
-  #         --platform managed \
-  #         --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
-  #
-  #       gcloud run deploy retry \
-  #         --image $_RETRY_IMAGE \
-  #         --region $_REGION \
-  #         --platform managed \
-  #         --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
-  #
-  #       gcloud run deploy retry \
-  #         --image $_RETRY_IMAGE \
-  #         --region $_REGION \
-  #         --platform managed \
-  #         --allow-unauthenticated \
-  #         --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-  #         --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-  #         --memory 512Mi \
-  #         --cpu 1 \
-  #         --timeout 3600s \
-  #         --max-instances 5 \
-  #         --min-instances 1 \
-  #         --no-cpu-throttling \
-  #         --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080 \
-  #         --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
-  #
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        gcloud run deploy archive-entry-consumer \
-          --image $_ARCHIVE_ENTRY_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-env-vars=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
-
-        gcloud run deploy archive-entry-consumer \
-          --image $_ARCHIVE_ENTRY_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --no-traffic \
-          --remove-secrets=DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD || true
-
-        gcloud run deploy archive-entry-consumer \
-          --image $_ARCHIVE_ENTRY_IMAGE \
-          --region $_REGION \
-          --platform managed \
-          --allow-unauthenticated \
-          --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
-          --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 2Gi \
-          --cpu 1 \
-          --timeout 3600s \
-          --max-instances 5 \
-          --min-instances 1 \
-          --no-cpu-throttling \
+        # ---- archive-entry-consumer ----
+        clear_conflicts archive-entry-consumer "$CLEAR_VARS" "$_ARCHIVE_ENTRY_IMAGE"
+        deploy archive-entry-consumer "$_ARCHIVE_ENTRY_IMAGE" 2Gi 1 1 5 "$SECRETS" \
+          "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,RAR_TEMP_MOUNT=/mnt/scratch,ARCHIVE_ENTRY_QUEUE_URL=pubsub://projects/${PROJECT_ID}/topics/fpp-archive-entry,LARGE_FILE_THRESHOLD_BYTES=524288000" \
           --execution-environment gen2 \
           --session-affinity \
-          --set-env-vars QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,RAR_TEMP_MOUNT=/mnt/scratch,ARCHIVE_ENTRY_QUEUE_URL=pubsub://projects/data-etl-499916/topics/fpp-archive-entry,LARGE_FILE_THRESHOLD_BYTES=524288000 \
           --add-volume name=rar-temp,type=cloud-storage,bucket=datalead-osint \
-          --add-volume-mount volume=rar-temp,mount-path=/mnt/scratch \
-          --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
-
-  # Ensure all deployed services route 100% of traffic to the newly built revisions.
-  # This guards against builds that deploy revisions but leave traffic on an older one.
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'migrate-cloud-run-traffic'
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        for svc in job-service ingest detect-bootstrap stream-parser load report archive-entry-consumer; do
-          echo "Routing traffic to latest for $svc"
-          gcloud run services update-traffic $svc --to-latest --region $_REGION --platform managed --quiet || echo "Traffic migration skipped for $svc"
-        done
+          --add-volume-mount volume=rar-temp,mount-path=/mnt/scratch
 
 images:
   - $_JOB_IMAGE
