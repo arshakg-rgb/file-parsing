@@ -36,7 +36,7 @@ steps:
       - -c
       - |
         set -euo pipefail
-        npm ci
+        npm install
         npm run lint
         npm test
         npm run build
