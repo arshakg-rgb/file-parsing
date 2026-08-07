@@ -1,5 +1,6 @@
 import pino from "pino";
 import { settings } from "@shared/Settings.js";
+import { mapWithConcurrency } from "@utils/concurrency.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, SourceType, IngestMessage } from "@shared/models/job.js";
 import { BombError } from "@errors/BombError.js";
@@ -466,8 +467,7 @@ export class IngestService
       this.stats.s3PrefixFanouts++;
       const objects: [string, number][] = await this.ingestServiceImpl.listS3Prefix(url);
 
-      for (const [objUrl, objSize] of objects)
-      {
+      await mapWithConcurrency(objects, 25, async ([objUrl, objSize]) => {
         await this.queueService.publishEvent(
             makeJobEvent(EventType.ENTRY_DISCOVERED, msg.job_id, "ingest", {
               parent_job_id: msg.job_id,
@@ -479,7 +479,7 @@ export class IngestService
               source_type: SourceType.S3,
             })
         );
-      }
+      });
       this.logger.info("s3_prefix_fanout", { job_id: msg.job_id, count: objects.length });
       MetricsUtils.increment("ingest.prefix_fanout", objects.length);
       return null;
@@ -640,15 +640,10 @@ export class IngestService
         return;
       }
 
-      let hasPending: boolean = false;
-
-      for (const entry of entries)
-      {
-        if (await this.processArchiveEntry(jobId, entry))
-        {
-          hasPending = true;
-        }
-      }
+      const results = await mapWithConcurrency(entries, 25, (entry) =>
+        this.processArchiveEntry(jobId, entry)
+      );
+      const hasPending: boolean = results.some(Boolean);
 
       this.logger.info("archive_extracted", { job_id: jobId, entries: entries.length, pending: hasPending });
       MetricsUtils.increment("ingest.archive_extracted", entries.length);
