@@ -174,7 +174,7 @@ export class BigQueryManager extends ServiceManager
 
     if (limit !== undefined)
     {
-      sql += ` LIMIT @limit`;
+      sql += " LIMIT @limit";
     }
 
     return this.query<T>(sql, { ...where, ...(limit !== undefined ? { limit } : {}) }, types);

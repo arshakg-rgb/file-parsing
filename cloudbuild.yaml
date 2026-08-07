@@ -58,7 +58,7 @@ steps:
           gcloud pubsub topics create "$$topic" --project=data-etl-499916 || true
           gcloud pubsub subscriptions create "$$topic-sub" \
             --topic="$$topic" \
-            --ack-deadline-seconds=60 \
+            --ack-deadline=60s \
             --project=data-etl-499916 || true
         done
 
