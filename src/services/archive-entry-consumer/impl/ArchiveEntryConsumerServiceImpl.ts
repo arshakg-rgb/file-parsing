@@ -121,7 +121,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
 
       try
       {
-        const { s3Url, size } = await this.extractSingleRarEntry(jobId, archiveS3Url, entryName, password);
+        const { s3Url, size } = await this.extractSingleRarEntry(jobId, archiveS3Url, entryName, password, entryId);
 
         const [bucket, key] = this.gcsUtils.parseGcsUrl(s3Url);
 
@@ -136,7 +136,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
           await this.publishDiscoveredEntry(jobId, batchId, s3Url, entryName, size, fieldSpec);
         }
 
-        await DatabaseService.getInstance().markPendingEntryCompleted(entryId);
+        await DatabaseService.getInstance().markPendingEntryCompleted(jobId, entryId);
         this.logger.info(LogEvent.COMPLETED, { job_id: jobId, entry_name: entryName });
         return { success: true };
       }
@@ -144,7 +144,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
       {
         const errMsg: string = err instanceof Error ? err.message : String(err);
         this.logger.error(LogEvent.FAILED, { job_id: jobId, entry_name: entryName, error: errMsg });
-        await DatabaseService.getInstance().markPendingEntryFailed(entryId, errMsg);
+        await DatabaseService.getInstance().markPendingEntryFailed(jobId, entryId, errMsg);
         return { success: false, error: errMsg };
       }
     }
@@ -227,7 +227,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
      * Extract single RAR entry from archive
      */
 
-    public async extractSingleRarEntry(jobId: string, archiveS3Url: string, entryName: string, password: string | undefined): Promise<{ s3Url: string; size: number }>
+    public async extractSingleRarEntry(jobId: string, archiveS3Url: string, entryName: string, password: string | undefined, entryId: string): Promise<{ s3Url: string; size: number }>
     {
       const [bucket, archiveKey] = this.gcsUtils.parseGcsUrl(archiveS3Url);
       const tmpPath: string = path.join(this.rarMountPath, `${crypto.randomUUID()}.rar`);
@@ -236,7 +236,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
 
       try
       {
-        return await this.extractEntryToGcs(jobId, bucket, entryName, tmpPath, password);
+        return await this.extractEntryToGcs(jobId, bucket, entryName, tmpPath, password, entryId);
       }
       finally
       {
@@ -274,10 +274,11 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
      * Extracts a single entry from a local archive file and streams it to GCS.
      * @private
      */
-    private async extractEntryToGcs(jobId: string, bucket: string, entryName: string, tmpPath: string, password: string | undefined): Promise<{ s3Url: string; size: number }>
+    private async extractEntryToGcs(jobId: string, bucket: string, entryName: string, tmpPath: string, password: string | undefined, entryId: string): Promise<{ s3Url: string; size: number }>
     {
       const safeEntryName: string = entryName.replace(/[#\s]+/g, "_");
-      const entryKey = `ingested/${jobId}/entries/${safeEntryName}`;
+      const outputId = entryId;
+      const entryKey = `ingested/${jobId}/entries/${outputId}/${safeEntryName}`;
       const entryFile = this.gcsUtils.getStorage().bucket(bucket).file(entryKey);
       const writeStream = entryFile.createWriteStream();
 

@@ -69,9 +69,9 @@ export class ParsedRecordRepository
   /**
    * Bulk-loads a Parquet file from GCS into the parsed_records table.
    */
-  async bulkLoadFromGcs(gcsPath: string): Promise<number>
+  async bulkLoadFromGcs(gcsPaths: string[]): Promise<number>
   {
-    return BigQueryManager.getInstance().bulkLoadFromGcs(gcsPath);
+    return BigQueryManager.getInstance().bulkLoadFromGcs(gcsPaths);
   }
 
   /**

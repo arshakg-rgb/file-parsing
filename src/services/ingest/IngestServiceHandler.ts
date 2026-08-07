@@ -309,7 +309,7 @@ export class IngestService
 
       if (!resolved)
       {
-        if (msg.source_type === SourceType.S3 && msg.source_ref.endsWith("/"))
+        if (msg.source_type === SourceType.BUCKET && msg.source_ref.endsWith("/"))
         {
           await this.transition(jobId, JobStatus.COMPLETED);
         }
@@ -430,7 +430,7 @@ export class IngestService
 
   private async resolveSource(msg: IngestMessage): Promise<{ s3Url: string; size: number } | null>
   {
-    if (msg.source_type === SourceType.S3)
+    if (msg.source_type === SourceType.BUCKET)
     {
       return this.resolveS3Source(msg);
     }
@@ -467,7 +467,7 @@ export class IngestService
       this.stats.s3PrefixFanouts++;
       const objects: [string, number][] = await this.ingestServiceImpl.listS3Prefix(url);
 
-      await mapWithConcurrency(objects, 25, async ([objUrl, objSize]) => {
+      const results = await mapWithConcurrency(objects, 25, async ([objUrl, objSize]) => {
         await this.queueService.publishEvent(
             makeJobEvent(EventType.ENTRY_DISCOVERED, msg.job_id, "ingest", {
               parent_job_id: msg.job_id,
@@ -476,10 +476,26 @@ export class IngestService
               entry_name: objUrl,
               entry_size: objSize,
               field_spec: msg.field_spec || [],
-              source_type: SourceType.S3,
+              source_type: SourceType.BUCKET,
             })
         );
       });
+
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length > 0)
+      {
+        this.logger.error(
+            "s3_prefix_fanout_partial_failure",
+            {
+              job_id: msg.job_id,
+              failed_count: failed.length,
+              total: objects.length,
+              sample_error: String(failed[0].reason),
+            }
+        );
+        throw new Error(`Failed to publish ${failed.length}/${objects.length} entries for job ${msg.job_id}`);
+      }
+
       this.logger.info("s3_prefix_fanout", { job_id: msg.job_id, count: objects.length });
       MetricsUtils.increment("ingest.prefix_fanout", objects.length);
       return null;
@@ -643,7 +659,17 @@ export class IngestService
       const results = await mapWithConcurrency(entries, 25, (entry) =>
         this.processArchiveEntry(jobId, entry)
       );
-      const hasPending: boolean = results.some(Boolean);
+
+      const failures = results.filter((r) => r.status === "rejected");
+      if (failures.length > 0)
+      {
+        this.logger.error(
+            "archive_fanout_partial_failure",
+            { job_id: jobId, failed_count: failures.length, total: entries.length }
+        );
+      }
+
+      const hasPending: boolean = results.some((r) => r.status === "fulfilled" && r.value === true);
 
       this.logger.info("archive_extracted", { job_id: jobId, entries: entries.length, pending: hasPending });
       MetricsUtils.increment("ingest.archive_extracted", entries.length);

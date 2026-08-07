@@ -51,7 +51,7 @@ app.post("/upload", upload.single("file"), async (req: Request, res: Response) =
 
     await QueueService.getInstance().sendRaw(settings.INGEST_QUEUE_URL, {
       job_id: jobId,
-      source_type: "s3",
+      source_type: "bucket",
       source_ref: `gs://${settings.DATA_BUCKET}/${filename}`,
       field_spec,
       user_id: user_id || "unknown",

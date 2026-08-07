@@ -24,7 +24,7 @@ async function createJobFromGCS(gcsUrl: string, fieldSpec: string[]): Promise<{ 
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ 
-      source_type: "s3", 
+      source_type: "bucket", 
       source_ref: gcsUrl,
       field_spec: JSON.stringify(fieldSpec) 
     }),

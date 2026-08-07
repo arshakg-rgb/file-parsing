@@ -79,7 +79,7 @@ async function sendIngestMessage(s3Key: string): Promise<string> {
   const jobId = randomUUID();
   const message = {
     job_id: jobId,
-    source_type: "s3",
+    source_type: "bucket",
     source_ref: `s3://${DATA_BUCKET}/${s3Key}`,
     field_spec: ["id", "name", "email", "created_at"],
   };

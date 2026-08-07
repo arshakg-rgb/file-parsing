@@ -115,12 +115,12 @@ export class JobServiceImpl implements JobService
       throw new ValidationError(ValidationError.INPUT, `Invalid source_type: ${source_type}`);
     }
 
-    if ([SourceType.S3, SourceType.URL, SourceType.ARCHIVE_ENTRY].includes(source_type) && !source_ref)
+    if ([SourceType.BUCKET, SourceType.URL, SourceType.ARCHIVE_ENTRY].includes(source_type) && !source_ref)
     {
-      throw new ValidationError(ValidationError.INPUT, "source_ref is required for s3, url and archive_entry sources");
+      throw new ValidationError(ValidationError.INPUT, "source_ref is required for bucket, url and archive_entry sources");
     }
 
-    if ((source_type === SourceType.S3 || source_type === SourceType.ARCHIVE_ENTRY) && source_ref)
+    if ((source_type === SourceType.BUCKET || source_type === SourceType.ARCHIVE_ENTRY) && source_ref)
     {
       if (!/^gs:\/\/|^s3:\/\//i.test(source_ref))
       {

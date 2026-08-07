@@ -28,7 +28,7 @@ export interface StateMachine
         newStatus: JobStatus,
         error?: string,
         extraFields?: Record<string, unknown>
-    ): Promise<ParseJobRow>;
+    ): Promise<ParseJobRow | null>;
 
     /**
      * Dispatches an incoming job-lifecycle event to the appropriate handler.

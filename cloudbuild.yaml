@@ -293,6 +293,26 @@ steps:
           --add-volume name=rar-temp,type=cloud-storage,bucket=datalead-osint \
           --add-volume-mount volume=rar-temp,mount-path=/mnt/scratch
 
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-reconciler'
+    waitFor: ['deploy-all']
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        gcloud run jobs deploy reconciler \
+          --image "$_JOB_IMAGE" \
+          --region "$_REGION" \
+          --project data-etl-499916 \
+          --service-account="datalead-osint@data-etl-499916.iam.gserviceaccount.com" \
+          --command=node \
+          --args="dist/scripts/reconciler.js" \
+          --set-env-vars "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=data-etl-499916,TEMPLATE_COLLECTION=file-parsing-templates" \
+          --update-secrets="FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest" \
+          --task-timeout=1800s \
+          --max-retries=0
+
 images:
   - $_JOB_IMAGE
   - $_INGEST_IMAGE

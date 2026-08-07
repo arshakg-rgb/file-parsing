@@ -125,5 +125,6 @@
     "sourceMap": true,
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/scripts", "src/db"]
+  "exclude": ["node_modules", "dist", "src/scripts", "src/db"],
+  "files": ["src/scripts/reconciler.ts"]
 }

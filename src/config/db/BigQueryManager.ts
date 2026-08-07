@@ -328,18 +328,23 @@ export class BigQueryManager extends ServiceManager
    * uses a DML INSERT ... SELECT to cast the STRING `fields` column into the
    * target `JSON` column of `parsed_records`.
    */
-  public async bulkLoadFromGcs(gcsUri: string): Promise<number>
+  public async bulkLoadFromGcs(gcsUris: string[]): Promise<number>
   {
+    if (!gcsUris.length)
+    {
+      return 0;
+    }
+
     const stagingName = `parsed_records_staging_${randomUUID().replace(/-/g, "_")}`;
     const stagingFull = this.fullTableName(stagingName);
     const targetFull = this.fullTableName("parsed_records");
 
-    this.logger.info({ source: gcsUri, staging: stagingName }, "bigquery_bulk_load_start");
+    this.logger.info({ sources: gcsUris, staging: stagingName }, "bigquery_bulk_load_start");
 
     const [job] = await this.client.createJob({
       configuration: {
         load: {
-          sourceUris: [gcsUri],
+          sourceUris: gcsUris,
           destinationTable: {
             projectId: settings.BIGQUERY_PROJECT_ID,
             datasetId: settings.BIGQUERY_DATASET,
@@ -354,7 +359,7 @@ export class BigQueryManager extends ServiceManager
 
     const metadata = await this.waitForJob(job);
     const outputRows = Number((metadata as { statistics?: { load?: { outputRows?: string | number } } }).statistics?.load?.outputRows ?? 0);
-    this.logger.info({ source: gcsUri, staging: stagingName, outputRows }, "bigquery_staging_loaded");
+    this.logger.info({ sources: gcsUris, staging: stagingName, outputRows }, "bigquery_staging_loaded");
 
     const insertSql = `
       INSERT INTO ${targetFull}
@@ -375,18 +380,18 @@ export class BigQueryManager extends ServiceManager
       FROM ${stagingFull}
     `;
 
-    this.logger.info({ source: gcsUri, staging: stagingName }, "bigquery_insert_start");
+    this.logger.info({ sources: gcsUris, staging: stagingName }, "bigquery_insert_start");
     const inserted = await this.execute(insertSql);
-    this.logger.info({ source: gcsUri, staging: stagingName, inserted }, "bigquery_insert_complete");
+    this.logger.info({ sources: gcsUris, staging: stagingName, inserted }, "bigquery_insert_complete");
 
-    this.logger.info({ source: gcsUri, staging: stagingName }, "bigquery_drop_staging_start");
+    this.logger.info({ sources: gcsUris, staging: stagingName }, "bigquery_drop_staging_start");
     await this.client.query({
       query: `DROP TABLE IF EXISTS ${stagingFull}`,
       useLegacySql: false,
       location: settings.BIGQUERY_LOCATION,
     });
 
-    this.logger.info({ source: gcsUri, staging: stagingName, outputRows, inserted }, "bigquery_bulk_load_complete");
+    this.logger.info({ sources: gcsUris, staging: stagingName, outputRows, inserted }, "bigquery_bulk_load_complete");
     return inserted;
   }
 

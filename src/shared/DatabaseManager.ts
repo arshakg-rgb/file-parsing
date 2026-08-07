@@ -5,6 +5,9 @@ import type { ParseJobAttributes } from "@config/db/models/ParseJob.js";
 import type { OutputPartAttributes } from "@config/db/models/OutputPart.js";
 import type { DeadLetterAttributes } from "@config/db/models/DeadLetter.js";
 import { InstantiationError } from "@errors/InstantiationError";
+import { EventType, makeJobEvent } from "@shared/models/events.js";
+import { JobStatus } from "@shared/models/job.js";
+import { QueueService } from "@shared/QueueService.js";
 
 export type ParseJobRow = ParseJobAttributes;
 export type OutputPartRow = OutputPartAttributes;
@@ -112,19 +115,46 @@ export class DatabaseService
   }
 
   /**
-   * Marks a pending archive entry as "completed".
+   * Marks a pending archive entry as "completed" and checks whether the
+   * parent job is now fully resolved.
    */
-  public async markPendingEntryCompleted(entryId: string): Promise<void>
+  public async markPendingEntryCompleted(jobId: string, entryId: string): Promise<void>
   {
     await this.repositories.pendingArchiveEntries.markStatus(entryId, "completed");
+    await this.attemptParentCompletion(jobId);
   }
 
   /**
-   * Marks a pending archive entry as "failed".
+   * Marks a pending archive entry as "failed" and checks whether the
+   * parent job is now fully resolved.
    */
-  public async markPendingEntryFailed(entryId: string, error: string): Promise<void>
+  public async markPendingEntryFailed(jobId: string, entryId: string, error: string): Promise<void>
   {
     await this.repositories.pendingArchiveEntries.markStatus(entryId, "failed", error);
+    await this.attemptParentCompletion(jobId);
+  }
+
+  /**
+   * Publishes a parent completion event when all of its pending archive entries
+   * have been processed. The StateMachine's atomic transition guard ensures that
+   * only one concurrent completion actually writes the final job status.
+   *
+   * @private
+   */
+  private async attemptParentCompletion(jobId: string): Promise<void>
+  {
+    const counts = await this.repositories.pendingArchiveEntries.getCountByJob(jobId);
+
+    if (counts.pending > 0)
+    {
+      return;
+    }
+
+    const newStatus = counts.failed > 0 ? JobStatus.FAILED : JobStatus.COMPLETED;
+
+    await QueueService.getInstance().publishEvent(makeJobEvent(EventType.JOB_STATUS_CHANGED, jobId, "archive-entry-consumer", {
+      new_status: newStatus,
+    }));
   }
 
 }

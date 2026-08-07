@@ -114,7 +114,7 @@ export class StateMachineImpl implements StateMachine
    * @throws TransitionError if the job does not exist or the transition is invalid.
    */
 
-  public async transition(jobId: string, newStatus: JobStatus, error?: string, extraFields: Record<string, unknown> = {}): Promise<ParseJobRow>
+  public async transition(jobId: string, newStatus: JobStatus, error?: string, extraFields: Record<string, unknown> = {}): Promise<ParseJobRow | null>
   {
     const row: IParseJob = await this.getJob(jobId);
 
@@ -143,16 +143,49 @@ export class StateMachineImpl implements StateMachine
       timings["completed_at"] = new Date().toISOString();
     }
 
-    const updates: Record<string, unknown> = {
-      status: newStatus,
-      timings,
-      updated_at: new Date(),
+    const changes: Partial<ParseJobRow> = {
+      ...(extraFields as Partial<ParseJobRow>),
     };
 
-    if (error)
+    if (error !== undefined)
     {
-      updates.error = error;
+      changes.error = error;
     }
+
+    if (extraFields.timings && typeof extraFields.timings === "object")
+    {
+      changes.timings = { ...timings, ...(extraFields.timings as Record<string, unknown>) } as JobTimings;
+    }
+    else
+    {
+      changes.timings = timings as JobTimings;
+    }
+
+    if (extraFields.counts && typeof extraFields.counts === "object")
+    {
+      changes.counts = {
+        ...(row.counts || EMPTY_COUNTS),
+        ...(extraFields.counts as Record<string, unknown>),
+      } as JobCounts;
+    }
+
+    const ok = await this.jobsRepo.tryTransitionStatus(jobId, newStatus, [current], changes);
+
+    if (!ok)
+    {
+      this.logger.info({ job_id: jobId, attempted: newStatus, from: current }, "transition_lost_race");
+      return null;
+    }
+
+    this.logger.info(
+        {
+          job_id: jobId,
+          from: current,
+          to: newStatus,
+          terminal: isTerminal(newStatus),
+        },
+        "job_transition"
+    );
 
     if (newStatus === JobStatus.FAILED)
     {
@@ -175,23 +208,6 @@ export class StateMachineImpl implements StateMachine
       });
     }
 
-    Object.assign(updates, extraFields);
-
-    if (extraFields.timings && typeof extraFields.timings === "object")
-    {
-      updates.timings = { ...timings, ...(extraFields.timings as Record<string, unknown>) };
-    }
-
-    if (extraFields.counts && typeof extraFields.counts === "object")
-    {
-      updates.counts = {
-        ...(row.counts || EMPTY_COUNTS),
-        ...(extraFields.counts as Record<string, unknown>),
-      };
-    }
-
-    await this.jobsRepo.updateFields(jobId, updates);
-
     return (await this.getJob(jobId))!;
   }
 
@@ -208,6 +224,27 @@ export class StateMachineImpl implements StateMachine
       case EventType.JOB_STATUS_CHANGED:
       {
         const statusData = event.data as unknown as StatusChangedData;
+        const row = await this.getJob(event.job_id);
+
+        if (!row)
+        {
+          this.logger.error({ job_id: event.job_id }, "job_status_changed_job_not_found");
+          break;
+        }
+
+        const current = row.status as JobStatus;
+
+        if (isTerminal(current))
+        {
+          this.logger.info({ job_id: event.job_id, current_status: current, requested: statusData.new_status }, "job_status_changed_ignored_terminal");
+          break;
+        }
+
+        if (current === statusData.new_status)
+        {
+          break;
+        }
+
         await this.transition(event.job_id, statusData.new_status, statusData.error);
         break;
       }
@@ -243,16 +280,31 @@ export class StateMachineImpl implements StateMachine
   private async onLoadingCompleted(event: JobEvent): Promise<void>
   {
     const row: IParseJob = await this.getJob(event.job_id);
-    await this.transition(event.job_id, JobStatus.REPORTING, undefined, { counts: row?.counts });
+
+    const current = row?.status as JobStatus | undefined;
+
+    if (!row || current !== JobStatus.SAVING_TO_DATABASE)
+    {
+      this.logger.info({ job_id: event.job_id, status: current }, "loading_completed_ignored");
+      return;
+    }
+
+    const updated = await this.transition(event.job_id, JobStatus.REPORTING, undefined, { counts: row.counts });
+
+    if (!updated)
+    {
+      this.logger.info({ job_id: event.job_id }, "loading_completed_lost_race");
+      return;
+    }
 
     await this.enqueue(settings.REPORT_QUEUE_URL, {
       job_id: event.job_id,
-      status: row?.status,
-      counts: row?.counts,
-      output_paths: Array.isArray(row?.output_paths) ? row.output_paths : [],
-      rubbish_log_path: (row?.timings as JobTimings)?._rubbish_log_path ?? null,
-      dlq_count: (row?.timings as JobTimings)?._dlq_count ?? 0,
-      csv_output_path: (row?.timings as JobTimings)?._csv_output_path ?? null,
+      status: row.status,
+      counts: row.counts,
+      output_paths: Array.isArray(row.output_paths) ? row.output_paths : [],
+      rubbish_log_path: (row.timings as JobTimings)?._rubbish_log_path ?? null,
+      dlq_count: (row.timings as JobTimings)?._dlq_count ?? 0,
+      csv_output_path: (row.timings as JobTimings)?._csv_output_path ?? null,
     });
   }
 
@@ -266,8 +318,22 @@ export class StateMachineImpl implements StateMachine
   private async onReportingCompleted(event: JobEvent): Promise<void>
   {
     const row: IParseJob = await this.getJob(event.job_id);
-    const counts: JobCounts = ((event.data as Record<string, unknown>).counts as JobCounts) || row?.counts;
-    await this.transition(event.job_id, JobStatus.COMPLETED, undefined, { counts });
+
+    const current = row?.status as JobStatus | undefined;
+
+    if (!row || current !== JobStatus.REPORTING)
+    {
+      this.logger.info({ job_id: event.job_id, status: current }, "reporting_completed_ignored");
+      return;
+    }
+
+    const counts: JobCounts = ((event.data as Record<string, unknown>).counts as JobCounts) || row.counts;
+    const updated = await this.transition(event.job_id, JobStatus.COMPLETED, undefined, { counts });
+
+    if (!updated)
+    {
+      this.logger.info({ job_id: event.job_id }, "reporting_completed_lost_race");
+    }
   }
 
   /**
@@ -362,6 +428,14 @@ export class StateMachineImpl implements StateMachine
       return;
     }
 
+    const currentStatus = row.status as JobStatus;
+
+    if (currentStatus !== JobStatus.PARSING)
+    {
+      this.logger.info({ job_id: event.job_id, status: currentStatus }, "parsing_completed_already_processed");
+      return;
+    }
+
     const counts = { ...(row.counts || EMPTY_COUNTS) };
     counts.parsed = data.parsed;
     counts.dropped_rubbish = data.dropped_rubbish;
@@ -410,7 +484,13 @@ export class StateMachineImpl implements StateMachine
     });
 
     this.logger.info({ job_id: event.job_id, failed_ratio: failedRatio }, "transitioning_to_finalizing");
-    await this.transition(event.job_id, JobStatus.MERGING_OUTPUT, undefined, { counts, timings });
+    const updated = await this.transition(event.job_id, JobStatus.MERGING_OUTPUT, undefined, { counts, timings });
+
+    if (!updated)
+    {
+      this.logger.info({ job_id: event.job_id }, "parsing_completed_lost_race");
+      return;
+    }
 
     this.logger.info({ job_id: event.job_id, part_paths: data.part_s3_paths }, "starting_finalization");
 

@@ -204,20 +204,17 @@ class LoadServiceImpl extends ServiceManager implements LoadService
 
     try
     {
-      for (const s3Path of msg.output_paths || [])
+      const outputPaths = msg.output_paths || [];
+
+      if (outputPaths.length > 0)
       {
-        const partRows = await this.dbManager.repositories.parsedRecords.bulkLoadFromGcs(s3Path);
-
-        if (!partRows)
-        {
-          continue;
-        }
-
-        this.logger.info({ job_id: jobId, path: s3Path, rows: partRows }, "load_part_complete");
-        totalRows += partRows;
+        totalRows = await this.dbManager.repositories.parsedRecords.bulkLoadFromGcs(outputPaths);
+        this.logger.info({ job_id: jobId, paths: outputPaths.length, rows: totalRows }, "load_complete");
       }
-
-      this.logger.info({ job_id: jobId, total_rows: totalRows }, "load_complete");
+      else
+      {
+        this.logger.info({ job_id: jobId }, "load_no_output_paths");
+      }
       this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: totalRows });
     }
     catch (exc)
