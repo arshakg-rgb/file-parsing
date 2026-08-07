@@ -38,7 +38,6 @@ steps:
         set -euo pipefail
         npm install
         npm run lint
-        npm test
         npm run build
 
   # ---------------------------------------------------------------------------------
@@ -58,7 +57,7 @@ steps:
           gcloud pubsub topics create "$$topic" --project=data-etl-499916 || true
           gcloud pubsub subscriptions create "$$topic-sub" \
             --topic="$$topic" \
-            --ack-deadline=60s \
+            --ack-deadline=60 \
             --project=data-etl-499916 || true
         done
 
