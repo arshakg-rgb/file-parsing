@@ -36,7 +36,7 @@ export class PendingArchiveEntryRepository
   {
     const now = new Date();
 
-    await BigQueryManager.getInstance().insertOne(TABLE, {
+    const row: PendingArchiveEntryAttributes = {
       id: data.id,
       job_id: data.job_id,
       entry_name: data.entry_name,
@@ -45,9 +45,11 @@ export class PendingArchiveEntryRepository
       error: data.error ?? null,
       created_at: now,
       updated_at: now,
-    });
+    };
 
-    return this.findById(data.id);
+    await BigQueryManager.getInstance().insert(TABLE, [row as unknown as Record<string, unknown>]);
+
+    return row;
   }
 
   /**

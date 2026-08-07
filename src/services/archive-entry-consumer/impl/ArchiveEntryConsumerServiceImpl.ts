@@ -113,11 +113,11 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
 
     public async processEntry(req: ArchiveEntryRequest): Promise<ArchiveEntryResponse>
     {
-      const { job_id: jobId, batchId, archive_s3_url: archiveS3Url, entry_name: entryName, field_spec: fieldSpec, password, archive_type: archiveType, nesting_depth: nestingDepth } = req;
+      const { job_id: jobId, entry_id: entryId, batchId, archive_s3_url: archiveS3Url, entry_name: entryName, field_spec: fieldSpec, password, archive_type: archiveType, nesting_depth: nestingDepth } = req;
 
       this.logger.info(LogEvent.PROCESSING, { job_id: jobId, entry_name: entryName, nesting_depth: nestingDepth, archive_type: archiveType });
 
-      await DatabaseService.getInstance().markPendingEntryProcessing(jobId, entryName);
+      await DatabaseService.getInstance().markPendingEntryProcessing(entryId);
 
       try
       {
@@ -136,7 +136,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
           await this.publishDiscoveredEntry(jobId, batchId, s3Url, entryName, size, fieldSpec);
         }
 
-        await DatabaseService.getInstance().markPendingEntryCompleted(jobId, entryName);
+        await DatabaseService.getInstance().markPendingEntryCompleted(entryId);
         this.logger.info(LogEvent.COMPLETED, { job_id: jobId, entry_name: entryName });
         return { success: true };
       }
@@ -144,7 +144,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
       {
         const errMsg: string = err instanceof Error ? err.message : String(err);
         this.logger.error(LogEvent.FAILED, { job_id: jobId, entry_name: entryName, error: errMsg });
-        await DatabaseService.getInstance().markPendingEntryFailed(jobId, entryName, errMsg);
+        await DatabaseService.getInstance().markPendingEntryFailed(entryId, errMsg);
         return { success: false, error: errMsg };
       }
     }

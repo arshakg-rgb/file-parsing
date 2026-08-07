@@ -5,13 +5,11 @@ import path from "path";
 import { ValidationResult } from "joi";
 import {
     validateAppConfig,
-    validateMysqlConfig,
     validateAuthConfig,
     validateCommonConfig,
     validateSocketConfig,
     validateRedisConfig
 } from "./ConfigValidator.js";
-import { IPostgreSqlConfig } from "./io/IPostgreSqlConfig.js";
 import { IAppConfig } from "./io/IAppConfig.js";
 import { IAuthConfig } from "./io/IAuthConfig.js";
 import { ICommonConfig } from "./io/ICommonConfig.js";
@@ -23,7 +21,6 @@ const logger: pino.Logger = pino();
 export default class Config
 {
     private static instance: Config;
-    private readonly _mysqlConfig: IPostgreSqlConfig;
     private readonly _socketConfig: ISocketConfig;
     private readonly _appConfig: IAppConfig;
     private readonly _redisConfig: IRedisConfig;
@@ -46,7 +43,6 @@ export default class Config
         try
         {
             this._appConfig = this.readConfigFile<IAppConfig>("app.json", validateAppConfig);
-            this._mysqlConfig = this.readConfigFile<IPostgreSqlConfig>("mysql.json", validateMysqlConfig);
             this._socketConfig = this.readConfigFile<ISocketConfig>("socket.json", validateSocketConfig);
             this._redisConfig = this.readConfigFile<IRedisConfig>("redis-config.json", validateRedisConfig);
             this._authConfig = this.readConfigFile<IAuthConfig>("auth.json", validateAuthConfig);
@@ -104,26 +100,6 @@ export default class Config
     public get redisConfig(): IRedisConfig
     {
         return this._redisConfig;
-    }
-
-    /**
-     * Gets the PostgreSQL configuration.
-     * @returns The PostgreSQL configuration.
-     */
-
-    public get postgresConfig(): IPostgreSqlConfig
-    {
-        return this._mysqlConfig;
-    }
-
-    /**
-     * Alias for postgresConfig to maintain compatibility with DatabaseManager.
-     * @returns The PostgreSQL configuration.
-     */
-
-    public get databaseConfig(): IPostgreSqlConfig
-    {
-        return this._mysqlConfig;
     }
 
     /**

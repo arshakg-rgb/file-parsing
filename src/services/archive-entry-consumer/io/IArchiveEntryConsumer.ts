@@ -1,5 +1,6 @@
 export interface ArchiveEntryRequest {
   job_id: string;
+  entry_id: string;
   batchId: string;
   archive_s3_url: string;
   entry_name: string;

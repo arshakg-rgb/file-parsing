@@ -192,7 +192,6 @@ steps:
         REGION="$_REGION"
         PROJECT_ID="data-etl-499916"
         SA="datalead-osint@data-etl-499916.iam.gserviceaccount.com"
-        SQL_INSTANCE="data-etl-499916:us-central1:datalead-osint"
 
         SECRETS="FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest"
         SECRETS_WITH_CORS="$$SECRETS,CORS_DOMAINS=CORS_DOMAINS:latest,CORS_ENABLED=CORS_ENABLED:latest"
@@ -223,7 +222,6 @@ steps:
             --platform managed \
             --allow-unauthenticated \
             --service-account="$$SA" \
-            --add-cloudsql-instances="$$SQL_INSTANCE" \
             --memory "$memory" \
             --cpu "$cpu" \
             --timeout 3600s \

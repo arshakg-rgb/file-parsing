@@ -211,12 +211,13 @@ export class RarExtractor
 
         try
         {
-            const created: boolean = await DatabaseService.getInstance().createPendingArchiveEntry(jobId, file.name, file.size);
+            const entryId: string | null = await DatabaseService.getInstance().createPendingArchiveEntry(jobId, file.name, file.size);
 
-            if (created)
+            if (entryId)
             {
                 await QueueService.getInstance().sendRaw(settings.ARCHIVE_ENTRY_QUEUE_URL, {
                     job_id: jobId,
+                    entry_id: entryId,
                     batchId: batchId,
                     archive_s3_url: s3Url,
                     entry_name: file.name,
