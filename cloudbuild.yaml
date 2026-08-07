@@ -55,9 +55,9 @@ steps:
       - |
         set -uo pipefail
         for topic in fpp-ingest fpp-classify fpp-parse fpp-line-dlq fpp-load fpp-report fpp-job-events fpp-archive-entry; do
-          gcloud pubsub topics create "$topic" --project=data-etl-499916 || true
-          gcloud pubsub subscriptions create "${topic}-sub" \
-            --topic="$topic" \
+          gcloud pubsub topics create "$$topic" --project=data-etl-499916 || true
+          gcloud pubsub subscriptions create "$$topic-sub" \
+            --topic="$$topic" \
             --ack-deadline-seconds=60 \
             --project=data-etl-499916 || true
         done
@@ -196,19 +196,19 @@ steps:
         SQL_INSTANCE="data-etl-499916:us-central1:datalead-osint"
 
         SECRETS="FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest"
-        SECRETS_WITH_CORS="${SECRETS},CORS_DOMAINS=CORS_DOMAINS:latest,CORS_ENABLED=CORS_ENABLED:latest"
+        SECRETS_WITH_CORS="$$SECRETS,CORS_DOMAINS=CORS_DOMAINS:latest,CORS_ENABLED=CORS_ENABLED:latest"
         CLEAR_VARS="DATABASE_URL,FILE_DATABASE_URL,DATA_BUCKET,FIRESTORE_DATABASE_ID,BEDROCK_MODEL_ID,LOKI_HOST,LOKI_USERNAME,LOKI_PASSWORD"
-        CLEAR_VARS_JOB="${CLEAR_VARS},CORS_DOMAINS,CORS_ENABLED"
+        CLEAR_VARS_JOB="$$CLEAR_VARS,CORS_DOMAINS,CORS_ENABLED"
 
         # Strips conflicting env vars / secrets left over from a prior revision of $1.
         # A "does not exist" response here just means it's the service's first-ever
         # deploy, which is expected and fine — anything else should still be visible.
         clear_conflicts() {
           local name="$1" clear_vars="$2"
-          gcloud run deploy "$name" --region "$REGION" --platform managed --no-traffic \
+          gcloud run deploy "$name" --region "$$REGION" --platform managed --no-traffic \
             --image "$3" --remove-env-vars="$clear_vars" \
             || echo "  [info] no prior env vars to clear for $name (first deploy?)"
-          gcloud run deploy "$name" --region "$REGION" --platform managed --no-traffic \
+          gcloud run deploy "$name" --region "$$REGION" --platform managed --no-traffic \
             --image "$3" --remove-secrets="$clear_vars" \
             || echo "  [info] no prior secrets to clear for $name (first deploy?)"
         }
@@ -217,14 +217,14 @@ steps:
         deploy() {
           local name="$1" image="$2" memory="$3" cpu="$4" min="$5" max="$6" secrets="$7" env_vars="$8"
           shift 8
-          echo "=== Deploying ${name} ==="
+          echo "=== Deploying $$name ==="
           gcloud run deploy "$name" \
             --image "$image" \
-            --region "$REGION" \
+            --region "$$REGION" \
             --platform managed \
             --allow-unauthenticated \
-            --service-account="$SA" \
-            --add-cloudsql-instances="$SQL_INSTANCE" \
+            --service-account="$$SA" \
+            --add-cloudsql-instances="$$SQL_INSTANCE" \
             --memory "$memory" \
             --cpu "$cpu" \
             --timeout 3600s \
@@ -237,13 +237,13 @@ steps:
         }
 
         # ---- job-service ----
-        clear_conflicts job-service "$CLEAR_VARS_JOB" "$_JOB_IMAGE"
-        deploy job-service "$_JOB_IMAGE" 2Gi 4 1 5 "$SECRETS_WITH_CORS" \
+        clear_conflicts job-service "$$CLEAR_VARS_JOB" "$_JOB_IMAGE"
+        deploy job-service "$_JOB_IMAGE" 2Gi 4 1 5 "$$SECRETS_WITH_CORS" \
           "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080"
 
         # ---- ingest ----
-        clear_conflicts ingest "$CLEAR_VARS" "$_INGEST_IMAGE"
-        deploy ingest "$_INGEST_IMAGE" 4Gi 1 1 5 "$SECRETS" \
+        clear_conflicts ingest "$$CLEAR_VARS" "$_INGEST_IMAGE"
+        deploy ingest "$_INGEST_IMAGE" 4Gi 1 1 20 "$$SECRETS" \
           "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,RAR_TEMP_MOUNT=/mnt/scratch,ARCHIVE_ENTRY_QUEUE_URL=pubsub://projects/${PROJECT_ID}/topics/fpp-archive-entry,LARGE_FILE_THRESHOLD_BYTES=524288000" \
           --execution-environment gen2 \
           --session-affinity \
@@ -251,45 +251,45 @@ steps:
           --add-volume-mount volume=rar-temp,mount-path=/mnt/scratch
 
         # ---- detect-bootstrap ----
-        clear_conflicts detect-bootstrap "$CLEAR_VARS" "$_DETECT_IMAGE"
-        deploy detect-bootstrap "$_DETECT_IMAGE" 512Mi 1 1 5 "$SECRETS" \
+        clear_conflicts detect-bootstrap "$$CLEAR_VARS" "$_DETECT_IMAGE"
+        deploy detect-bootstrap "$_DETECT_IMAGE" 512Mi 1 1 5 "$$SECRETS" \
           "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080"
 
         # ---- stream-parser ----
-        clear_conflicts stream-parser "$CLEAR_VARS" "$_STREAM_IMAGE"
-        deploy stream-parser "$_STREAM_IMAGE" 4Gi 4 1 5 "$SECRETS" \
+        clear_conflicts stream-parser "$$CLEAR_VARS" "$_STREAM_IMAGE"
+        deploy stream-parser "$_STREAM_IMAGE" 4Gi 4 1 20 "$$SECRETS" \
           "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,AI_INLINE_MODE=${_AI_INLINE_MODE},MAX_AI_CALLS_PER_JOB=${_MAX_AI_CALLS_PER_JOB}" \
           --concurrency 1
 
         # >>> DISABLED FOR FAST TEST BUILDS: ai-classifier deploy. Uncomment to restore. <<<
-        # clear_conflicts ai-classifier "$CLEAR_VARS" "$_AI_IMAGE"
-        # deploy ai-classifier "$_AI_IMAGE" 512Mi 1 1 5 "$SECRETS" \
+        # clear_conflicts ai-classifier "$$CLEAR_VARS" "$_AI_IMAGE"
+        # deploy ai-classifier "$_AI_IMAGE" 512Mi 1 1 5 "$$SECRETS" \
         #   "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080"
 
         # ---- load / load-small / load-large ----
         # Only "load" ever carried legacy conflicting vars, so it's the only one that
         # needs the clear step; load-small/load-large were introduced clean.
-        clear_conflicts load "$CLEAR_VARS" "$_LOAD_IMAGE"
-        deploy load-small "$_LOAD_IMAGE" 1Gi 2 0 5 "$SECRETS" \
+        clear_conflicts load "$$CLEAR_VARS" "$_LOAD_IMAGE"
+        deploy load-small "$_LOAD_IMAGE" 1Gi 2 0 5 "$$SECRETS" \
           "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,LOAD_QUEUE_URL=fpp-load"
-        deploy load "$_LOAD_IMAGE" 2Gi 4 1 5 "$SECRETS" \
+        deploy load "$_LOAD_IMAGE" 2Gi 4 1 5 "$$SECRETS" \
           "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,LOAD_QUEUE_URL=fpp-load"
-        deploy load-large "$_LOAD_IMAGE" 4Gi 4 0 5 "$SECRETS" \
+        deploy load-large "$_LOAD_IMAGE" 4Gi 4 0 5 "$$SECRETS" \
           "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,LOAD_QUEUE_URL=fpp-load"
 
         # ---- report ----
-        clear_conflicts report "$CLEAR_VARS" "$_REPORT_IMAGE"
-        deploy report "$_REPORT_IMAGE" 512Mi 1 1 5 "$SECRETS" \
+        clear_conflicts report "$$CLEAR_VARS" "$_REPORT_IMAGE"
+        deploy report "$_REPORT_IMAGE" 512Mi 1 1 5 "$$SECRETS" \
           "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080"
 
         # >>> DISABLED FOR FAST TEST BUILDS: retry deploy. Uncomment to restore. <<<
-        # clear_conflicts retry "$CLEAR_VARS" "$_RETRY_IMAGE"
-        # deploy retry "$_RETRY_IMAGE" 512Mi 1 1 5 "$SECRETS" \
+        # clear_conflicts retry "$$CLEAR_VARS" "$_RETRY_IMAGE"
+        # deploy retry "$_RETRY_IMAGE" 512Mi 1 1 5 "$$SECRETS" \
         #   "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080"
 
         # ---- archive-entry-consumer ----
-        clear_conflicts archive-entry-consumer "$CLEAR_VARS" "$_ARCHIVE_ENTRY_IMAGE"
-        deploy archive-entry-consumer "$_ARCHIVE_ENTRY_IMAGE" 2Gi 1 1 5 "$SECRETS" \
+        clear_conflicts archive-entry-consumer "$$CLEAR_VARS" "$_ARCHIVE_ENTRY_IMAGE"
+        deploy archive-entry-consumer "$_ARCHIVE_ENTRY_IMAGE" 2Gi 1 1 5 "$$SECRETS" \
           "QUEUE_BACKEND=pubsub,GCP_PROJECT_ID=${PROJECT_ID},TEMPLATE_COLLECTION=file-parsing-templates,HEALTH_CHECK_PORT=8080,RAR_TEMP_MOUNT=/mnt/scratch,ARCHIVE_ENTRY_QUEUE_URL=pubsub://projects/${PROJECT_ID}/topics/fpp-archive-entry,LARGE_FILE_THRESHOLD_BYTES=524288000" \
           --execution-environment gen2 \
           --session-affinity \
