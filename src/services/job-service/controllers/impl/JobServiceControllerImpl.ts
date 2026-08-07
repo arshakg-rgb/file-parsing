@@ -193,7 +193,9 @@ export class JobControllerImpl implements JobServiceController
   {
     try
     {
-      const result: IJobResponse[] = await this.service.getBatchJobs(String(req.params.batch_id));
+      const limit: number | undefined = req.query.limit ? Number(req.query.limit) : undefined;
+      const offset: number | undefined = req.query.offset ? Number(req.query.offset) : undefined;
+      const result: IJobResponse[] = await this.service.getBatchJobs(String(req.params.batch_id), limit, offset);
       this.handleSuccessResponse(res, result);
     }
     catch (err)
@@ -208,12 +210,15 @@ export class JobControllerImpl implements JobServiceController
     {
       const raw = req.query.statuses;
       const statuses: string[] | undefined = typeof raw === "string"
-          ? raw.split(",").map((s) => s.trim()).filter(Boolean)
-          : Array.isArray(raw)
-              ? raw.map(String).map((s) => s.trim()).filter(Boolean)
-              : undefined;
+        ? raw.split(",").map((s) => s.trim()).filter(Boolean)
+        : Array.isArray(raw)
+        ? raw.map(String).map((s) => s.trim()).filter(Boolean)
+        : undefined;
 
-      const result: IJobResponse[] = await this.service.getAllJobs(statuses);
+      const limit: number | undefined = req.query.limit ? Number(req.query.limit) : undefined;
+      const offset: number | undefined = req.query.offset ? Number(req.query.offset) : undefined;
+
+      const result: IJobResponse[] = await this.service.getAllJobs(statuses, limit, offset);
       this.handleSuccessResponse(res, result);
     }
     catch (err)

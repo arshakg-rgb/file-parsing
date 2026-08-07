@@ -38,9 +38,9 @@ const JSON_SAFE = JSONbig({ storeAsString: true });
  * - Repository-style methods for data operations
  * - Clean separation of concerns
  *
- * Backward-compatible static entrypoints (`parseJob`, `bootstrap`) are
+ * Backward-compatible static entrypoints (parseJob, bootstrap) are
  * provided so existing call sites that used the old free-function API
- * keep working without going through `getInstance()` directly.
+ * keep working without going through getInstance() directly.
  *
  * @class StreamParserService
  */
@@ -82,17 +82,87 @@ export class StreamParserService
   private readonly DEADLINE_EXTEND_INTERVAL_MS: number = 30000;
 
   /**
+   * How many seconds to extend the queue ack deadline by each time a parse
+   * job is still running past DEADLINE_EXTEND_INTERVAL_MS.
+   * @private
+   */
+
+  private readonly ACK_DEADLINE_EXTENSION_SEC: number = 60;
+
+  /**
+   * How often (in lines) to emit a parse_progress log line.
+   * @private
+   */
+
+  private readonly PARSE_PROGRESS_LOG_INTERVAL: number = 10000;
+
+  /**
+   * Max number of recent lines retained as rolling context for the AI
+   * classifier. AI_CONTEXT_LINES (the slice actually sent per call) must be
+   * <= this value.
+   * @private
+   */
+
+  private readonly CONTEXT_LINES_CACHE_SIZE: number = 5;
+
+  /**
+   * Number of trailing lines from the recent-lines cache sent to the AI
+   * classifier as context for an uncertain line.
+   * @private
+   */
+
+  private readonly AI_CONTEXT_LINES: number = 3;
+
+  /**
+   * Number of leading lines in a job for which verbose classification debug
+   * logs are emitted.
+   * @private
+   */
+
+  private readonly DEBUG_LINE_SAMPLE_COUNT: number = 5;
+
+  /**
+   * Max parse messages pulled from the queue in a single receive call.
+   * @private
+   */
+
+  private readonly MAX_PARSE_BATCH_SIZE: number = 10;
+
+  /**
+   * Long-poll wait time (seconds) for queue receives in the consumer loop.
+   * @private
+   */
+
+  private readonly PARSE_QUEUE_LONG_POLL_SECONDS: number = 5;
+
+  /**
+   * Fraction of RAM_FLUSH_WATERMARK at which the "over watermark" flag is
+   * cleared again (hysteresis, to avoid flapping around the high watermark).
+   * @private
+   */
+
+  private readonly RAM_FLUSH_WATERMARK_LOW_RATIO: number = 0.7;
+
+  /**
+   * Backoff delay used when polling the queue and finding nothing to do, or
+   * when waiting for an active-job slot to free up.
+   * @private
+   */
+
+  private readonly QUEUE_POLL_BACKOFF_MS: number = 1000;
+
+  /**
    * AI rate limiter state - token bucket, enforcing both RPM (requests per
    * minute) and burst limits. Lives directly on the service instance instead
-   * of a separate class/closure so `StreamParserService` remains the only
-   * class in this module. Exposed to collaborators via `getAIRateLimiter()`.
+   * of a separate class/closure so StreamParserService remains the only
+   * class in this module. Exposed to collaborators via getAIRateLimiter().
    * @private
    */
 
   private aiRateLimiterRequests: number[] = [];
 
   /**
-   * Cached delegation handle returned by `getAIRateLimiter()`, so repeated
+   * Cached delegation handle returned by getAIRateLimiter(), so repeated
    * calls hand out the same object identity instead of allocating a new
    * closure per call.
    * @private
@@ -504,6 +574,8 @@ export class StreamParserService
     this.logger.info("adaptive_probing", { job_id: jobId, probe_count: probeCount, file_size: fileSize });
     MetricsUtils.increment("parse.probing_start", 1, { probe_count: String(probeCount) });
 
+    const probeStartTime: number = Date.now();
+
     let detectedEncoding: string = "utf-8";
     let avgRowWidth: number = 0;
     let maxRowWidth: number = 0;
@@ -532,7 +604,6 @@ export class StreamParserService
 
         const content: string = buffer.toString("utf-8").replace(/\0/g, "");
         const lines: string[] = content.split("\n").filter(line => line.trim());
-
         if (lines.length > 0)
         {
           const widths: number[] = lines.map(l => l.length);
@@ -546,11 +617,14 @@ export class StreamParserService
       }
     }
 
+    const probeDuration: number = Date.now() - probeStartTime;
+
     this.logger.info("probing_complete", {
       job_id: jobId,
       encoding: detectedEncoding,
       avg_row_width: avgRowWidth,
-      max_row_width: maxRowWidth
+      max_row_width: maxRowWidth,
+      duration_ms: probeDuration
     });
 
     const recordTemplates: RecordTemplate[] = templateRegistry.getAllRecordTemplates();
@@ -582,7 +656,7 @@ export class StreamParserService
     const bgFlushes: Promise<void>[] = [];
 
     const RAM_WATERMARK_HIGH: number = settings.RAM_FLUSH_WATERMARK;
-    const RAM_WATERMARK_LOW: number = settings.RAM_FLUSH_WATERMARK * 0.7;
+    const RAM_WATERMARK_LOW: number = settings.RAM_FLUSH_WATERMARK * this.RAM_FLUSH_WATERMARK_LOW_RATIO;
     let overWatermark: boolean = false;
     const HOUSEKEEPING_INTERVAL_LINES: number = 1000;
     let sinceHousekeeping: number = 0;
@@ -652,7 +726,7 @@ export class StreamParserService
         try
         {
           this.logger.info("ack_deadline_extending", { job_id: jobId, receiptHandle: activeReceiptHandle.substring(0, 20) + "..." });
-          await this.queueService.modifyAckDeadline(settings.PARSE_QUEUE_URL, activeReceiptHandle, 60);
+          await this.queueService.modifyAckDeadline(settings.PARSE_QUEUE_URL, activeReceiptHandle, this.ACK_DEADLINE_EXTENSION_SEC);
           lastDeadlineExtension = Date.now();
           this.logger.info("ack_deadline_extended", { job_id: jobId });
         }
@@ -731,6 +805,8 @@ export class StreamParserService
 
       let aiHeaderMapped: boolean = false;
 
+      const lineSourceStart: number = Date.now();
+
       const enrichFromMeta = async (row: Record<string, unknown>): Promise<Record<string, unknown>> => {
 
         if (!aiEnabled || !row.meta || typeof row.meta !== "string")
@@ -784,7 +860,7 @@ export class StreamParserService
         lineNo += 1;
         this.stats.totalLinesProcessed++;
 
-        if (lineNo % 10000 === 0)
+        if (lineNo % this.PARSE_PROGRESS_LOG_INTERVAL === 0)
         {
           this.logger.info("parse_progress", { job_id: jobId, line_no: lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
         }
@@ -825,15 +901,16 @@ export class StreamParserService
           if (aiCalls < aiBudget)
           {
             const remainingBudget: number = aiBudget - aiCalls;
-            this.logger.info("ai_call_initiated", { job_id: jobId, line_no: lineNo, ai_calls: aiCalls, ai_budget: aiBudget, remaining_budget: remainingBudget, context_lines: recentLines.slice(-3).length });
+            this.logger.info("ai_call_initiated", { job_id: jobId, line_no: lineNo, ai_calls: aiCalls, ai_budget: aiBudget, remaining_budget: remainingBudget, context_lines: recentLines.slice(-this.AI_CONTEXT_LINES).length });
 
             try
             {
-              const aiResult: ClassifyResult = await classifier.classifyWithTimeout(line, recentLines.slice(-3), settings.AI_CLASSIFY_TIMEOUT_MS, remainingBudget);
+              const aiCallStart: number = Date.now();
+              const aiResult: ClassifyResult = await classifier.classifyWithTimeout(line, recentLines.slice(-this.AI_CONTEXT_LINES), settings.AI_CLASSIFY_TIMEOUT_MS, remainingBudget);
               const used: number = aiResult.ai_calls_used ?? 0;
               aiCalls += used;
               this.stats.totalAiCalls += used;
-              this.logger.info("ai_call_completed", { job_id: jobId, line_no: lineNo, ai_calls: aiCalls, ai_calls_used: used, verdict: aiResult.verdict, template_id: aiResult.template_id });
+              this.logger.info("ai_call_completed", { job_id: jobId, line_no: lineNo, ai_calls: aiCalls, ai_calls_used: used, verdict: aiResult.verdict, template_id: aiResult.template_id, duration_ms: Date.now() - aiCallStart });
 
               if (aiResult.verdict !== "uncertain")
               {
@@ -860,12 +937,12 @@ export class StreamParserService
 
         recentLines.push(line);
 
-        if (recentLines.length > 5)
+        if (recentLines.length > this.CONTEXT_LINES_CACHE_SIZE)
         {
           recentLines.shift();
         }
 
-        if (lineNo <= 5)
+        if (lineNo <= this.DEBUG_LINE_SAMPLE_COUNT)
         {
           this.logger.debug("classification_debug", { job_id: jobId, line_no: lineNo, verdict: result.verdict, template_id: result.template_id, line_length: line.length });
         }
@@ -1047,11 +1124,18 @@ export class StreamParserService
         }
       }
 
-      await flushBatches(true);
+      this.logger.info("lines_streamed", { job_id: jobId, line_count: lineNo, duration_ms: Date.now() - lineSourceStart });
 
+      const finalFlushStart: number = Date.now();
+      await flushBatches(true);
+      this.logger.info("parse_flushed", { job_id: jobId, duration_ms: Date.now() - finalFlushStart });
+
+      const outputFlushStart: number = Date.now();
       const outputPaths: string[] = await outputManager.flushAll();
 
       const csvOutputPath: string = await csvWriter.flush();
+
+      this.logger.info("output_flushed", { job_id: jobId, csv_output_path: csvOutputPath || null, duration_ms: Date.now() - outputFlushStart });
 
       if (csvOutputPath)
       {
@@ -1202,8 +1286,8 @@ export class StreamParserService
         const messages = await this.queueService.receiveMessages<ParseMessage>(
             settings.PARSE_QUEUE_URL,
             (body) => JSON.parse(body) as ParseMessage,
-            Math.min(freeSlots, 10),
-            5
+            Math.min(freeSlots, this.MAX_PARSE_BATCH_SIZE),
+            this.PARSE_QUEUE_LONG_POLL_SECONDS
         );
 
         if (messages.length > 0)
@@ -1223,7 +1307,7 @@ export class StreamParserService
         if (freeSlots > 0)
         {
           // Free slots but queue empty; back off briefly and re-poll.
-          await new Promise((resolve) => setTimeout(resolve, 1000));
+          await new Promise((resolve) => setTimeout(resolve, this.QUEUE_POLL_BACKOFF_MS));
         }
         else
         {
@@ -1233,7 +1317,7 @@ export class StreamParserService
       }
       else if (this.running)
       {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, this.QUEUE_POLL_BACKOFF_MS));
       }
     }
 
@@ -1245,7 +1329,7 @@ export class StreamParserService
   /**
    * Bootstraps the consumer loop when this module is loaded as the service
    * entrypoint. Guarded via STREAM_PARSER_AUTOSTART so importing this module
-   * elsewhere (tests, or another service that only needs `parseJob`) doesn't
+   * elsewhere (tests, or another service that only needs parseJob) doesn't
    * trigger a second, competing consumer loop.
    */
 

@@ -9,8 +9,8 @@ export interface JobService
   uploadAndCreateJob(request: IUploadAndCreateJobRequest): Promise<ICreateJobResponse>;
   findStuckJobs(thresholdMinutes: number): Promise<IStuckJobsResponse>;
   getJob(jobId: string): Promise<IJobResponse | null>;
-  getBatchJobs(batchId: string): Promise<IJobResponse[]>;
-  getAllJobs(statuses?: string[]): Promise<IJobResponse[]>;
+  getBatchJobs(batchId: string, limit?: number, offset?: number): Promise<IJobResponse[]>;
+  getAllJobs(statuses?: string[], limit?: number, offset?: number): Promise<IJobResponse[]>;
   getAllStatuses(): Promise<IStatusesResponse>;
   providePassword(jobId: string, request: IProvidePasswordRequest): Promise<void>;
   releaseHold(jobId: string): Promise<void>;

@@ -2,10 +2,10 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-COPY package*.json tsconfig.json ./
-RUN npm install
+COPY package.json pnpm-lock.yaml tsconfig.json ./
+RUN npm install -g pnpm && pnpm install --frozen-lockfile
 COPY src/ ./src/
-RUN npm run build
+RUN pnpm run build
 
 FROM node:20-alpine
 
@@ -21,8 +21,8 @@ RUN apk add --no-cache wget gcompat libc6-compat && \
     apk del wget
 
 # Install dependencies
-COPY package*.json ./
-RUN npm install --omit=dev
+COPY package.json pnpm-lock.yaml ./
+RUN npm install -g pnpm && pnpm install --prod --frozen-lockfile
 
 # Copy built files
 COPY --from=build /app/dist/ ./dist/

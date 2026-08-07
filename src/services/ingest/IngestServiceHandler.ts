@@ -45,7 +45,7 @@ export class IngestService
   private totalIngests: number = 0;
 
   /**
-    Total Archives Extracted @private
+   Total Archives Extracted @private
    *  */
 
   private totalArchivesExtracted: number = 0;
@@ -88,6 +88,29 @@ export class IngestService
 
   private readonly EXTRACTION_TIMEOUT_MS = 50 * 60 * 1000;
 
+  /**
+   * Number of leading bytes read from an object to sniff its archive type
+   * (magic-number detection). 511 covers every signature we currently check.
+   * @private
+   */
+
+  private readonly ARCHIVE_HEADER_PROBE_BYTES = 511;
+
+  /**
+   * Max concurrent operations when fanning out over S3 prefix objects or
+   * archive entries.
+   * @private
+   */
+
+  private readonly FAN_OUT_CONCURRENCY = 25;
+
+  /**
+   * Delay before retrying the consumer loop after a lost DB connection.
+   * @private
+   */
+
+  private readonly DB_RECONNECT_DELAY_MS = 5000;
+
   private gcsUtils: GcsUtils;
 
   private queueService: QueueService;
@@ -98,6 +121,7 @@ export class IngestService
    * @param enforce - Function to enforce a Singleton pattern.
    * @param ingestServiceImpl - The ingest service instance.
    * @param gcsUtils - The gcs utils instance.
+   * @param queueService - The queue service instance.
    * @throws Error if instantiation is attempted directly.
    */
 
@@ -305,60 +329,60 @@ export class IngestService
       MetricsUtils.increment("ingest.start", 1, { source_type: msg.source_type });
 
       try {
-      const resolved: { s3Url: string; size: number } = await this.resolveSource(msg);
+        const resolved: { s3Url: string; size: number } = await this.resolveSource(msg);
 
-      if (!resolved)
-      {
-        if (msg.source_type === SourceType.BUCKET && msg.source_ref.endsWith("/"))
+        if (!resolved)
         {
-          await this.transition(jobId, JobStatus.COMPLETED);
+          if (msg.source_type === SourceType.BUCKET && msg.source_ref.endsWith("/"))
+          {
+            await this.transition(jobId, JobStatus.COMPLETED);
+          }
+          return;
         }
-        return;
+
+        const { s3Url, size } = resolved;
+
+        try
+        {
+          await DatabaseService.getInstance().repositories.jobs.updateS3Url(jobId, s3Url, size);
+        }
+        catch (e)
+        {
+          this.logger.warn("ingest_s3_url_update_failed", { job_id: jobId, error: String(e) });
+        }
+
+        const [bucket, key] = this.gcsUtils.parseGcsUrl(s3Url);
+
+        if (size === 0)
+        {
+          throw new Error("Source file is empty");
+        }
+
+        const header: Buffer = await this.gcsUtils.readRange(bucket, key, 0, Math.min(this.ARCHIVE_HEADER_PROBE_BYTES, size - 1));
+        const archiveType: string = this.ingestServiceImpl.detectArchiveType(header);
+
+        if (archiveType)
+        {
+          await this.handleArchive(jobId, s3Url, archiveType, msg);
+          return;
+        }
+
+        await this.queueService.sendRaw(settings.CLASSIFY_QUEUE_URL,
+            {
+              job_id: jobId,
+              s3_url: s3Url,
+              size,
+              field_spec: msg.field_spec,
+              column_map: msg.column_map,
+            });
+
+        this.logger.info("ingest_forwarded_to_classify", { job_id: jobId, s3_url: s3Url });
+        MetricsUtils.increment("ingest.forwarded", 1, { target: "classify" });
       }
-
-      const { s3Url, size } = resolved;
-
-      try
+      catch (exc)
       {
-        await DatabaseService.getInstance().repositories.jobs.updateS3Url(jobId, s3Url, size);
+        await this.handleIngestError(exc, jobId);
       }
-      catch (e)
-      {
-        this.logger.warn("ingest_s3_url_update_failed", { job_id: jobId, error: String(e) });
-      }
-
-      const [bucket, key] = this.gcsUtils.parseGcsUrl(s3Url);
-
-      if (size === 0)
-      {
-        throw new Error("Source file is empty");
-      }
-
-      const header: Buffer = await this.gcsUtils.readRange(bucket, key, 0, Math.min(511, size - 1));
-      const archiveType: string = this.ingestServiceImpl.detectArchiveType(header);
-
-      if (archiveType)
-      {
-        await this.handleArchive(jobId, s3Url, archiveType, msg);
-        return;
-      }
-
-      await this.queueService.sendRaw(settings.CLASSIFY_QUEUE_URL,
-      {
-        job_id: jobId,
-        s3_url: s3Url,
-        size,
-        field_spec: msg.field_spec,
-        column_map: msg.column_map,
-      });
-
-      this.logger.info("ingest_forwarded_to_classify", { job_id: jobId, s3_url: s3Url });
-      MetricsUtils.increment("ingest.forwarded", 1, { target: "classify" });
-    }
-    catch (exc)
-    {
-      await this.handleIngestError(exc, jobId);
-    }
     }
     finally
     {
@@ -467,7 +491,7 @@ export class IngestService
       this.stats.s3PrefixFanouts++;
       const objects: [string, number][] = await this.ingestServiceImpl.listS3Prefix(url);
 
-      const results = await mapWithConcurrency(objects, 25, async ([objUrl, objSize]) => {
+      const results = await mapWithConcurrency(objects, this.FAN_OUT_CONCURRENCY, async ([objUrl, objSize]) => {
         await this.queueService.publishEvent(
             makeJobEvent(EventType.ENTRY_DISCOVERED, msg.job_id, "ingest", {
               parent_job_id: msg.job_id,
@@ -656,8 +680,8 @@ export class IngestService
         return;
       }
 
-      const results = await mapWithConcurrency(entries, 25, (entry) =>
-        this.processArchiveEntry(jobId, entry)
+      const results = await mapWithConcurrency(entries, this.FAN_OUT_CONCURRENCY, (entry) =>
+          this.processArchiveEntry(jobId, entry)
       );
 
       const failures = results.filter((r) => r.status === "rejected");
@@ -862,7 +886,7 @@ export class IngestService
         this.logger.error("database_connection_lost", { error: String(dbError) }, dbError instanceof Error ? dbError : new Error(String(dbError)));
         MetricsUtils.increment("ingest.db_connection_lost", 1);
         await DatabaseService.getInstance().waitForDb();
-        await new Promise((r) => setTimeout(r, 5000));
+        await new Promise((r) => setTimeout(r, this.DB_RECONNECT_DELAY_MS));
       }
     }
 

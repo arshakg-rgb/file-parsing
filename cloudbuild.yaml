@@ -36,9 +36,10 @@ steps:
       - -c
       - |
         set -euo pipefail
-        npm install
-        npm run lint
-        npm run build
+        npm install -g pnpm
+        pnpm install --frozen-lockfile
+        pnpm run lint
+        pnpm run build
 
   # ---------------------------------------------------------------------------------
   # Pub/Sub topics/subscriptions: independent of the node build, so it starts

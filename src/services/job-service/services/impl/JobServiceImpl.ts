@@ -391,6 +391,28 @@ export class JobServiceImpl implements JobService
     return await this.buildJobResponse(row as ParseJobAttributes);
   }
 
+  private readonly DEFAULT_JOB_LIST_LIMIT = 100;
+  private readonly MAX_JOB_LIST_LIMIT = 500;
+
+  /**
+   * Slice a result set down to a bounded page before any per-row enrichment
+   * (e.g. presigned URL generation) runs on it. Caps even the unspecified
+   * case, since callers that fetch "all jobs" with no limit are exactly the
+   * ones that would otherwise trigger N concurrent GCS signing calls.
+   *
+   * @param rows - Full result set from the repository query
+   * @param limit - Requested page size, clamped to MAX_JOB_LIST_LIMIT
+   * @param offset - Requested page offset
+   * @private
+   */
+  private paginateRows<T>(rows: T[], limit?: number, offset?: number): T[]
+  {
+    const effectiveLimit: number = Math.min(limit ?? this.DEFAULT_JOB_LIST_LIMIT, this.MAX_JOB_LIST_LIMIT);
+    const effectiveOffset: number = Math.max(offset ?? 0, 0);
+
+    return rows.slice(effectiveOffset, effectiveOffset + effectiveLimit);
+  }
+
   /**
    * Retrieves all jobs belonging to the specified batch.
    *
@@ -398,11 +420,12 @@ export class JobServiceImpl implements JobService
    * @returns A list of jobs associated with the batch.
    */
 
-  public async getBatchJobs(batchId: string): Promise<IJobResponse[]>
+  public async getBatchJobs(batchId: string, limit?: number, offset?: number): Promise<IJobResponse[]>
   {
     const rows: ParseJobAttributes[] = await this.dbManager.repositories.jobs.findByBatchId(batchId);
+    const page: ParseJobAttributes[] = this.paginateRows(rows, limit, offset);
 
-    return await Promise.all(rows.map((row: ParseJobAttributes) => this.buildJobResponse(row)));
+    return await Promise.all(page.map((row: ParseJobAttributes) => this.buildJobResponse(row)));
   }
 
   /**
@@ -410,11 +433,12 @@ export class JobServiceImpl implements JobService
    *
    * @returns A list of all jobs.
    */
-  public async getAllJobs(statuses?: string[]): Promise<IJobResponse[]>
+  public async getAllJobs(statuses?: string[], limit?: number, offset?: number): Promise<IJobResponse[]>
   {
     const rows: ParseJobAttributes[] = await this.dbManager.repositories.jobs.findAll(statuses);
+    const page: ParseJobAttributes[] = this.paginateRows(rows, limit, offset);
 
-    return await Promise.all(rows.map((row: ParseJobAttributes) => this.buildJobResponse(row)));
+    return await Promise.all(page.map((row: ParseJobAttributes) => this.buildJobResponse(row)));
   }
 
   /**
