@@ -5,6 +5,7 @@ import { TemplateRepository } from "./TemplateRepository.js";
 import { JobLogRepository } from "./JobLogRepository.js";
 import { OutputPartRepository } from "./OutputPartRepository.js";
 import { PendingArchiveEntryRepository } from "./PendingArchiveEntryRepository.js";
+import { PasswordStateRepository } from "./PasswordStateRepository.js";
 import { JobRepository } from "./JobRepository.js";
 
 
@@ -29,9 +30,7 @@ export class Repositories {
    * Pending Archive Entries
    */
   readonly pendingArchiveEntries: PendingArchiveEntryRepository;
-    /**
-   * Parsed Records
-   */
+  readonly passwordState: PasswordStateRepository;
   readonly parsedRecords: ParsedRecordRepository;
     /**
    * Rubbish Logs
@@ -54,6 +53,7 @@ export class Repositories {
     this.deadLetters = new DeadLetterRepository();
     this.outputParts = new OutputPartRepository();
     this.pendingArchiveEntries = new PendingArchiveEntryRepository();
+    this.passwordState = new PasswordStateRepository();
     this.parsedRecords = new ParsedRecordRepository();
     this.rubbishLogs = new RubbishLogRepository();
     this.templates = new TemplateRepository();

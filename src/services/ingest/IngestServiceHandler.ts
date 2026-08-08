@@ -56,17 +56,6 @@ export class IngestService
 
   private totalPasswordsProvided: number = 0;
 
-  /**
-   *  Password Cache @private
-   */
-
-  private passwordCache: Map<string, Buffer> = new Map();
-
-  /**
-   *  Password Attempts @private
-   */
-
-  private passwordAttempts: Map<string, number> = new Map();
 
   /**
    *  Active Ingests @private
@@ -416,7 +405,7 @@ export class IngestService
     if (exc instanceof PasswordError)
     {
       this.stats.passwordErrors++;
-      const attempts: number = this.passwordAttempts.get(jobId) || 0;
+      const attempts: number = await this.getPasswordAttempts(jobId);
 
       if (attempts >= settings.ARCHIVE_PASSWORD_MAX_ATTEMPTS)
       {
@@ -426,8 +415,8 @@ export class IngestService
       }
       else
       {
-        this.passwordAttempts.set(jobId, attempts + 1);
-        this.logger.info("archive_password_required", { job_id: jobId, attempts: attempts + 1 });
+        const nextAttempt = await this.incrementPasswordAttempts(jobId);
+        this.logger.info("archive_password_required", { job_id: jobId, attempts: nextAttempt });
         await this.transition(jobId, JobStatus.NEEDS_PASSWORD);
       }
 
@@ -663,7 +652,8 @@ export class IngestService
     this.totalArchivesExtracted++;
     this.stats.archiveExtractions++;
 
-    const password: string = msg.password ?? this.passwordCache.get(jobId)?.toString();
+    const providedPassword = await this.getStoredPassword(jobId);
+    const password: string = msg.password ?? providedPassword;
     try
     {
       const entries: Record<string, unknown>[] = await this.withTimeout(
@@ -787,7 +777,7 @@ export class IngestService
   async handlePassword(jobId: string, password: string): Promise<void>
   {
     this.totalPasswordsProvided++;
-    this.passwordCache.set(jobId, Buffer.from(password));
+    await this.setStoredPassword(jobId, password);
     this.logger.info("password_received", { job_id: jobId });
 
     const row: IParseJob = await DatabaseService.getInstance().getJob(jobId);
@@ -806,6 +796,26 @@ export class IngestService
       batch_id: row.batch_id,
       password,
     });
+  }
+
+  private async getStoredPassword(jobId: string): Promise<string | undefined>
+  {
+    return (await DatabaseService.getInstance().repositories.passwordState.get(jobId)).password ?? undefined;
+  }
+
+  private async setStoredPassword(jobId: string, password: string): Promise<void>
+  {
+    await DatabaseService.getInstance().repositories.passwordState.setPassword(jobId, password);
+  }
+
+  private async getPasswordAttempts(jobId: string): Promise<number>
+  {
+    return (await DatabaseService.getInstance().repositories.passwordState.get(jobId)).attempts;
+  }
+
+  private async incrementPasswordAttempts(jobId: string): Promise<number>
+  {
+    return await DatabaseService.getInstance().repositories.passwordState.incrementAttempts(jobId);
   }
 
   /**
