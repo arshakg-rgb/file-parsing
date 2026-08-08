@@ -867,17 +867,118 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
     {
       if (kind === "record-template")
       {
-        const fieldMap = template.field_map as Record<string, { locator: string; type: string }> | undefined;
+        const rawFieldMap = template.field_map as Record<string, Record<string, unknown>> | undefined;
 
-        if (!fieldMap)
+        if (!rawFieldMap)
         {
           return null;
+        }
+
+        // When the triggering line is a JSON object, force the structure to "json"
+        // and rewrite index/regex locators to key locators against the real JSON keys.
+        let parsedJson: Record<string, unknown> | null = null;
+        const trimmed = line.trim();
+        let structure = (template.structure as string) || "csv";
+
+        if (trimmed.startsWith("{") || trimmed.startsWith("["))
+        {
+          try
+          {
+            const parsed = JSON.parse(trimmed);
+            if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+            {
+              parsedJson = parsed;
+              structure = "json";
+            }
+          }
+          catch
+          {
+            // leave structure as-is
+          }
+        }
+
+        const findBestKey = (target: string, keys: string[]): string | undefined =>
+        {
+          const normalizedTarget = target.toLowerCase();
+
+          for (const key of keys)
+          {
+            if (key.toLowerCase() === normalizedTarget)
+            {
+              return key;
+            }
+          }
+
+          for (const key of keys)
+          {
+            const lower = key.toLowerCase();
+            if (lower.includes(normalizedTarget) || normalizedTarget.includes(lower))
+            {
+              return key;
+            }
+          }
+
+          return undefined;
+        };
+
+        const jsonKeys = parsedJson ? Object.keys(parsedJson) : [];
+        const fieldMap: Record<string, { locator: string; type: string }> = {};
+
+        for (const [field, rawLoc] of Object.entries(rawFieldMap))
+        {
+          let locString = "";
+          let type = "string";
+
+          if (typeof rawLoc === "string")
+          {
+            locString = rawLoc;
+          }
+          else if (rawLoc && typeof rawLoc === "object")
+          {
+            const locObj = rawLoc as Record<string, unknown>;
+
+            if (typeof locObj.locator === "string")
+            {
+              locString = locObj.locator;
+              if (typeof locObj.type === "string")
+              {
+                type = locObj.type;
+              }
+            }
+            else if (typeof locObj.key === "string")
+            {
+              const bestKey = parsedJson ? findBestKey(locObj.key, jsonKeys) : undefined;
+              locString = `key:${bestKey ?? locObj.key}`;
+            }
+            else if (typeof locObj.index === "number" && parsedJson)
+            {
+              const bestKey = findBestKey(field, jsonKeys);
+              const fallback = jsonKeys[locObj.index];
+              const chosen = bestKey ?? fallback;
+              locString = chosen ? `key:${chosen}` : `index:${locObj.index}`;
+            }
+            else if (typeof locObj.regex === "string" && !parsedJson)
+            {
+              locString = `regex:${locObj.regex}`;
+            }
+            else if (typeof locObj.regex === "string")
+            {
+              locString = `regex:${locObj.regex}`;
+            }
+
+            if (typeof locObj.type === "string")
+            {
+              type = locObj.type;
+            }
+          }
+
+          fieldMap[field] = { locator: locString, type };
         }
 
         return {
           ...base,
           field_map: fieldMap,
-          structure: (template.structure as string) || "csv",
+          structure,
           delimiter: template.delimiter as string | undefined,
           quote_char: template.quote_char as string | undefined,
           length_hint: (template.length_hint as number) ?? line.length,
