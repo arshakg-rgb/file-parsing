@@ -21,6 +21,9 @@ import {OutputBuffer} from "@shared/OutputBuffer";
 import {AIRateLimiterHandle} from "@service/stream-parser/io/IClassifier";
 import { DatabaseService } from "@shared/DatabaseManager";
 import {GcsUtils} from "@shared/GcsUtils";
+import { parse as jsonStreamParse } from "JSONStream";
+import { on } from "node:events";
+import { Transform } from "node:stream";
 import {InstantiationError} from "@errors/InstantiationError";
 import {QueueService} from "@shared/QueueService";
 import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
@@ -760,31 +763,29 @@ export class StreamParserService
     };
 
     const isJsonFile: boolean = key.endsWith(".json") && !key.endsWith(".ndjson");
-    let jsonRecords: string[] | null = null;
 
-    if (isJsonFile)
+    const streamJsonRecords = async function* (logger: ReturnType<typeof createLogger>, gcs: GcsUtils, b: string, k: string): AsyncIterable<[string, number, number]>
     {
-      try
+      let index = 0;
+      const parser = gcs.getObjectReadStream(b, k).pipe(jsonStreamParse("*")) as unknown as Transform;
+      parser.on("error", (err) => {
+        logger.warn("json_stream_error", { bucket: b, key: k, error: String(err) });
+        parser.destroy();
+      });
+
+      for await (const args of on(parser, "data"))
       {
-        const buf: Buffer = await this.gcsUtils.readFull(bucket, key);
-        const text: string = buf.toString(detectedEncoding as BufferEncoding).replace(/\0/g, "");
-        jsonRecords = this.extractJsonRecords(JSON_SAFE.parse(text));
+        const [value] = args as [unknown];
+        const line = JSON.stringify(value);
+        yield [line, index, line.length] as [string, number, number];
+        index++;
       }
-      catch (err)
-      {
-        this.logger.warn("json_parse_failed", { job_id: jobId, s3_url: msg.s3_url, error: String(err) });
-      }
-    }
+    };
 
     try
     {
-      const lineSource: AsyncIterable<[string, number, number]> = jsonRecords
-          ? (async function* () {
-            for (let i = 0; i < jsonRecords!.length; i++) {
-              const line = jsonRecords![i];
-              yield [line, i, line.length] as [string, number, number];
-            }
-          })()
+      const lineSource: AsyncIterable<[string, number, number]> = isJsonFile
+          ? streamJsonRecords(this.logger, this.gcsUtils, bucket, key)
           : this.gcsUtils.streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding);
 
       let aiHeaderMapped: boolean = false;

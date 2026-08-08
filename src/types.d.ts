@@ -1,3 +1,7 @@
+declare module "JSONStream" {
+  export function parse(pattern: string): NodeJS.ReadWriteStream;
+}
+
 declare module "json-bigint" {
   interface JSONBigOptions {
     strict?: boolean;
