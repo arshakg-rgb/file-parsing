@@ -109,6 +109,7 @@ export class BigQueryManager extends ServiceManager
       const [response] = await this.table(tableName).insert(rows, {
         raw: true,
         skipInvalidRows: false,
+        ignoreUnknownValues: true,
       });
 
       const insertErrors = (response as { insertErrors?: unknown[] }).insertErrors;
