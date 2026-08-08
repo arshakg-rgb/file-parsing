@@ -57,6 +57,17 @@ steps:
             --project=data-etl-499916 || true
         done
 
+        # Force fpp-job-events subscription to be ordered; recreate it if ordering is not enabled.
+        ordering=$(gcloud pubsub subscriptions describe fpp-job-events-sub --project=data-etl-499916 --format="value(enableMessageOrdering)" 2>/dev/null || echo "False")
+        if [ "$ordering" != "True" ]; then
+          gcloud pubsub subscriptions delete fpp-job-events-sub --project=data-etl-499916 || true
+          gcloud pubsub subscriptions create fpp-job-events-sub \
+            --topic=fpp-job-events \
+            --ack-deadline-seconds=60 \
+            --enable-message-ordering \
+            --project=data-etl-499916
+        fi
+
   - name: 'gcr.io/kaniko-project/executor:latest'
     id: 'build-base'
     waitFor: ['-']
