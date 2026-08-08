@@ -1,26 +1,19 @@
 import pino from "pino";
-import { randomUUID } from "crypto";
-import { tmpdir } from "os";
-import { join } from "path";
-import { unlink } from "fs/promises";
 import Config from "@config/system-config/Config.js";
 import { settings } from "@shared/Settings.js";
 import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
-import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import { DatabaseManager } from "@shared/DatabaseManager.js";
 import { toDate } from "@config/db/BigQueryManager.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { LoadMessage } from "@shared/models/job.js";
-import { ParquetReader } from "@dsnp/parquetjs";
 import { createLogger } from "@utils/logger/Log.js";
 import { LoadService } from "@service/load/LoadService.js";
 import { LoadResponse } from "@service/load/io/ILoad.js";
 import HealthService from "@utils/response/Health";
-import {MetricsUtils} from "@utils/response/Metrics";
-import { GcsUtils } from "@shared/GcsUtils.js";
-import {QueueService} from "@shared/QueueService";
-import {QueueConsumerPool} from "@shared/QueueConsumerPool.js";
+import { MetricsUtils } from "@utils/response/Metrics";
+import { QueueService } from "@shared/QueueService";
+import { QueueConsumerPool } from "@shared/QueueConsumerPool.js";
 
 /**
  * LoadServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -40,13 +33,6 @@ class LoadServiceImpl extends ServiceManager implements LoadService
    */
 
   private logger: pino.Logger;
-
-    /**
-   * Gcs Utils
-   * @private
-   */
-
-  private gcsUtils: FirestoreCacheUtils;
 
     /**
    * Db Manager
@@ -101,7 +87,6 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     this.UPSERT_BATCH = Math.floor(60000 / this.PARAMS_PER_ROW);
 
     this.logger = createLogger(module);
-    this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.dbManager = DatabaseManager.getInstance();
     this.queueService = queueService;
 
@@ -250,44 +235,6 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     };
   }
 
-    /**
-   * Reads parquet
-   * @param s3Path - The s3 path
-   * @returns A promise that resolves to the list
-   */
-
-  private async *readParquetBatches(s3Path: string, batchSize: number): AsyncGenerator<Record<string, unknown>[], void, unknown>
-  {
-    const [bucket, key] = GcsUtils.getInstance().parseGcsUrl(s3Path);
-    const buffer = await GcsUtils.getInstance().readFull(bucket, key);
-    const reader: ParquetReader = await ParquetReader.openBuffer(buffer);
-    const cursor = reader.getCursor();
-    const batch: Record<string, unknown>[] = [];
-    let row: unknown;
-
-    try
-    {
-      while ((row = await cursor.next()))
-      {
-        batch.push(row as Record<string, unknown>);
-
-        if (batch.length >= batchSize)
-        {
-          yield batch.slice();
-          batch.length = 0;
-        }
-      }
-
-      if (batch.length)
-      {
-        yield batch.slice();
-      }
-    }
-    finally
-    {
-      await reader.close();
-    }
-  }
 
     /**
    * Performs the upsert rows operation.

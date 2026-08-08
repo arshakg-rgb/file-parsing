@@ -2,7 +2,6 @@ import { DeadLetterRepository } from "./DeadLetterRepository.js";
 import { ParsedRecordRepository } from "./ParsedRecordRepository.js";
 import { RubbishLogRepository } from "./RubbishLogRepository.js";
 import { TemplateRepository } from "./TemplateRepository.js";
-import { SchemaMigrationRepository } from "./SchemaMigrationRepository.js";
 import { JobLogRepository } from "./JobLogRepository.js";
 import { OutputPartRepository } from "./OutputPartRepository.js";
 import { PendingArchiveEntryRepository } from "./PendingArchiveEntryRepository.js";
@@ -43,10 +42,6 @@ export class Repositories {
    */
   readonly templates: TemplateRepository;
     /**
-   * Schema Migrations
-   */
-  readonly schemaMigrations: SchemaMigrationRepository;
-    /**
    * Job Logs
    */
   readonly jobLogs: JobLogRepository;
@@ -62,7 +57,6 @@ export class Repositories {
     this.parsedRecords = new ParsedRecordRepository();
     this.rubbishLogs = new RubbishLogRepository();
     this.templates = new TemplateRepository();
-    this.schemaMigrations = new SchemaMigrationRepository();
     this.jobLogs = new JobLogRepository();
   }
 }

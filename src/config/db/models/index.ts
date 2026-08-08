@@ -33,11 +33,6 @@ import Template, {
   type TemplateAttributes,
   type TemplateCreationAttributes,
 } from "./Template.js";
-import SchemaMigration, {
-  type ISchemaMigration,
-  type SchemaMigrationAttributes,
-  type SchemaMigrationCreationAttributes,
-} from "./SchemaMigration.js";
 import JobLog, {
   type IJobLog,
   type JobLogAttributes,
@@ -52,7 +47,6 @@ export {
   ParsedRecord,
   RubbishLog,
   Template,
-  SchemaMigration,
   JobLog,
 };
 
@@ -78,9 +72,6 @@ export type {
   ITemplate,
   TemplateAttributes,
   TemplateCreationAttributes,
-  ISchemaMigration,
-  SchemaMigrationAttributes,
-  SchemaMigrationCreationAttributes,
   IJobLog,
   JobLogAttributes,
   JobLogCreationAttributes,
@@ -94,6 +85,5 @@ export interface DatabaseModels {
   ParsedRecord: typeof ParsedRecord;
   RubbishLog: typeof RubbishLog;
   Template: typeof Template;
-  SchemaMigration: typeof SchemaMigration;
   JobLog: typeof JobLog;
 }
