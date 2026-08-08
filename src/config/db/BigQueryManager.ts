@@ -106,10 +106,23 @@ export class BigQueryManager extends ServiceManager
 
     try
     {
-      const [response] = await this.table(tableName).insert(rows, {
-        raw: true,
+      const fields = await this.getTableSchema(tableName);
+      const fieldNames = new Set(fields.map(f => f.name));
+      const filteredRows = rows.map((row) => {
+        const filtered: Record<string, unknown> = {};
+        for (const key of Object.keys(row))
+        {
+          if (fieldNames.has(key))
+          {
+            filtered[key] = row[key];
+          }
+        }
+        return filtered;
+      });
+
+      const [response] = await this.table(tableName).insert(filteredRows, {
+        raw: false,
         skipInvalidRows: false,
-        ignoreUnknownValues: true,
       });
 
       const insertErrors = (response as { insertErrors?: unknown[] }).insertErrors;
@@ -123,7 +136,11 @@ export class BigQueryManager extends ServiceManager
     }
     catch (err)
     {
-      const partialFailure = err as { errors?: { message?: string; reason?: string; location?: string }[]; message?: string; name?: string };
+      const partialFailure = err as {
+        errors?: { message?: string; reason?: string; location?: string; debugInfo?: unknown }[];
+        message?: string;
+        name?: string;
+      };
 
       if (partialFailure?.errors?.length)
       {
