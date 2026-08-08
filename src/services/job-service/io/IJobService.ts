@@ -44,4 +44,4 @@ export const EVENT_LOOP_ERROR_BACKOFF_MS = 5_000;
  * acknowledged (deleted) rather than retried, since retrying can never succeed.
  */
 
-export const NON_RETRYABLE_JOB_ERROR_MARKERS = ["not found", "cannot transition"] as const;
+export const NON_RETRYABLE_JOB_ERROR_MARKERS = ["not found"] as const;
