@@ -232,6 +232,11 @@ steps:
             --set-env-vars "$env_vars" \
             --update-secrets="$secrets" \
             "$@"
+          gcloud run services update-traffic "$name" \
+            --to-revisions=LATEST=100 \
+            --region "$$REGION" \
+            --platform managed \
+            --quiet
         }
 
         # ---- job-service ----
