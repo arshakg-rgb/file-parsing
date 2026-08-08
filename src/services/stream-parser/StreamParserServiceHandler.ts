@@ -680,7 +680,8 @@ export class StreamParserService
         flushTasks.push(repositories.rubbishLogs.bulkCreate(batch).then(() => {
           rubbishBatch = [];
         }).catch(e => {
-          this.logger.error("rubbish_batch_flush_error", { error: String(e), batch_size: batch.length });
+          const sample = batch.slice(0, 3);
+          this.logger.error("rubbish_batch_flush_error", { error: String(e), batch_size: batch.length, sample: JSON.stringify(sample) });
         }));
       }
 
@@ -690,7 +691,8 @@ export class StreamParserService
         flushTasks.push(repositories.deadLetters.bulkCreate(batch).then(() => {
           dlqBatch = [];
         }).catch(e => {
-          this.logger.error("dlq_batch_flush_error", { error: String(e), batch_size: batch.length });
+          const sample = batch.slice(0, 3);
+          this.logger.error("dlq_batch_flush_error", { error: String(e), batch_size: batch.length, sample: JSON.stringify(sample) });
         }));
       }
 
@@ -745,7 +747,8 @@ export class StreamParserService
         flushTasks.push(repositories.rubbishLogs.bulkCreate(batch).then(() => {
           rubbishBatch = [];
         }).catch(e => {
-          this.logger.error("rubbish_batch_flush_error", { error: String(e), batch_size: batch.length });
+          const sample = batch.slice(0, 3);
+          this.logger.error("rubbish_batch_flush_error", { error: String(e), batch_size: batch.length, sample: JSON.stringify(sample) });
         }));
       }
 
@@ -755,7 +758,8 @@ export class StreamParserService
         flushTasks.push(repositories.deadLetters.bulkCreate(batch).then(() => {
           dlqBatch = [];
         }).catch(e => {
-          this.logger.error("dlq_batch_flush_error", { error: String(e), batch_size: batch.length });
+          const sample = batch.slice(0, 3);
+          this.logger.error("dlq_batch_flush_error", { error: String(e), batch_size: batch.length, sample: JSON.stringify(sample) });
         }));
       }
 
