@@ -106,6 +106,13 @@ export class StreamParserService
   private readonly CONTEXT_LINES_CACHE_SIZE: number = 5;
 
   /**
+   * Maximum JSON file size in bytes to attempt parsing with readFull.
+   * Larger files are skipped to prevent memory issues and crashes.
+   * @private
+   */
+  private readonly JSON_MAX_SIZE_BYTES: number = 200 * 1024 * 1024; // 200MB
+
+  /**
    * Number of trailing lines from the recent-lines cache sent to the AI
    * classifier as context for an uncertain line.
    * @private
@@ -760,15 +767,24 @@ export class StreamParserService
 
     if (isJsonFile)
     {
-      try
+      const fileSize: number = msg.size || (await this.gcsUtils.objectSize(bucket, key));
+      
+      if (fileSize > this.JSON_MAX_SIZE_BYTES)
       {
-        const buf: Buffer = await this.gcsUtils.readFull(bucket, key);
-        const text: string = buf.toString(detectedEncoding as BufferEncoding).replace(/\0/g, "");
-        jsonRecords = this.extractJsonRecords(JSON_SAFE.parse(text));
+        this.logger.warn("json_file_too_large_skipped", { job_id: jobId, s3_url: msg.s3_url, size_bytes: fileSize, max_bytes: this.JSON_MAX_SIZE_BYTES });
       }
-      catch (err)
+      else
       {
-        this.logger.warn("json_parse_failed", { job_id: jobId, s3_url: msg.s3_url, error: String(err) });
+        try
+        {
+          const buf: Buffer = await this.gcsUtils.readFull(bucket, key);
+          const text: string = buf.toString(detectedEncoding as BufferEncoding).replace(/\0/g, "");
+          jsonRecords = this.extractJsonRecords(JSON_SAFE.parse(text));
+        }
+        catch (err)
+        {
+          this.logger.warn("json_parse_failed", { job_id: jobId, s3_url: msg.s3_url, error: String(err) });
+        }
       }
     }
 
