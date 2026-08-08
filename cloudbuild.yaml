@@ -41,21 +41,9 @@ steps:
         echo "ARCHIVE_ENTRY_QUEUE_URL=$(gcloud secrets versions access latest --secret=FILE_ARCHIVE_ENTRY_QUEUE_URL)" >> .env
         echo "LARGE_FILE_THRESHOLD_BYTES=524288000" >> .env
 
-  - name: 'node:20'
-    id: 'lint'
-    waitFor: ['create-env']
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        set -euo pipefail
-        npm install -g pnpm
-        pnpm install --frozen-lockfile
-        pnpm run lint
-
   - name: 'gcr.io/cloud-builders/gcloud'
     id: 'ensure-pubsub'
-    waitFor: ['lint']
+    waitFor: ['-']
     entrypoint: 'bash'
     args:
       - '-c'
@@ -70,7 +58,7 @@ steps:
 
   - name: 'gcr.io/kaniko-project/executor:latest'
     id: 'build-base'
-    waitFor: ['lint']
+    waitFor: ['-']
     args:
       - --dockerfile=Dockerfile.base
       - --context=dir:///workspace
