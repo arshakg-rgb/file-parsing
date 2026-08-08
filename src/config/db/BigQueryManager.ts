@@ -104,17 +104,35 @@ export class BigQueryManager extends ServiceManager
       return;
     }
 
-    const [response] = await this.table(tableName).insert(rows, {
-      raw: true,
-      skipInvalidRows: false,
-    });
-
-    const insertErrors = (response as { insertErrors?: unknown[] }).insertErrors;
-
-    if (insertErrors?.length)
+    try
     {
-      const errorSummary = `BigQuery insert failed for ${tableName}: ${JSON.stringify(insertErrors)}`;
-      this.logger.error({ table: tableName, errors: insertErrors }, errorSummary);
+      const [response] = await this.table(tableName).insert(rows, {
+        raw: true,
+        skipInvalidRows: false,
+      });
+
+      const insertErrors = (response as { insertErrors?: unknown[] }).insertErrors;
+
+      if (insertErrors?.length)
+      {
+        const errorSummary = `BigQuery insert failed for ${tableName}: ${JSON.stringify(insertErrors)}`;
+        this.logger.error({ table: tableName, errors: insertErrors }, errorSummary);
+        throw new Error(errorSummary);
+      }
+    }
+    catch (err)
+    {
+      const partialFailure = err as { errors?: { message?: string; reason?: string; location?: string }[]; message?: string; name?: string };
+
+      if (partialFailure?.errors?.length)
+      {
+        const errorSummary = `BigQuery partial failure for ${tableName}: ${JSON.stringify(partialFailure.errors)}`;
+        this.logger.error({ table: tableName, errors: partialFailure.errors, rawMessage: partialFailure.message }, errorSummary);
+        throw new Error(errorSummary);
+      }
+
+      const errorSummary = `BigQuery insert failed for ${tableName}: ${partialFailure?.message || String(err)}`;
+      this.logger.error({ table: tableName, error: err }, errorSummary);
       throw new Error(errorSummary);
     }
 
