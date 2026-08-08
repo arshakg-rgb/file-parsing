@@ -33,15 +33,19 @@ export class TarExtractor extends BaseArchiveExtractor
         return TarExtractor.instance;
     }
 
-    async extract(jobId: string, raw: Buffer, compressedSize: number, fieldSpec: string[], batchId: string): Promise<Record<string, unknown>[]>
+    async extractFromFile(jobId: string, filePath: string, compressedSize: number, fieldSpec: string[], batchId: string): Promise<Record<string, unknown>[]>
     {
-        const tmp: string = await TempFileManager.createTempFile(raw, ".tar");
         const extractDir: string = await TempFileManager.createTempDir();
-        await extractTar({ file: tmp, cwd: extractDir });
-        const out: Record<string, unknown>[] = await this.entryStore.collectExtractedFiles(extractDir, jobId, compressedSize, fieldSpec, batchId);
-        await TempFileManager.removeDir(extractDir);
-        await TempFileManager.removeFile(tmp);
-        return out;
+        try
+        {
+            await extractTar({ file: filePath, cwd: extractDir });
+            const out: Record<string, unknown>[] = await this.entryStore.collectExtractedFiles(extractDir, jobId, compressedSize, fieldSpec, batchId);
+            return out;
+        }
+        finally
+        {
+            await TempFileManager.removeDir(extractDir);
+        }
     }
 }
 

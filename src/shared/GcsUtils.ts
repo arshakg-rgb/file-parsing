@@ -1,4 +1,6 @@
 import pino from "pino";
+import fs from "node:fs";
+import { pipeline } from "node:stream/promises";
 import { Storage } from "@google-cloud/storage";
 import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
@@ -288,6 +290,43 @@ export class GcsUtils extends ServiceManager
               .bucket(bucket)
               .file(key)
               .save(body, { contentType, resumable: body.length > 5 * 1024 * 1024 });
+        }, this.GCS_TIMEOUT_MS),
+        this.GCS_RETRIES
+    );
+  }
+
+  /**
+   * Downloads an object to a local file using a stream.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param destination - The local file path
+   */
+  public async downloadToFile(bucket: string, key: string, destination: string): Promise<void>
+  {
+    await this.withRetry(
+        () => this.withTimeout(async () => {
+          const readStream = this.getStorage().bucket(bucket).file(key).createReadStream();
+          const writeStream = fs.createWriteStream(destination);
+          await pipeline(readStream, writeStream);
+        }, this.GCS_TIMEOUT_MS),
+        this.GCS_RETRIES
+    );
+  }
+
+  /**
+   * Uploads a local file to GCS using a stream.
+   * @param bucket - The bucket
+   * @param key - The key
+   * @param filePath - The local file path
+   * @param contentType - The content type
+   */
+  public async putObjectFromFile(bucket: string, key: string, filePath: string, contentType = "application/octet-stream"): Promise<void>
+  {
+    await this.withRetry(
+        () => this.withTimeout(async () => {
+          const readStream = fs.createReadStream(filePath);
+          const writeStream = this.getStorage().bucket(bucket).file(key).createWriteStream({ contentType, resumable: false });
+          await pipeline(readStream, writeStream);
         }, this.GCS_TIMEOUT_MS),
         this.GCS_RETRIES
     );

@@ -54,6 +54,16 @@ export class GcsEntryStore
         return [`gs://${settings.DATA_BUCKET}/${s3Key}`, data.length];
     }
 
+    public async storeEntryFromFile(jobId: string, entryName: string, filePath: string): Promise<[string, number]>
+    {
+        const safeName: string = path.basename(entryName).replace(/[#\s]+/g, "_") || "entry";
+        const entryId = randomUUID();
+        const s3Key = `ingested/${jobId}/entries/${entryId}/${safeName}`;
+        const stat = await fs.stat(filePath);
+        await GcsUtils.getInstance().putObjectFromFile(settings.DATA_BUCKET, s3Key, filePath);
+        return [`gs://${settings.DATA_BUCKET}/${s3Key}`, stat.size];
+    }
+
     public makeEntryEvent(parentJobId: string, batchId: string, s3Url: string, name: string, size: number, fieldSpec: string[])
     {
         return { parent_job_id: parentJobId, batchId: batchId, entry_s3_url: s3Url, entry_name: name, entry_size: size, field_spec: fieldSpec };
@@ -76,10 +86,9 @@ export class GcsEntryStore
 
             if (stat.isFile())
             {
-                const data = await fs.readFile(fpath);
-                totalUncompressed += data.length;
+                totalUncompressed += stat.size;
                 CompressionGuard.checkRatio(compressedSize, totalUncompressed);
-                const [url, size] = await this.storeEntry(jobId, rel as string, data);
+                const [url, size] = await this.storeEntryFromFile(jobId, rel as string, fpath);
                 out.push(this.makeEntryEvent(jobId, batchId, url, rel as string, size, fieldSpec));
             }
         }

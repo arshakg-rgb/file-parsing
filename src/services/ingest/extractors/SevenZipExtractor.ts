@@ -34,16 +34,20 @@ export class SevenZipExtractor extends BaseArchiveExtractor
         return SevenZipExtractor.instance;
     }
 
-    async extract(jobId: string, raw: Buffer, compressedSize: number, fieldSpec: string[], batchId: string, password?: string): Promise<Record<string, unknown>[]>
+    async extractFromFile(jobId: string, filePath: string, compressedSize: number, fieldSpec: string[], batchId: string, password?: string): Promise<Record<string, unknown>[]>
     {
-        const tmp: string = await TempFileManager.createTempFile(raw, ".7z");
         const extractDir: string = await TempFileManager.createTempDir();
-        const stream: NodeJS.ReadableStream = Seven.extractFull(tmp, extractDir, { password: password || undefined });
-        await once(stream, "end");
-        const out: Record<string, unknown>[] = await this.entryStore.collectExtractedFiles(extractDir, jobId, compressedSize, fieldSpec, batchId);
-        await TempFileManager.removeDir(extractDir);
-        await TempFileManager.removeFile(tmp);
-        return out;
+        try
+        {
+            const stream: NodeJS.ReadableStream = Seven.extractFull(filePath, extractDir, { password: password || undefined });
+            await once(stream, "end");
+            const out: Record<string, unknown>[] = await this.entryStore.collectExtractedFiles(extractDir, jobId, compressedSize, fieldSpec, batchId);
+            return out;
+        }
+        finally
+        {
+            await TempFileManager.removeDir(extractDir);
+        }
     }
 }
 

@@ -1,9 +1,13 @@
+import fs from "node:fs";
+import fsPromises from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { pipeline } from "node:stream/promises";
+import { randomUUID } from "node:crypto";
 import zlib from "zlib";
-import { promisify } from "util";
 import { BaseArchiveExtractor } from "./BaseArchiveExtractor.js";
 import { CompressionGuard } from "../CompressionGuard.js";
 import {InstantiationError} from "@errors/InstantiationError";
-const gunzip = promisify(zlib.gunzip);
 
 export class GzExtractor extends BaseArchiveExtractor
 {
@@ -35,13 +39,23 @@ export class GzExtractor extends BaseArchiveExtractor
         return GzExtractor.instance;
     }
 
-    async extract(jobId: string, raw: Buffer, compressedSize: number, fieldSpec: string[], batchId: string): Promise<Record<string, unknown>[]>
+    async extractFromFile(jobId: string, filePath: string, compressedSize: number, fieldSpec: string[], batchId: string): Promise<Record<string, unknown>[]>
     {
-        const data = await gunzip(raw);
-        CompressionGuard.checkRatio(compressedSize, data.length);
-        const name = `decompressed_${jobId}.dat`;
-        const [url, size] = await this.entryStore.storeEntry(jobId, name, data);
-        return [this.entryStore.makeEntryEvent(jobId, batchId, url, name, size, fieldSpec)];
+        const outPath: string = path.join(os.tmpdir(), `${randomUUID()}.dat`);
+        try
+        {
+            const gunzip = zlib.createGunzip();
+            await pipeline(fs.createReadStream(filePath), gunzip, fs.createWriteStream(outPath));
+            const stat = await fsPromises.stat(outPath);
+            CompressionGuard.checkRatio(compressedSize, stat.size);
+            const name = `decompressed_${jobId}.dat`;
+            const [url, size] = await this.entryStore.storeEntryFromFile(jobId, name, outPath);
+            return [this.entryStore.makeEntryEvent(jobId, batchId, url, name, size, fieldSpec)];
+        }
+        finally
+        {
+            await fsPromises.unlink(outPath).catch(() => {});
+        }
     }
 }
 

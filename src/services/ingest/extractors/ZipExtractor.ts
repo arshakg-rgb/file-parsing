@@ -36,10 +36,9 @@ export class ZipExtractor extends BaseArchiveExtractor
         return ZipExtractor.instance;
     }
 
-    async extract(jobId: string, raw: Buffer, compressedSize: number, fieldSpec: string[], batchId: string, password?: string): Promise<Record<string, unknown>[]>
+    async extractFromFile(jobId: string, filePath: string, compressedSize: number, fieldSpec: string[], batchId: string, password?: string): Promise<Record<string, unknown>[]>
     {
-        const tmp: string = await TempFileManager.createTempFile(raw, ".zip");
-        const zip = new NodeStreamZip.async({ file: tmp, password: password || undefined });
+        const zip = new NodeStreamZip.async({ file: filePath, password: password || undefined });
         const entries = await zip.entries();
 
         if (Object.keys(entries).length > settings.ARCHIVE_MAX_ENTRIES)
@@ -56,12 +55,11 @@ export class ZipExtractor extends BaseArchiveExtractor
             const data: Buffer = await zip.entryData(name);
             totalUncompressed += data.length;
             CompressionGuard.checkRatio(compressedSize, totalUncompressed);
-            const [url, size] = await this.entryStore.storeEntry(jobId, name, Buffer.from(data));
+            const [url, size] = await this.entryStore.storeEntry(jobId, name, data);
             out.push(this.entryStore.makeEntryEvent(jobId, batchId, url, name, size, fieldSpec));
         }
 
         await zip.close();
-        await TempFileManager.removeFile(tmp);
         return out;
     }
 }

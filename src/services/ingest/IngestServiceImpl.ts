@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { settings } from "@shared/Settings.js";
 import { BombError } from "@errors/BombError.js";
 import { ArchiveTypeDetector } from "./ArchiveTypeDetector.js";
@@ -77,22 +81,30 @@ export class IngestServiceImpl
     {
       return RarExtractor.getInstance().extract(jobId, s3Url, bucket, key, fieldSpec, batchId, password, depth);
     }
-
-    const raw: Buffer = await GcsUtils.getInstance().readFull(bucket, key);
-    const compressedSize: number = raw.length;
-
-    switch (archiveType)
+    const tmp: string = path.join(os.tmpdir(), `${randomUUID()}${archiveType === "gz" ? ".gz" : ".archive"}`);
+    try
     {
-      case "zip":
-        return ZipExtractor.getInstance().extract(jobId, raw, compressedSize, fieldSpec, batchId, password);
-      case "gz":
-        return GzExtractor.getInstance().extract(jobId, raw, compressedSize, fieldSpec, batchId);
-      case "tar":
-        return TarExtractor.getInstance().extract(jobId, raw, compressedSize, fieldSpec, batchId);
-      case "7z":
-        return SevenZipExtractor.getInstance().extract(jobId, raw, compressedSize, fieldSpec, batchId, password);
-      default:
-        throw new Error(`Unsupported archive type: ${archiveType}`);
+      await GcsUtils.getInstance().downloadToFile(bucket, key, tmp);
+      const stat = await fs.stat(tmp);
+      const compressedSize: number = stat.size;
+
+      switch (archiveType)
+      {
+        case "zip":
+          return ZipExtractor.getInstance().extractFromFile(jobId, tmp, compressedSize, fieldSpec, batchId, password);
+        case "gz":
+          return GzExtractor.getInstance().extractFromFile(jobId, tmp, compressedSize, fieldSpec, batchId);
+        case "tar":
+          return TarExtractor.getInstance().extractFromFile(jobId, tmp, compressedSize, fieldSpec, batchId);
+        case "7z":
+          return SevenZipExtractor.getInstance().extractFromFile(jobId, tmp, compressedSize, fieldSpec, batchId, password);
+        default:
+          throw new Error(`Unsupported archive type: ${archiveType}`);
+      }
+    }
+    finally
+    {
+      await fs.unlink(tmp).catch(() => {});
     }
   }
 }
