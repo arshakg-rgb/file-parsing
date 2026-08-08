@@ -699,13 +699,13 @@ export class StreamParserService
 
       const mem = process.memoryUsage();
 
-      if (!overWatermark && mem.rss >= RAM_WATERMARK_HIGH)
+      if (overWatermark && mem.rss >= RAM_WATERMARK_HIGH)
       {
         overWatermark = true;
         this.logger.warn("ram_watermark_reached", { rss: mem.rss, heap_used: mem.heapUsed, watermark: RAM_WATERMARK_HIGH });
         await flushBatches(true);
         await outputManager.flushAll();
-        csvWriter.flushPending();
+        await csvWriter.flushPending();
       }
       else if (overWatermark && mem.rss < RAM_WATERMARK_LOW)
       {
@@ -970,7 +970,8 @@ export class StreamParserService
             }
 
             counts.parsed++;
-            csvWriter.addRow(sanitizedRow, lineNo);
+            const csvFlush = csvWriter.addRow(sanitizedRow, lineNo);
+            if (csvFlush) await csvFlush;
             break;
           }
 
@@ -1047,7 +1048,8 @@ export class StreamParserService
               }
 
               counts.parsed++;
-              csvWriter.addRow(sanitizedRow, lineNo);
+              const csvFlush2 = csvWriter.addRow(sanitizedRow, lineNo);
+              if (csvFlush2) await csvFlush2;
             }
             else
             {

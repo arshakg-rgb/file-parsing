@@ -2,6 +2,8 @@ import pino from "pino";
 import os from "os";
 import path from "path";
 import fs from "fs";
+import { finished } from "node:stream/promises";
+import type { WriteStream } from "node:fs";
 import Config from "@config/system-config/Config.js";
 import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import { createLogger } from "@utils/logger/Log.js";
@@ -64,11 +66,6 @@ export class CsvOutputWriter {
    */
   private failed = false;
     /**
-   * Header Written
-   * @private
-   */
-  private headerWritten = false;
-    /**
    * Pending
    * @private
    */
@@ -83,6 +80,11 @@ export class CsvOutputWriter {
    * @private
    */
   private static readonly FLUSH_THRESHOLD_BYTES = 32 * 1024 * 1024;
+    /**
+   * Output stream to the tmp CSV file.
+   * @private
+   */
+  private readonly stream: WriteStream;
 
     /**
    * Constructs a new CsvOutputWriter instance.
@@ -98,6 +100,8 @@ export class CsvOutputWriter {
     this.logger = createLogger(module);
     this.gcsUtils = FirestoreCacheUtils.getInstance();
     this.config = Config.getInstance();
+    this.stream = fs.createWriteStream(this.tmpPath, { encoding: "utf8" });
+    this.stream.write("\ufeff" + this.line([...this.columns]), "utf8");
   }
 
   // CRLF line endings + a UTF-8 BOM (written once, before the header) so the file opens cleanly
@@ -111,36 +115,42 @@ export class CsvOutputWriter {
    * Adds row
    * @param row - The row
    * @param _lineNo - The _line no
+   * @returns A promise if a flush is in progress, otherwise undefined
    */
-  addRow(row: Record<string, unknown>, _lineNo?: number): void {
-    if (this.failed) return;
+  public addRow(row: Record<string, unknown>, _lineNo?: number): Promise<void> | undefined
+  {
+    if (this.failed) return undefined;
     try {
-      if (!this.headerWritten) {
-        fs.appendFileSync(this.tmpPath, "\ufeff" + this.line([...this.columns]), "utf8");
-        this.headerWritten = true;
-      }
       const line = this.line([...this.columns.map((c) => row[c])]);
       this.pending.push(line);
       this.pendingBytes += Buffer.byteLength(line, "utf8");
       this.rowCount++;
       if (this.pendingBytes >= CsvOutputWriter.FLUSH_THRESHOLD_BYTES) {
-        this.flushPending();
+        return this.flushPending();
       }
+      return undefined;
     } catch (err) {
       this.failed = true;
       this.logger.warn("csv_output_add_failed", { job_id: this.jobId, error: String(err) });
+      return undefined;
     }
   }
 
     /**
-   * Flushes pending
+   * Flushes pending bytes to the output stream.
    */
-  public flushPending(): void {
-    if (!this.pending.length) return;
+  public async flushPending(): Promise<void> {
+    if (!this.pending.length || this.failed) return;
+    const toWrite = this.pending.join("");
+    this.pending = [];
+    this.pendingBytes = 0;
     try {
-      fs.appendFileSync(this.tmpPath, this.pending.join(""), "utf8");
-      this.pending = [];
-      this.pendingBytes = 0;
+      await new Promise<void>((resolve, reject) => {
+        this.stream.write(toWrite, "utf8", (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
     } catch (err) {
       this.failed = true;
       this.logger.warn("csv_output_flush_pending_failed", { job_id: this.jobId, error: String(err) });
@@ -153,11 +163,14 @@ export class CsvOutputWriter {
    */
   async flush(): Promise<string | null> {
     if (this.rowCount === 0 || this.failed) {
+      this.stream.destroy();
       await this.cleanup();
       return null;
     }
     try {
-      this.flushPending();
+      await this.flushPending();
+      this.stream.end();
+      await finished(this.stream);
       const key = `output/${this.jobId}.csv`;
       await this.gcsUtils.putFile(this.config.settings.DATA_BUCKET, key, this.tmpPath, "text/csv");
       const gsPath = `gs://${this.config.settings.DATA_BUCKET}/${key}`;
