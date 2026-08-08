@@ -581,13 +581,16 @@ export class QueueService extends ServiceManager
    */
   public async publishEvent(event: object): Promise<string>
   {
-    const config = this.getConfig();
-    const messageId = await this.sendMessage(config.settings.JOB_EVENTS_QUEUE_URL, event, 0, ((event as Record<string, unknown>).job_id as string | undefined) ?? "default");
-    if (!messageId)
+    return this.withRetry(async () =>
     {
-      throw new Error("publish_event_failed");
-    }
-    return messageId;
+      const config = this.getConfig();
+      const messageId = await this.sendMessage(config.settings.JOB_EVENTS_QUEUE_URL, event, 0, ((event as Record<string, unknown>).job_id as string | undefined) ?? "default");
+      if (!messageId)
+      {
+        throw new Error("publish_event_failed");
+      }
+      return messageId;
+    });
   }
 
   /**

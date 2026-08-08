@@ -1100,7 +1100,7 @@ export class StreamParserService
         this.logger.warn("csv_output_path_missing", { job_id: jobId, parsed: counts.parsed });
       }
 
-      const qualityCheck = await qualityGate.passesQualityGate(jobId);
+      const qualityCheck = await qualityGate.passesQualityGate(jobId, counts);
 
       if (!qualityCheck.passes)
       {

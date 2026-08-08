@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { OutputBuffer } from "./OutputBuffer.js";
 import { parquetOutputService } from "./ParquetOutputService.js";
 import { settings } from "./Settings.js";
+import { DatabaseService } from "./DatabaseManager.js";
 
 /**
  * OutputManager manages the resource lifecycle of OutputBuffer instances
@@ -24,13 +26,13 @@ export class OutputManager
    * @returns The output buffer result
    */
 
-  public getBuffer(jobId: string, _templateId?: string): OutputBuffer
+  public getBuffer(jobId: string, templateId = "mixed"): OutputBuffer
   {
     let buffer: OutputBuffer | undefined = this.buffers.get(jobId);
 
     if (!buffer)
     {
-      buffer = OutputBuffer.getInstance(jobId);
+      buffer = OutputBuffer.getInstance(jobId, templateId);
       this.buffers.set(jobId, buffer);
     }
 
@@ -53,6 +55,8 @@ export class OutputManager
       await buffer.flush();
 
       const flushedPaths: string[] = buffer.getFlushedPaths();
+      const flushedParts = buffer.getFlushedParts();
+
       if (flushedPaths.length > 0)
       {
         paths.push(...flushedPaths);
@@ -67,6 +71,29 @@ export class OutputManager
             `output/${jobId}/_MANIFEST.json`,
             manifest,
         );
+      }
+
+      for (const part of flushedParts)
+      {
+        try
+        {
+          await DatabaseService.getInstance().repositories.outputParts.create({
+            part_id: randomUUID(),
+            job_id: jobId,
+            template_id: part.template_id,
+            s3_path: part.path,
+            row_count: part.row_count,
+            byte_size: 0,
+          });
+        }
+        catch (err)
+        {
+          parquetOutputService.getLogger().error("output_part_record_failed", {
+            job_id: jobId,
+            path: part.path,
+            error: String(err),
+          });
+        }
       }
 
       OutputBuffer.releaseInstance(jobId);

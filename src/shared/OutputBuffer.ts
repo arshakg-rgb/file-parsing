@@ -58,9 +58,12 @@ export class OutputBuffer
   private totalFlushed: number = 0;
 
   /**
-   * Pending bytes
+   * Template id associated with this buffer's parts (default "mixed" because a
+   * single part can contain rows for several templates).
    * @private
    */
+  private readonly templateId: string;
+
   /**
    * Pending flushes
    * @private
@@ -74,14 +77,22 @@ export class OutputBuffer
   private flushedPaths: string[] = [];
 
   /**
+   * Flushed part metadata for `output_parts` bookkeeping.
+   * @private
+   */
+  private flushedParts: Array<{ path: string; row_count: number; template_id: string }> = [];
+
+  /**
    * Constructs a new OutputBuffer instance.
    * Private — use OutputBuffer.getInstance(jobId) instead.
    * @param jobId - The job identifier
+   * @param templateId - The template id to record for flushed parts
    */
 
-  private constructor(jobId: string)
+  private constructor(jobId: string, templateId = "mixed")
   {
     this.partId = jobId;
+    this.templateId = templateId;
     this.totalFlushed = 0;
   }
 
@@ -89,16 +100,17 @@ export class OutputBuffer
    * Returns the singleton OutputBuffer for the given jobId, creating it
    * on first access.
    * @param jobId - The job identifier
+   * @param templateId - The template id to record for flushed parts
    * @returns The OutputBuffer instance for this job
    */
 
-  public static getInstance(jobId: string): OutputBuffer
+  public static getInstance(jobId: string, templateId = "mixed"): OutputBuffer
   {
     let instance: OutputBuffer | undefined = OutputBuffer.instances.get(jobId);
 
     if (!instance)
     {
-      instance = new OutputBuffer(jobId);
+      instance = new OutputBuffer(jobId, templateId);
       OutputBuffer.instances.set(jobId, instance);
     }
 
@@ -397,6 +409,11 @@ export class OutputBuffer
     }
 
     this.flushedPaths.push(gcsPath);
+    this.flushedParts.push({
+      path: gcsPath,
+      row_count: rowsToFlush.length,
+      template_id: this.templateId,
+    });
     parquetOutputService.getLogger().info("parquet_flush_complete", { part_name: partName, path: gcsPath, row_count: rowsToFlush.length });
   }
 
@@ -421,5 +438,15 @@ export class OutputBuffer
   public getFlushedPaths(): string[]
   {
     return [...this.flushedPaths];
+  }
+
+  /**
+   * Gets flushed part metadata for `output_parts` bookkeeping.
+   * @returns The flushed parts result
+   */
+
+  public getFlushedParts(): Array<{ path: string; row_count: number; template_id: string }>
+  {
+    return [...this.flushedParts];
   }
 }

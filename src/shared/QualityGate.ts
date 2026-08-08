@@ -74,43 +74,57 @@ export class QualityGate extends ServiceManager
     return QualityGate.instance;
   }
 
-    /**
-   * Calculates metrics
-   * @param jobId - The job identifier
-   * @returns A promise that resolves to the result
-   */
-
-  public async calculateMetrics(jobId: string): Promise<QualityMetrics>
+    private computeMetrics(counts: JobCounts): QualityMetrics
   {
-    const counts: JobCounts = await this.dbManager.repositories.jobs.getCounts(jobId);
-
-    if (!counts)
-    {
-      throw new Error(`Job not found: ${jobId}`);
-    }
-
     const failed: number = totalFailed(counts);
-    const totalLines: number = counts.parsed + counts.dropped_rubbish + failed;
+    const totalLines: number = (counts.parsed || 0) + (counts.dropped_rubbish || 0) + failed;
     const failedLineRatio: number = totalLines > 0 ? failed / totalLines : 0;
 
     return {
       totalLines,
       parsedLines: counts.parsed || 0,
       droppedRubbishLines: counts.dropped_rubbish || 0,
-      failedLines: failed || 0,
+      failedLines: failed,
       failedLineRatio,
     };
   }
 
-    /**
-   * Performs the passes quality gate operation.
+  /**
+   * Calculates metrics for a job. Prefer the `counts` argument when the live
+   * in-memory counts are available (e.g., from the stream parser); fall back
+   * to the DB only when they are not.
    * @param jobId - The job identifier
+   * @param counts - Optional live counts to use instead of the DB
    * @returns A promise that resolves to the result
    */
 
-  public async passesQualityGate(jobId: string): Promise<{ passes: boolean; reason?: string }>
+  public async calculateMetrics(jobId: string, counts?: JobCounts): Promise<QualityMetrics>
   {
-    const metrics: QualityMetrics = await this.calculateMetrics(jobId);
+    if (counts)
+    {
+      return this.computeMetrics(counts);
+    }
+
+    const dbCounts: JobCounts = await this.dbManager.repositories.jobs.getCounts(jobId);
+
+    if (!dbCounts)
+    {
+      throw new Error(`Job not found: ${jobId}`);
+    }
+
+    return this.computeMetrics(dbCounts);
+  }
+
+  /**
+   * Performs the passes quality gate operation.
+   * @param jobId - The job identifier
+   * @param counts - The live counts for the job
+   * @returns A promise that resolves to the result
+   */
+
+  public async passesQualityGate(jobId: string, counts: JobCounts): Promise<{ passes: boolean; reason?: string }>
+  {
+    const metrics: QualityMetrics = this.computeMetrics(counts);
 
     this.logger.info("quality_gate_check", {
       job_id: jobId,

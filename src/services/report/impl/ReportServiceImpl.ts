@@ -177,8 +177,8 @@ class ReportServiceImpl extends ServiceManager implements ReportService
     const batchSiblings: ParseJobAttributes[] = jobRow.batch_id ? await this.getBatchJobs(jobRow.batch_id) : [];
 
     const qualityGate: QualityGate = QualityGate.getInstance();
-    const qualityMetrics: QualityMetrics = await qualityGate.calculateMetrics(jobId);
-    const qualityCheck = await qualityGate.passesQualityGate(jobId);
+    const qualityMetrics: QualityMetrics = await qualityGate.calculateMetrics(jobId, msg.counts);
+    const qualityCheck = await qualityGate.passesQualityGate(jobId, msg.counts);
 
     const report = {
       job_id: jobId,
