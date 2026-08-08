@@ -649,7 +649,6 @@ export class StreamParserService
     const recentLines: string[] = [];
 
     const BATCH_SIZE: number = Math.max(1, settings.PARSE_DB_FLUSH_BATCH_SIZE);
-    let parsedBatch: Record<string, unknown>[] = [];
     let rubbishBatch: Record<string, unknown>[] = [];
     let dlqBatch: Record<string, unknown>[] = [];
     const repositories: Repositories = DatabaseManager.getInstance().repositories;
@@ -669,14 +668,6 @@ export class StreamParserService
       }
 
       const flushTasks: Promise<void>[] = [];
-
-      if (parsedBatch.length >= BATCH_SIZE)
-      {
-        const batch: Record<string, unknown>[] = parsedBatch; parsedBatch = [];
-        flushTasks.push(repositories.parsedRecords.bulkCreate(batch as any).catch(e => {
-          this.logger.warn("parsed_batch_flush_error", { error: String(e) });
-        }));
-      }
 
       if (rubbishBatch.length >= BATCH_SIZE)
       {
@@ -740,13 +731,6 @@ export class StreamParserService
     const flushBatches = async (force = false): Promise<void> =>
     {
       const flushTasks: Promise<void>[] = [];
-
-      if (force && parsedBatch.length > 0) {
-        const batch: Record<string, unknown>[] = parsedBatch; parsedBatch = [];
-        flushTasks.push(repositories.parsedRecords.bulkCreate(batch as any).catch(e => {
-          this.logger.warn("parsed_batch_flush_error", { error: String(e) });
-        }));
-      }
 
       if (force && rubbishBatch.length > 0)
       {
@@ -980,21 +964,6 @@ export class StreamParserService
               _parsed_at: parsedAt,
               _part_id: "auto",
             });
-
-            parsedBatch.push({
-              _job_id: jobId,
-              _byte_offset: byteOffset,
-              _byte_length: byteLength,
-              _record_index: idx,
-              _line_no: lineNo,
-              _template_id: result.template_id || "default",
-              _template_version: result.template_version || 1,
-              _checksum: "",
-              _parsed_at: parsedAt,
-              _part_id: "auto",
-              fields: { s3_url: msg.s3_url, ...sanitizedRow }
-            });
-
             if (maybeFlush)
             {
               await maybeFlush;
@@ -1072,21 +1041,6 @@ export class StreamParserService
                 _parsed_at: new Date(),
                 _part_id: "auto",
               });
-
-              parsedBatch.push({
-                _job_id: jobId,
-                _byte_offset: byteOffset,
-                _byte_length: byteLength,
-                _record_index: idx,
-                _line_no: lineNo,
-                _template_id: result.template_id || "default",
-                _template_version: result.template_version || 1,
-                _checksum: "",
-                _parsed_at: new Date(),
-                _part_id: "auto",
-                fields: { s3_url: msg.s3_url, ...sanitizedRow }
-              });
-
               if (maybeFlush)
               {
                 await maybeFlush;
