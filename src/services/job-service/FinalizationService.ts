@@ -3,7 +3,6 @@ import { randomUUID } from "crypto";
 import { settings } from "@shared/Settings.js";
 import {DatabaseService, type DeadLetterRow} from "@shared/DatabaseManager.js";
 import { createLogger } from "@utils/logger/Log.js";
-import { LineNumberMapper } from "@service/job-service/finalize/LineNumberMapper.js";
 import { ParquetEngine, type ParquetRow } from "@service/job-service/finalize/ParquetEngine.js";
 import { StoragePath, type GcsProtocol } from "@service/job-service/finalize/StoragePath.js";
 import type { FinalizeResult } from "@service/job-service/io/IFinalizationService.js";
@@ -263,22 +262,13 @@ class FinalizationService
     const timings = (job.timings as Record<string, unknown>) || {};
     const rubbishLogPath = timings._rubbish_log_path as string | undefined;
 
-    let source: Buffer | undefined;
-    try {
-      const sourcePath = StoragePath.parse(job.s3_url);
-      source = await GcsUtils.getInstance().readFull(sourcePath.bucket, sourcePath.key);
-    } catch (e) {
-      this.logger.warn({ jobId, error: String(e) }, "backfill_source_read_failed");
-      return;
-    }
-
-    const targetOffsets = new Set<number>();
+    const lineMap = new Map<number, number>();
     for (const p of mergedPaths) {
       try {
         const rows = await ParquetEngine.readRows(p);
         for (const r of rows) {
-          if (r._byte_offset !== undefined && r._byte_offset !== null) {
-            targetOffsets.add(Number(ParquetEngine.sanitizeValue(r._byte_offset, false)));
+          if (r._byte_offset !== undefined && r._byte_offset !== null && r._line_no !== undefined && r._line_no !== null) {
+            lineMap.set(Number(ParquetEngine.sanitizeValue(r._byte_offset, false)), Number(r._line_no));
           }
         }
       } catch (e) {
@@ -288,7 +278,9 @@ class FinalizationService
 
     const deadLetters: DeadLetterRow[] = await DatabaseService.getInstance().repositories.deadLetters.findByJob(jobId);
     for (const dlq of deadLetters) {
-      targetOffsets.add(Number(dlq.byte_offset));
+      if (dlq.line_no !== undefined && dlq.line_no !== null) {
+        lineMap.set(Number(dlq.byte_offset), Number(dlq.line_no));
+      }
     }
 
     let rubbishEntries: Array<Record<string, unknown>> = [];
@@ -301,17 +293,14 @@ class FinalizationService
           .filter((l) => l.trim())
           .map((l) => JSON.parse(l));
         for (const e of rubbishEntries) {
-          if (typeof e.byte_offset === "number") {
-            targetOffsets.add(e.byte_offset);
+          if (typeof e.byte_offset === "number" && typeof e.line_no === "number") {
+            lineMap.set(e.byte_offset, e.line_no);
           }
         }
       } catch (e) {
         this.logger.warn({ jobId, error: String(e) }, "backfill_rubbish_read_failed");
       }
     }
-
-    const sortedOffsets = Array.from(targetOffsets).sort((a, b) => a - b);
-    const lineMap = LineNumberMapper.computeLineMap(source, sortedOffsets);
 
     for (const dlq of deadLetters) {
       const line = lineMap.get(Number(dlq.byte_offset));
