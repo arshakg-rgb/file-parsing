@@ -1,6 +1,5 @@
 import pino from "pino";
 import fs from "node:fs";
-import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { Storage } from "@google-cloud/storage";
 import ServiceManager from "@config/ServiceManager.js";
@@ -273,18 +272,6 @@ export class GcsUtils extends ServiceManager
         }, this.GCS_TIMEOUT_MS),
         this.GCS_RETRIES
     );
-  }
-
-  /**
-   * Returns a raw GCS object read stream without buffering the whole file.
-   * @param bucket - The bucket
-   * @param key - The key
-   * @returns A readable stream of the object bytes
-   */
-
-  public getObjectReadStream(bucket: string, key: string): Readable
-  {
-    return this.getStorage().bucket(bucket).file(key).createReadStream();
   }
 
   /**
