@@ -77,7 +77,7 @@ export class DeadLetterRepository
   /**
    * Streaming-inserts rows into the dead_letters table.
    */
-  async bulkCreate(rows: DeadLetterCreationAttributes[]): Promise<void>
+  async bulkCreate(rows: DeadLetterCreationAttributes[] | Record<string, unknown>[]): Promise<void>
   {
     const bqRows = rows.map((r) => ({
       ...r,

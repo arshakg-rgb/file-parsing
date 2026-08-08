@@ -8,8 +8,8 @@ export abstract class CustomError extends Error
   public code?: string;
   public name: string;
   public message: string;
-  public data?: Record<string, any>;
-  public info?: Record<string, any>;
+  public data?: Record<string, unknown>;
+  public info?: Record<string, unknown>;
   public fields?: string[];
 
   /**
@@ -23,7 +23,7 @@ export abstract class CustomError extends Error
    * @param info - Optional additional information associated with the error.
    */
 
-  protected constructor(name: string, message: string = "", code?: string, fields?: string[], info?: Record<string, any>, data?: Record<string, any>,)
+  protected constructor(name: string, message: string = "", code?: string, fields?: string[], info?: Record<string, unknown>, data?: Record<string, unknown>,)
   {
     super(message);
     this.name = name;

@@ -48,7 +48,7 @@ export class ServerError extends CustomError
    * @param fields - Optional array of fields related to the error.
    * @param data - Optional additional data associated with the error.
    */
-  constructor(code: string, message: string, fields?: string[], data?: Record<string, any>)
+  constructor(code: string, message: string, fields?: string[], data?: Record<string, unknown>)
   {
     super("ServerError");
     this.code = code;

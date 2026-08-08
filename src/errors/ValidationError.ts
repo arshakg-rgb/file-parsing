@@ -38,7 +38,7 @@ export class ValidationError extends CustomError
    * @param info - Optional additional information associated with the error.
    */
 
-  constructor(code: string, message: string, fields?: string[], info?: Record<string, any>, data?: Record<string, any>)
+  constructor(code: string, message: string, fields?: string[], info?: Record<string, unknown>, data?: Record<string, unknown>)
   {
     super("ValidationError");
     this.code = code;

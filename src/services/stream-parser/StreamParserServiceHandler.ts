@@ -677,7 +677,7 @@ export class StreamParserService
       if (rubbishBatch.length >= BATCH_SIZE)
       {
         const batch: Record<string, unknown>[] = rubbishBatch; rubbishBatch = [];
-        flushTasks.push(repositories.rubbishLogs.bulkCreate(batch as any).catch(e => {
+        flushTasks.push(repositories.rubbishLogs.bulkCreate(batch).catch(e => {
           this.logger.warn("rubbish_batch_flush_error", { error: String(e) });
         }));
       }
@@ -685,7 +685,7 @@ export class StreamParserService
       if (dlqBatch.length >= BATCH_SIZE)
       {
         const batch: Record<string, unknown>[] = dlqBatch; dlqBatch = [];
-        flushTasks.push(repositories.deadLetters.bulkCreate(batch as any).catch(e => {
+        flushTasks.push(repositories.deadLetters.bulkCreate(batch).catch(e => {
           this.logger.warn("dlq_batch_flush_error", { error: String(e) });
         }));
       }
@@ -738,7 +738,7 @@ export class StreamParserService
       if (force && rubbishBatch.length > 0)
       {
         const batch: Record<string, unknown>[] = rubbishBatch; rubbishBatch = [];
-        flushTasks.push(repositories.rubbishLogs.bulkCreate(batch as any).catch(e => {
+        flushTasks.push(repositories.rubbishLogs.bulkCreate(batch).catch(e => {
           this.logger.warn("rubbish_batch_flush_error", { error: String(e) });
         }));
       }
@@ -746,7 +746,7 @@ export class StreamParserService
       if (force && dlqBatch.length > 0)
       {
         const batch: Record<string, unknown>[] = dlqBatch; dlqBatch = [];
-        flushTasks.push(repositories.deadLetters.bulkCreate(batch as any).catch(e => {
+        flushTasks.push(repositories.deadLetters.bulkCreate(batch).catch(e => {
           this.logger.warn("dlq_batch_flush_error", { error: String(e) });
         }));
       }

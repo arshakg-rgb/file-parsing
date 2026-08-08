@@ -44,7 +44,7 @@ export class HttpError extends CustomError
      * @param data - Optional additional data associated with the error.
      * @param info - Optional additional information associated with the error.
      */
-    constructor(code: string, message: string, fields?: string[], info?: Record<string, any>, data?: Record<string, any>)
+    constructor(code: string, message: string, fields?: string[], info?: Record<string, unknown>, data?: Record<string, unknown>)
     {
         super("HttpError");
         this.code = code;

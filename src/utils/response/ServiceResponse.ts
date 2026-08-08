@@ -13,10 +13,10 @@ export class ServiceResponse
 {
     private _originalResponse: Response;
     private _status: number = 200;
-    private _outcome: any = null;
+    private _outcome: unknown = null;
     private _pages: IResponsePages;
     private readonly _success: boolean = true;
-    private _errors: any[] = [];
+    private _errors: unknown[] = [];
 
     /**
      * Creates an instance of `ServiceResponse`.
@@ -46,12 +46,12 @@ export class ServiceResponse
     /**
      * Sets the outcome data and optional errors for the response.
      *
-     * @param {any} data - The outcome data to be sent in the response.
+     * @param {unknown} data - The outcome data to be sent in the response.
      * @param pages
-     * @param {any[]} [errors] - Optional array of errors.
+     * @param {unknown[]} [errors] - Optional array of errors.
      * @returns {ServiceResponse} The current instance for chaining.
      */
-    public setOutcome(data: any, pages?: IResponsePages, errors?: any[]): ServiceResponse
+    public setOutcome(data: unknown, pages?: IResponsePages, errors?: unknown[]): ServiceResponse
     {
         this._outcome = data;
 
@@ -80,9 +80,9 @@ export class ServiceResponse
         {
             const responseData: {
                 success: boolean;
-                data?: any;
+                data?: unknown;
                 pages?: IResponsePages;
-                errors?: any[];
+                errors?: unknown[];
             } = {
                 success: this._success,
                 data: this._outcome || undefined,

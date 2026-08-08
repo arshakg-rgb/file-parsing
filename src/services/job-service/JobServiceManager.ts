@@ -121,7 +121,7 @@ class JobServiceManager extends ServiceManager implements IJobService
 
     this.app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
       this.logger.error({ error: err.message, stack: err.stack }, "express_error");
-      const status = (err as any).status || 500;
+      const status = (err as { status?: number }).status || 500;
       res.status(status).json({ detail: err.message });
     });
   }

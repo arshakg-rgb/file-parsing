@@ -52,7 +52,7 @@ export class RubbishLogRepository
   /**
    * Streaming-inserts rows into the rubbish_log table.
    */
-  async bulkCreate(rows: RubbishLogCreationAttributes[]): Promise<void>
+  async bulkCreate(rows: RubbishLogCreationAttributes[] | Record<string, unknown>[]): Promise<void>
   {
     const bqRows = rows.map((r, i) => ({
       ...r,
