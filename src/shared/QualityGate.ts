@@ -77,7 +77,9 @@ export class QualityGate extends ServiceManager
     private computeMetrics(counts: JobCounts): QualityMetrics
   {
     const failed: number = totalFailed(counts);
-    const totalLines: number = (counts.parsed || 0) + (counts.dropped_rubbish || 0) + failed;
+    // Design spec: rubbish should be excluded from the denominator
+    // Only parsed + failed lines count toward the quality gate ratio
+    const totalLines: number = (counts.parsed || 0) + failed;
     const failedLineRatio: number = totalLines > 0 ? failed / totalLines : 0;
 
     return {
