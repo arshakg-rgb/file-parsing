@@ -703,9 +703,7 @@ export class StreamParserService
       {
         overWatermark = true;
         this.logger.warn("ram_watermark_reached", { rss: mem.rss, heap_used: mem.heapUsed, watermark: RAM_WATERMARK_HIGH });
-        await flushBatches(true);
-        await outputManager.flushAll();
-        await csvWriter.flushPending();
+        await Promise.all([flushBatches(true), outputManager.flushAll(), csvWriter.flushPending()]);
       }
       else if (overWatermark && mem.rss < RAM_WATERMARK_LOW)
       {
@@ -1083,13 +1081,14 @@ export class StreamParserService
       this.logger.info("lines_streamed", { job_id: jobId, line_count: lineNo, duration_ms: Date.now() - lineSourceStart });
 
       const finalFlushStart: number = Date.now();
-      await flushBatches(true);
+      const [_, outputPaths, csvOutputPath] = await Promise.all([
+        flushBatches(true),
+        outputManager.flushAll(),
+        csvWriter.flush()
+      ]);
       this.logger.info("parse_flushed", { job_id: jobId, duration_ms: Date.now() - finalFlushStart });
 
       const outputFlushStart: number = Date.now();
-      const outputPaths: string[] = await outputManager.flushAll();
-
-      const csvOutputPath: string = await csvWriter.flush();
 
       this.logger.info("output_flushed", { job_id: jobId, csv_output_path: csvOutputPath || null, duration_ms: Date.now() - outputFlushStart });
 
