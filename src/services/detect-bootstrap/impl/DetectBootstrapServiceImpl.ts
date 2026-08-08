@@ -20,10 +20,13 @@ import EncodingService from "@utils/normalizers/Encoding";
 import {MetricsUtils} from "@utils/response/Metrics";
 import {AiClassifierServiceImpl, aiClassifierServiceImpl} from "@service/ai-classifier/impl/AiClassifierServiceImpl";
 import {QueueService} from "@shared/QueueService";
+import JSONbig from "json-bigint";
 
 /**
  * DetectBootstrapServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
  */
+const JSON_SAFE = JSONbig({ storeAsString: true });
+
 class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstrapService
 {
   /**
@@ -243,6 +246,88 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     }
 
     return this.hash(`text|${first.length}|${encoding}`);
+  }
+
+  private extractJsonRecords(data: unknown): string[] {
+    const records: string[] = [];
+
+    const pushRecord = (value: unknown): void => {
+      if (value === undefined) {
+        return;
+      }
+      records.push(JSON.stringify(value));
+    };
+
+    if (Array.isArray(data)) {
+      for (const item of data) pushRecord(item);
+    } else if (typeof data === "object" && data !== null) {
+      for (const [, value] of Object.entries(data as Record<string, unknown>)) {
+        if (Array.isArray(value)) {
+          for (const item of value) pushRecord(item);
+        } else {
+          pushRecord(value);
+        }
+      }
+    } else {
+      pushRecord(data);
+    }
+
+    return records;
+  }
+
+  private async processJsonProbe(
+      bucket: string,
+      key: string,
+      encoding: string,
+      fieldSpecArray: string[],
+      jobId: string
+  ): Promise<ProbeResult | null> {
+    const maxHeadBytes = 262144; // 256 KB
+    const fileSize = await this.gcsUtils.objectSize(bucket, key);
+    const headSize = Math.min(fileSize, maxHeadBytes);
+    const headRaw = await this.gcsUtils.readRange(bucket, key, 0, headSize);
+    const text = EncodingService.decode(headRaw, encoding);
+
+    let parsed: unknown;
+    try {
+      parsed = JSON_SAFE.parse(text);
+    } catch (err) {
+      this.logger.info("detect_json_parse_failed", { job_id: jobId, error: String(err) });
+      return null;
+    }
+
+    const records = this.extractJsonRecords(parsed)
+        .filter((r) => r.trim().startsWith("{"));
+
+    for (let i = 0; i < Math.min(records.length, 3); i++) {
+      const record = records[i];
+      const fingerprint = this.fingerprintProbe(Buffer.from(record, EncodingService.bufferEncodingFor(encoding)), encoding);
+
+      const existing = templateRegistry.getByFingerprint(fingerprint);
+      if (existing) {
+        return { fingerprint, templateId: existing.template_id };
+      }
+
+      const req: ClassifyRequest = {
+        unknown_line: record,
+        field_spec: fieldSpecArray,
+        context_lines: records.slice(i + 1, i + 4),
+        job_id: jobId,
+      };
+
+      const resp = await this.classifyWithTimeout(req, jobId, fingerprint);
+      if (!resp) continue;
+
+      const templateId = this.extractTemplateId(resp.template);
+      if (templateId) {
+        this.logger.info("seed_template_created", { job_id: jobId, kind: resp.kind, template_id: templateId, fingerprint, source: "json_probe" });
+        MetricsUtils.increment("detect.template_created", 1, { kind: resp.kind });
+        return { fingerprint, templateId };
+      }
+    }
+
+    this.logger.info("detect_json_probe_no_template", { job_id: jobId, records_tried: Math.min(records.length, 3) });
+    return null;
   }
 
   /**
@@ -471,19 +556,30 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     const fileSize = msg.size || (await this.gcsUtils.objectSize(bucket, key));
 
     const { encoding, windowSize } = await this.detectFileProperties(bucket, key, fileSize);
-
-    const offsets = this.computeProbeOffsets(fileSize, windowSize);
-    this.logger.info("probing", { job_id: jobId, probe_count: offsets.length, file_size: fileSize });
-    MetricsUtils.increment("detect.probe_start", 1, { probe_count: String(offsets.length) });
-
     const fieldSpecArray = this.parseFieldSpec(msg.field_spec);
 
     const seen = new Set<string>();
     const seedTemplateIds: string[] = [];
 
-    for (const offset of offsets) {
-      const result = await this.processProbeWindow(bucket, key, offset, windowSize, fileSize, encoding, fieldSpecArray, jobId, seen);
-      if (result?.templateId) seedTemplateIds.push(result.templateId);
+    const isJsonFile = key.endsWith(".json") && !key.endsWith(".ndjson");
+    if (isJsonFile) {
+      this.logger.info("detect_json_probe_start", { job_id: jobId, file_size: fileSize });
+      const jsonResult = await this.processJsonProbe(bucket, key, encoding, fieldSpecArray, jobId);
+      if (jsonResult?.templateId) {
+        seedTemplateIds.push(jsonResult.templateId);
+      }
+    }
+
+    const offsets = this.computeProbeOffsets(fileSize, windowSize);
+
+    if (seedTemplateIds.length === 0) {
+      this.logger.info("probing", { job_id: jobId, probe_count: offsets.length, file_size: fileSize });
+      MetricsUtils.increment("detect.probe_start", 1, { probe_count: String(offsets.length) });
+
+      for (const offset of offsets) {
+        const result = await this.processProbeWindow(bucket, key, offset, windowSize, fileSize, encoding, fieldSpecArray, jobId, seen);
+        if (result?.templateId) seedTemplateIds.push(result.templateId);
+      }
     }
 
     this.logger.info("detect_complete", { job_id: jobId, seeds: seedTemplateIds.length, probes: offsets.length });
