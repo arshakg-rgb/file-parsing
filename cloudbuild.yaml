@@ -1,7 +1,7 @@
 options:
   logging: CLOUD_LOGGING_ONLY
   substitution_option: 'ALLOW_LOOSE'
-  machineType: 'E2_HIGHCPU_16'
+  machineType: 'E2_HIGHCPU_32'
   diskSizeGb: '100'
 
 timeout: 1800s
