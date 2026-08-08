@@ -53,6 +53,7 @@ steps:
           gcloud pubsub subscriptions create ${topic}-sub \
             --topic=$topic \
             --ack-deadline-seconds=60 \
+            --enable-message-ordering \
             --project=data-etl-499916 || true
         done
 
