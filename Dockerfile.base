@@ -1,0 +1,41 @@
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml tsconfig.json ./
+RUN npm install -g pnpm && pnpm install --frozen-lockfile
+
+COPY src/ ./src/
+RUN pnpm run build
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install unrar once in the base image for ingest/archive consumers
+RUN apk add --no-cache wget gcompat libc6-compat && \
+    wget https://www.rarlab.com/rar/rarlinux-x64-711.tar.gz -O /tmp/unrar.tar.gz && \
+    tar -xzf /tmp/unrar.tar.gz -C /tmp && \
+    cp /tmp/rar/unrar /usr/local/bin/unrar && \
+    chmod +x /usr/local/bin/unrar && \
+    rm -rf /tmp/rar /tmp/unrar.tar.gz && \
+    apk del wget
+
+COPY package.json pnpm-lock.yaml ./
+RUN npm install -g pnpm && pnpm install --prod --frozen-lockfile
+
+COPY --from=builder /app/dist ./dist
+COPY configs/ ./configs/
+COPY package.json ./
+
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+USER nodejs
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:8080/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+
+EXPOSE 8080
+
+CMD ["node"]

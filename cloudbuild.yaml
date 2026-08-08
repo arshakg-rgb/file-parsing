@@ -8,14 +8,13 @@ timeout: 1800s
 
 substitutions:
   _REGION: us-central1
+  _BASE_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/base:latest
   _JOB_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/job-service:latest
   _INGEST_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ingest:latest
   _DETECT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/detect-bootstrap:latest
   _STREAM_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/stream-parser:latest
-  _AI_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/ai-classifier:latest
   _LOAD_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/load:latest
   _REPORT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/report:latest
-  _RETRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/retry:latest
   _ARCHIVE_ENTRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/archive-entry-consumer:latest
   _AI_INLINE_MODE: 'false'
   _MAX_AI_CALLS_PER_JOB: '5'
@@ -70,8 +69,18 @@ steps:
         done
 
   - name: 'gcr.io/kaniko-project/executor:latest'
-    id: 'build-job'
+    id: 'build-base'
     waitFor: ['lint']
+    args:
+      - --dockerfile=Dockerfile.base
+      - --context=dir:///workspace
+      - --destination=$_BASE_IMAGE
+      - --cache=true
+      - --cache-ttl=24h
+
+  - name: 'gcr.io/kaniko-project/executor:latest'
+    id: 'build-job'
+    waitFor: ['build-base']
     args:
       - --dockerfile=Dockerfile.job
       - --context=dir:///workspace
@@ -81,7 +90,7 @@ steps:
 
   - name: 'gcr.io/kaniko-project/executor:latest'
     id: 'build-ingest'
-    waitFor: ['lint']
+    waitFor: ['build-base']
     args:
       - --dockerfile=Dockerfile.ingest
       - --context=dir:///workspace
@@ -91,7 +100,7 @@ steps:
 
   - name: 'gcr.io/kaniko-project/executor:latest'
     id: 'build-detect'
-    waitFor: ['lint']
+    waitFor: ['build-base']
     args:
       - --dockerfile=Dockerfile.detect
       - --context=dir:///workspace
@@ -101,7 +110,7 @@ steps:
 
   - name: 'gcr.io/kaniko-project/executor:latest'
     id: 'build-stream'
-    waitFor: ['lint']
+    waitFor: ['build-base']
     args:
       - --dockerfile=Dockerfile.stream
       - --context=dir:///workspace
@@ -111,7 +120,7 @@ steps:
 
   - name: 'gcr.io/kaniko-project/executor:latest'
     id: 'build-load'
-    waitFor: ['lint']
+    waitFor: ['build-base']
     args:
       - --dockerfile=Dockerfile.load
       - --context=dir:///workspace
@@ -121,7 +130,7 @@ steps:
 
   - name: 'gcr.io/kaniko-project/executor:latest'
     id: 'build-report'
-    waitFor: ['lint']
+    waitFor: ['build-base']
     args:
       - --dockerfile=Dockerfile.report
       - --context=dir:///workspace
@@ -131,7 +140,7 @@ steps:
 
   - name: 'gcr.io/kaniko-project/executor:latest'
     id: 'build-archive'
-    waitFor: ['lint']
+    waitFor: ['build-base']
     args:
       - --dockerfile=Dockerfile.archive-entry
       - --context=dir:///workspace
@@ -140,21 +149,12 @@ steps:
       - --cache-ttl=24h
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    id: 'deploy'
-    waitFor:
-      - 'build-job'
-      - 'build-ingest'
-      - 'build-detect'
-      - 'build-stream'
-      - 'build-load'
-      - 'build-report'
-      - 'build-archive'
+    id: 'deploy-job'
+    waitFor: ['build-job']
     entrypoint: 'bash'
     args:
       - '-c'
       - |
-        set -euo pipefail
-
         gcloud run deploy job-service \
           --image $_JOB_IMAGE \
           --region $_REGION \
@@ -172,6 +172,13 @@ steps:
           --remove-secrets=DATABASE_URL \
           --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest,CORS_DOMAINS=CORS_DOMAINS:latest,CORS_ENABLED=CORS_ENABLED:latest
 
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-ingest'
+    waitFor: ['build-ingest']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
         gcloud run deploy ingest \
           --image $_INGEST_IMAGE \
           --region $_REGION \
@@ -193,6 +200,13 @@ steps:
           --add-volume-mount volume=rar-temp,mount-path=/mnt/scratch \
           --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
 
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-detect'
+    waitFor: ['build-detect']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
         gcloud run deploy detect-bootstrap \
           --image $_DETECT_IMAGE \
           --region $_REGION \
@@ -210,6 +224,13 @@ steps:
           --remove-secrets=DATABASE_URL \
           --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
 
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-stream'
+    waitFor: ['build-stream']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
         gcloud run deploy stream-parser \
           --image $_STREAM_IMAGE \
           --region $_REGION \
@@ -228,6 +249,13 @@ steps:
           --remove-secrets=DATABASE_URL \
           --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
 
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-load-small'
+    waitFor: ['build-load']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
         gcloud run deploy load-small \
           --image $_LOAD_IMAGE \
           --region $_REGION \
@@ -245,6 +273,13 @@ steps:
           --remove-secrets=DATABASE_URL \
           --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
 
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-load'
+    waitFor: ['build-load']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
         gcloud run deploy load \
           --image $_LOAD_IMAGE \
           --region $_REGION \
@@ -262,6 +297,13 @@ steps:
           --remove-secrets=DATABASE_URL \
           --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
 
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-load-large'
+    waitFor: ['build-load']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
         gcloud run deploy load-large \
           --image $_LOAD_IMAGE \
           --region $_REGION \
@@ -279,6 +321,13 @@ steps:
           --remove-secrets=DATABASE_URL \
           --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
 
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-report'
+    waitFor: ['build-report']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
         gcloud run deploy report \
           --image $_REPORT_IMAGE \
           --region $_REGION \
@@ -296,6 +345,13 @@ steps:
           --remove-secrets=DATABASE_URL \
           --update-secrets=FILE_DATABASE_URL=FILE_DATABASE_URL:latest,DATA_BUCKET=FILE_DATA_BUCKET:latest,FIRESTORE_DATABASE_ID=FILE_FIRESTORE_DATABASE_ID:latest,BEDROCK_MODEL_ID=FILE_BEDROCK_MODEL_ID:latest,LOKI_HOST=FILE_LOKI_HOST:latest,LOKI_USERNAME=FILE_LOKI_USERNAME:latest,LOKI_PASSWORD=FILE_LOKI_PASSWORD:latest
 
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-archive'
+    waitFor: ['build-archive']
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
         gcloud run deploy archive-entry-consumer \
           --image $_ARCHIVE_ENTRY_IMAGE \
           --region $_REGION \
