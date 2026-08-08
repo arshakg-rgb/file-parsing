@@ -504,11 +504,6 @@ steps:
         for svc in job-service ingest detect-bootstrap stream-parser load report archive-entry-consumer; do
           echo "Routing traffic to latest for $svc"
           gcloud run services update-traffic $svc --to-latest --region $_REGION --platform managed --quiet || echo "Traffic migration skipped for $svc"
-          latest=$(gcloud run services describe $svc --region $_REGION --platform managed --format='value(spec.template.metadata.name)')
-          for rev in $(gcloud run revisions list --service=$svc --region $_REGION --platform managed --format='value(metadata.name)' | grep -v "^$latest$"); do
-            echo "Deleting stale revision $rev for $svc"
-            gcloud run revisions delete "$rev" --service=$svc --region $_REGION --platform managed --quiet || true
-          done
         done
 
 images:
