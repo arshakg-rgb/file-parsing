@@ -1,4 +1,5 @@
 import pino from "pino";
+import { randomUUID } from "node:crypto";
 import Config from "@config/system-config/Config.js";
 import { settings } from "@shared/Settings.js";
 import ServiceManager from "@config/ServiceManager.js";
@@ -14,6 +15,9 @@ import HealthService from "@utils/response/Health";
 import { MetricsUtils } from "@utils/response/Metrics";
 import { QueueService } from "@shared/QueueService";
 import { QueueConsumerPool } from "@shared/QueueConsumerPool.js";
+import { ParquetEngine } from "@service/job-service/finalize/ParquetEngine.js";
+import { StoragePath } from "@service/job-service/finalize/StoragePath.js";
+import { GcsUtils } from "@shared/GcsUtils";
 
 /**
  * LoadServiceImpl is a singleton class responsible for managing the service. It provides methods to initialize and gracefully stop the service.
@@ -174,8 +178,8 @@ class LoadServiceImpl extends ServiceManager implements LoadService
       this.logger.info({ job_id: jobId, byte_offset: msg.byte_offset }, "load_recovered_row");
       MetricsUtils.increment("load.recovered_row", 1);
       const row: Record<string, unknown> = this.buildRecoveredRow(msg);
-      await this.upsertRows(jobId, [row]);
-      this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: 1 });
+      const totalRows = await this.loadRecoveredRowFromGcs(jobId, row);
+      this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: totalRows });
       return;
     }
 
@@ -242,45 +246,50 @@ class LoadServiceImpl extends ServiceManager implements LoadService
    * @param rows - The rows
    */
 
-  private async upsertRows(_jobId: string, rows: Record<string, unknown>[]): Promise<void>
+  private async loadRecoveredRowFromGcs(jobId: string, row: Record<string, unknown>): Promise<number>
   {
-    if (!rows.length)
+    const userFields: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(row))
     {
-      return;
+      if (!k.startsWith("_"))
+      {
+        userFields[k] = v;
+      }
     }
 
-    for (let i = 0; i < rows.length; i += this.UPSERT_BATCH)
+    const record = {
+      id: Date.now(),
+      _job_id: row._job_id as string,
+      _byte_offset: row._byte_offset as number,
+      _byte_length: row._byte_length as number,
+      _record_index: row._record_index as number,
+      _line_no: row._line_no as number,
+      _template_id: row._template_id as string,
+      _template_version: row._template_version as number,
+      _checksum: row._checksum as string,
+      _parsed_at: toDate(row._parsed_at),
+      _part_id: row._part_id as string,
+      fields: JSON.stringify(userFields),
+    };
+
+    const bucket: string = settings.DATA_BUCKET;
+    const key: string = `outputs/${jobId}/recovered/${randomUUID()}.parquet`;
+    const path = new StoragePath("gs", bucket, key);
+
+    await ParquetEngine.writeRows(path, [record]);
+    this.logger.info({ job_id: jobId, path: path.toString() }, "load_recovered_row_written");
+
+    try {
+      const loaded = await this.dbManager.repositories.parsedRecords.bulkLoadFromGcs([path.toString()]);
+      this.logger.info({ job_id: jobId, rows: loaded }, "load_recovered_row_loaded");
+      return loaded;
+    }
+    finally
     {
-      const batch: Record<string, unknown>[] = rows.slice(i, i + this.UPSERT_BATCH);
-      const records = batch.map((row) =>
+      await GcsUtils.getInstance().deleteObject(bucket, key).catch((err) =>
       {
-        const fields: Record<string, unknown> = {};
-
-        for (const [k, v] of Object.entries(row))
-        {
-          if (!k.startsWith("_"))
-          {
-            fields[k] = v;
-          }
-        }
-
-        return {
-          _job_id: row._job_id as string,
-          _byte_offset: row._byte_offset as number,
-          _byte_length: row._byte_length as number,
-          _record_index: row._record_index as number,
-          _line_no: row._line_no as number,
-          _template_id: row._template_id as string,
-          _template_version: row._template_version as number,
-          _checksum: row._checksum as string,
-          _parsed_at: toDate(row._parsed_at),
-          _part_id: row._part_id as string,
-          fields,
-        };
+        this.logger.warn({ job_id: jobId, path: path.toString(), error: String(err) }, "load_recovered_row_cleanup_failed");
       });
-
-      await this.dbManager.repositories.parsedRecords.bulkCreate(records);
-      this.logger.debug("upsert_batch", { rows: batch.length, offset: i });
     }
   }
 
