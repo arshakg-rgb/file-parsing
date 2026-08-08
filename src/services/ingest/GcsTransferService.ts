@@ -51,16 +51,8 @@ export class GcsTransferService
             const size: number = await this.gcsUtils.objectSize(bucket, key);
             const s3Key: string = this.entryStore.sourceKeyFor(jobId);
 
-            if (size > settings.SMALL_FILE_SINGLE_GET_THRESHOLD)
-            {
-                logger.info("gcs_streaming_copy", { jobId, size, threshold: settings.SMALL_FILE_SINGLE_GET_THRESHOLD });
-                await this.streamGcsToGcs(bucket, key, settings.DATA_BUCKET, s3Key);
-            }
-            else
-            {
-                const data: Buffer = await this.gcsUtils.readFull(bucket, key);
-                await this.gcsUtils.putObject(settings.DATA_BUCKET, s3Key, data);
-            }
+            logger.info("gcs_copy", { jobId, size, threshold: settings.SMALL_FILE_SINGLE_GET_THRESHOLD });
+            await this.streamGcsToGcs(bucket, key, settings.DATA_BUCKET, s3Key);
 
             const s3Url = `gs://${settings.DATA_BUCKET}/${s3Key}`;
             logger.info("gcs_copied_to_gcs", { jobId, s3Url, bytes: size });

@@ -1,7 +1,7 @@
 import os from "os";
 import path from "path";
 import fs from "fs/promises";
-import { ParquetSchema, ParquetWriter, type SchemaDefinition, type ParquetType } from "@dsnp/parquetjs";
+import { ParquetSchema, ParquetWriter } from "@dsnp/parquetjs";
 import { parquetOutputService } from "./ParquetOutputService.js";
 import { settings } from "./Settings.js";
 import Config from "@config/system-config/Config";
@@ -58,6 +58,19 @@ export class OutputBuffer
   private totalFlushed: number = 0;
 
   /**
+   * Approximate pending bytes in the current buffer.
+   * @private
+   */
+  private pendingBytes: number = 0;
+
+  /**
+   * Byte threshold for forcing a flush before the row-count threshold.
+   * A 64 MB cap keeps merged parts well under the 64 MB merge limit.
+   * @private
+   */
+  private static readonly FLUSH_THRESHOLD_BYTES: number = 64 * 1024 * 1024;
+
+  /**
    * Template id associated with this buffer's parts (default "mixed" because a
    * single part can contain rows for several templates).
    * @private
@@ -81,6 +94,25 @@ export class OutputBuffer
    * @private
    */
   private flushedParts: Array<{ path: string; row_count: number; template_id: string }> = [];
+
+  /**
+   * Fixed Parquet schema for all flushed parts. Building this once removes
+   * the per-flush row-scan that used to infer types from the data.
+   */
+  private static readonly PARQUET_SCHEMA: ParquetSchema = new ParquetSchema({
+    id: { type: "INT64", optional: true },
+    _job_id: { type: "UTF8", optional: true },
+    _byte_offset: { type: "INT64", optional: true },
+    _byte_length: { type: "INT64", optional: true },
+    _record_index: { type: "INT64", optional: true },
+    _line_no: { type: "INT64", optional: true },
+    _template_id: { type: "UTF8", optional: true },
+    _template_version: { type: "INT64", optional: true },
+    _checksum: { type: "UTF8", optional: true },
+    _parsed_at: { type: "TIMESTAMP_MILLIS", optional: true },
+    _part_id: { type: "UTF8", optional: true },
+    fields: { type: "UTF8", optional: true },
+  });
 
   /**
    * Constructs a new OutputBuffer instance.
@@ -203,62 +235,6 @@ export class OutputBuffer
   }
 
   /**
-   * Infers the parquet column type for a given sanitized value.
-   * @param v - The value to infer a type for
-   * @returns The parquet type
-   * @private
-   */
-
-  private static typeForValue(v: unknown): ParquetType
-  {
-    if (v === null || v === undefined)
-    {
-      return "UTF8";
-    }
-
-    if (typeof v === "boolean")
-    {
-      return "BOOLEAN";
-    }
-
-    if (typeof v === "number")
-    {
-      return Number.isInteger(v) && Number.isSafeInteger(v) ? "INT64" : "DOUBLE";
-    }
-
-    if (v instanceof Date)
-    {
-      return "TIMESTAMP_MILLIS";
-    }
-
-    return "UTF8";
-  }
-
-  /**
-   * Builds a parquet schema by inspecting a set of already-sanitized rows.
-   * @param rows - The sanitized rows to infer the schema from
-   * @returns The inferred parquet schema
-   * @private
-   */
-
-  private static buildSchema(rows: Record<string, unknown>[]): ParquetSchema
-  {
-    const schemaObj: SchemaDefinition = {};
-
-    for (const row of rows)
-    {
-      for (const [k, v] of Object.entries(row))
-      {
-        if (!schemaObj[k])
-        {
-          schemaObj[k] = { type: OutputBuffer.typeForValue(v), optional: true };
-        }
-      }
-    }
-    return new ParquetSchema(schemaObj);
-  }
-
-  /**
    * Adds row and flushes when the threshold is reached.
    * Returns a promise only when backpressure forces the caller to await.
    * @param row - The row
@@ -268,6 +244,7 @@ export class OutputBuffer
   public addRow(row: OutputRow): Promise<void> | undefined
   {
     this.rows.push(row);
+    this.pendingBytes += Buffer.byteLength(JSON.stringify(row), "utf8");
 
     if (!this.shouldFlush())
     {
@@ -276,6 +253,7 @@ export class OutputBuffer
 
     const rowsToFlush: OutputRow[] = this.rows;
     this.rows = [];
+    this.pendingBytes = 0;
 
     const startRow: number = this.totalFlushed;
     this.totalFlushed += rowsToFlush.length;
@@ -306,7 +284,8 @@ export class OutputBuffer
 
   private shouldFlush(): boolean
   {
-    return this.rows.length >= settings.OUTPUT_BUFFER_FLUSH_THRESHOLD_ROWS;
+    return this.rows.length >= settings.OUTPUT_BUFFER_FLUSH_THRESHOLD_ROWS ||
+        this.pendingBytes >= OutputBuffer.FLUSH_THRESHOLD_BYTES;
   }
 
   /**
@@ -329,6 +308,7 @@ export class OutputBuffer
 
     const rowsToFlush: OutputRow[] = this.rows;
     this.rows = [];
+    this.pendingBytes = 0;
 
     const startRow: number = this.totalFlushed;
     this.totalFlushed += rowsToFlush.length;
@@ -386,9 +366,8 @@ export class OutputBuffer
       };
     });
 
-    const schema: ParquetSchema = OutputBuffer.buildSchema(loadRows);
     const tempFile: string = path.join(os.tmpdir(), `${partName}.parquet`);
-    const writer: ParquetWriter = await ParquetWriter.openFile(schema, tempFile);
+    const writer: ParquetWriter = await ParquetWriter.openFile(OutputBuffer.PARQUET_SCHEMA, tempFile);
 
     for (const row of loadRows)
     {
