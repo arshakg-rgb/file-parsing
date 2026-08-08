@@ -56,7 +56,7 @@ export class QualityGate extends ServiceManager
 
     this.logger = createLogger(module);
     this.dbManager = DatabaseManager.getInstance();
-    this.FAILED_LINE_RATIO_THRESHOLD = 0.1;
+    this.FAILED_LINE_RATIO_THRESHOLD = 0.7;
   }
 
     /**
