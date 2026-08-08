@@ -12,31 +12,28 @@ export interface IPasswordState {
   updated_at: Date;
 }
 
+/**
+ * Password state is stored as an append-only log of (job_id, password,
+ * attempts) rows in BigQuery. Writes use streaming insert instead of DML
+ * UPDATE/INSERT so they do not count toward the "table update operations"
+ * quota that was causing ingest startup failures.
+ */
 export class PasswordStateRepository {
   private bq(): BigQueryManager {
     return BigQueryManager.getInstance();
   }
 
   /**
-   * Ensures the password_state table exists (no-op if it already exists).
-   */
-  async ensureTable(): Promise<void> {
-    await this.bq().query(`
-      CREATE TABLE IF NOT EXISTS ${FULL_TABLE} (
-        job_id STRING NOT NULL,
-        password STRING,
-        attempts INT64 DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
-      )
-    `);
-  }
-
-  /**
-   * Fetches the current password state for a job.
+   * Fetches the current password state for a job (most recent by updated_at).
    */
   async get(jobId: string): Promise<{ password: string | null; attempts: number }> {
-    const row = await this.bq().queryOne<Record<string, unknown>>(TABLE, { job_id: jobId });
+    const rows = await this.bq().queryMany<Record<string, unknown>>(
+      TABLE,
+      { job_id: jobId },
+      { column: "updated_at", direction: "DESC" },
+      1
+    );
+    const row = rows[0];
     if (!row) {
       return { password: null, attempts: 0 };
     }
@@ -46,56 +43,49 @@ export class PasswordStateRepository {
     };
   }
 
+  private now(): Date {
+    return new Date();
+  }
+
   /**
-   * Stores or updates the provided password for a job.
+   * Stores a provided password. Writes a new row; never UPDATEs in place.
    */
   async setPassword(jobId: string, password: string): Promise<void> {
-    const now = new Date();
     const existing = await this.get(jobId);
-    if (existing.password === null && existing.attempts === 0) {
-      await this.bq().insertOne(TABLE, {
+    const now = this.now();
+    await this.bq().insert(TABLE, [
+      {
         job_id: jobId,
         password,
         attempts: existing.attempts,
         created_at: now,
         updated_at: now,
-      });
-    } else {
-      await this.bq().execute(
-        `UPDATE ${FULL_TABLE} SET password = @password, updated_at = @updated_at WHERE job_id = @job_id`,
-        { job_id: jobId, password, updated_at: now },
-        await this.bq().inferTypes({ job_id: jobId, password, updated_at: now }, TABLE)
-      );
-    }
+      },
+    ]);
   }
 
   /**
-   * Increments the password attempt counter and returns the new value.
+   * Increments the password attempt counter. Writes a new row; never UPDATEs.
    */
   async incrementAttempts(jobId: string): Promise<number> {
-    const now = new Date();
     const existing = await this.get(jobId);
     const attempts = existing.attempts + 1;
-    if (existing.password === null && existing.attempts === 0) {
-      await this.bq().insertOne(TABLE, {
+    const now = this.now();
+    await this.bq().insert(TABLE, [
+      {
         job_id: jobId,
-        password: null,
+        password: existing.password,
         attempts,
         created_at: now,
         updated_at: now,
-      });
-    } else {
-      await this.bq().execute(
-        `UPDATE ${FULL_TABLE} SET attempts = @attempts, updated_at = @updated_at WHERE job_id = @job_id`,
-        { job_id: jobId, attempts, updated_at: now },
-        await this.bq().inferTypes({ job_id: jobId, attempts, updated_at: now }, TABLE)
-      );
-    }
+      },
+    ]);
     return attempts;
   }
 
   /**
-   * Removes the password state for a job.
+   * Removes the password state for a job. Kept for compatibility; DML delete
+   * is still a table update, but it is only called on job completion/failure.
    */
   async delete(jobId: string): Promise<void> {
     await this.bq().execute(`DELETE FROM ${FULL_TABLE} WHERE job_id = @job_id`, { job_id: jobId });

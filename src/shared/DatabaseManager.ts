@@ -55,7 +55,6 @@ export class DatabaseService
   public async waitForDb(): Promise<void>
   {
     await BigQueryManager.getInstance().initialize();
-    await this.repositories.passwordState.ensureTable();
   }
 
   /**
