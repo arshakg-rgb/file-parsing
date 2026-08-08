@@ -538,8 +538,6 @@ export class StreamParserService
     const activeReceiptHandle: string | null = receiptHandle || null;
     let lastDeadlineExtension: number = Date.now();
 
-    await templateRegistry.loadFromDatabase();
-
     const jobId: string = msg.job_id;
     await this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.PARSING });
     this.logger.info("parse_start", { job_id: jobId, s3_url: msg.s3_url, size: msg.size });
