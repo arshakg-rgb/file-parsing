@@ -113,8 +113,9 @@ export class BigQueryManager extends ServiceManager
 
     if (insertErrors?.length)
     {
-      this.logger.error({ table: tableName, errors: insertErrors }, "BigQuery insert errors");
-      throw new Error(`BigQuery insert failed for ${tableName}: ${JSON.stringify(insertErrors)}`);
+      const errorSummary = `BigQuery insert failed for ${tableName}: ${JSON.stringify(insertErrors)}`;
+      this.logger.error({ table: tableName, errors: insertErrors }, errorSummary);
+      throw new Error(errorSummary);
     }
 
     this.logger.debug({ table: tableName, count: rows.length }, "BigQuery insert succeeded");

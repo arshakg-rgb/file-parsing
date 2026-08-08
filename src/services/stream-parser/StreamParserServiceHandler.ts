@@ -681,7 +681,7 @@ export class StreamParserService
           rubbishBatch = [];
         }).catch(e => {
           const sample = batch.slice(0, 3);
-          this.logger.error("rubbish_batch_flush_error", { error: String(e), batch_size: batch.length, sample: JSON.stringify(sample) });
+          this.logger.error(`rubbish_batch_flush_error: ${String(e)}`, { batch_size: batch.length, sample: JSON.stringify(sample) });
         }));
       }
 
@@ -692,7 +692,7 @@ export class StreamParserService
           dlqBatch = [];
         }).catch(e => {
           const sample = batch.slice(0, 3);
-          this.logger.error("dlq_batch_flush_error", { error: String(e), batch_size: batch.length, sample: JSON.stringify(sample) });
+          this.logger.error(`dlq_batch_flush_error: ${String(e)}`, { batch_size: batch.length, sample: JSON.stringify(sample) });
         }));
       }
 
@@ -748,7 +748,7 @@ export class StreamParserService
           rubbishBatch = [];
         }).catch(e => {
           const sample = batch.slice(0, 3);
-          this.logger.error("rubbish_batch_flush_error", { error: String(e), batch_size: batch.length, sample: JSON.stringify(sample) });
+          this.logger.error(`rubbish_batch_flush_error: ${String(e)}`, { batch_size: batch.length, sample: JSON.stringify(sample) });
         }));
       }
 
@@ -759,7 +759,7 @@ export class StreamParserService
           dlqBatch = [];
         }).catch(e => {
           const sample = batch.slice(0, 3);
-          this.logger.error("dlq_batch_flush_error", { error: String(e), batch_size: batch.length, sample: JSON.stringify(sample) });
+          this.logger.error(`dlq_batch_flush_error: ${String(e)}`, { batch_size: batch.length, sample: JSON.stringify(sample) });
         }));
       }
 
