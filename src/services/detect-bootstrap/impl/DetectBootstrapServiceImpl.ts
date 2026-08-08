@@ -464,7 +464,7 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     await templateRegistry.loadFromDatabase();
 
     const jobId = msg.job_id;
-    this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.DETECTING });
+    await this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.DETECTING });
     this.logger.info("detect_start", { jobId, s3_url: msg.s3_url, size: msg.size });
 
     const [bucket, key] = this.gcsUtils.parseGcsUrl(msg.s3_url);
@@ -498,8 +498,8 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
    * @param eventType - The event type
    * @param data - The data to process
    */
-  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>) {
-    QueueService.getInstance().publishEvent(makeJobEvent(eventType, jobId, "detect-bootstrap", data));
+  private async emit(jobId: string, eventType: EventType, data: Record<string, unknown>): Promise<void> {
+    await QueueService.getInstance().publishEvent(makeJobEvent(eventType, jobId, "detect-bootstrap", data));
   }
 
   private extractTemplateId(template: unknown): string | null

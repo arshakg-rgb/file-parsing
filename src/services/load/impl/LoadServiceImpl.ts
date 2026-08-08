@@ -142,9 +142,9 @@ class LoadServiceImpl extends ServiceManager implements LoadService
    * @param data - The data to process
    */
 
-  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>)
+  private async emit(jobId: string, eventType: EventType, data: Record<string, unknown>): Promise<void>
   {
-    this.queueService.publishEvent(makeJobEvent(eventType, jobId, "load", data));
+    await this.queueService.publishEvent(makeJobEvent(eventType, jobId, "load", data));
   }
 
     /**
@@ -179,7 +179,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
       MetricsUtils.increment("load.recovered_row", 1);
       const row: Record<string, unknown> = this.buildRecoveredRow(msg);
       const totalRows = await this.loadRecoveredRowFromGcs(jobId, row);
-      this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: totalRows });
+      await this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: totalRows });
       return;
     }
 
@@ -204,13 +204,13 @@ class LoadServiceImpl extends ServiceManager implements LoadService
       {
         this.logger.info({ job_id: jobId }, "load_no_output_paths");
       }
-      this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: totalRows });
+      await this.emit(jobId, EventType.LOADING_COMPLETED, { total_rows: totalRows });
     }
     catch (exc)
     {
       this.logger.error({ job_id: jobId, error: exc instanceof Error ? exc.message : String(exc) }, "load_failed");
       MetricsUtils.increment("load.error", 1);
-      this.emit(jobId, EventType.ERROR_OCCURRED, { error: String(exc) });
+      await this.emit(jobId, EventType.ERROR_OCCURRED, { error: String(exc) });
     }
   }
 

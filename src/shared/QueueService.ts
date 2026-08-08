@@ -574,19 +574,20 @@ export class QueueService extends ServiceManager
   }
 
   /**
-   * Publishes a job event to the configured job-events queue. Failures
-   * are logged and swallowed (returns null) rather than propagated.
+   * Publishes a job event to the configured job-events queue. Failures are
+   * now propagated so callers can decide whether to retry or fail.
    * @param event - The event
-   * @returns A promise that resolves to the result
+   * @returns A promise that resolves to the message id
    */
-  public async publishEvent(event: object): Promise<string | null>
+  public async publishEvent(event: object): Promise<string>
   {
     const config = this.getConfig();
-    return this.sendMessage(config.settings.JOB_EVENTS_QUEUE_URL, event, 0, ((event as Record<string, unknown>).job_id as string | undefined) ?? "default").catch((err) =>
+    const messageId = await this.sendMessage(config.settings.JOB_EVENTS_QUEUE_URL, event, 0, ((event as Record<string, unknown>).job_id as string | undefined) ?? "default");
+    if (!messageId)
     {
-      this.logger.warn("publish_event_failed", { error: String(err) });
-      return null;
-    });
+      throw new Error("publish_event_failed");
+    }
+    return messageId;
   }
 
   /**

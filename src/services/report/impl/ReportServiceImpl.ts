@@ -233,7 +233,7 @@ class ReportServiceImpl extends ServiceManager implements ReportService
       }
     }
 
-    this.emit(jobId, EventType.REPORTING_COMPLETED, { counts: msg.counts });
+    await this.emit(jobId, EventType.REPORTING_COMPLETED, { counts: msg.counts });
   }
 
     /**
@@ -243,9 +243,9 @@ class ReportServiceImpl extends ServiceManager implements ReportService
    * @param data - The data to process
    */
 
-  private emit(jobId: string, eventType: EventType, data: Record<string, unknown>)
+  private async emit(jobId: string, eventType: EventType, data: Record<string, unknown>): Promise<void>
   {
-    this.queueService.publishEvent(makeJobEvent(eventType, jobId, "report", data));
+    await this.queueService.publishEvent(makeJobEvent(eventType, jobId, "report", data));
   }
 
     /**
