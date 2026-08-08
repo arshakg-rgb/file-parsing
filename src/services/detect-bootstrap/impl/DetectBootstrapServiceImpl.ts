@@ -278,12 +278,12 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
   private async processJsonProbe(
       bucket: string,
       key: string,
+      fileSize: number,
       encoding: string,
       fieldSpecArray: string[],
       jobId: string
   ): Promise<ProbeResult | null> {
     const maxHeadBytes = 262144; // 256 KB
-    const fileSize = await this.gcsUtils.objectSize(bucket, key);
     const headSize = Math.min(fileSize, maxHeadBytes);
     const headRaw = await this.gcsUtils.readRange(bucket, key, 0, headSize);
     const text = EncodingService.decode(headRaw, encoding);
@@ -503,13 +503,14 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
    * @param fileSize - Total file size in bytes
    * @returns Detected encoding and computed probe window size
    */
-  private async detectFileProperties(bucket: string, key: string, fileSize: number): Promise<{ encoding: string; windowSize: number }> {
+  private async detectFileProperties(bucket: string, key: string, fileSize: number): Promise<{ encoding: string; windowSize: number; headSample: string }> {
     const headEnd = Math.min(this.getConfig().settings.PROBE_WINDOW_MIN_BYTES - 1, fileSize - 1);
     const headRaw = await this.gcsUtils.readRange(bucket, key, 0, headEnd);
     const encoding = this.detectEncoding(headRaw);
     const [avgRow, maxRow] = this.measureRowWidth(headRaw, encoding);
     const windowSize = this.computeWindowSize(avgRow, maxRow);
-    return { encoding, windowSize };
+    const headSample = EncodingService.decode(headRaw, encoding);
+    return { encoding, windowSize, headSample };
   }
 
   /**
@@ -555,16 +556,18 @@ class DetectBootstrapServiceImpl extends ServiceManager implements DetectBootstr
     const [bucket, key] = this.gcsUtils.parseGcsUrl(msg.s3_url);
     const fileSize = msg.size || (await this.gcsUtils.objectSize(bucket, key));
 
-    const { encoding, windowSize } = await this.detectFileProperties(bucket, key, fileSize);
+    const { encoding, windowSize, headSample } = await this.detectFileProperties(bucket, key, fileSize);
     const fieldSpecArray = this.parseFieldSpec(msg.field_spec);
 
     const seen = new Set<string>();
     const seedTemplateIds: string[] = [];
 
+    const trimmedHead = headSample.trim();
     const isJsonFile = key.endsWith(".json") && !key.endsWith(".ndjson");
-    if (isJsonFile) {
-      this.logger.info("detect_json_probe_start", { job_id: jobId, file_size: fileSize });
-      const jsonResult = await this.processJsonProbe(bucket, key, encoding, fieldSpecArray, jobId);
+    const isJsonContent = trimmedHead.startsWith("{") || trimmedHead.startsWith("[");
+    if (isJsonFile || isJsonContent) {
+      this.logger.info("detect_json_probe_start", { job_id: jobId, file_size: fileSize, by_extension: isJsonFile, by_content: isJsonContent });
+      const jsonResult = await this.processJsonProbe(bucket, key, fileSize, encoding, fieldSpecArray, jobId);
       if (jsonResult?.templateId) {
         seedTemplateIds.push(jsonResult.templateId);
       }

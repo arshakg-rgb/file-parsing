@@ -774,13 +774,23 @@ export class StreamParserService
       }
     };
 
-    const isJsonFile: boolean = key.endsWith(".json") && !key.endsWith(".ndjson");
+    let isJsonFile = false;
     let jsonRecords: string[] | null = null;
+
+    if (fileSize > 0) {
+      const headSize = Math.min(fileSize, 4096);
+      try {
+        const headRaw = await this.gcsUtils.readRange(bucket, key, 0, headSize);
+        const headText = EncodingService.decode(headRaw, detectedEncoding).replace(/\0/g, "").trim();
+        isJsonFile = (key.endsWith(".json") && !key.endsWith(".ndjson")) || headText.startsWith("{") || headText.startsWith("[");
+      } catch (err) {
+        this.logger.warn("json_head_peek_failed", { job_id: jobId, s3_url: msg.s3_url, error: String(err) });
+        isJsonFile = key.endsWith(".json") && !key.endsWith(".ndjson");
+      }
+    }
 
     if (isJsonFile)
     {
-      const fileSize: number = msg.size || (await this.gcsUtils.objectSize(bucket, key));
-      
       if (fileSize > this.JSON_MAX_SIZE_BYTES)
       {
         this.logger.warn("json_file_too_large_skipped", { job_id: jobId, s3_url: msg.s3_url, size_bytes: fileSize, max_bytes: this.JSON_MAX_SIZE_BYTES });
@@ -790,7 +800,7 @@ export class StreamParserService
         try
         {
           const buf: Buffer = await this.gcsUtils.readFull(bucket, key);
-          const text: string = buf.toString(detectedEncoding as BufferEncoding).replace(/\0/g, "");
+          const text: string = EncodingService.decode(buf, detectedEncoding).replace(/\0/g, "");
           jsonRecords = this.extractJsonRecords(JSON_SAFE.parse(text));
         }
         catch (err)
