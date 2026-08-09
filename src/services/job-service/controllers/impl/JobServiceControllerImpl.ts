@@ -87,6 +87,7 @@ export class JobControllerImpl implements JobServiceController
         field_spec: req.body.field_spec,
         batch_id: req.body.batch_id,
         column_map: req.body.column_map,
+        filename: req.body.filename,
       };
 
       const result: ICreateJobResponse = await this.service.createJob(request);

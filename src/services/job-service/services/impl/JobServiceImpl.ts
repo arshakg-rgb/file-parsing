@@ -77,7 +77,7 @@ export class JobServiceImpl implements JobService
 
   public async createJob(request: ICreateJobRequest): Promise<ICreateJobResponse>
   {
-    const { source_type, source_ref, field_spec, batch_id, column_map, content_type } = request;
+    const { source_type, source_ref, field_spec, batch_id, column_map, content_type, filename } = request;
 
     let columnMap: Record<string, number | number[]> | undefined;
 
@@ -197,7 +197,9 @@ export class JobServiceImpl implements JobService
 
     if (source_type === SourceType.UPLOAD)
     {
-      const uploadKey = `uploads/${jobId}/source`;
+      const rawName: string = (filename || "source").trim();
+      const baseName: string = (rawName.split(/[\\/]/).pop() || "source").replace(/[#\s]+/g, "_") || "source";
+      const uploadKey = `uploads/${jobId}/${baseName}`;
       putUrl = await this.gcsUtils.presignedPutUrl(settings.DATA_BUCKET, uploadKey, 3600, uploadContentType);
       s3Url = `gs://${settings.DATA_BUCKET}/${uploadKey}`;
     }

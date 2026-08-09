@@ -10,6 +10,7 @@ export interface ICreateJobRequest {
   batch_id?: string;
   column_map?: unknown;
   content_type?: string;
+  filename?: string;
 }
 
 /**
