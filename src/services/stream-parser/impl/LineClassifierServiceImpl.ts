@@ -51,14 +51,14 @@ export class LineClassifierServiceImpl implements IClassifier
   private readonly defaultMinMatches: number;
   private static readonly ALIASES: Record<string, string[]> = {
     email: ["email", "mail", "emailaddress", "e_mail", "emails"],
-    name: ["name", "fullname", "full_name"],
-    phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones"],
-    address: ["address", "addr", "streetaddress", "addresses", "street"],
-    location: ["location", "city", "country", "state", "province", "region", "town", "geo", "locality"],
+    name: ["name", "fullname", "full_name", "фио"],
+    phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones", "телефон"],
+    address: ["address", "addr", "streetaddress", "addresses", "street", "адрес"],
+    location: ["location", "city", "country", "state", "province", "region", "town", "geo", "locality", "город", "страна"],
   };
 
   private static readonly EMAIL_RE: RegExp = /^[A-Za-z0-9._%+=\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
-  private static readonly HEADER_LABEL_RE: RegExp = /^[A-Za-z][A-Za-z0-9 _.\-]*$/;
+  private static readonly HEADER_LABEL_RE: RegExp = /^[\p{L}_][\p{L}\p{N} _.,\-]*$/u;
 
   private static readonly KV_SEG_RE: RegExp = /^\s*([A-Za-z][A-Za-z0-9 _]*?)\s*:\s*(.*)$/;
 
@@ -1185,7 +1185,7 @@ export class LineClassifierServiceImpl implements IClassifier
       return cached;
     }
 
-    const out: string = s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const out: string = s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 
     if (this.normalizeKeyCache.size < LineClassifierServiceImpl.NORMALIZE_CACHE_MAX)
     {
@@ -1227,6 +1227,9 @@ export class LineClassifierServiceImpl implements IClassifier
 
     return aliases.some((a) => {
       const na: string = this.normalizeKey(a);
+      if (na.length >= 3 && (normalizedKey.includes(na) || (normalizedKey.length >= 3 && na.includes(normalizedKey)))) {
+        return true;
+      }
       return na.length >= 3 && normalizedKey.startsWith(na) && /^\d*$/.test(normalizedKey.slice(na.length));
     });
   }
@@ -1894,7 +1897,17 @@ export class LineClassifierServiceImpl implements IClassifier
     {
       const v: string = c.trim();
 
-      if (v === "" || v.includes("@") || v.replace(/\D/g, "").length >= 7)
+      if (v === "")
+      {
+        continue;
+      }
+
+      if (v.length > 1 && v[0] === "{" && v[v.length - 1] === "}")
+      {
+        continue;
+      }
+
+      if (v.includes("@") || v.replace(/\D/g, "").length >= 7)
       {
         return null;
       }
@@ -1911,6 +1924,15 @@ export class LineClassifierServiceImpl implements IClassifier
     {
       if (field === "meta")
       {
+        for (let i = 0; i < parts.length; i++)
+        {
+          const v: string = parts[i].trim();
+          if (v.length > 1 && v[0] === "{" && v[v.length - 1] === "}")
+          {
+            map[field] = i;
+            break;
+          }
+        }
         continue;
       }
 
