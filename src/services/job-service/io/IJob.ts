@@ -29,6 +29,7 @@ export interface ICreateJobResponse {
 export interface IUploadAndCreateJobRequest {
   source_buffer: Buffer;
   mimetype: string;
+  filename?: string;
   field_spec: unknown;
   column_map?: unknown;
   batch_id?: string;

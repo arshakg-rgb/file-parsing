@@ -122,6 +122,7 @@ export class JobControllerImpl implements JobServiceController
       const request: IUploadAndCreateJobRequest = {
         source_buffer: req.file.buffer,
         mimetype: req.file.mimetype,
+        filename: req.file.originalname,
         field_spec: parseJsonField(req.body.field_spec),
         column_map: req.body.column_map ? parseJsonField(req.body.column_map) : undefined,
         batch_id: req.body.batch_id,

@@ -255,7 +255,7 @@ export class JobServiceImpl implements JobService
 
   public async uploadAndCreateJob(request: IUploadAndCreateJobRequest): Promise<ICreateJobResponse>
   {
-    const { source_buffer, mimetype, field_spec, column_map, batch_id } = request;
+    const { source_buffer, mimetype, filename, field_spec, column_map, batch_id } = request;
 
     let columnMap: Record<string, number | number[]> | undefined;
     if (column_map)
@@ -313,7 +313,9 @@ export class JobServiceImpl implements JobService
     const batchId: string = batch_id || randomUUID();
     const now: string = new Date().toISOString();
 
-    const uploadKey = `uploads/${jobId}/source`;
+    const rawName: string = (filename || "source").trim();
+    const baseName: string = (rawName.split(/[\\/]/).pop() || "source").replace(/[#\s]+/g, "_") || "source";
+    const uploadKey = `uploads/${jobId}/${baseName}`;
     const s3Url = `gs://${settings.DATA_BUCKET}/${uploadKey}`;
 
     try
