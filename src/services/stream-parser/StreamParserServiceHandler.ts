@@ -294,7 +294,7 @@ export class StreamParserService
       ai_inline_mode: process.env.AI_INLINE_MODE,
     });
 
-    if (process.env.STREAM_PARSER_PUSH === "true")
+    if (process.env.QUEUE_PUSH_MODE === "true")
     {
       this.startPushServer();
       return;
