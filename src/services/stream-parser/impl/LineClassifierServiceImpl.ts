@@ -56,9 +56,9 @@ export class LineClassifierServiceImpl implements IClassifier
   private static readonly ALIASES: Record<string, string[]> = {
     email: ["email", "mail", "emailaddress", "e_mail", "emails", "useremail", "e"],
     name: ["name", "fullname", "full_name", "username", "surname", "фио", "n", "firstname", "lastname", "first_name", "last_name"],
-    phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones", "телефон", "t"],
+    phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones", "mobile_phone_no", "mobile_number", "телефон", "t"],
     address: ["address", "addr", "streetaddress", "addresses", "street", "адрес"],
-    location: ["location", "city", "country", "countryname", "county", "postcode", "postalcode", "postal", "zip", "zipcode", "state", "province", "region", "town", "geo", "locality", "a", "город", "страна"],
+    location: ["location", "city", "country", "countryname", "county", "postcode", "postalcode", "postal", "zip", "zipcode", "state", "province", "region", "town", "geo", "locality", "location_id", "a", "город", "страна"],
   };
 
   private static readonly EMAIL_RE: RegExp = /^[A-Za-z0-9._%+=\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;

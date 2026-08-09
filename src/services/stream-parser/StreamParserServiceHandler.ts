@@ -777,6 +777,7 @@ export class StreamParserService
     };
 
     let isJsonFile = false;
+    let isMySqlDump = false;
     let jsonRecords: string[] | null = null;
 
     if (fileSize > 0) {
@@ -784,10 +785,13 @@ export class StreamParserService
       try {
         const headRaw = await this.gcsUtils.readRange(bucket, key, 0, headSize);
         const headText = EncodingService.decode(headRaw, detectedEncoding).replace(/\0/g, "").trim();
+        const headUpper = headText.toUpperCase();
         isJsonFile = (key.endsWith(".json") && !key.endsWith(".ndjson")) || headText.startsWith("{") || headText.startsWith("[");
+        isMySqlDump = !isJsonFile && (headUpper.includes("MYSQL DUMP") || headUpper.startsWith("CREATE TABLE") || headUpper.includes("INSERT INTO"));
       } catch (err) {
         this.logger.warn("json_head_peek_failed", { job_id: jobId, s3_url: msg.s3_url, error: String(err) });
         isJsonFile = key.endsWith(".json") && !key.endsWith(".ndjson");
+        isMySqlDump = false;
       }
     }
 
@@ -821,7 +825,9 @@ export class StreamParserService
               yield [line, i, line.length] as [string, number, number];
             }
           })()
-          : this.gcsUtils.streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding);
+          : isMySqlDump
+              ? this.gcsUtils.streamMysqlDumpRows(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding)
+              : this.gcsUtils.streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding);
 
       let aiHeaderMapped: boolean = false;
 

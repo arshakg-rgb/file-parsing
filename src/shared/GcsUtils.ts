@@ -744,6 +744,361 @@ export class GcsUtils extends ServiceManager
 
     return { lineStart, endedAtBoundary };
   }
+
+  public async *streamMysqlDumpRows(
+      bucket: string,
+      key: string,
+      chunkSize = this.FETCH_CHUNK_SIZE,
+      encoding = "utf-8"
+  ): AsyncGenerator<[string, number, number]>
+  {
+    let columns: string[] | null = null;
+    let insertColumns: string[] | null = null;
+    let buffer = "";
+    let statementStartOffset = 0;
+
+    this.logger.info("mysql_dump_stream_start", { bucket, key });
+
+    for await (const [line, offset, length] of this.streamLines(bucket, key, chunkSize, encoding))
+    {
+      if (buffer.length === 0)
+      {
+        statementStartOffset = offset;
+      }
+
+      buffer += line;
+
+      const trimmed = line.trimEnd();
+
+      if (trimmed.endsWith(";"))
+      {
+        try
+        {
+          const statement = buffer.trim();
+
+          if (statement.toUpperCase().startsWith("CREATE TABLE"))
+          {
+            columns = this.parseMysqlCreateTableColumns(statement);
+            this.logger.debug("mysql_dump_columns_parsed", { count: columns.length, first_five: columns.slice(0, 5) });
+          }
+          else if (statement.toUpperCase().startsWith("INSERT INTO"))
+          {
+            insertColumns = this.parseMysqlInsertColumnList(statement) ?? columns;
+
+            if (insertColumns && insertColumns.length > 0)
+            {
+              for (const [json, tupleOffset, tupleLength] of this.parseMysqlInsertTuples(statement, insertColumns, statementStartOffset))
+              {
+                yield [json, tupleOffset, tupleLength];
+              }
+            }
+            else
+            {
+              this.logger.warn("mysql_dump_insert_without_columns", { statement_start: statement.slice(0, 80) });
+            }
+          }
+        }
+        catch (err)
+        {
+          this.logger.warn("mysql_dump_statement_failed", { error: String(err), statement_start: buffer.slice(0, 80) });
+        }
+
+        buffer = "";
+      }
+      else
+      {
+        buffer += " ";
+      }
+    }
+
+    this.logger.info("mysql_dump_stream_end", { bucket, key });
+  }
+
+  private parseMysqlCreateTableColumns(sql: string): string[]
+  {
+    const match = sql.match(/CREATE\s+TABLE\s+[`"']?(\w+)[`"']?\s*\(/is);
+    if (!match)
+    {
+      return [];
+    }
+
+    const start = match.index! + match[0].length - 1;
+    let depth = 0;
+    let inQuote = false;
+    let quoteChar = "";
+    let i = start;
+    const body: string[] = [];
+    let current = "";
+
+    for (; i < sql.length; i++)
+    {
+      const c = sql[i];
+
+      if (inQuote)
+      {
+        if (c === "\\" && i + 1 < sql.length)
+        {
+          current += c + sql[++i];
+          continue;
+        }
+
+        if (c === quoteChar)
+        {
+          inQuote = false;
+        }
+
+        current += c;
+        continue;
+      }
+
+      if (c === "'" || c === '"')
+      {
+        inQuote = true;
+        quoteChar = c;
+        current += c;
+        continue;
+      }
+
+      if (c === "(")
+      {
+        depth++;
+      }
+      else if (c === ")")
+      {
+        depth--;
+        if (depth < 0)
+        {
+          break;
+        }
+      }
+
+      if (c === "," && depth === 0)
+      {
+        body.push(current);
+        current = "";
+        continue;
+      }
+
+      current += c;
+    }
+
+    const columnKeywords = new Set(["PRIMARY", "UNIQUE", "KEY", "INDEX", "CONSTRAINT", "FOREIGN", "CHECK", "FULLTEXT", "SPATIAL"]);
+    const columns: string[] = [];
+
+    for (const segment of body)
+    {
+      const trimmed = segment.trim();
+      const m = trimmed.match(/^[`"']?(\w+)[`"']?/);
+      if (!m)
+      {
+        continue;
+      }
+
+      const word = m[1].toUpperCase();
+      if (columnKeywords.has(word) || word === "" || !isNaN(Number(word)))
+      {
+        continue;
+      }
+
+      columns.push(m[1]);
+    }
+
+    return columns;
+  }
+
+  private parseMysqlInsertColumnList(sql: string): string[] | null
+  {
+    const valuesMatch = sql.match(/\)\s*VALUES\s*\(/is);
+    if (!valuesMatch)
+    {
+      return null;
+    }
+
+    const between = sql.slice(0, valuesMatch.index);
+    const parenMatch = between.match(/\(([^)]+)\)\s*$/s);
+    if (!parenMatch)
+    {
+      return null;
+    }
+
+    return parenMatch[1].split(",").map((s) => s.trim().replace(/^[`"']|[`"']$/g, "")).filter((s) => s.length > 0);
+  }
+
+  private *parseMysqlInsertTuples(
+      sql: string,
+      columns: string[],
+      statementStartOffset: number
+  ): Generator<[string, number, number]>
+  {
+    const valuesMatch = sql.match(/VALUES\s*\(/is);
+    if (!valuesMatch)
+    {
+      return;
+    }
+
+    const valuesStart = valuesMatch.index! + valuesMatch[0].length - 1;
+    const valuesEnd = sql.lastIndexOf(")");
+    if (valuesEnd <= valuesStart)
+    {
+      return;
+    }
+
+    let depth = 0;
+    let inQuote = false;
+    let quoteChar = "";
+    let tuple = "";
+    let tupleCount = 0;
+    let tupleStart = valuesStart + 1;
+
+    for (let i = valuesStart + 1; i <= valuesEnd; i++)
+    {
+      const c = i < sql.length ? sql[i] : ")";
+
+      if (inQuote)
+      {
+        if (c === "\\" && i + 1 < sql.length)
+        {
+          tuple += c + sql[++i];
+          continue;
+        }
+
+        if (c === quoteChar)
+        {
+          inQuote = false;
+        }
+
+        tuple += c;
+        continue;
+      }
+
+      if (c === "'" || c === '"')
+      {
+        inQuote = true;
+        quoteChar = c;
+        tuple += c;
+        continue;
+      }
+
+      if (c === "(")
+      {
+        depth++;
+      }
+      else if (c === ")")
+      {
+        depth--;
+        if (depth === 0)
+        {
+          const values = this.splitMysqlValues(tuple);
+          const record: Record<string, unknown> = {};
+
+          for (let j = 0; j < Math.min(columns.length, values.length); j++)
+          {
+            record[columns[j]] = this.coerceMysqlValue(values[j]);
+          }
+
+          if (values.length > columns.length)
+          {
+            record.meta = values.slice(columns.length).map((v) => this.coerceMysqlValue(v));
+          }
+
+          const json = JSON.stringify(record);
+          const byteOffset = statementStartOffset + tupleStart;
+          const byteLength = json.length;
+
+          yield [json, byteOffset, byteLength];
+
+          tupleCount++;
+          tuple = "";
+          tupleStart = i + 1;
+        }
+      }
+      else
+      {
+        tuple += c;
+      }
+    }
+  }
+
+  private splitMysqlValues(tuple: string): string[]
+  {
+    const values: string[] = [];
+    let current = "";
+    let inQuote = false;
+    let quoteChar = "";
+
+    for (let i = 0; i < tuple.length; i++)
+    {
+      const c = tuple[i];
+
+      if (inQuote)
+      {
+        if (c === "\\" && i + 1 < tuple.length)
+        {
+          current += c + tuple[++i];
+          continue;
+        }
+
+        if (c === quoteChar)
+        {
+          inQuote = false;
+        }
+
+        current += c;
+        continue;
+      }
+
+      if (c === "'" || c === '"')
+      {
+        inQuote = true;
+        quoteChar = c;
+        current += c;
+        continue;
+      }
+
+      if (c === ",")
+      {
+        values.push(current.trim());
+        current = "";
+        continue;
+      }
+
+      current += c;
+    }
+
+    if (current.trim().length > 0)
+    {
+      values.push(current.trim());
+    }
+
+    return values;
+  }
+
+  private coerceMysqlValue(raw: string): unknown
+  {
+    const trimmed = raw.trim();
+
+    if (trimmed.toUpperCase() === "NULL")
+    {
+      return null;
+    }
+
+    if (/^'.*'$/.test(trimmed))
+    {
+      return trimmed.slice(1, -1).replace(/\\(['"\\])/g, "$1").replace(/''/g, "'");
+    }
+
+    if (/^-?\d+$/.test(trimmed))
+    {
+      return Number(trimmed);
+    }
+
+    if (/^-?\d+\.\d+$/.test(trimmed))
+    {
+      return Number(trimmed);
+    }
+
+    return trimmed;
+  }
 }
 
 /**
