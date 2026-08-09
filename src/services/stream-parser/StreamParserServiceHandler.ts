@@ -75,11 +75,11 @@ export class StreamParserService
   private activeJobs: Map<string, Promise<void>> = new Map();
 
   /**
-   * Deadline extension interval (30 seconds)
+   * Deadline extension interval (10 seconds)
    * @private
    */
 
-  private readonly DEADLINE_EXTEND_INTERVAL_MS: number = 30000;
+  private readonly DEADLINE_EXTEND_INTERVAL_MS: number = 10000;
 
   /**
    * How many seconds to extend the queue ack deadline by each time a parse
@@ -87,7 +87,7 @@ export class StreamParserService
    * @private
    */
 
-  private readonly ACK_DEADLINE_EXTENSION_SEC: number = 60;
+  private readonly ACK_DEADLINE_EXTENSION_SEC: number = 600;
 
   /**
    * How often (in lines) to emit a parse_progress log line.
@@ -659,6 +659,7 @@ export class StreamParserService
     const repositories: Repositories = DatabaseManager.getInstance().repositories;
     const bgFlushes: Promise<void>[] = [];
     let countsInterval: NodeJS.Timeout | null = null;
+    let ackDeadlineInterval: NodeJS.Timeout | null = null;
 
     const RAM_WATERMARK_HIGH: number = settings.RAM_FLUSH_WATERMARK;
     const RAM_WATERMARK_LOW: number = settings.RAM_FLUSH_WATERMARK * this.RAM_FLUSH_WATERMARK_LOW_RATIO;
@@ -904,6 +905,30 @@ export class StreamParserService
               countsUpdating = false;
             }
           }, 2000);
+
+          let ackUpdating = false;
+          ackDeadlineInterval = setInterval(async () =>
+          {
+            if (ackUpdating) return;
+            if (!activeReceiptHandle) return;
+            if (Date.now() - lastDeadlineExtension < this.DEADLINE_EXTEND_INTERVAL_MS) return;
+            ackUpdating = true;
+            try
+            {
+              this.logger.info("ack_deadline_extending", { job_id: jobId, receiptHandle: activeReceiptHandle.substring(0, 20) + "..." });
+              await this.queueService.modifyAckDeadline(settings.PARSE_QUEUE_URL, activeReceiptHandle, this.ACK_DEADLINE_EXTENSION_SEC);
+              lastDeadlineExtension = Date.now();
+              this.logger.info("ack_deadline_extended", { job_id: jobId });
+            }
+            catch (err)
+            {
+              this.logger.error("ack_deadline_extension_failed", { job_id: jobId, error: String(err) });
+            }
+            finally
+            {
+              ackUpdating = false;
+            }
+          }, this.DEADLINE_EXTEND_INTERVAL_MS);
         }
 
         await drainIfReady();
@@ -1239,6 +1264,12 @@ export class StreamParserService
       {
         clearInterval(countsInterval);
         countsInterval = null;
+      }
+
+      if (ackDeadlineInterval)
+      {
+        clearInterval(ackDeadlineInterval);
+        ackDeadlineInterval = null;
       }
 
       await repositories.jobs.updateFields(jobId, { counts }).catch((err) =>
