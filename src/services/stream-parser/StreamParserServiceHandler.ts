@@ -827,45 +827,99 @@ export class StreamParserService
 
       const lineSourceStart: number = Date.now();
 
+      const normalizeKey = (s: string): string =>
+          s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
       const enrichFromMeta = async (row: Record<string, unknown>): Promise<Record<string, unknown>> => {
 
-        if (!aiEnabled || !row.meta || typeof row.meta !== "string")
-        {
-          return row;
-        }
-
-        if (row.meta.trim().length === 0)
+        if (!row.meta || typeof row.meta !== "string" || row.meta.trim().length === 0)
         {
           return row;
         }
 
         try
         {
-          const extracted = await aiClassifierServiceImpl.extractFromMeta(row.meta, fieldSpec, jobId);
+          const parsed: unknown = JSON.parse(row.meta);
 
-          if (!extracted)
+          if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
           {
             return row;
           }
 
-          for (const [field, value] of Object.entries(extracted.row))
-          {
-            if (value !== null && value !== undefined)
-            {
-              const current: unknown = row[field];
+          const metaObj: Record<string, unknown> = parsed as Record<string, unknown>;
+          const cleanedMeta: Record<string, unknown> = { ...metaObj };
+          const extracted: Record<string, unknown> = {};
 
-              if (current === null || current === undefined || String(current).trim() === "")
+          for (const field of fieldSpec)
+          {
+            if (field === "meta")
+            {
+              continue;
+            }
+
+            const target: string = normalizeKey(field);
+
+            for (const [k, v] of Object.entries(metaObj))
+            {
+              if (v === null || v === undefined)
               {
-                row[field] = value;
+                continue;
               }
-              else if (typeof current === "string" && typeof value === "string")
+
+              if (normalizeKey(k) === target)
               {
-                row[field] = `${current}, ${value}`;
+                extracted[field] = v;
+                delete cleanedMeta[k];
+                break;
               }
             }
           }
 
-          row.meta = extracted.cleanedMeta;
+          // Combine first/last name components when a full name is missing.
+          const firstKey: string | undefined = Object.keys(metaObj).find((k) => /first/i.test(k));
+          const lastKey: string | undefined = Object.keys(metaObj).find((k) => /last/i.test(k));
+
+          if (firstKey && lastKey && !extracted["name"])
+          {
+            const firstVal: unknown = metaObj[firstKey];
+            const lastVal: unknown = metaObj[lastKey];
+
+            if (typeof firstVal === "string" && firstVal.trim() && typeof lastVal === "string" && lastVal.trim())
+            {
+              extracted["name"] = `${firstVal} ${lastVal}`.trim();
+
+              if (firstKey.toLowerCase() !== "name")
+              {
+                delete cleanedMeta[firstKey];
+              }
+
+              if (lastKey.toLowerCase() !== "name")
+              {
+                delete cleanedMeta[lastKey];
+              }
+            }
+          }
+
+          for (const [field, value] of Object.entries(extracted))
+          {
+            if (value === null || value === undefined)
+            {
+              continue;
+            }
+
+            const current: unknown = row[field];
+
+            if (current === null || current === undefined || String(current).trim() === "")
+            {
+              row[field] = value;
+            }
+            else if (typeof current === "string" && typeof value === "string")
+            {
+              row[field] = `${current}, ${value}`;
+            }
+          }
+
+          row.meta = Object.keys(cleanedMeta).length > 0 ? JSON.stringify(cleanedMeta) : null;
         }
         catch (err)
         {
