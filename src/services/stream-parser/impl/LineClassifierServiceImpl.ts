@@ -62,13 +62,13 @@ export class LineClassifierServiceImpl implements IClassifier
 
   private static readonly KV_SEG_RE: RegExp = /^\s*([A-Za-z][A-Za-z0-9 _]*?)\s*:\s*(.*)$/;
 
-  /** Matches control/private-use/unassigned/surrogate code points — true binary corruption.
+  /** Matches control/private-use/unassigned code points — true binary corruption.
    *  Deliberately excludes emoji/symbol categories (So/Sm/Sk), which are normal in real
    *  names/usernames and must not reject an otherwise-valid line. Reused by both the
    *  line-level binary gate and the field-level check in `coerce()`.
    */
 
-  private static readonly BINARY_RE: RegExp = /[\p{Cc}\p{Co}\p{Cn}\p{Cs}]/gu;
+  private static readonly BINARY_RE: RegExp = /[\p{Cc}\p{Co}\p{Cn}]/gu;
   private static readonly MAX_LINE_LENGTH: number = 64 * 1024;
   private static readonly NON_PRINTABLE_RATIO_MAX: number = 0.15;
   private static readonly BINARY_RATIO_MAX: number = 0.05;
