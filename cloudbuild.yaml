@@ -16,7 +16,7 @@ substitutions:
   _LOAD_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/load:latest
   _REPORT_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/report:latest
   _ARCHIVE_ENTRY_IMAGE: us-central1-docker.pkg.dev/data-etl-499916/file-parsing/archive-entry-consumer:latest
-  _AI_INLINE_MODE: 'false'
+  _AI_INLINE_MODE: 'live'
   _MAX_AI_CALLS_PER_JOB: '5'
 
 steps:
