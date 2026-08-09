@@ -1029,9 +1029,7 @@ export class StreamParserService
 
             if (!classifier.rowStrongFieldsOk(sanitizedRow))
             {
-              result = { verdict: "rubbish", template_id: "row-strong-fields-rejected" };
-              counts.dropped_rubbish++;
-              break;
+              classifier.cleanInvalidStrongFields(sanitizedRow);
             }
 
             const idx: number = recordIndex++;
@@ -1109,8 +1107,7 @@ export class StreamParserService
 
               if (!classifier.rowStrongFieldsOk(sanitizedRow))
               {
-                counts.dropped_rubbish++;
-                break;
+                classifier.cleanInvalidStrongFields(sanitizedRow);
               }
 
               const idx: number = recordIndex++;

@@ -907,6 +907,34 @@ export class LineClassifierServiceImpl implements IClassifier
   }
 
   /**
+   * Nulls out invalid email/phone values in-place so the rest of the row can still
+   * be emitted.
+   *
+   * @param row - The finalized row to clean in-place.
+   */
+
+  public cleanInvalidStrongFields(row: Record<string, unknown>): void
+  {
+    for (let i = 0; i < this.fieldSpec.length; i++)
+    {
+      const field: string = this.fieldSpec[i];
+      const normalizedField: string = this.normalizedFieldSpec[i];
+
+      if (normalizedField !== "email" && normalizedField !== "phone")
+      {
+        continue;
+      }
+
+      const v: unknown = row[field];
+
+      if (v !== undefined && v !== null && String(v).trim() !== "" && !this.validateField(field, v))
+      {
+        row[field] = null;
+      }
+    }
+  }
+
+  /**
    * Resolves a learned/AI template (record or rubbish) against a line, used by the AI-cache
    * hit path in `classifyWithAI`.
    *
