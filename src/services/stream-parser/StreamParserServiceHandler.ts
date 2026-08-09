@@ -658,6 +658,7 @@ export class StreamParserService
     let dlqBatch: Record<string, unknown>[] = [];
     const repositories: Repositories = DatabaseManager.getInstance().repositories;
     const bgFlushes: Promise<void>[] = [];
+    let countsInterval: NodeJS.Timeout | null = null;
 
     const RAM_WATERMARK_HIGH: number = settings.RAM_FLUSH_WATERMARK;
     const RAM_WATERMARK_LOW: number = settings.RAM_FLUSH_WATERMARK * this.RAM_FLUSH_WATERMARK_LOW_RATIO;
@@ -882,6 +883,29 @@ export class StreamParserService
         {
           this.logger.info("parse_progress", { job_id: jobId, line_no: lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
         }
+
+        if (lineNo === 1)
+        {
+          let countsUpdating = false;
+          countsInterval = setInterval(async () =>
+          {
+            if (countsUpdating) return;
+            countsUpdating = true;
+            try
+            {
+              await repositories.jobs.updateFields(jobId, { counts });
+            }
+            catch (err)
+            {
+              this.logger.warn("parse_counts_update_failed", { job_id: jobId, error: String(err) });
+            }
+            finally
+            {
+              countsUpdating = false;
+            }
+          }, 2000);
+        }
+
         await drainIfReady();
 
         if (!aiHeaderMapped && aiEnabled && !columnMap)
@@ -1210,6 +1234,17 @@ export class StreamParserService
       {
         await this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.FAILED, error: String(fatal) });
       }
+
+      if (countsInterval)
+      {
+        clearInterval(countsInterval);
+        countsInterval = null;
+      }
+
+      await repositories.jobs.updateFields(jobId, { counts }).catch((err) =>
+      {
+        this.logger.warn("parse_counts_final_update_failed", { job_id: jobId, error: String(err) });
+      });
     }
   }
 
