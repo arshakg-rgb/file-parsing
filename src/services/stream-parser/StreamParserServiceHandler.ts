@@ -6,6 +6,7 @@ import { OutputManager } from "@shared/OutputManager.js";
 import { CsvOutputWriter } from "@shared/CsvOutputWriter.js";
 import { QualityGate } from "@shared/QualityGate.js";
 import { AdaptiveProbing } from "@shared/AdaptiveProbing.js";
+import { startPushConsumer } from "@shared/PushConsumerServer.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { DatabaseManager } from "@shared/DatabaseManager.js";
 import jschardet, { IDetectedMap } from "jschardet";
@@ -293,7 +294,22 @@ export class StreamParserService
       ai_inline_mode: process.env.AI_INLINE_MODE,
     });
 
+    if (process.env.STREAM_PARSER_PUSH === "true")
+    {
+      this.startPushServer();
+      return;
+    }
+
     await this.consumerLoop();
+  }
+
+  private startPushServer(): void
+  {
+    this.logger.info("stream_parser_push_server_starting");
+    startPushConsumer<ParseMessage>({
+      parse: (body) => body as ParseMessage,
+      process: (payload) => this.parseJob(payload),
+    });
   }
 
   /**

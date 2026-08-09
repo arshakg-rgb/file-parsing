@@ -1,5 +1,6 @@
 import pino from "pino";
 import { QueueService } from "@shared/QueueService.js";
+import { startPushConsumer } from "@shared/PushConsumerServer.js";
 import type { QueueMessage } from "@shared/io/IQueueService.js";
 
 /**
@@ -14,6 +15,7 @@ export interface QueueConsumerPoolOptions<TPayload extends object>
   pollBackoffMs?: number;
   memorySoftLimit?: number;
   isRunning?: () => boolean;
+  pushMode?: boolean;
 }
 
 /**
@@ -32,6 +34,13 @@ export class QueueConsumerPool<TPayload extends object>
 
   async run(handler: (payload: TPayload, receiptHandle: string) => Promise<void>): Promise<void>
   {
+    const pushMode: boolean = this.options.pushMode ?? (process.env.QUEUE_PUSH_MODE === "true");
+    if (pushMode)
+    {
+      this.startPushServer(handler);
+      return;
+    }
+
     const concurrency: number = Math.max(1, this.options.concurrency ?? 3);
     const waitSeconds: number = Math.max(0, this.options.waitSeconds ?? 5);
     const pollBackoffMs: number = Math.max(0, this.options.pollBackoffMs ?? 1000);
@@ -97,6 +106,15 @@ export class QueueConsumerPool<TPayload extends object>
     }
 
     await Promise.all(Array.from(this.activeJobs.values()));
+  }
+
+  private startPushServer(handler: (payload: TPayload, receiptHandle: string) => Promise<void>): void
+  {
+    this.logger.info("queue_push_server_starting", { queueUrl: this.options.queueUrl });
+    startPushConsumer<TPayload>({
+      parse: (body) => this.options.parser(JSON.stringify(body)),
+      process: (payload) => handler(payload, "PUSH"),
+    });
   }
 
   private async processOne(handler: (payload: TPayload, receiptHandle: string) => Promise<void>, payload: TPayload, receiptHandle: string): Promise<void>

@@ -549,6 +549,10 @@ export class QueueService extends ServiceManager
    */
   public async deleteMessage(queueUrl: string, receiptHandle: string): Promise<void>
   {
+    if (receiptHandle === "PUSH" || receiptHandle.startsWith("PUSH:"))
+    {
+      return;
+    }
     return this.isPubSub()
         ? this.pubDelete(queueUrl, receiptHandle)
         : this.sqsDelete(queueUrl, receiptHandle);
@@ -564,6 +568,10 @@ export class QueueService extends ServiceManager
    */
   public async modifyAckDeadline(queueUrl: string, receiptHandle: string, deadlineSeconds: number): Promise<void>
   {
+    if (receiptHandle === "PUSH" || receiptHandle.startsWith("PUSH:"))
+    {
+      return;
+    }
     if (this.isPubSub())
     {
       return this.pubModifyAckDeadline(queueUrl, receiptHandle, deadlineSeconds);
