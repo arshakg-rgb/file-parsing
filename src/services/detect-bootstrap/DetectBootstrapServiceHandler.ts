@@ -85,7 +85,7 @@ export class DetectBootstrapService
       throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE,"Cannot instantiate RetryServiceImpl directly. Use getInstance()");
     }
 
-    if (process.env.HEALTH_CHECK_PORT)
+    if (process.env.HEALTH_CHECK_PORT && process.env.QUEUE_PUSH_MODE !== "true")
     {
       HealthService.startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }

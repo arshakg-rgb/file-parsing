@@ -211,7 +211,7 @@ export class StreamParserService
       throw new InstantiationError(InstantiationError.NOT_INSTANTIABLE, "Cannot instantiate StreamParserService directly. Use getInstance()");
     }
 
-    if (process.env.HEALTH_CHECK_PORT)
+    if (process.env.HEALTH_CHECK_PORT && process.env.QUEUE_PUSH_MODE !== "true")
     {
       HealthService.startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }

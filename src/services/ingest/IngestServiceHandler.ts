@@ -125,7 +125,10 @@ export class IngestService
     this.ingestServiceImpl = ingestServiceImpl;
     this.queueService = queueService;
 
-    this.startHealthCheckServers();
+    if (process.env.QUEUE_PUSH_MODE !== "true")
+    {
+      this.startHealthCheckServers();
+    }
   }
 
   /**

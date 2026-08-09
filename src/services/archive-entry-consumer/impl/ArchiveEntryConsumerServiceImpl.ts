@@ -74,7 +74,7 @@ class ArchiveEntryConsumerServiceImpl extends ServiceManager implements ArchiveE
       this.gcsUtils = FirestoreCacheUtils.getInstance();
       this.rarMountPath = process.env.RAR_TEMP_MOUNT || "/mnt/scratch";
 
-      if (process.env.HEALTH_CHECK_PORT)
+      if (process.env.HEALTH_CHECK_PORT && process.env.QUEUE_PUSH_MODE !== "true")
       {
           HealthService.startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
       }

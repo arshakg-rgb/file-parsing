@@ -94,7 +94,7 @@ class LoadServiceImpl extends ServiceManager implements LoadService
     this.dbManager = DatabaseManager.getInstance();
     this.queueService = queueService;
 
-    if (process.env.HEALTH_CHECK_PORT)
+    if (process.env.HEALTH_CHECK_PORT && process.env.QUEUE_PUSH_MODE !== "true")
     {
       HealthService.startHealthCheckServer(parseInt(process.env.HEALTH_CHECK_PORT, 10));
     }
