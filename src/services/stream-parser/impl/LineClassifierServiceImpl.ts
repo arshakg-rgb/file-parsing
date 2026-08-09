@@ -32,6 +32,15 @@ export class LineClassifierServiceImpl implements IClassifier
   private readonly aiCache: Map<string, RecordTemplate | RubbishTemplate>;
   private headerMap: Record<string, number | number[]> | null = null;
   private headerParts: string[] | null = null;
+
+  /** Delimiter that was used to split the header row. Once established, every
+   *  subsequent data row is split using this SAME delimiter (rather than
+   *  re-guessing per line) so that a free-text column (e.g. an address or tag
+   *  list containing several ';' or ',' characters) can never cause a row to
+   *  be split on a different, wrong delimiter than the header.
+   */
+
+  private headerDelimiter: string | null = null;
   private readonly columnMap: ColumnMap | null = null;
   private firstLine: boolean = true;
   private readonly logger: pino.Logger;
@@ -153,8 +162,9 @@ export class LineClassifierServiceImpl implements IClassifier
   public setHeaderMap(map: Record<string, number | number[]>, headerLine: string): void
   {
     this.headerMap = map;
-    const parts: string[] | null = this.splitBestDelimited(headerLine);
-    this.headerParts = parts ? parts.map((p) => p.trim()) : [headerLine.trim()];
+    const found: { parts: string[]; delim: string } | null = this.splitBestDelimitedWithDelim(headerLine);
+    this.headerParts = found ? found.parts.map((p) => p.trim()) : [headerLine.trim()];
+    this.headerDelimiter = found?.delim ?? null;
     this.expandCompositeHeaderMap();
   }
 
@@ -1789,7 +1799,21 @@ export class LineClassifierServiceImpl implements IClassifier
 
   private splitBestDelimited(line: string): string[] | null
   {
-    let best: string[] | null = null;
+    return this.splitBestDelimitedWithDelim(line)?.parts ?? null;
+  }
+
+  /**
+   * Same delimiter-guessing logic as `splitBestDelimited`, but also returns which
+   * delimiter produced the winning split so callers can remember and reuse it
+   * (see `headerDelimiter`).
+   *
+   * @param line - The raw line to split.
+   * @returns The winning split and its delimiter, or `null` if no candidate produced ≥2 columns.
+   */
+
+  private splitBestDelimitedWithDelim(line: string): { parts: string[]; delim: string } | null
+  {
+    let best: { parts: string[]; delim: string } | null = null;
 
     for (const delim of LineClassifierServiceImpl.DELIMITER_CANDIDATES)
     {
@@ -1805,9 +1829,9 @@ export class LineClassifierServiceImpl implements IClassifier
         continue;
       }
 
-      if (!best || parts.length > best.length)
+      if (!best || parts.length > best.parts.length)
       {
-        best = parts;
+        best = { parts, delim };
       }
     }
     return best;
@@ -1826,12 +1850,14 @@ export class LineClassifierServiceImpl implements IClassifier
 
   private detectHeader(line: string): Record<string, number | number[]> | null
   {
-    const parts: string[] | null = this.splitBestDelimited(line);
+    const found: { parts: string[]; delim: string } | null = this.splitBestDelimitedWithDelim(line);
 
-    if (!parts || parts.length < 2)
+    if (!found || found.parts.length < 2)
     {
       return null;
     }
+
+    const parts: string[] = found.parts;
 
     for (const c of parts)
     {
@@ -1888,6 +1914,7 @@ export class LineClassifierServiceImpl implements IClassifier
     }
 
     this.headerParts = parts.map((p) => p.trim());
+    this.headerDelimiter = found.delim;
     return map;
   }
 
@@ -1984,7 +2011,9 @@ export class LineClassifierServiceImpl implements IClassifier
       return null;
     }
 
-    const parts: string[] | null = this.splitBestDelimited(line);
+    const parts: string[] | null = this.headerDelimiter
+      ? LineClassifierServiceImpl.parseCsvLine(line, this.headerDelimiter, "\"")
+      : this.splitBestDelimited(line);
     if (!parts) return null;
 
     if (this.headerMap)
