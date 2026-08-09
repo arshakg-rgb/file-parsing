@@ -2134,6 +2134,10 @@ export class LineClassifierServiceImpl implements IClassifier
     {
       const row: Record<string, unknown> = {};
       let matched: number = 0;
+      const mappedIndices = new Set<number>(
+        Object.values(this.headerMap!).flatMap((v) => (Array.isArray(v) ? v : [v]))
+      );
+
       for (let i = 0; i < this.fieldSpec.length; i++)
       {
         const field: string = this.fieldSpec[i];
@@ -2164,22 +2168,39 @@ export class LineClassifierServiceImpl implements IClassifier
         }
       }
 
-      const metaColumnIndex: number | number[] | undefined = this.headerMap!["meta"];
-      if (metaColumnIndex !== undefined)
+      if (this.headerParts)
       {
-        const metaValue: string = Array.isArray(metaColumnIndex)
-          ? metaColumnIndex.map((idx) => (idx < parts.length ? String(parts[idx] ?? "").trim() : "")).filter((c) => c !== "").join(", ")
-          : (metaColumnIndex < parts.length ? String(parts[metaColumnIndex] ?? "").trim() : "");
-        row["meta"] = metaValue || null;
-      }
-      else
-      {
-        row["meta"] = null;
-      }
+        const metaObj: Record<string, string> = {};
+        for (let j = 0; j < this.headerParts.length; j++)
+        {
+          if (!mappedIndices.has(j))
+          {
+            const v: string = j < parts.length ? String(parts[j] ?? "").trim() : "";
 
-      if (row["meta"] !== null)
-      {
-        matched++;
+            if (v !== "")
+            {
+              metaObj[this.headerParts[j]] = v;
+            }
+          }
+        }
+
+        const metaColumnIndex: number | number[] | undefined = this.headerMap!["meta"];
+        if (metaColumnIndex !== undefined)
+        {
+          const metaValue: string = Array.isArray(metaColumnIndex)
+            ? metaColumnIndex.map((idx) => (idx < parts.length ? String(parts[idx] ?? "").trim() : "")).filter((c) => c !== "").join(", ")
+            : (metaColumnIndex < parts.length ? String(parts[metaColumnIndex] ?? "").trim() : "");
+          row["meta"] = metaValue || null;
+        }
+        else
+        {
+          row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
+        }
+
+        if (row["meta"] !== null)
+        {
+          matched++;
+        }
       }
 
       return matched > 0 ? { row, usedHeader: true } : null;
