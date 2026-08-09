@@ -644,18 +644,18 @@ Output:`;
     const headerList: string = headerParts.map((h, i) => `${i}: ${h}`).join("\n");
 
     const prompt = `You are a data mapping assistant.
-Given the source column names (with 0-based indices) and the target field specification, return a JSON mapping of target field names to arrays of source column indices.
+Given the source column names (with 0-based indices, in any language/script) and the target field specification, return a JSON mapping of target field names to arrays of source column indices.
 
 Guidelines:
-- A source column must map to exactly one target field.
-- A target field may use one OR MORE source column indices when the logical value is split across multiple columns (e.g. address_1 + address_2, or city + county + postcode + country).
-- Group related parts together in the order they appear:
+- A source column must map to exactly one target field, or to none at all.
+- Evaluate every column independently by its own meaning. Never assign a column to a field just because it sits next to (before/after) a column that DID match.
+- Only group multiple source columns into one target field when they are OBVIOUSLY split parts of the SAME value (e.g. address_1 + address_2, or first_name + last_name). Never group columns of different semantic types together (e.g. do not combine a name column with a birthdate, ID, or passport column just because they are adjacent).
   - "address" = street, house number, address1, address2, road, lane, block, unit, etc.
   - "location" = city, town, county, state, province, postcode, zip, country, country_name.
   - "name" = first_name, last_name, given_name, surname, full_name, etc.
   - "phone" = telephone, mobile, cell, contact_number (NOT fax).
   - "email" = email, email_address, mail.
-- Ignore unrelated ID, passenger, reservation, admin, and metadata columns. They will be stored in a meta column automatically.
+- NEVER map any of the following to a target field, in ANY language: national ID / insurance numbers (e.g. SSN, SNILS, СНИЛС), tax IDs (e.g. TIN, INN, ИНН), passport or other document numbers (e.g. ПАСПОРТ), dates of birth (e.g. ДАТА_РОЖДЕНИЯ), or employer/company names (e.g. РАБОТОДАТЕЛИ). These are unrelated ID/admin/metadata columns and must be omitted from every field's mapping so they fall through to the meta column automatically.
 - Do NOT include a "meta" mapping.
 
 Source columns:
@@ -696,7 +696,15 @@ If a field has no matching source columns, omit it from "mappings".`;
 
         if (Array.isArray(idxs) && idxs.every((n) => typeof n === "number" && n >= 0))
         {
-          out[field] = idxs as number[];
+          const filtered: number[] = (idxs as number[]).filter((i) => {
+            const label: string | undefined = headerParts[i];
+            return label === undefined || !AiClassifierServiceImpl.isDenylistedHeader(label);
+          });
+
+          if (filtered.length > 0)
+          {
+            out[field] = filtered;
+          }
         }
       }
 
@@ -1007,6 +1015,31 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
   private quickFingerprint(line: string): string
   {
     return crypto.createHash("md5").update(line).digest("hex");
+  }
+
+  /**
+   * Header labels matching this pattern represent unrelated ID/admin/metadata
+   * columns (national ID or insurance numbers, tax IDs, passport/document
+   * numbers, dates of birth, employer names) and must never be accepted into
+   * a target field mapping, regardless of what the model returned. Covers
+   * common English terms plus their Russian equivalents since these labels
+   * frequently appear in Cyrillic source files.
+   * @private
+   */
+
+  private static readonly DENYLISTED_HEADER_RE: RegExp = /snils|снилс|passport|паспорт|\btin\b|\binn\b|инн|\bssn\b|national.?id|insurance.?number|employer|работодат|date.?of.?birth|\bdob\b|birth.?date|дата.?рожд/i;
+
+  /**
+   * Does a source column header represent an unrelated ID/admin/metadata
+   * column that must never be mapped to a target field?
+   *
+   * @param label - The raw source column header label.
+   * @returns `true` if the label matches a denylisted ID/DOB/passport/tax/employer pattern.
+   */
+
+  private static isDenylistedHeader(label: string): boolean
+  {
+    return AiClassifierServiceImpl.DENYLISTED_HEADER_RE.test(label);
   }
 
   /**
