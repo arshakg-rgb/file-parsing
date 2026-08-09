@@ -1077,7 +1077,7 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
    * @private
    */
 
-  private static readonly DENYLISTED_HEADER_RE: RegExp = /snils|снилс|passport|паспорт|\\btin\\b|\\binn\\b|инн|\\bssn\\b|national.?id|insurance.?number|insurer|employer|работодат|patronymic|patronymic|date.?of.?birth|\\bdob\\b|birth.?date|дата.?рожд/i;
+  private static readonly DENYLISTED_HEADER_RE: RegExp = /snils|снилс|passport|паспорт|\\btin\\b|\\binn\\b|инн|\\bssn\\b|national.?id|insurance.?number|insurer|employer|работодат|patronymic|date.?of.?birth|\\bdob\\b|birth.?date|дата.?рожд/i;
 
   /**
    * Does a source column header represent an unrelated ID/admin/metadata

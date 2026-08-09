@@ -1981,7 +1981,7 @@ export class LineClassifierServiceImpl implements IClassifier
     }
 
     const nonMetaFields: string[] = this.fieldSpec.filter((f) => f !== "meta");
-    const need: number = Math.max(1, Math.ceil(nonMetaFields.length / 5));
+    const need: number = Math.max(1, Math.floor(nonMetaFields.length / 2));
 
     if (matched < need)
     {
