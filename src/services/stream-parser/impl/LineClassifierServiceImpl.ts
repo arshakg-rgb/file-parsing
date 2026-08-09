@@ -54,7 +54,7 @@ export class LineClassifierServiceImpl implements IClassifier
     name: ["name", "fullname", "full_name", "surname", "фио"],
     phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones", "телефон"],
     address: ["address", "addr", "streetaddress", "addresses", "street", "адрес"],
-    location: ["location", "city", "country", "state", "province", "region", "town", "geo", "locality", "город", "страна"],
+    location: ["location", "city", "country", "countryname", "county", "postcode", "postalcode", "postal", "zip", "zipcode", "state", "province", "region", "town", "geo", "locality", "город", "страна"],
   };
 
   private static readonly EMAIL_RE: RegExp = /^[A-Za-z0-9._%+=\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
