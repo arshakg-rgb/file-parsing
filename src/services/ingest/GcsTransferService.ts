@@ -1,4 +1,5 @@
 import pino from "pino";
+import path from "path";
 import { settings } from "@shared/Settings.js";
 import { createLogger } from "@utils/logger/Log.js";
 import { GcsEntryStore } from "./GcsEntryStore.js";
@@ -49,7 +50,8 @@ export class GcsTransferService
         {
             const [bucket, key] = this.gcsUtils.parseGcsUrl(url);
             const size: number = await this.gcsUtils.objectSize(bucket, key);
-            const s3Key: string = this.entryStore.sourceKeyFor(jobId);
+            const filename = path.basename(key) || undefined;
+            const s3Key: string = this.entryStore.sourceKeyFor(jobId, filename);
 
             logger.info("gcs_copy", { jobId, size, threshold: settings.SMALL_FILE_SINGLE_GET_THRESHOLD });
             await this.streamGcsToGcs(bucket, key, settings.DATA_BUCKET, s3Key);
@@ -59,7 +61,17 @@ export class GcsTransferService
             return [s3Url, size];
         }
 
-        const s3Key: string = this.entryStore.sourceKeyFor(jobId);
+        let filename: string | undefined;
+        try
+        {
+            filename = path.basename(new URL(url).pathname) || undefined;
+        }
+        catch
+        {
+            filename = undefined;
+        }
+
+        const s3Key: string = this.entryStore.sourceKeyFor(jobId, filename);
         const chunks: Buffer[] = [];
         let total: number = 0;
 

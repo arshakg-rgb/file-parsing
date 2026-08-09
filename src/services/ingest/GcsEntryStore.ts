@@ -40,9 +40,12 @@ export class GcsEntryStore
         return GcsEntryStore.instance;
     }
 
-    public sourceKeyFor(jobId: string): string
+    public sourceKeyFor(jobId: string, filename?: string): string
     {
-        return `ingested/${jobId}/source`;
+        const baseName = filename
+            ? (path.basename(filename).replace(/[#\s]+/g, "_") || "source")
+            : "source";
+        return `ingested/${jobId}/${baseName}`;
     }
 
     public async storeEntry(jobId: string, entryName: string, data: Buffer): Promise<[string, number]>
