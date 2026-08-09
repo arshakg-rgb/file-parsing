@@ -302,13 +302,6 @@ class FinalizationService
       }
     }
 
-    for (const dlq of deadLetters) {
-      const line = lineMap.get(Number(dlq.byte_offset));
-      if (line !== undefined) {
-        await DatabaseService.getInstance().repositories.deadLetters.updateLineNo(dlq.dlq_id, line);
-      }
-    }
-
     if (rubbishLogPath && rubbishEntries.length) {
       await this.updateRubbishLog(jobId, rubbishLogPath, rubbishEntries, lineMap);
     }
