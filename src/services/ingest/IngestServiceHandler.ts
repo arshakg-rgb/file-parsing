@@ -516,6 +516,13 @@ export class IngestService
 
     const [bucket, key] = this.gcsUtils.parseGcsUrl(url);
     const size: number = await this.gcsUtils.objectSize(bucket, key);
+    const filename = await this.extractFilenameFromMetadata(bucket, key);
+
+    if (filename)
+    {
+      return this.copyUploadToIngested(msg, bucket, key, size, filename);
+    }
+
     return { s3Url: url, size };
   }
 
@@ -598,19 +605,67 @@ export class IngestService
   }
 
   /**
+   * Extract the original filename from GCS object metadata if available.
+   * Supports Content-Disposition header and custom x-goog-meta-filename.
+   *
+   * @param bucket - GCS bucket
+   * @param key - GCS object key
+   * @returns The sanitized filename, or undefined if not found
+   * @private
+   */
+
+  private async extractFilenameFromMetadata(bucket: string, key: string): Promise<string | undefined>
+  {
+    try
+    {
+      const [meta] = await this.gcsUtils.getStorage().bucket(bucket).file(key).getMetadata();
+      const contentDisposition = (meta as { contentDisposition?: string }).contentDisposition;
+      const customFilename = (meta as { metadata?: Record<string, string> }).metadata?.filename;
+
+      let baseName: string | undefined;
+
+      if (contentDisposition)
+      {
+        const match = contentDisposition.match(/filename(?:\*|=(?:(?:UTF-8'')|"'?))([^"';,\s]+)(?:"'?)?/i);
+        if (match)
+        {
+          baseName = match[1];
+          try { baseName = decodeURIComponent(baseName.replace(/["']+/g, "")); } catch { /* keep as is */ }
+        }
+      }
+
+      baseName ??= customFilename;
+
+      if (!baseName)
+      {
+        return undefined;
+      }
+
+      return (baseName.split(/[\\/]/).pop() || "source").replace(/[#\s]+/g, "_") || "source";
+    }
+    catch
+    {
+      return undefined;
+    }
+  }
+
+  /**
    * Copy an uploaded object from the uploads/ prefix to the ingested/ prefix.
    *
    * @param msg - Ingest message
    * @param bucket - GCS bucket
-   * @param key - Source object key
+   * @param key - GCS object key
    * @param size - Object size, passed through on success
+   * @param filename - Optional filename to use for the destination key
    * @private
    */
 
-  private async copyUploadToIngested(msg: IngestMessage, bucket: string, key: string, size: number): Promise<{ s3Url: string; size: number }>
+  private async copyUploadToIngested(msg: IngestMessage, bucket: string, key: string, size: number, filename?: string): Promise<{ s3Url: string; size: number }>
   {
     this.stats.uploadCopies++;
-    const dstKey: string = key.replace("uploads/", "ingested/");
+    const baseName = filename ?? await this.extractFilenameFromMetadata(bucket, key) ?? (key.split("/").pop() || "source");
+    const safeName = (baseName.split(/[\\/]/).pop() || "source").replace(/[#\s]+/g, "_") || "source";
+    const dstKey: string = `ingested/${msg.job_id}/${safeName}`;
 
     try
     {
