@@ -233,7 +233,7 @@ steps:
       - '-c'
       - |
         SERVICE_URL=$(gcloud run services describe detect-bootstrap --project data-etl-499916 --region us-central1 --format 'value(status.url)')
-        gcloud pubsub subscriptions update fpp-classify-sub --project=data-etl-499916 --push-endpoint="${SERVICE_URL}/" --ack-deadline=3600
+        gcloud pubsub subscriptions update fpp-classify-sub --project=data-etl-499916 --push-endpoint="$$SERVICE_URL/" --ack-deadline=3600
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'deploy-stream'
@@ -268,7 +268,7 @@ steps:
       - '-c'
       - |
         SERVICE_URL=$(gcloud run services describe stream-parser --project data-etl-499916 --region us-central1 --format 'value(status.url)')
-        gcloud pubsub subscriptions update fpp-parse-sub --project=data-etl-499916 --push-endpoint="${SERVICE_URL}/" --ack-deadline=3600
+        gcloud pubsub subscriptions update fpp-parse-sub --project=data-etl-499916 --push-endpoint="$$SERVICE_URL/" --ack-deadline=3600
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'deploy-load-small'
@@ -375,7 +375,7 @@ steps:
       - '-c'
       - |
         SERVICE_URL=$(gcloud run services describe report --project data-etl-499916 --region us-central1 --format 'value(status.url)')
-        gcloud pubsub subscriptions update fpp-report-sub --project=data-etl-499916 --push-endpoint="${SERVICE_URL}/" --ack-deadline=3600
+        gcloud pubsub subscriptions update fpp-report-sub --project=data-etl-499916 --push-endpoint="$$SERVICE_URL/" --ack-deadline=3600
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'deploy-archive'
@@ -414,4 +414,4 @@ steps:
       - '-c'
       - |
         SERVICE_URL=$(gcloud run services describe archive-entry-consumer --project data-etl-499916 --region us-central1 --format 'value(status.url)')
-        gcloud pubsub subscriptions update fpp-archive-entry-sub --project=data-etl-499916 --push-endpoint="${SERVICE_URL}/" --ack-deadline=3600
+        gcloud pubsub subscriptions update fpp-archive-entry-sub --project=data-etl-499916 --push-endpoint="$$SERVICE_URL/" --ack-deadline=3600
