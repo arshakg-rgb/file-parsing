@@ -189,7 +189,7 @@ export class LineClassifierServiceImpl implements IClassifier
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "");
 
-    const skip = /emergency|emerg|business|fax|secondary|alternate/;
+    const skip = /business|fax|secondary|alternate/;
 
     const patterns: Record<string, RegExp[]> = {
       address: [
@@ -204,10 +204,11 @@ export class LineClassifierServiceImpl implements IClassifier
         /(?:^|[^a-z0-9])(?:country|countryname)/,
       ],
       name: [
-        /(?:^|[^a-z0-9])(?:first|given|fore)/,
-        /(?:^|[^a-z0-9])(?:last|sur)/,
-        /(?:^|[^a-z0-9])(?:full|complete)/,
-        /(?:^|[^a-z0-9])name/,
+        /first/,
+        /last/,
+        /sur/,
+        /(?:full|complete)/,
+        /name/,
       ],
       phone: [
         /(?:^|[^a-z0-9])(?:telephone|telefon|tel|mobile|cell|handphone|hp|phone)/,
