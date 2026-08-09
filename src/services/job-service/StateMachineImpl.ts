@@ -560,15 +560,16 @@ export class StateMachineImpl implements StateMachine
       return;
     }
 
-    if (mergedPaths.length === 0 && data.parsed === 0)
+    if (mergedPaths.length === 0)
     {
       this.logger.info({ job_id: jobId }, "no_output_no_data");
-      await this.transition(jobId, JobStatus.COMPLETED, undefined, { output_paths: [] });
-      return;
+      await this.transition(jobId, JobStatus.SAVING_TO_DATABASE, undefined, { output_paths: [], counts });
     }
-
-    this.logger.info({ job_id: jobId, merged_paths_count: mergedPaths.length }, "transitioning_to_loading");
-    await this.transition(jobId, JobStatus.SAVING_TO_DATABASE, undefined, { output_paths: mergedPaths, counts });
+    else
+    {
+      this.logger.info({ job_id: jobId, merged_paths_count: mergedPaths.length }, "transitioning_to_loading");
+      await this.transition(jobId, JobStatus.SAVING_TO_DATABASE, undefined, { output_paths: mergedPaths, counts });
+    }
 
     const sizeMb = (row.size ?? 0) / (1024 * 1024);
     const queueUrl = sizeMb <= 25

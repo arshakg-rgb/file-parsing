@@ -822,7 +822,7 @@ export class GcsUtils extends ServiceManager
       return [];
     }
 
-    const start = match.index! + match[0].length - 1;
+    const start = match.index! + match[0].length;
     let depth = 0;
     let inQuote = false;
     let quoteChar = "";
@@ -882,6 +882,11 @@ export class GcsUtils extends ServiceManager
       current += c;
     }
 
+    if (current.trim().length > 0)
+    {
+      body.push(current);
+    }
+
     const columnKeywords = new Set(["PRIMARY", "UNIQUE", "KEY", "INDEX", "CONSTRAINT", "FOREIGN", "CHECK", "FULLTEXT", "SPATIAL"]);
     const columns: string[] = [];
 
@@ -937,28 +942,20 @@ export class GcsUtils extends ServiceManager
     }
 
     const valuesStart = valuesMatch.index! + valuesMatch[0].length - 1;
-    const valuesEnd = sql.lastIndexOf(")");
-    if (valuesEnd <= valuesStart)
-    {
-      return;
-    }
-
     let depth = 0;
     let inQuote = false;
     let quoteChar = "";
-    let tuple = "";
-    let tupleCount = 0;
-    let tupleStart = valuesStart + 1;
+    let tupleStart = 0;
 
-    for (let i = valuesStart + 1; i <= valuesEnd; i++)
+    for (let i = valuesStart; i < sql.length; i++)
     {
-      const c = i < sql.length ? sql[i] : ")";
+      const c = sql[i];
 
       if (inQuote)
       {
         if (c === "\\" && i + 1 < sql.length)
         {
-          tuple += c + sql[++i];
+          i++;
           continue;
         }
 
@@ -967,7 +964,6 @@ export class GcsUtils extends ServiceManager
           inQuote = false;
         }
 
-        tuple += c;
         continue;
       }
 
@@ -975,19 +971,30 @@ export class GcsUtils extends ServiceManager
       {
         inQuote = true;
         quoteChar = c;
-        tuple += c;
         continue;
+      }
+
+      if (c === ";")
+      {
+        break;
       }
 
       if (c === "(")
       {
         depth++;
+        if (depth === 1)
+        {
+          tupleStart = i + 1;
+        }
+        continue;
       }
-      else if (c === ")")
+
+      if (c === ")")
       {
         depth--;
         if (depth === 0)
         {
+          const tuple = sql.slice(tupleStart, i);
           const values = this.splitMysqlValues(tuple);
           const record: Record<string, unknown> = {};
 
@@ -1006,15 +1013,8 @@ export class GcsUtils extends ServiceManager
           const byteLength = json.length;
 
           yield [json, byteOffset, byteLength];
-
-          tupleCount++;
-          tuple = "";
-          tupleStart = i + 1;
         }
-      }
-      else
-      {
-        tuple += c;
+        continue;
       }
     }
   }
