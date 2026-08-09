@@ -43,6 +43,7 @@ export class LineClassifierServiceImpl implements IClassifier
   private headerDelimiter: string | null = null;
   private readonly columnMap: ColumnMap | null = null;
   private firstLine: boolean = true;
+  private coerceRejectsLogged: number = 0;
   private readonly logger: pino.Logger;
   private readonly normalizedFieldSpec: string[];
   private readonly aliasMap: Map<string, Set<string>>;
@@ -2466,6 +2467,11 @@ export class LineClassifierServiceImpl implements IClassifier
 
         if (s.length > 0 && binaryCount / s.length > LineClassifierServiceImpl.BINARY_RATIO_MAX)
         {
+          if (this.coerceRejectsLogged < 10)
+          {
+            this.logger.warn("coerce_rejected", { job_id: this.jobId, field: k, value: s.substring(0, 200), binary_count: binaryCount, length: s.length, ratio: +(binaryCount / s.length).toFixed(3) });
+            this.coerceRejectsLogged++;
+          }
           return null;
         }
         out[k] = s;

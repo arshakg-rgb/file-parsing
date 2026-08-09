@@ -641,6 +641,7 @@ export class StreamParserService
     const qualityGate: QualityGate = QualityGate.getInstance();
 
     const counts: JobCounts = { parsed: 0, dropped_rubbish: 0, failed_by_class: {} };
+    let verdictDistribution: Record<string, number> = {};
     let lineNo: number = 0;
     let recordIndex: number = 0;
     let fatal: Error | null = null;
@@ -882,7 +883,8 @@ export class StreamParserService
 
         if (lineNo % this.PARSE_PROGRESS_LOG_INTERVAL === 0)
         {
-          this.logger.info("parse_progress", { job_id: jobId, line_no: lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts) });
+          this.logger.info("parse_progress", { job_id: jobId, line_no: lineNo, parsed: counts.parsed, dropped: counts.dropped_rubbish, failed: totalFailed(counts), verdict_distribution: { ...verdictDistribution } });
+          verdictDistribution = {};
         }
 
         if (lineNo === 1)
@@ -959,6 +961,7 @@ export class StreamParserService
         catch (lineError)
         {
           this.logger.error("line_classification_failed", { job_id: jobId, line_no: lineNo, error: lineError instanceof Error ? lineError.message : String(lineError) });
+          verdictDistribution["line_classification_failed"] = (verdictDistribution["line_classification_failed"] ?? 0) + 1;
           counts.dropped_rubbish++;
           continue;
         }
@@ -1026,6 +1029,7 @@ export class StreamParserService
 
             if (!classifier.rowStrongFieldsOk(sanitizedRow))
             {
+              result = { verdict: "rubbish", template_id: "row-strong-fields-rejected" };
               counts.dropped_rubbish++;
               break;
             }
@@ -1161,6 +1165,9 @@ export class StreamParserService
             break;
           }
         }
+
+        const verdictKey: string = result.template_id ?? result.verdict;
+        verdictDistribution[verdictKey] = (verdictDistribution[verdictKey] ?? 0) + 1;
       }
 
       this.logger.info("lines_streamed", { job_id: jobId, line_count: lineNo, duration_ms: Date.now() - lineSourceStart });
