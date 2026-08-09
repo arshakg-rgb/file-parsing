@@ -935,20 +935,30 @@ export class StreamParserService
 
         await drainIfReady();
 
-        if (!aiHeaderMapped && aiEnabled && !columnMap)
+        if (!aiHeaderMapped && !columnMap)
         {
           aiHeaderMapped = true;
-          try {
-            const aiMapping: Record<string, number[]> = await aiClassifierServiceImpl.mapHeaderColumns(line, fieldSpec, jobId);
 
-            if (aiMapping)
-            {
-              classifier.setHeaderMap(aiMapping, line);
-            }
-          }
-          catch (err)
+          const detectedHeader: Record<string, number | number[]> | null = classifier.detectHeader(line);
+
+          if (detectedHeader)
           {
-            this.logger.warn("ai_header_mapping_failed", { job_id: jobId, error: String(err) });
+            classifier.setHeaderMap(detectedHeader, line);
+          }
+          else if (aiEnabled)
+          {
+            try {
+              const aiMapping: Record<string, number[]> = await aiClassifierServiceImpl.mapHeaderColumns(line, fieldSpec, jobId);
+
+              if (aiMapping)
+              {
+                classifier.setHeaderMap(aiMapping, line);
+              }
+            }
+            catch (err)
+            {
+              this.logger.warn("ai_header_mapping_failed", { job_id: jobId, error: String(err) });
+            }
           }
         }
 

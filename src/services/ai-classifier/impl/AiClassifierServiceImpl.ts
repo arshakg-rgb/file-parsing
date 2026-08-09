@@ -705,7 +705,7 @@ Guidelines:
   - "name" = first_name, last_name, given_name, surname, full_name, etc.
   - "phone" = telephone, mobile, cell, contact_number (NOT fax).
   - "email" = email, email_address, mail.
-- NEVER map any of the following to a target field, in ANY language: national ID / insurance numbers (e.g. SSN, SNILS, СНИЛС), tax IDs (e.g. TIN, INN, ИНН), passport or other document numbers (e.g. ПАСПОРТ), dates of birth (e.g. ДАТА_РОЖДЕНИЯ), or employer/company names (e.g. РАБОТОДАТЕЛИ). These are unrelated ID/admin/metadata columns and must be omitted from every field's mapping so they fall through to the meta column automatically.
+- NEVER map any of the following to a target field, in ANY language: national ID / insurance numbers (e.g. SSN, SNILS, СНИЛС), tax IDs (e.g. TIN, INN, ИНН), passport or other document numbers (e.g. ПАСПОРТ), dates of birth (e.g. ДАТА_РОЖДЕНИЯ), employer/company/insurer names (e.g. РАБОТОДАТЕЛИ, insurer, insurer_inns, insurer_names), or patronymic. These are unrelated ID/admin/metadata columns and must be omitted from every field's mapping so they fall through to the meta column automatically.
 - Do NOT include a "meta" mapping.
 
 Source columns:
@@ -1077,7 +1077,7 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
    * @private
    */
 
-  private static readonly DENYLISTED_HEADER_RE: RegExp = /snils|снилс|passport|паспорт|\btin\b|\binn\b|инн|\bssn\b|national.?id|insurance.?number|employer|работодат|date.?of.?birth|\bdob\b|birth.?date|дата.?рожд/i;
+  private static readonly DENYLISTED_HEADER_RE: RegExp = /snils|снилс|passport|паспорт|\\btin\\b|\\binn\\b|инн|\\bssn\\b|national.?id|insurance.?number|insurer|employer|работодат|patronymic|patronymic|date.?of.?birth|\\bdob\\b|birth.?date|дата.?рожд/i;
 
   /**
    * Does a source column header represent an unrelated ID/admin/metadata

@@ -51,7 +51,7 @@ export class LineClassifierServiceImpl implements IClassifier
   private readonly defaultMinMatches: number;
   private static readonly ALIASES: Record<string, string[]> = {
     email: ["email", "mail", "emailaddress", "e_mail", "emails"],
-    name: ["name", "fullname", "full_name", "фио"],
+    name: ["name", "fullname", "full_name", "surname", "фио"],
     phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones", "телефон"],
     address: ["address", "addr", "streetaddress", "addresses", "street", "адрес"],
     location: ["location", "city", "country", "state", "province", "region", "town", "geo", "locality", "город", "страна"],
@@ -168,7 +168,6 @@ export class LineClassifierServiceImpl implements IClassifier
     const found: { parts: string[]; delim: string } | null = this.splitBestDelimitedWithDelim(headerLine);
     this.headerParts = found ? found.parts.map((p) => p.trim()) : [headerLine.trim()];
     this.headerDelimiter = found?.delim ?? null;
-    this.expandCompositeHeaderMap();
   }
 
   /**
@@ -1214,24 +1213,46 @@ export class LineClassifierServiceImpl implements IClassifier
       return false;
     }
 
-    if (normalizedKey === normalizedField)
+    const tokens: string[] = key
+      .split(/[,;]+/)
+      .map((t) => this.normalizeKey(t.trim()))
+      .filter((t) => t.length > 0);
+
+    if (tokens.length === 0)
     {
-      return true;
+      return false;
     }
 
-    const aliases: string[] = LineClassifierServiceImpl.ALIASES[normalizedField] || [normalizedField];
+    const aliases: Set<string> = this.aliasMap.get(normalizedField) ?? new Set<string>([normalizedField]);
 
-    if (aliases.some((a) => this.normalizeKey(a) === normalizedKey))
+    if (normalizedField === this.normalizeKey("name"))
     {
-      return true;
-    }
-
-    return aliases.some((a) => {
-      const na: string = this.normalizeKey(a);
-      if (na.length >= 3 && (normalizedKey.includes(na) || (normalizedKey.length >= 3 && na.includes(normalizedKey)))) {
+      if (tokens.some((t) => aliases.has(t)))
+      {
         return true;
       }
-      return na.length >= 3 && normalizedKey.startsWith(na) && /^\d*$/.test(normalizedKey.slice(na.length));
+
+      const hasFirst: boolean = tokens.some((t) => /first|given|fore/.test(t));
+      const hasLast: boolean = tokens.some((t) => /last|sur|surname/.test(t));
+
+      return hasFirst && hasLast;
+    }
+
+    return tokens.some((token) => {
+      for (const a of aliases)
+      {
+        if (token === a)
+        {
+          return true;
+        }
+
+        if (token.length > a.length && token.startsWith(a) && /^\d*$/.test(token.slice(a.length)))
+        {
+          return true;
+        }
+      }
+
+      return false;
     });
   }
 
@@ -1883,7 +1904,7 @@ export class LineClassifierServiceImpl implements IClassifier
    * @returns A map of field name to column index if the line qualifies as a header; otherwise `null`.
    */
 
-  private detectHeader(line: string): Record<string, number | number[]> | null
+  public detectHeader(line: string): Record<string, number | number[]> | null
   {
     const found: { parts: string[]; delim: string } | null = this.splitBestDelimitedWithDelim(line);
 
