@@ -54,11 +54,11 @@ export class LineClassifierServiceImpl implements IClassifier
   private readonly aiRateLimiter?: AiRateLimiter;
   private readonly defaultMinMatches: number;
   private static readonly ALIASES: Record<string, string[]> = {
-    email: ["email", "mail", "emailaddress", "e_mail", "emails", "useremail"],
-    name: ["name", "fullname", "full_name", "username", "surname", "фио"],
-    phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones", "телефон"],
+    email: ["email", "mail", "emailaddress", "e_mail", "emails", "useremail", "e"],
+    name: ["name", "fullname", "full_name", "username", "surname", "фио", "n", "firstname", "lastname", "first_name", "last_name"],
+    phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones", "телефон", "t"],
     address: ["address", "addr", "streetaddress", "addresses", "street", "адрес"],
-    location: ["location", "city", "country", "countryname", "county", "postcode", "postalcode", "postal", "zip", "zipcode", "state", "province", "region", "town", "geo", "locality", "город", "страна"],
+    location: ["location", "city", "country", "countryname", "county", "postcode", "postalcode", "postal", "zip", "zipcode", "state", "province", "region", "town", "geo", "locality", "a", "город", "страна"],
   };
 
   private static readonly EMAIL_RE: RegExp = /^[A-Za-z0-9._%+=\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
@@ -1697,23 +1697,34 @@ export class LineClassifierServiceImpl implements IClassifier
         {
           value = inferred.value;
           matchedKey = inferred.key;
+
+          if (inferred.key === "firstname+lastname")
+          {
+            consumedKeys.add("firstname");
+            consumedKeys.add("lastname");
+          }
         }
       }
 
       if (value !== undefined && value !== null && String(value).trim() !== "")
       {
-        row[field] = value;
-        matched++;
-
         if (Array.isArray(value))
         {
           const meaningful: unknown[] = value.filter((x) => x !== null && x !== undefined && String(x).trim() !== "");
+
+          row[field] = meaningful.length > 0 ? meaningful[0] : null;
 
           if (meaningful.length > 1)
           {
             extraMeta[`${field}_all`] = meaningful;
           }
         }
+        else
+        {
+          row[field] = value;
+        }
+
+        matched++;
 
         consumedKeys.add(matchedKey!);
         const fullKey = leafToFull.get(matchedKey!);
@@ -1723,7 +1734,7 @@ export class LineClassifierServiceImpl implements IClassifier
           consumedKeys.add(fullKey);
         }
 
-        if ((nf === "email" || nf === "phone") && this.validateField(field, value))
+        if ((nf === "email" || nf === "phone") && this.validateField(field, row[field]))
         {
           strong++;
         }
@@ -1802,7 +1813,7 @@ export class LineClassifierServiceImpl implements IClassifier
 
       const segments: string[] = k.split(/[.[\]]+/).filter(Boolean).map((s) => this.normalizeKey(s));
       const segmentMatch: boolean = segments.some((s) => accepted.includes(s));
-      const prefixMatch: boolean = accepted.some((a) => nk.startsWith(a));
+      const prefixMatch: boolean = accepted.some((a) => a.length >= 2 && nk.startsWith(a));
       const substringMatch: boolean = !noSubstring && accepted.some((a) => a.length >= 3 && nk.includes(a));
 
       if (!segmentMatch && !prefixMatch && !substringMatch)
@@ -1854,10 +1865,33 @@ export class LineClassifierServiceImpl implements IClassifier
 
   private inferFullNameFromParts(obj: Record<string, unknown>, normalizedObjKeys: Map<string, unknown>, currentValue: unknown): { value: string; key: string } | null
   {
-    const firstVal: unknown = normalizedObjKeys.get("first");
-    const lastVal: unknown = normalizedObjKeys.get("last");
+    let firstVal: string | undefined;
+    let lastVal: string | undefined;
 
-    if (!(typeof firstVal === "string" && typeof lastVal === "string" && firstVal.trim() && lastVal.trim()))
+    for (const [k, v] of normalizedObjKeys)
+    {
+      if (typeof v !== "string" || !v.trim())
+      {
+        continue;
+      }
+
+      if (!firstVal && k.includes("first"))
+      {
+        firstVal = v;
+      }
+
+      if (!lastVal && k.includes("last"))
+      {
+        lastVal = v;
+      }
+
+      if (firstVal && lastVal)
+      {
+        break;
+      }
+    }
+
+    if (!firstVal?.trim() || !lastVal?.trim())
     {
       return null;
     }
@@ -1871,30 +1905,9 @@ export class LineClassifierServiceImpl implements IClassifier
       return null;
     }
 
-    let bestKey: string | undefined;
-    let bestValue: string | undefined;
+    const combined: string = `${firstVal} ${lastVal}`.trim();
 
-    for (const [k, val] of Object.entries(obj))
-    {
-      if (typeof val !== "string")
-      {
-        continue;
-      }
-
-      if (this.normalizeKey(k).includes("first") || this.normalizeKey(k).includes("last"))
-      {
-        continue;
-      }
-      const nv: string = this.normalizeKey(val);
-
-      if (nv.includes(fn) && nv.includes(ln) && (!bestValue || val.length > bestValue.length))
-      {
-        bestValue = val;
-        bestKey = k;
-      }
-    }
-
-    return bestValue !== undefined ? { value: bestValue, key: this.normalizeKey(bestKey!) } : null;
+    return combined ? { value: combined, key: "firstname+lastname" } : null;
   }
 
   /**
