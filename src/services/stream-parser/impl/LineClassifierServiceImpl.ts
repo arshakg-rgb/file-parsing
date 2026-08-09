@@ -144,7 +144,7 @@ export class LineClassifierServiceImpl implements IClassifier
 
   public static getInstance(jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: AiRateLimiter | null): LineClassifierServiceImpl
   {
-    if (!LineClassifierServiceImpl.instance)
+    if (!LineClassifierServiceImpl.instance || LineClassifierServiceImpl.instance.jobId !== jobId)
     {
       LineClassifierServiceImpl.instance = new LineClassifierServiceImpl(Enforce, jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, aiRateLimiter);
     }
