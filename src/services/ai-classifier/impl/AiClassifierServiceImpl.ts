@@ -622,6 +622,51 @@ Output:`;
     return this.genAIClient;
   }
 
+  private static csvQuoteFor(delim: string): string
+  {
+    return delim === "\t" ? "" : "\"";
+  }
+
+  private static parseCsvLine(line: string, delim: string, quoteChar: string = "\""): string[]
+  {
+    const quote: string | null = quoteChar || null;
+    const parts: string[] = [];
+    let current: string = "";
+    let inQuote: boolean = false;
+
+    for (let i = 0; i < line.length; i++)
+    {
+      const c: string = line[i];
+      const next: string = line[i + 1];
+
+      if (quote && c === quote)
+      {
+        if (inQuote && next === quote)
+        {
+          current += quote;
+          i++;
+        }
+        else
+        {
+          inQuote = !inQuote;
+        }
+      }
+      else if (c === delim && !inQuote)
+      {
+        parts.push(current.trim());
+        current = "";
+      }
+      else
+      {
+        current += c;
+      }
+    }
+
+    parts.push(current.trim());
+
+    return parts;
+  }
+
   /**
    * Ask Vertex AI to map CSV header columns to the target field_spec.
    * Returns an object where keys are field_spec fields and values are arrays
@@ -637,9 +682,14 @@ Output:`;
   {
     this.logger.info("ai_header_mapping_start", { job_id: jobId, header_line: headerLine, field_spec: fieldSpec });
 
-    const headerParts: string[] = Constants.CSV_DELIMITERS
-      .map((d) => headerLine.split(d).map((h) => h.trim().replace(/^["']|["']$/g, "")).filter((h) => h.length > 0))
-      .sort((a, b) => b.length - a.length)[0] ?? [headerLine.trim()];
+    const best: { delim: string; parts: string[] } | undefined = Constants.CSV_DELIMITERS
+      .map((d) => ({
+        delim: d,
+        parts: AiClassifierServiceImpl.parseCsvLine(headerLine, d, AiClassifierServiceImpl.csvQuoteFor(d)),
+      }))
+      .sort((a, b) => b.parts.length - a.parts.length)[0];
+
+    const headerParts: string[] = best?.parts.map((h) => h.trim()) ?? [headerLine.trim()];
 
     const headerList: string = headerParts.map((h, i) => `${i}: ${h}`).join("\n");
 
