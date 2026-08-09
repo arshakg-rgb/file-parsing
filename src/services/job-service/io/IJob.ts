@@ -42,6 +42,7 @@ export interface IJobInput {
   source_ref: string;
   s3_url?: string | null | undefined;
   size?: number | null | undefined;
+  file_name?: string | null | undefined;
 }
 
 export interface IJobResponse {

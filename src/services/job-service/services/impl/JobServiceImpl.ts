@@ -491,6 +491,20 @@ export class JobServiceImpl implements JobService
 
     const finishedAt = rawTimings.completed_at || undefined;
 
+    let fileName: string | null = null;
+    if (row.s3_url)
+    {
+      try
+      {
+        const [, key] = this.gcsUtils.parseGcsUrl(row.s3_url);
+        fileName = key.split("/").pop() ?? null;
+      }
+      catch
+      {
+        fileName = null;
+      }
+    }
+
     return {
       job_id: row.job_id,
       batch_id: row.batch_id,
@@ -503,6 +517,7 @@ export class JobServiceImpl implements JobService
         source_ref: row.source_ref,
         s3_url: row.s3_url,
         size: row.size,
+        file_name: fileName,
       },
       fields: row.field_spec as string[],
       started_at: startedAt,
