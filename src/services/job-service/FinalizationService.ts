@@ -261,6 +261,12 @@ class FinalizationService
 
     const timings = (job.timings as Record<string, unknown>) || {};
     const rubbishLogPath = timings._rubbish_log_path as string | undefined;
+    const deadLetters: DeadLetterRow[] = await DatabaseService.getInstance().repositories.deadLetters.findByJob(jobId);
+
+    if (deadLetters.length === 0 && !rubbishLogPath) {
+      this.logger.info({ jobId, parts: mergedPaths.length }, "backfill_skip_no_external_line_data");
+      return;
+    }
 
     const lineMap = new Map<number, number>();
     for (const p of mergedPaths) {
@@ -276,7 +282,6 @@ class FinalizationService
       }
     }
 
-    const deadLetters: DeadLetterRow[] = await DatabaseService.getInstance().repositories.deadLetters.findByJob(jobId);
     for (const dlq of deadLetters) {
       if (dlq.line_no !== undefined && dlq.line_no !== null) {
         lineMap.set(Number(dlq.byte_offset), Number(dlq.line_no));
