@@ -1125,7 +1125,7 @@ export class LineClassifierServiceImpl implements IClassifier
     if (rec.structure === "csv")
     {
       const delim = rec.delimiter ?? ",";
-      return LineClassifierServiceImpl.parseCsvLine(line, delim, "\"");
+      return LineClassifierServiceImpl.parseCsvLine(line, delim, LineClassifierServiceImpl.csvQuoteFor(delim));
     }
 
     if (rec.structure === "regex" || rec.structure === "fixed")
@@ -1822,7 +1822,7 @@ export class LineClassifierServiceImpl implements IClassifier
         continue;
       }
 
-      const parts: string[] = LineClassifierServiceImpl.parseCsvLine(line, delim, "\"");
+      const parts: string[] = LineClassifierServiceImpl.parseCsvLine(line, delim, LineClassifierServiceImpl.csvQuoteFor(delim));
 
       if (parts.length < 2)
       {
@@ -2012,7 +2012,7 @@ export class LineClassifierServiceImpl implements IClassifier
     }
 
     const parts: string[] | null = this.headerDelimiter
-      ? LineClassifierServiceImpl.parseCsvLine(line, this.headerDelimiter, "\"")
+      ? LineClassifierServiceImpl.parseCsvLine(line, this.headerDelimiter, LineClassifierServiceImpl.csvQuoteFor(this.headerDelimiter))
       : this.splitBestDelimited(line);
     if (!parts) return null;
 
@@ -2485,6 +2485,11 @@ export class LineClassifierServiceImpl implements IClassifier
    * @returns The line split into trimmed cell strings.
    */
 
+  private static csvQuoteFor(delim: string): string
+  {
+    return delim === "\t" ? "" : "\"";
+  }
+
   private static parseCsvLine(line: string, delim: string, quoteChar: string = "\""): string[]
   {
     const quote: string | null = quoteChar || null;
@@ -2562,7 +2567,7 @@ export class LineClassifierServiceImpl implements IClassifier
 
     for (const delim of LineClassifierServiceImpl.DELIMITER_CANDIDATES)
     {
-      const parts: string[] = LineClassifierServiceImpl.parseCsvLine(line, delim, "\"");
+      const parts: string[] = LineClassifierServiceImpl.parseCsvLine(line, delim, LineClassifierServiceImpl.csvQuoteFor(delim));
 
       if (parts.length >= 3)
       {
