@@ -63,12 +63,14 @@ export class LineClassifierServiceImpl implements IClassifier
   private static readonly KV_SEG_RE: RegExp = /^\s*([A-Za-z][A-Za-z0-9 _]*?)\s*:\s*(.*)$/;
 
   /** Matches control/private-use/unassigned code points — true binary corruption.
+   *  Deliberately excludes C1 controls (0x80-0x9F) because those code points are
+   *  commonly used for printable characters when a file is mis-encoded as Latin-1.
    *  Deliberately excludes emoji/symbol categories (So/Sm/Sk), which are normal in real
    *  names/usernames and must not reject an otherwise-valid line. Reused by both the
    *  line-level binary gate and the field-level check in `coerce()`.
    */
 
-  private static readonly BINARY_RE: RegExp = /[\p{Cc}\p{Co}\p{Cn}]/gu;
+  private static readonly BINARY_RE: RegExp = /[\0-\x08\x0B\x0C\x0E-\x1F\x7F\p{Co}\p{Cn}]/gu;
   private static readonly MAX_LINE_LENGTH: number = 64 * 1024;
   private static readonly NON_PRINTABLE_RATIO_MAX: number = 0.15;
   private static readonly BINARY_RATIO_MAX: number = 0.05;
@@ -413,7 +415,7 @@ export class LineClassifierServiceImpl implements IClassifier
     {
       const c: number = trimmed.charCodeAt(i);
 
-      if ((c <= 0x08) || (c >= 0x0b && c <= 0x0c) || (c >= 0x0e && c <= 0x1f) || (c >= 0x7f && c <= 0x9f))
+      if ((c <= 0x08) || (c >= 0x0b && c <= 0x0c) || (c >= 0x0e && c <= 0x1f) || (c === 0x7f))
       {
         nonPrintable++;
       }
