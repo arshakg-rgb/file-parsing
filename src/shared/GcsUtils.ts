@@ -628,7 +628,12 @@ export class GcsUtils extends ServiceManager
     if (result.lineStart < data.length)
     {
       const raw: Buffer = data.slice(result.lineStart);
-      const text: string = EncodingService.decode(raw, encoding).replace(/\r\n$|\n$/, "");
+      let text: string = EncodingService.decode(raw, encoding).replace(/\r\n$|\n$/, "");
+
+      if (baseOffset === 0 && result.lineStart === 0)
+      {
+        text = text.replace(/^\uFEFF/, "");
+      }
 
       if (text.includes("Email:") && (text.match(/Email:/g) || []).length > 1)
       {
@@ -669,11 +674,19 @@ export class GcsUtils extends ServiceManager
     let endedAtBoundary: boolean = false;
     let quotedNewlines: number = 0;
 
-    const makeLine = (endExclusive: number): [string, number, number] => {
+    const makeLine = (endExclusive: number, skipBom: boolean = false): [string, number, number] => {
       const raw: Buffer = data.slice(lineStart, endExclusive);
-      const tuple: [string, number, number] = [EncodingService.decode(raw, encoding).replace(/\r\n$|\n$/, ""), dataBase + lineStart, raw.length];
+      let text: string = EncodingService.decode(raw, encoding).replace(/\r\n$|\n$/, "");
+
+      if (skipBom && lineStart === 0)
+      {
+        text = text.replace(/^\uFEFF/, "");
+      }
+
+      const tuple: [string, number, number] = [text, dataBase + lineStart, raw.length];
       lineStart = endExclusive;
       quotedNewlines = 0;
+      state.inQuote = false;
       return tuple;
     };
 
@@ -706,7 +719,7 @@ export class GcsUtils extends ServiceManager
       {
         if (!state.inQuote)
         {
-          yield makeLine(pos + 1);
+          yield makeLine(pos + 1, true);
         }
         else
         {
@@ -715,7 +728,7 @@ export class GcsUtils extends ServiceManager
           if (quotedNewlines > config.settings.MAX_QUOTED_NEWLINES || pos + 1 - lineStart >= config.settings.MAX_LINE_BYTES)
           {
             state.inQuote = false;
-            yield makeLine(pos + 1);
+            yield makeLine(pos + 1, true);
           }
         }
       }
@@ -725,7 +738,7 @@ export class GcsUtils extends ServiceManager
       if (pos - lineStart >= config.settings.MAX_LINE_BYTES)
       {
         state.inQuote = false;
-        yield makeLine(pos);
+        yield makeLine(pos, true);
       }
     }
 
