@@ -546,7 +546,6 @@ export class StreamParserService
     let lastDeadlineExtension: number = Date.now();
 
     const jobId: string = msg.job_id;
-    await this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.PARSING });
     this.logger.info("parse_start", { job_id: jobId, s3_url: msg.s3_url, size: msg.size });
     MetricsUtils.increment("parse.start", 1);
 

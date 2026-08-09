@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import jschardet, {IDetectedMap} from "jschardet";
+import { transition } from "@service/job-service/StateMachineImpl.js";
 import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
 import { JobStatus, ClassifyMessage, ParseMessage } from "@shared/models/job.js";
@@ -631,7 +632,7 @@ export class DetectBootstrapService
     await templateRegistry.loadFromDatabase();
 
     const jobId: string = msg.job_id;
-    await this.emit(jobId, EventType.JOB_STATUS_CHANGED, { new_status: JobStatus.DETECTING });
+    await transition(jobId, JobStatus.DETECTING);
 
     this.logger.info("detect_start", { jobId, s3_url: msg.s3_url, size: msg.size });
 
@@ -682,6 +683,7 @@ export class DetectBootstrapService
     MetricsUtils.increment("detect.complete", 1, { seeds: String(seedTemplateIds.length) });
     MetricsUtils.set("detect.duration_ms", bootstrapDuration);
 
+    await transition(jobId, JobStatus.PARSING);
     await this.forwardToParse(msg, jobId, fileSize, seedTemplateIds);
   }
 
