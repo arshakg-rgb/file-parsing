@@ -43,6 +43,10 @@ export class LineClassifierServiceImpl implements IClassifier
   private headerDelimiter: string | null = null;
   private readonly columnMap: ColumnMap | null = null;
   private firstLine: boolean = true;
+  private sqlDumpMode: boolean = false;
+  private sqlCopyMode: boolean = false;
+  private sqlCopyColumns: string[] | null = null;
+  private sqlCopyTable: string | null = null;
   private coerceRejectsLogged: number = 0;
   private readonly logger: pino.Logger;
   private readonly normalizedFieldSpec: string[];
@@ -50,8 +54,8 @@ export class LineClassifierServiceImpl implements IClassifier
   private readonly aiRateLimiter?: AiRateLimiter;
   private readonly defaultMinMatches: number;
   private static readonly ALIASES: Record<string, string[]> = {
-    email: ["email", "mail", "emailaddress", "e_mail", "emails"],
-    name: ["name", "fullname", "full_name", "surname", "фио"],
+    email: ["email", "mail", "emailaddress", "e_mail", "emails", "useremail"],
+    name: ["name", "fullname", "full_name", "username", "surname", "фио"],
     phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones", "телефон"],
     address: ["address", "addr", "streetaddress", "addresses", "street", "адрес"],
     location: ["location", "city", "country", "countryname", "county", "postcode", "postalcode", "postal", "zip", "zipcode", "state", "province", "region", "town", "geo", "locality", "город", "страна"],
@@ -283,6 +287,13 @@ export class LineClassifierServiceImpl implements IClassifier
   {
     const trimmed: string = line.trim();
 
+    const sqlDumped: ClassifyResult | null = this.classifySqlDump(line, trimmed);
+
+    if (sqlDumped)
+    {
+      return sqlDumped;
+    }
+
     const gated: ClassifyResult | null = this.applyLengthAndBinaryGate(line, trimmed);
 
     if (gated)
@@ -440,6 +451,160 @@ export class LineClassifierServiceImpl implements IClassifier
     }
 
     return null;
+  }
+
+  /**
+   * PostgreSQL pg_dump / COPY ... FROM stdin; handling.  All SQL scaffolding lines are
+   * dropped as rubbish.  The COPY block is parsed column-by-column and mapped against the
+   * configured fieldSpec, treating PostgreSQL NULL (`\N`) and empty cells as null.
+   *
+   * @param line - The raw input line.
+   * @param trimmed - The trimmed input line.
+   * @returns A verdict when the line belongs to a SQL dump, or `null` to continue with normal classification.
+   */
+
+  private classifySqlDump(line: string, trimmed: string): ClassifyResult | null
+  {
+    if (!this.sqlDumpMode && /^\s*--\s*PostgreSQL database dump/.test(trimmed))
+    {
+      this.sqlDumpMode = true;
+      return { verdict: "rubbish", template_id: "pg-dump-start" };
+    }
+
+    if (!this.sqlDumpMode)
+    {
+      return null;
+    }
+
+    if (this.sqlCopyMode)
+    {
+      if (/^\s*\\\.\s*$/.test(trimmed))
+      {
+        this.sqlCopyMode = false;
+        this.sqlCopyColumns = null;
+        this.sqlCopyTable = null;
+        return { verdict: "rubbish", template_id: "pg-copy-end" };
+      }
+
+      return this.parsePgCopyData(line);
+    }
+
+    const copyMatch: RegExpMatchArray | null = /^COPY\s+(?:public\.)?(\w+)\s*\(([^)]+)\)\s*FROM\s+stdin\s*;/i.exec(trimmed);
+
+    if (copyMatch)
+    {
+      this.sqlCopyTable = copyMatch[1];
+      this.sqlCopyColumns = copyMatch[2].split(",").map((s) => s.trim());
+      this.sqlCopyMode = true;
+      this.firstLine = false;
+      return { verdict: "rubbish", template_id: "pg-copy-start" };
+    }
+
+    return { verdict: "rubbish", template_id: "pg-sql-junk" };
+  }
+
+  /**
+   * Parse a single tab-delimited row from a PostgreSQL COPY block.
+   * Maps every column to the best matching fieldSpec field using the alias map.
+   * Unmapped columns are bundled into the `meta` JSON field when present in the fieldSpec.
+   *
+   * @param line - The raw COPY data row.
+   * @returns A parsed row verdict.
+   */
+
+  private parsePgCopyData(line: string): ClassifyResult
+  {
+    const parts: string[] = line.split("\t");
+    const row: Record<string, unknown> = {};
+
+    for (const f of this.fieldSpec)
+    {
+      row[f] = null;
+    }
+
+    const meta: Record<string, unknown> = {};
+    const hasMeta: boolean = this.fieldSpec.includes("meta");
+    const columns: string[] = this.sqlCopyColumns ?? [];
+
+    for (let i = 0; i < columns.length; i++)
+    {
+      const col: string = columns[i];
+      const raw: string | null = i < parts.length ? parts[i] : null;
+      const val: string | null = this.cleanPgCopyValue(raw);
+
+      let mapped: boolean = false;
+
+      for (const f of this.fieldSpec)
+      {
+        if (this.keyMatchesField(col, f))
+        {
+          if (f === "meta" && hasMeta)
+          {
+            meta[col] = val;
+          }
+          else
+          {
+            row[f] = val;
+          }
+
+          mapped = true;
+          break;
+        }
+      }
+
+      if (!mapped && hasMeta)
+      {
+        meta[col] = val;
+      }
+    }
+
+    if (hasMeta)
+    {
+      row.meta = JSON.stringify(meta);
+    }
+
+    return this.finalizeParsedOrReject(row, "pg-copy");
+  }
+
+  /**
+   * Convert PostgreSQL NULL markers and obvious placeholder/empty values to `null`.
+   * Treats `\N`, `NULL`, `null`, `N/A`, `NA`, `[CHARACTER_NOT_ALLOWED]` and strings that
+   * contain only dashes, asterisks, question marks or whitespace as missing data.
+   *
+   * @param raw - The raw cell value from a COPY row.
+   * @returns The cleaned value or `null`.
+   */
+
+  private cleanPgCopyValue(raw: string | null): string | null
+  {
+    if (raw === null || raw === "")
+    {
+      return null;
+    }
+
+    const trimmed: string = raw.trim();
+
+    if (trimmed === "")
+    {
+      return null;
+    }
+
+    if (trimmed === "\\N" || trimmed === "NULL" || trimmed === "null")
+    {
+      return null;
+    }
+
+    if (trimmed === "N/A" || trimmed === "NA" || trimmed === "[CHARACTER_NOT_ALLOWED]")
+    {
+      return null;
+    }
+
+    if (/^[\-_*?\s]+$/u.test(trimmed))
+    {
+      return null;
+    }
+
+    return trimmed;
   }
 
   /**
