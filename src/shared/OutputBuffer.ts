@@ -285,7 +285,7 @@ export class OutputBuffer
   private shouldFlush(): boolean
   {
     return this.rows.length >= settings.OUTPUT_BUFFER_FLUSH_THRESHOLD_ROWS ||
-        this.pendingBytes >= OutputBuffer.FLUSH_THRESHOLD_BYTES;
+        this.pendingBytes >= settings.OUTPUT_BUFFER_FLUSH_THRESHOLD_BYTES;
   }
 
   /**
