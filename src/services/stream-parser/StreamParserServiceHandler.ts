@@ -777,6 +777,7 @@ export class StreamParserService
     };
 
     let isJsonFile = false;
+    let isNdjson = false;
     let isMySqlDump = false;
     let jsonRecords: string[] | null = null;
 
@@ -787,6 +788,7 @@ export class StreamParserService
         const headText = EncodingService.decode(headRaw, detectedEncoding).replace(/\0/g, "").trim();
         const headUpper = headText.toUpperCase();
         isJsonFile = (key.endsWith(".json") && !key.endsWith(".ndjson")) || headText.startsWith("{") || headText.startsWith("[");
+        isNdjson = key.endsWith(".ndjson") || new RegExp("}(?:\\n|\\r\\n)\\s*\\{").test(headText);
         isMySqlDump = !isJsonFile && (headUpper.includes("MYSQL DUMP") || headUpper.startsWith("CREATE TABLE") || headUpper.includes("INSERT INTO"));
       } catch (err) {
         this.logger.warn("json_head_peek_failed", { job_id: jobId, s3_url: msg.s3_url, error: String(err) });
@@ -795,7 +797,7 @@ export class StreamParserService
       }
     }
 
-    if (isJsonFile)
+    if (isJsonFile && !isNdjson)
     {
       if (fileSize > this.JSON_MAX_SIZE_BYTES)
       {
