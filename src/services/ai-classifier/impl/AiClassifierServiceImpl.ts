@@ -1064,27 +1064,37 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
 
   /**
    * Ask Vertex AI to suggest source-side aliases/labels for a user's target
-   * field_spec. The result is a one-time per-job mapping that lets the
-   * parser understand arbitrary target names like "full name", "mail" or
-   * "phone number" without a hardcoded alias table.
+   * field_spec, AND, independently, which target fields are "composite" —
+   * built by concatenating 2+ separate source columns (e.g. "full name" from
+   * "first name" + "last name", or "full address" from "street" + "city" +
+   * "zip"). This lets the parser dynamically combine split source columns
+   * for ANY target field the AI identifies as composite, not just names,
+   * without any hardcoded per-field logic.
    *
    * @param fieldSpec - The ordered target field names from the job.
    * @param jobId - Job id for logging.
-   * @returns A mapping of target field -> candidate source aliases, or null on failure.
+   * @returns Aliases (target field -> candidate source labels) and composites (target field -> ordered source component labels to concatenate), or null on failure.
    */
 
-  public async resolveFieldAliases(fieldSpec: string[], jobId: string): Promise<Record<string, string[]> | null>
+  public async resolveFieldAliases(fieldSpec: string[], jobId: string): Promise<{ aliases: Record<string, string[]>; composites: Record<string, string[]> } | null>
   {
     this.logger.info("ai_resolve_field_aliases_start", { job_id: jobId, field_spec: fieldSpec });
 
     const prompt = `You are a data field matching assistant.
-Given the following target field names, return a JSON object that maps each target field name to a list of likely source field names, labels, or aliases that should be treated as the same concept.
-Include common variations, English and non-English labels, abbreviations, and synonyms. Do not include unrelated ID/admin columns.
+Given the following target field names, return a JSON object with two parts:
+
+1. "aliases": for each target field, a list of likely source field names, labels, or aliases (in any language) that mean the SAME single concept as that field. Include common variations, abbreviations, and synonyms. Do not include unrelated ID/admin columns.
+
+2. "composites": for each target field that is normally built by concatenating 2+ SEPARATE source columns (not just a single-value synonym), list those component source labels in the natural order they should be joined. For example a "full name" field is often composed from separate "first name" and "last name" columns; a "full address" field might be composed from "street", "city", and "postal code" columns. If a target field is typically a single source value (like "email" or "phone"), omit it from "composites" or give it an empty list.
+
 Return ONLY valid JSON in this exact shape (no markdown, no explanation):
 {
   "aliases": {
     "field name 1": ["alias1", "alias2", "alias3"],
     "field name 2": ["alias1", "alias2"]
+  },
+  "composites": {
+    "field name 1": ["component1", "component2"]
   }
 }
 
@@ -1106,19 +1116,38 @@ Output:`;
       }
 
       const aliases = parsed.aliases as Record<string, unknown>;
-      const out: Record<string, string[]> = {};
+      const outAliases: Record<string, string[]> = {};
 
       for (const [field, candidates] of Object.entries(aliases))
       {
         if (!fieldSpec.includes(field)) continue;
         if (Array.isArray(candidates))
         {
-          out[field] = candidates.filter((x): x is string => typeof x === "string").map((a) => String(a).trim()).filter((a) => a !== "");
+          outAliases[field] = candidates.filter((x): x is string => typeof x === "string").map((a) => String(a).trim()).filter((a) => a !== "");
         }
       }
 
-      this.logger.info("ai_resolve_field_aliases_success", { job_id: jobId, aliases: out });
-      return out;
+      const outComposites: Record<string, string[]> = {};
+      const composites = parsed.composites;
+
+      if (composites && typeof composites === "object" && !Array.isArray(composites))
+      {
+        for (const [field, parts] of Object.entries(composites as Record<string, unknown>))
+        {
+          if (!fieldSpec.includes(field)) continue;
+          if (Array.isArray(parts))
+          {
+            const cleaned: string[] = parts.filter((x): x is string => typeof x === "string").map((a) => String(a).trim()).filter((a) => a !== "");
+            if (cleaned.length > 1)
+            {
+              outComposites[field] = cleaned;
+            }
+          }
+        }
+      }
+
+      this.logger.info("ai_resolve_field_aliases_success", { job_id: jobId, aliases: outAliases, composites: outComposites });
+      return { aliases: outAliases, composites: outComposites };
     }
     catch (err)
     {

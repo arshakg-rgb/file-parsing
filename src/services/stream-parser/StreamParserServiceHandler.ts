@@ -654,12 +654,15 @@ export class StreamParserService
     const aiMode: string = settings.AI_INLINE_MODE;
     const aiEnabled: boolean = aiMode === "mock" || aiMode === "live";
     let customAliases: Record<string, string[]> | null = null;
+    let customComponents: Record<string, string[]> | null = null;
 
     if (aiEnabled && fieldSpec.length > 0)
     {
       try
       {
-        customAliases = await aiClassifierServiceImpl.resolveFieldAliases(fieldSpec, jobId);
+        const resolved = await aiClassifierServiceImpl.resolveFieldAliases(fieldSpec, jobId);
+        customAliases = resolved?.aliases ?? null;
+        customComponents = resolved?.composites ?? null;
       }
       catch (err)
       {
@@ -667,7 +670,7 @@ export class StreamParserService
       }
     }
 
-    const classifier: LineClassifierServiceImpl = LineClassifierServiceImpl.getInstance(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, this.getAIRateLimiter(), customAliases);
+    const classifier: LineClassifierServiceImpl = LineClassifierServiceImpl.getInstance(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, this.getAIRateLimiter(), customAliases, customComponents);
     const outputManager = new OutputManager();
     const csvWriter = new CsvOutputWriter(jobId, fieldSpec);
     const qualityGate: QualityGate = QualityGate.getInstance();

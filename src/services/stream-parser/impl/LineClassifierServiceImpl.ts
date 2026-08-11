@@ -51,6 +51,18 @@ export class LineClassifierServiceImpl implements IClassifier
   private readonly logger: pino.Logger;
   private readonly normalizedFieldSpec: string[];
   private readonly aliasMap: Map<string, Set<string>>;
+
+  /** Maps a normalized target field (e.g. "fullname") to the ordered, normalized
+   *  source-side component labels that should be concatenated together to build
+   *  that field's value when they appear as separate columns/keys (e.g. "full name"
+   *  composed from "first name" + "last name"). Populated dynamically from the
+   *  AI-resolved field mapping (per job) so any composite relationship the AI
+   *  identifies - not just names - is handled generically, with no hardcoded
+   *  per-field logic. Falls back to a minimal static default when AI data is
+   *  unavailable for a job.
+   */
+
+  private readonly componentMap: Map<string, string[]>;
   private readonly aiRateLimiter?: AiRateLimiter;
   private readonly defaultMinMatches: number;
   private static readonly ALIASES: Record<string, string[]> = {
@@ -59,6 +71,15 @@ export class LineClassifierServiceImpl implements IClassifier
     phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones", "mobile_phone_no", "mobile_number", "телефон", "t"],
     address: ["address", "addr", "streetaddress", "addresses", "street", "адрес"],
     location: ["location", "city", "country", "countryname", "county", "postcode", "postalcode", "postal", "zip", "zipcode", "state", "province", "region", "town", "geo", "locality", "location_id", "a", "город", "страна"],
+  };
+
+  /** Static fallback used only when no AI-resolved component data is available
+   *  for the job (e.g. AI disabled or the call failed), so basic first+last name
+   *  composition still works without AI.
+   */
+
+  private static readonly DEFAULT_COMPONENTS: Record<string, string[]> = {
+    name: ["firstname", "lastname"],
   };
 
   private static readonly EMAIL_RE: RegExp = /^[A-Za-z0-9._%+=\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
@@ -111,10 +132,11 @@ export class LineClassifierServiceImpl implements IClassifier
    * @param columnMap - Optional client-supplied fixed column map for headerless delimited files.
    * @param aiRateLimiter - Optional rate limiter whose `acquire()` is awaited before any AI call.
    * @param customAliases - Optional per-job alias map returned by the AI (target field -> source aliases).
+   * @param customComponents - Optional per-job composite-field map returned by the AI (target field -> ordered source component labels to concatenate, e.g. "full name" -> ["first name", "last name"]).
    * @returns A new LineClassifierServiceImpl instance configured for the given job and field spec.
    */
 
-  public constructor(enforce: () => void, jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: AiRateLimiter | null, customAliases?: Record<string, string[]> | null)
+  public constructor(enforce: () => void, jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: AiRateLimiter | null, customAliases?: Record<string, string[]> | null, customComponents?: Record<string, string[]> | null)
   {
     if (enforce !== Enforce)
     {
@@ -153,6 +175,27 @@ export class LineClassifierServiceImpl implements IClassifier
       }
     }
 
+    this.componentMap = new Map<string, string[]>();
+
+    if (customComponents && Object.keys(customComponents).length > 0)
+    {
+      for (const field of fieldSpec)
+      {
+        const parts: string[] | undefined = customComponents[field];
+        if (parts && parts.length > 1)
+        {
+          this.componentMap.set(this.normalizeKey(field), parts.map((p) => this.normalizeKey(p)).filter((p) => p !== ""));
+        }
+      }
+    }
+    else
+    {
+      for (const [base, parts] of Object.entries(LineClassifierServiceImpl.DEFAULT_COMPONENTS))
+      {
+        this.componentMap.set(this.normalizeKey(base), parts.map((p) => this.normalizeKey(p)));
+      }
+    }
+
     this.defaultMinMatches = Math.max(1, Math.ceil(fieldSpec.filter((f) => f !== "meta").length * 0.75));
   }
 
@@ -161,11 +204,11 @@ export class LineClassifierServiceImpl implements IClassifier
    * @returns The single instance of the class
    */
 
-  public static getInstance(jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: AiRateLimiter | null, customAliases?: Record<string, string[]> | null): LineClassifierServiceImpl
+  public static getInstance(jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: AiRateLimiter | null, customAliases?: Record<string, string[]> | null, customComponents?: Record<string, string[]> | null): LineClassifierServiceImpl
   {
     if (!LineClassifierServiceImpl.instance || LineClassifierServiceImpl.instance.jobId !== jobId)
     {
-      LineClassifierServiceImpl.instance = new LineClassifierServiceImpl(Enforce, jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, aiRateLimiter, customAliases);
+      LineClassifierServiceImpl.instance = new LineClassifierServiceImpl(Enforce, jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, aiRateLimiter, customAliases, customComponents);
     }
 
     return LineClassifierServiceImpl.instance;
@@ -320,7 +363,9 @@ export class LineClassifierServiceImpl implements IClassifier
     {
       this.firstLine = false;
 
-      if (!this.headerMap)
+      const looksLikeStructuredRecord: boolean = trimmed[0] === "{" || trimmed[0] === "[" || this.parseKvRecord(line) !== null;
+
+      if (!this.headerMap && !looksLikeStructuredRecord)
       {
         const header: Record<string, number | number[]> | null = this.detectHeader(line);
 
@@ -1383,6 +1428,23 @@ export class LineClassifierServiceImpl implements IClassifier
    * @returns `true` if `key` normalizes to `field` directly or to one of its known aliases.
    */
 
+  /**
+   * Is the given normalized target field a composite field — i.e. one the AI (or the
+   * static default) has identified as built from 2+ separate source components
+   * (e.g. "full name" from "first name" + "last name")? Fully data-driven via
+   * `componentMap`, so any composite relationship the AI identifies for any field
+   * is handled the same way, with no per-field hardcoding.
+   *
+   * @param nf - The already-normalized target field name.
+   * @returns `true` if this field has 2+ registered components to combine.
+   */
+
+  private isCompositeField(nf: string): boolean
+  {
+    const components: string[] | undefined = this.componentMap.get(nf);
+    return components !== undefined && components.length > 1;
+  }
+
   private keyMatchesField(key: string, field: string): boolean
   {
     const normalizedKey: string = this.normalizeKey(key);
@@ -1405,17 +1467,17 @@ export class LineClassifierServiceImpl implements IClassifier
 
     const aliases: Set<string> = this.aliasMap.get(normalizedField) ?? new Set<string>([normalizedField]);
 
-    if (normalizedField === this.normalizeKey("name"))
+    if (tokens.some((t) => aliases.has(t)))
     {
-      if (tokens.some((t) => aliases.has(t)))
-      {
-        return true;
-      }
+      return true;
+    }
 
-      const hasFirst: boolean = tokens.some((t) => /first|given|fore/.test(t));
-      const hasLast: boolean = tokens.some((t) => /last|sur|surname/.test(t));
+    const components: string[] | undefined = this.componentMap.get(normalizedField);
 
-      return hasFirst && hasLast;
+    if (components && components.length > 1)
+    {
+      const matchedComponents: Set<string> = new Set(tokens.filter((t) => components.includes(t)));
+      return matchedComponents.size >= Math.min(2, components.length);
     }
 
     return tokens.some((token) => {
@@ -1704,19 +1766,18 @@ export class LineClassifierServiceImpl implements IClassifier
         }
       }
 
-      if (nf === "name")
+      if (this.isCompositeField(nf))
       {
-        const inferred = this.inferFullNameFromParts(obj, normalizedObjKeys, value);
+        const inferred = this.inferCompositeFromParts(nf, normalizedObjKeys, value);
 
         if (inferred)
         {
           value = inferred.value;
           matchedKey = inferred.key;
 
-          if (inferred.key === "firstname+lastname")
+          for (const consumedComponent of inferred.consumedComponents)
           {
-            consumedKeys.add("firstname");
-            consumedKeys.add("lastname");
+            consumedKeys.add(consumedComponent);
           }
         }
       }
@@ -1869,60 +1930,58 @@ export class LineClassifierServiceImpl implements IClassifier
   }
 
   /**
-   * If `first`/`last` keys exist and the current candidate for "name" doesn't already
-   * contain both, look for a full-name-shaped value that does.
+   * Generic composite-field resolver: if this target field has 2+ registered source
+   * components (from `componentMap`, driven by the AI-resolved job mapping or the
+   * static default) and 2+ of them are present as separate source keys with
+   * non-empty string values, join them (in the AI-given order) into a single value.
+   * Not specific to names — works for any composite relationship the AI identifies
+   * (e.g. full name from first+last, full address from street+city+zip, etc.).
    *
-   * @param obj - The flattened source object to search for a combined full-name value.
-   * @param normalizedObjKeys - Map of normalized source keys to their values, used to look up `first`/`last`.
-   * @param currentValue - The value currently selected for the "name" field, if any.
-   * @returns The best-matching full-name value and its normalized key, or `null` if no better candidate was found.
+   * @param nf - The already-normalized target field name.
+   * @param normalizedObjKeys - Map of normalized source keys to their values.
+   * @param currentValue - The value currently selected for this field, if any.
+   * @returns The combined value, its synthetic key, and which component keys were consumed; or `null` if fewer than 2 components were found or the current value already contains them all.
    */
 
-  private inferFullNameFromParts(obj: Record<string, unknown>, normalizedObjKeys: Map<string, unknown>, currentValue: unknown): { value: string; key: string } | null
+  private inferCompositeFromParts(nf: string, normalizedObjKeys: Map<string, unknown>, currentValue: unknown): { value: string; key: string; consumedComponents: string[] } | null
   {
-    let firstVal: string | undefined;
-    let lastVal: string | undefined;
+    const components: string[] | undefined = this.componentMap.get(nf);
 
-    for (const [k, v] of normalizedObjKeys)
-    {
-      if (typeof v !== "string" || !v.trim())
-      {
-        continue;
-      }
-
-      if (!firstVal && k.includes("first"))
-      {
-        firstVal = v;
-      }
-
-      if (!lastVal && k.includes("last"))
-      {
-        lastVal = v;
-      }
-
-      if (firstVal && lastVal)
-      {
-        break;
-      }
-    }
-
-    if (!firstVal?.trim() || !lastVal?.trim())
+    if (!components || components.length < 2)
     {
       return null;
     }
 
-    const fn: string = this.normalizeKey(firstVal);
-    const ln: string = this.normalizeKey(lastVal);
+    const foundValues: string[] = [];
+    const consumedComponents: string[] = [];
+
+    for (const component of components)
+    {
+      const v: unknown = normalizedObjKeys.get(component);
+
+      if (typeof v === "string" && v.trim())
+      {
+        foundValues.push(v.trim());
+        consumedComponents.push(component);
+      }
+    }
+
+    if (foundValues.length < 2)
+    {
+      return null;
+    }
+
     const current: string = typeof currentValue === "string" ? this.normalizeKey(currentValue) : "";
+    const allPartsAlreadyPresent: boolean = current !== "" && foundValues.every((v) => current.includes(this.normalizeKey(v)));
 
-    if (current && current.includes(fn) && current.includes(ln))
+    if (allPartsAlreadyPresent)
     {
       return null;
     }
 
-    const combined: string = `${firstVal} ${lastVal}`.trim();
+    const combined: string = foundValues.join(" ").trim();
 
-    return combined ? { value: combined, key: "firstname+lastname" } : null;
+    return combined ? { value: combined, key: consumedComponents.join("+"), consumedComponents } : null;
   }
 
   /**
@@ -2151,6 +2210,7 @@ export class LineClassifierServiceImpl implements IClassifier
         continue;
       }
 
+      const nf: string = this.normalizeKey(field);
       const matchingIndices: number[] = [];
 
       for (let i = 0; i < parts.length; i++)
@@ -2158,6 +2218,32 @@ export class LineClassifierServiceImpl implements IClassifier
         if (this.keyMatchesField(parts[i].trim(), field))
         {
           matchingIndices.push(i);
+        }
+      }
+
+      const components: string[] | undefined = this.componentMap.get(nf);
+
+      if (components && components.length > 1 && matchingIndices.length < components.length)
+      {
+        const componentIndices: Map<string, number> = new Map<string, number>();
+
+        for (let i = 0; i < parts.length; i++)
+        {
+          const pn: string = this.normalizeKey(parts[i]);
+
+          if (components.includes(pn) && !componentIndices.has(pn))
+          {
+            componentIndices.set(pn, i);
+          }
+        }
+
+        if (componentIndices.size >= 2)
+        {
+          matchingIndices.length = 0;
+          for (const idx of componentIndices.values())
+          {
+            matchingIndices.push(idx);
+          }
         }
       }
 
