@@ -1034,7 +1034,15 @@ export class StreamParserService
         {
           aiHeaderMapped = true;
 
-          const detectedHeader: Record<string, number | number[]> | null = classifier.detectHeader(line);
+          const firstLineTrimmed: string = line.trim();
+          const looksLikeStructuredRecord: boolean = firstLineTrimmed[0] === "{" || firstLineTrimmed[0] === "[" ||
+              isJsonFile || isNdjson || isMySqlDump ||
+              /^--/.test(firstLineTrimmed) || /^COPY\s+/i.test(firstLineTrimmed) ||
+              /^\s*[A-Za-z][A-Za-z0-9 _]*?\s*:\s*.+$/.test(firstLineTrimmed);
+
+          const detectedHeader: Record<string, number | number[]> | null = looksLikeStructuredRecord
+              ? null
+              : classifier.detectHeader(line);
 
           if (detectedHeader)
           {
@@ -1067,7 +1075,7 @@ export class StreamParserService
               classifier.setHeaderMap(detectedHeader, line);
             }
           }
-          else if (aiEnabled)
+          else if (aiEnabled && !looksLikeStructuredRecord)
           {
             try {
               const aiMapping: Record<string, number[]> | null = await aiClassifierServiceImpl.mapHeaderColumns(line, fieldSpec, jobId);

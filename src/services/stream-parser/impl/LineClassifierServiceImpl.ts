@@ -154,45 +154,45 @@ export class LineClassifierServiceImpl implements IClassifier
     this.normalizedFieldSpec = fieldSpec.map((f) => this.normalizeKey(f));
     this.aliasMap = new Map<string, Set<string>>();
 
-    if (customAliases && Object.keys(customAliases).length > 0)
+    // Seed every field with its own static aliases first (if any), then layer the
+    // AI-resolved aliases on top. This is a UNION, never a replacement: an AI response
+    // that only covers a subset of fields (e.g. just "name") must not strip the static
+    // aliases (e.g. "msisdn" for phone, "useremail" for email) from every other field.
+    for (const field of fieldSpec)
     {
-      for (const field of fieldSpec)
+      const nf: string = this.normalizeKey(field);
+      const set: Set<string> = new Set<string>();
+      set.add(nf);
+
+      const staticAliases: string[] | undefined = LineClassifierServiceImpl.ALIASES[field] ?? LineClassifierServiceImpl.ALIASES[nf];
+      if (staticAliases)
       {
-        const set = new Set<string>();
-        const nf = this.normalizeKey(field);
-        set.add(nf);
+        for (const a of staticAliases) set.add(this.normalizeKey(a));
+      }
+
+      if (customAliases)
+      {
         for (const a of (customAliases[field] ?? [])) set.add(this.normalizeKey(a));
-        this.aliasMap.set(nf, set);
       }
-    }
-    else
-    {
-      for (const [base, aliases] of Object.entries(LineClassifierServiceImpl.ALIASES))
-      {
-        const set = new Set<string>();
-        for (const a of aliases) set.add(this.normalizeKey(a));
-        this.aliasMap.set(this.normalizeKey(base), set);
-      }
+
+      this.aliasMap.set(nf, set);
     }
 
     this.componentMap = new Map<string, string[]>();
 
-    if (customComponents && Object.keys(customComponents).length > 0)
+    // Same union approach for composite-field components: seed from static defaults,
+    // then layer AI-resolved components on top (AI wins if it identifies more/different
+    // components for a field the static defaults also cover).
+    for (const field of fieldSpec)
     {
-      for (const field of fieldSpec)
+      const nf: string = this.normalizeKey(field);
+      const staticParts: string[] | undefined = LineClassifierServiceImpl.DEFAULT_COMPONENTS[field] ?? LineClassifierServiceImpl.DEFAULT_COMPONENTS[nf];
+      const aiParts: string[] | undefined = customComponents?.[field];
+      const parts: string[] | undefined = (aiParts && aiParts.length > 1) ? aiParts : staticParts;
+
+      if (parts && parts.length > 1)
       {
-        const parts: string[] | undefined = customComponents[field];
-        if (parts && parts.length > 1)
-        {
-          this.componentMap.set(this.normalizeKey(field), parts.map((p) => this.normalizeKey(p)).filter((p) => p !== ""));
-        }
-      }
-    }
-    else
-    {
-      for (const [base, parts] of Object.entries(LineClassifierServiceImpl.DEFAULT_COMPONENTS))
-      {
-        this.componentMap.set(this.normalizeKey(base), parts.map((p) => this.normalizeKey(p)));
+        this.componentMap.set(nf, parts.map((p) => this.normalizeKey(p)).filter((p) => p !== ""));
       }
     }
 
