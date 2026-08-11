@@ -638,7 +638,9 @@ export class LineClassifierServiceImpl implements IClassifier
   /**
    * Parse a single tab-delimited row from a PostgreSQL COPY block.
    * Maps every column to the best matching fieldSpec field using the alias map.
-   * Unmapped columns are bundled into the `meta` JSON field when present in the fieldSpec.
+   * Unmapped columns are always bundled into the `meta` JSON field because the output
+   * layer (CSV/Parquet) always emits a `meta` column, even if it is not listed in the
+   * job's `field_spec`.
    *
    * @param line - The raw COPY data row.
    * @returns A parsed row verdict.
@@ -655,7 +657,6 @@ export class LineClassifierServiceImpl implements IClassifier
     }
 
     const meta: Record<string, unknown> = {};
-    const hasMeta: boolean = this.fieldSpec.includes("meta");
     const columns: string[] = this.sqlCopyColumns ?? [];
 
     for (let i = 0; i < columns.length; i++)
@@ -670,8 +671,9 @@ export class LineClassifierServiceImpl implements IClassifier
       {
         if (this.keyMatchesField(col, f))
         {
-          if (f === "meta" && hasMeta)
+          if (f === "meta")
           {
+            // Source column literally named "meta" gets preserved in the meta payload.
             meta[col] = val;
           }
           else
@@ -684,16 +686,15 @@ export class LineClassifierServiceImpl implements IClassifier
         }
       }
 
-      if (!mapped && hasMeta)
+      if (!mapped)
       {
         meta[col] = val;
       }
     }
 
-    if (hasMeta)
-    {
-      row.meta = JSON.stringify(meta);
-    }
+    // Always emit a meta payload: CsvOutputWriter and OutputBuffer always include a
+    // trailing `meta` column, so unmapped SQL columns must never be silently dropped.
+    row.meta = Object.keys(meta).length ? JSON.stringify(meta) : null;
 
     return this.finalizeParsedOrReject(row, "pg-copy");
   }
