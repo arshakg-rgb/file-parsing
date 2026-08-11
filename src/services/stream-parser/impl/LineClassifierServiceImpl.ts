@@ -69,9 +69,78 @@ export class LineClassifierServiceImpl implements IClassifier
     email: ["email", "mail", "emailaddress", "e_mail", "emails", "useremail", "e"],
     name: ["name", "fullname", "full_name", "username", "surname", "фио", "n", "firstname", "lastname", "first_name", "last_name"],
     phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones", "mobile_phone_no", "mobile_number", "телефон", "t"],
-    address: ["address", "addr", "streetaddress", "addresses", "street", "адрес"],
+    address: ["address", "addr", "streetaddress", "addresses", "street", "адрес", "a"],
     location: ["location", "city", "country", "countryname", "county", "postcode", "postalcode", "postal", "zip", "zipcode", "state", "province", "region", "town", "geo", "locality", "location_id", "a", "город", "страна"],
   };
+
+  /** Reverse index built once from {@link ALIASES}: every normalized alias term (e.g.
+   *  "fullname", "msisdn", "a") mapped back to the static category it belongs to (e.g.
+   *  "name", "phone", "location"). Lets an arbitrary job-supplied field name (e.g.
+   *  "full_name", "phone_number") be recognized as belonging to a known category even
+   *  though it isn't itself a top-level key of `ALIASES`, so its abbreviation aliases
+   *  still apply.
+   */
+
+  private static readonly ALIAS_TO_CATEGORY: Map<string, string> = (() => {
+    const m = new Map<string, string>();
+    for (const [category, aliases] of Object.entries(LineClassifierServiceImpl.ALIASES))
+    {
+      m.set(category, category);
+      for (const a of aliases) m.set(a, category);
+    }
+    return m;
+  })();
+
+  /** Substring keyword fallback used only when a field name doesn't directly resolve
+   *  (by exact key or membership) to a static category, e.g. "email_address_1" or
+   *  "contact_phone". Order matters: checked top-to-bottom, first match wins.
+   */
+
+  private static readonly CATEGORY_KEYWORDS: Array<{ category: string; re: RegExp }> = [
+    { category: "email", re: /mail/ },
+    { category: "phone", re: /phone|mobile|tel|msisdn/ },
+    { category: "name", re: /name|surname/ },
+    { category: "address", re: /address|street/ },
+    { category: "location", re: /city|country|county|postcode|postal|zip|state|province|region|town|geo|locality/ },
+  ];
+
+  /**
+   * Resolves the static alias category (name/email/phone/address/location) that a
+   * job-supplied field most likely represents, so its abbreviation/synonym aliases
+   * (e.g. "n"/"e"/"t"/"a") still apply even when the field isn't literally named
+   * "name"/"email"/etc. (e.g. "full_name", "email_address", "phone_number").
+   *
+   * @param field - The raw field name from the job's field_spec.
+   * @param nf - The normalized form of `field`.
+   * @returns The static aliases for the resolved category, or `undefined` if none apply.
+   */
+
+  private static resolveStaticAliases(field: string, nf: string): string[] | undefined
+  {
+    const direct: string[] | undefined = LineClassifierServiceImpl.ALIASES[field] ?? LineClassifierServiceImpl.ALIASES[nf];
+
+    if (direct)
+    {
+      return direct;
+    }
+
+    const viaMembership: string | undefined = LineClassifierServiceImpl.ALIAS_TO_CATEGORY.get(nf);
+
+    if (viaMembership)
+    {
+      return LineClassifierServiceImpl.ALIASES[viaMembership];
+    }
+
+    for (const { category, re } of LineClassifierServiceImpl.CATEGORY_KEYWORDS)
+    {
+      if (re.test(nf))
+      {
+        return LineClassifierServiceImpl.ALIASES[category];
+      }
+    }
+
+    return undefined;
+  }
 
   /** Static fallback used only when no AI-resolved component data is available
    *  for the job (e.g. AI disabled or the call failed), so basic first+last name
@@ -164,7 +233,7 @@ export class LineClassifierServiceImpl implements IClassifier
       const set: Set<string> = new Set<string>();
       set.add(nf);
 
-      const staticAliases: string[] | undefined = LineClassifierServiceImpl.ALIASES[field] ?? LineClassifierServiceImpl.ALIASES[nf];
+      const staticAliases: string[] | undefined = LineClassifierServiceImpl.resolveStaticAliases(field, nf);
       if (staticAliases)
       {
         for (const a of staticAliases) set.add(this.normalizeKey(a));
@@ -186,7 +255,10 @@ export class LineClassifierServiceImpl implements IClassifier
     for (const field of fieldSpec)
     {
       const nf: string = this.normalizeKey(field);
-      const staticParts: string[] | undefined = LineClassifierServiceImpl.DEFAULT_COMPONENTS[field] ?? LineClassifierServiceImpl.DEFAULT_COMPONENTS[nf];
+      const category: string = LineClassifierServiceImpl.ALIASES[field]
+          ? field
+          : (LineClassifierServiceImpl.ALIAS_TO_CATEGORY.get(nf) ?? nf);
+      const staticParts: string[] | undefined = LineClassifierServiceImpl.DEFAULT_COMPONENTS[category];
       const aiParts: string[] | undefined = customComponents?.[field];
       const parts: string[] | undefined = (aiParts && aiParts.length > 1) ? aiParts : staticParts;
 
