@@ -650,7 +650,24 @@ export class StreamParserService
     const recordTemplates: RecordTemplate[] = templateRegistry.getAllRecordTemplates();
     const rubbishTemplates: RubbishTemplate[] = templateRegistry.getAllRubbishTemplates();
     const columnMap = (msg as unknown as Record<string, unknown>).column_map as ColumnMap | undefined;
-    const classifier: LineClassifierServiceImpl = LineClassifierServiceImpl.getInstance(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, this.getAIRateLimiter());
+
+    const aiMode: string = settings.AI_INLINE_MODE;
+    const aiEnabled: boolean = aiMode === "mock" || aiMode === "live";
+    let customAliases: Record<string, string[]> | null = null;
+
+    if (aiEnabled && fieldSpec.length > 0)
+    {
+      try
+      {
+        customAliases = await aiClassifierServiceImpl.resolveFieldAliases(fieldSpec, jobId);
+      }
+      catch (err)
+      {
+        this.logger.warn("resolve_field_aliases_failed", { job_id: jobId, error: String(err) });
+      }
+    }
+
+    const classifier: LineClassifierServiceImpl = LineClassifierServiceImpl.getInstance(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, this.getAIRateLimiter(), customAliases);
     const outputManager = new OutputManager();
     const csvWriter = new CsvOutputWriter(jobId, fieldSpec);
     const qualityGate: QualityGate = QualityGate.getInstance();
@@ -661,8 +678,6 @@ export class StreamParserService
     let recordIndex: number = 0;
     let fatal: Error | null = null;
 
-    const aiMode: string = settings.AI_INLINE_MODE;
-    const aiEnabled: boolean = aiMode === "mock" || aiMode === "live";
     const aiBudget: number = settings.MAX_AI_CALLS_PER_JOB;
     let aiCalls: number = 0;
     let aiLocalRecoveries: number = 0;
@@ -1020,12 +1035,39 @@ export class StreamParserService
 
           if (detectedHeader)
           {
-            classifier.setHeaderMap(detectedHeader, line);
+            const nonMetaFields: string[] = fieldSpec.filter((f) => f !== "meta");
+            const detectedAll: boolean = nonMetaFields.every((f) => detectedHeader[f] !== undefined);
+
+            if (aiEnabled && !detectedAll)
+            {
+              try
+              {
+                const aiMapping: Record<string, number[]> | null = await aiClassifierServiceImpl.mapHeaderColumns(line, fieldSpec, jobId);
+
+                if (aiMapping)
+                {
+                  classifier.setHeaderMap(aiMapping, line);
+                }
+                else
+                {
+                  classifier.setHeaderMap(detectedHeader, line);
+                }
+              }
+              catch (err)
+              {
+                this.logger.warn("ai_header_mapping_failed", { job_id: jobId, error: String(err) });
+                classifier.setHeaderMap(detectedHeader, line);
+              }
+            }
+            else
+            {
+              classifier.setHeaderMap(detectedHeader, line);
+            }
           }
           else if (aiEnabled)
           {
             try {
-              const aiMapping: Record<string, number[]> = await aiClassifierServiceImpl.mapHeaderColumns(line, fieldSpec, jobId);
+              const aiMapping: Record<string, number[]> | null = await aiClassifierServiceImpl.mapHeaderColumns(line, fieldSpec, jobId);
 
               if (aiMapping)
               {

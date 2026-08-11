@@ -110,10 +110,11 @@ export class LineClassifierServiceImpl implements IClassifier
    * @param rubbishTemplates - Known rubbish/noise signatures available for matching.
    * @param columnMap - Optional client-supplied fixed column map for headerless delimited files.
    * @param aiRateLimiter - Optional rate limiter whose `acquire()` is awaited before any AI call.
+   * @param customAliases - Optional per-job alias map returned by the AI (target field -> source aliases).
    * @returns A new LineClassifierServiceImpl instance configured for the given job and field spec.
    */
 
-  public constructor(enforce: () => void, jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: AiRateLimiter | null)
+  public constructor(enforce: () => void, jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: AiRateLimiter | null, customAliases?: Record<string, string[]> | null)
   {
     if (enforce !== Enforce)
     {
@@ -131,11 +132,25 @@ export class LineClassifierServiceImpl implements IClassifier
     this.normalizedFieldSpec = fieldSpec.map((f) => this.normalizeKey(f));
     this.aliasMap = new Map<string, Set<string>>();
 
-    for (const [base, aliases] of Object.entries(LineClassifierServiceImpl.ALIASES))
+    if (customAliases && Object.keys(customAliases).length > 0)
     {
-      const set = new Set<string>();
-      for (const a of aliases) set.add(this.normalizeKey(a));
-      this.aliasMap.set(this.normalizeKey(base), set);
+      for (const field of fieldSpec)
+      {
+        const set = new Set<string>();
+        const nf = this.normalizeKey(field);
+        set.add(nf);
+        for (const a of (customAliases[field] ?? [])) set.add(this.normalizeKey(a));
+        this.aliasMap.set(nf, set);
+      }
+    }
+    else
+    {
+      for (const [base, aliases] of Object.entries(LineClassifierServiceImpl.ALIASES))
+      {
+        const set = new Set<string>();
+        for (const a of aliases) set.add(this.normalizeKey(a));
+        this.aliasMap.set(this.normalizeKey(base), set);
+      }
     }
 
     this.defaultMinMatches = Math.max(1, Math.ceil(fieldSpec.filter((f) => f !== "meta").length * 0.75));
@@ -146,11 +161,11 @@ export class LineClassifierServiceImpl implements IClassifier
    * @returns The single instance of the class
    */
 
-  public static getInstance(jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: AiRateLimiter | null): LineClassifierServiceImpl
+  public static getInstance(jobId: string, fieldSpec: string[], recordTemplates: RecordTemplate[], rubbishTemplates: RubbishTemplate[], columnMap?: ColumnMap | null, aiRateLimiter?: AiRateLimiter | null, customAliases?: Record<string, string[]> | null): LineClassifierServiceImpl
   {
     if (!LineClassifierServiceImpl.instance || LineClassifierServiceImpl.instance.jobId !== jobId)
     {
-      LineClassifierServiceImpl.instance = new LineClassifierServiceImpl(Enforce, jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, aiRateLimiter);
+      LineClassifierServiceImpl.instance = new LineClassifierServiceImpl(Enforce, jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, aiRateLimiter, customAliases);
     }
 
     return LineClassifierServiceImpl.instance;

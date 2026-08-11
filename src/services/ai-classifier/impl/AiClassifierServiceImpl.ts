@@ -1062,6 +1062,72 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
    * @returns The MD5 hash of the line, as a hex string.
    */
 
+  /**
+   * Ask Vertex AI to suggest source-side aliases/labels for a user's target
+   * field_spec. The result is a one-time per-job mapping that lets the
+   * parser understand arbitrary target names like "full name", "mail" or
+   * "phone number" without a hardcoded alias table.
+   *
+   * @param fieldSpec - The ordered target field names from the job.
+   * @param jobId - Job id for logging.
+   * @returns A mapping of target field -> candidate source aliases, or null on failure.
+   */
+
+  public async resolveFieldAliases(fieldSpec: string[], jobId: string): Promise<Record<string, string[]> | null>
+  {
+    this.logger.info("ai_resolve_field_aliases_start", { job_id: jobId, field_spec: fieldSpec });
+
+    const prompt = `You are a data field matching assistant.
+Given the following target field names, return a JSON object that maps each target field name to a list of likely source field names, labels, or aliases that should be treated as the same concept.
+Include common variations, English and non-English labels, abbreviations, and synonyms. Do not include unrelated ID/admin columns.
+Return ONLY valid JSON in this exact shape (no markdown, no explanation):
+{
+  "aliases": {
+    "field name 1": ["alias1", "alias2", "alias3"],
+    "field name 2": ["alias1", "alias2"]
+  }
+}
+
+Target fields:
+${fieldSpec.join("\n")}
+
+Output:`;
+
+    try
+    {
+      const raw: string = await this.askVertexAI(prompt);
+      const jsonStr: string = AiClassifierServiceImpl.extractJsonFromMarkdown(raw);
+      const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+
+      if (!parsed || typeof parsed !== "object" || !parsed.aliases || typeof parsed.aliases !== "object" || Array.isArray(parsed.aliases))
+      {
+        this.logger.warn("ai_resolve_field_aliases_invalid_response", { job_id: jobId, raw });
+        return null;
+      }
+
+      const aliases = parsed.aliases as Record<string, unknown>;
+      const out: Record<string, string[]> = {};
+
+      for (const [field, candidates] of Object.entries(aliases))
+      {
+        if (!fieldSpec.includes(field)) continue;
+        if (Array.isArray(candidates))
+        {
+          out[field] = candidates.filter((x): x is string => typeof x === "string").map((a) => String(a).trim()).filter((a) => a !== "");
+        }
+      }
+
+      this.logger.info("ai_resolve_field_aliases_success", { job_id: jobId, aliases: out });
+      return out;
+    }
+    catch (err)
+    {
+      const errorMessage = err instanceof Error ? err.message : (typeof err === "string" ? err : JSON.stringify(err));
+      this.logger.error("ai_resolve_field_aliases_failed", { job_id: jobId, error: errorMessage });
+      return null;
+    }
+  }
+
   private quickFingerprint(line: string): string
   {
     return crypto.createHash("md5").update(line).digest("hex");
