@@ -70,7 +70,6 @@ export class DatabaseService
    */
   public async createTables(): Promise<void>
   {
-    // Tables are managed out-of-band.
   }
 
   /**

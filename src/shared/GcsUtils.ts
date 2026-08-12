@@ -63,6 +63,24 @@ export class GcsUtils extends ServiceManager
   private readonly FETCH_CHUNK_SIZE: number = 1048576;
 
   /**
+   * GCS resumable upload threshold (5 MB)
+   * @private
+   */
+  private readonly GCS_RESUMABLE_THRESHOLD_BYTES: number = 5 * 1024 * 1024;
+
+  /**
+   * GCS large file copy threshold (100 MB)
+   * @private
+   */
+  private readonly GCS_LARGE_COPY_THRESHOLD_BYTES: number = 100 * 1024 * 1024;
+
+  /**
+   * GCS stream copy progress log interval (100 MB)
+   * @private
+   */
+  private readonly GCS_COPY_LOG_INTERVAL_BYTES: number = 100 * 1024 * 1024;
+
+  /**
    * Constructs a new GcsUtils instance.
    * @param enforce - A function to enforce the Singleton pattern
    * @throws Error if instantiated directly
@@ -289,7 +307,7 @@ export class GcsUtils extends ServiceManager
           await this.getStorage()
               .bucket(bucket)
               .file(key)
-              .save(body, { contentType, resumable: body.length > 5 * 1024 * 1024 });
+              .save(body, { contentType, resumable: body.length > this.GCS_RESUMABLE_THRESHOLD_BYTES });
         }, this.GCS_TIMEOUT_MS),
         this.GCS_RETRIES
     );
@@ -366,9 +384,9 @@ export class GcsUtils extends ServiceManager
     }
 
     const [meta] = await srcFile.getMetadata();
-    const size: number = Number((meta as { size?: string | number }).size ?? 0);
+    const size: number = Number(meta.size ?? 0);
 
-    if (size > 100 * 1024 * 1024)
+    if (size > this.GCS_LARGE_COPY_THRESHOLD_BYTES)
     {
       this.logger.info(`Using streaming copy for large file: ${size} bytes`);
       await this.streamCopy(srcBucket, srcKey, dstBucket, dstKey);
@@ -422,7 +440,7 @@ export class GcsUtils extends ServiceManager
         const elapsed = (Date.now() - startTime) / 1000;
         const speed = bytesCopied / elapsed / (1024 * 1024);
 
-        if (bytesCopied % (100 * 1024 * 1024) === 0)
+        if (bytesCopied % this.GCS_COPY_LOG_INTERVAL_BYTES === 0)
         {
           this.logger.debug(`stream_copy_progress: ${bytesCopied / (1024 * 1024)}MB at ${speed.toFixed(2)}MB/s`);
         }
@@ -430,7 +448,7 @@ export class GcsUtils extends ServiceManager
 
       readStream.pipe(writeStream)
           .on("error", (error) => {
-            this.logger.error("stream_copy_error:", { error: error.message, stack: error.stack });
+            this.logger.error(error, "stream_copy_error");
             reject(error);
           })
           .on("finish", () => {
@@ -502,7 +520,10 @@ export class GcsUtils extends ServiceManager
             expires: Date.now() + expiresIn * 1000,
           };
           if (filename) {
-            options.responseDisposition = `attachment; filename="${filename}"`;
+            const safeFilename: string = filename
+                .replace(/["\\]/g, "\\$&")
+                .replace(/[\r\n]/g, "");
+            options.responseDisposition = `attachment; filename="${safeFilename}"`;
           }
           const [url] = await this.getStorage()
               .bucket(bucket)
@@ -569,14 +590,10 @@ export class GcsUtils extends ServiceManager
     {
       const current: PendingRead = pending;
 
-      // Speculatively begin the next range read while the current chunk is still
-      // being parsed, so the network round-trip overlaps with CPU work.
       let next: PendingRead | null = startRead(current.offset + current.expectedLength);
 
       const chunk: Buffer = await current.promise;
 
-      // A short read invalidates the speculative offset; discard it and re-issue
-      // from the true next offset so byte offsets stay exact.
       if (chunk.length !== current.expectedLength)
       {
         discardRead(next);

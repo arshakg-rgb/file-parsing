@@ -68,13 +68,10 @@ export const settings = {
   FIRESTORE_DATABASE_ID: getString("FIRESTORE_DATABASE_ID", "file-parsing-db"),
   TEMPLATE_COLLECTION: getString("TEMPLATE_COLLECTION", "file-parsing-templates"),
 
-  ANTHROPIC_API_KEY: getString("ANTHROPIC_API_KEY", ""),
-  ANTHROPIC_MODEL: getString("ANTHROPIC_MODEL", "claude-3-sonnet-20240229"),
   BEDROCK_MODEL_ID: getString("BEDROCK_MODEL_ID", "mock"),
-  AI_CLASSIFIER_URL: getOptionalString("AI_CLASSIFIER_URL"),
-  AI_RATE_LIMIT_RPM: getNumber("AI_RATE_LIMIT_RPM", 60), // 60 requests per minute
-  AI_RATE_LIMIT_BURST: getNumber("AI_RATE_LIMIT_BURST", 10), // Burst of 10 requests
-  AI_CLASSIFY_TIMEOUT_MS: getNumber("AI_CLASSIFY_TIMEOUT_MS", 10000), // 10 s per AI probe call
+  AI_RATE_LIMIT_RPM: getNumber("AI_RATE_LIMIT_RPM", 60),
+  AI_RATE_LIMIT_BURST: getNumber("AI_RATE_LIMIT_BURST", 10),
+  AI_CLASSIFY_TIMEOUT_MS: getNumber("AI_CLASSIFY_TIMEOUT_MS", 10000),
   AI_INLINE_MODE: getString("AI_INLINE_MODE", "off"),
   MAX_AI_CALLS_PER_JOB: getNumber("MAX_AI_CALLS_PER_JOB", 10),
 
@@ -117,7 +114,7 @@ export const settings = {
 
   ARCHIVE_PASSWORD_MAX_ATTEMPTS: getNumber("ARCHIVE_PASSWORD_MAX_ATTEMPTS", 3),
 
-  LARGE_FILE_THRESHOLD_BYTES: getNumber("LARGE_FILE_THRESHOLD_BYTES", 500 * 1024 * 1024), // 500MB threshold for async extraction
+  LARGE_FILE_THRESHOLD_BYTES: getNumber("LARGE_FILE_THRESHOLD_BYTES", 500 * 1024 * 1024),
 
   ALLOWED_FETCH_SIZE_BYTES: getNumber(
     "ALLOWED_FETCH_SIZE_BYTES",

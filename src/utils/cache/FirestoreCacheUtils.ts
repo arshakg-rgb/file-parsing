@@ -5,7 +5,14 @@ import { Storage } from "@google-cloud/storage";
 import Config from "@config/system-config/Config.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { settings } from "../../shared/Settings.js";
-import {GCS_RETRIES, GCS_TIMEOUT_MS, LineState} from "@utils/cache/io/IFirestoreCache";
+import {
+  GCS_RETRIES,
+  GCS_TIMEOUT_MS,
+  GCS_LARGE_COPY_THRESHOLD_BYTES,
+  GCS_COPY_LOG_INTERVAL_BYTES,
+  LineState,
+} from "@utils/cache/io/IFirestoreCache";
+import { createLogger } from "@utils/logger/Log.js";
 import NormalizerUtils from "@utils/normalizers/Normalizer";
 
 
@@ -28,6 +35,8 @@ export class FirestoreCacheUtils {
    * @private
    */
   private config: Config;
+
+  private readonly logger = createLogger(module);
 
   /**
    * In-flight upload counter (shared across all instances in the process).
@@ -119,7 +128,7 @@ export class FirestoreCacheUtils {
         lastErr = err;
         if (i === retries || !this.isRetryable(err)) throw err;
         const wait = delay * 2 ** i;
-        console.warn("gcs_retry", { attempt: i + 1, wait, error: String(err) });
+        this.logger.warn({ attempt: i + 1, wait, error: String(err) }, "gcs_retry");
         await new Promise((r) => setTimeout(r, wait));
       }
     }
@@ -342,10 +351,10 @@ export class FirestoreCacheUtils {
       throw new Error(`Source file not found: ${srcBucket}/${srcKey}`);
     }
     const [meta] = await srcFile.getMetadata();
-    const size = Number((meta as { size?: string | number }).size ?? 0);
+    const size = Number(meta.size ?? 0);
 
-    if (size > 100 * 1024 * 1024) {
-      console.log(`Using streaming copy for large file: ${size} bytes`);
+    if (size > GCS_LARGE_COPY_THRESHOLD_BYTES) {
+      this.logger.info(`Using streaming copy for large file: ${size} bytes`);
       await this.streamCopy(srcBucket, srcKey, dstBucket, dstKey);
     } else {
       await this.withRetry(
@@ -395,19 +404,19 @@ export class FirestoreCacheUtils {
         bytesCopied += chunk.length;
         const elapsed = (Date.now() - startTime) / 1000;
         const speed = bytesCopied / elapsed / (1024 * 1024);
-        if (bytesCopied % (100 * 1024 * 1024) === 0) {
-          console.log(`stream_copy_progress: ${bytesCopied / (1024 * 1024)}MB at ${speed.toFixed(2)}MB/s`);
+        if (bytesCopied % GCS_COPY_LOG_INTERVAL_BYTES === 0) {
+          this.logger.debug(`stream_copy_progress: ${bytesCopied / (1024 * 1024)}MB at ${speed.toFixed(2)}MB/s`);
         }
       });
 
       readStream.pipe(writeStream)
         .on("error", (error) => {
-          console.error("stream_copy_error:", error);
+          this.logger.error(error, "stream_copy_error");
           reject(error);
         })
         .on("finish", () => {
           const elapsed = (Date.now() - startTime) / 1000;
-          console.log(`stream_copy_complete: ${bytesCopied / (1024 * 1024)}MB in ${elapsed.toFixed(2)}s`);
+          this.logger.info(`stream_copy_complete: ${bytesCopied / (1024 * 1024)}MB in ${elapsed.toFixed(2)}s`);
           resolve();
         });
     });
@@ -469,14 +478,14 @@ export class FirestoreCacheUtils {
     encoding = "utf-8"
   ): AsyncGenerator<[string, number, number]> {
     const total = await this.objectSize(bucket, key);
-    console.log("streamLines_start", { bucket, key, total, threshold: this.config.settings.SMALL_FILE_SINGLE_GET_THRESHOLD });
+    this.logger.info({ bucket, key, total, threshold: this.config.settings.SMALL_FILE_SINGLE_GET_THRESHOLD }, "streamLines_start");
 
     const state: LineState = { inQuote: false };
 
     if (total <= this.config.settings.SMALL_FILE_SINGLE_GET_THRESHOLD) {
-      console.log("streamLines_using_single_get", { total });
+      this.logger.info({ total }, "streamLines_using_single_get");
       const data = await this.readFull(bucket, key);
-      console.log("streamLines_download_complete", { size: data.length });
+      this.logger.info({ size: data.length }, "streamLines_download_complete");
       yield* this.splitBytesToLines(data, 0, encoding, state);
       return;
     }
@@ -534,8 +543,6 @@ export class FirestoreCacheUtils {
       const raw = data.slice(result.lineStart);
       const text = NormalizerUtils.decode(raw, encoding).replace(/\r\n$|\n$/, "");
 
-      // Detect and split run-on KV records (multiple records joined by space instead of newline)
-      // Pattern: Email: X - Name: Y - Followers: N - Created At: ... Email: A - Name: B...
       if (text.includes("Email:") && (text.match(/Email:/g) || []).length > 1) {
         const chunks = text.split(/\s+(?=Email:\s)/);
         let currentOffset = baseOffset + result.lineStart;
@@ -543,7 +550,7 @@ export class FirestoreCacheUtils {
           if (chunk.trim()) {
             const chunkBytes = Buffer.byteLength(chunk, encoding as BufferEncoding);
             yield [chunk.trim(), currentOffset, chunkBytes];
-            currentOffset += chunkBytes + 1; // +1 for the space separator
+            currentOffset += chunkBytes + 1;
           }
         }
       } else if (text) {

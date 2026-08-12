@@ -92,7 +92,7 @@ async function testChunkedStreaming(filePath: string, chunkSize: number): Promis
     const chunkBuffer = Buffer.alloc(end - fetchOffset + 1);
     const { bytesRead } = await fileHandle.read(chunkBuffer, 0, chunkBuffer.length, fetchOffset);
     const chunk = chunkBuffer.slice(0, bytesRead);
-    
+
     const data = Buffer.concat([remainder, chunk]);
     const dataBase = remainderStart;
 
@@ -100,7 +100,6 @@ async function testChunkedStreaming(filePath: string, chunkSize: number): Promis
     for (const line of scanLines(data, dataBase, state, settings.MAX_QUOTED_NEWLINES)) {
       lineNo = line.lineNo + 1;
 
-      // Check for malformed lines (simplified check)
       if (line.text.split(",").length < 5 && line.text.length > 0) {
         result.uncertainLines.push({
           lineNo: line.lineNo,
@@ -109,14 +108,13 @@ async function testChunkedStreaming(filePath: string, chunkSize: number): Promis
         });
       }
 
-      // Log state around line 185k
       if (lineNo >= 185500 && lineNo <= 186500) {
         console.log(`Line ${lineNo}: inQuote=${state.inQuote}, quotedNewlines=${state.quotedNewlines}, remainder=${remainder.length}`);
       }
     }
 
     scanResult = scanLines(data, dataBase, state, settings.MAX_QUOTED_NEWLINES).next().value as { lineStart: number; endedAtBoundary: boolean };
-    
+
     remainder = data.slice(scanResult.lineStart);
     remainderStart = dataBase + scanResult.lineStart;
     fetchOffset += chunk.length;
@@ -129,7 +127,7 @@ async function testChunkedStreaming(filePath: string, chunkSize: number): Promis
 
 async function main() {
   const filePath = "/tmp/twitter_users_000.csv";
-  const chunkSize = 64 * 1024; // 64KB
+  const chunkSize = 64 * 1024;
 
   console.log(`Testing chunked streaming with ${chunkSize / 1024}KB chunks...`);
   console.log(`File: ${filePath}`);
@@ -138,7 +136,7 @@ async function main() {
 
   console.log(`\nTotal lines: ${result.lines.length}`);
   console.log(`Uncertain lines: ${result.uncertainLines.length}`);
-  
+
   if (result.uncertainLines.length > 0) {
     console.log("\nUncertain lines:");
     result.uncertainLines.slice(0, 20).forEach(u => {
@@ -146,7 +144,6 @@ async function main() {
     });
   }
 
-  // Check for clustering around line 185k
   const cluster = result.uncertainLines.filter(u => u.lineNo >= 185000 && u.lineNo <= 187000);
   if (cluster.length > 5) {
     console.log(`\n⚠️  CLUSTER DETECTED around line 185k: ${cluster.length} uncertain lines`);

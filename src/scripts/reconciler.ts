@@ -70,7 +70,6 @@ async function reconcileStuckJobs(): Promise<void> {
   logger.info("reconciler_complete");
 }
 
-// Run if executed directly
 if (require.main === module) {
   reconcileStuckJobs()
     .then(() => {

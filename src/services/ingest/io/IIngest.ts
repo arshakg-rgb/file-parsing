@@ -44,7 +44,7 @@ export const MAGIC_RAR = Buffer.from("Rar!");
  * rationale), so its memory-safety limits are enforced directly there rather
  * than via the compression-ratio check used by the other formats.
  */
-export const RAR_MAX_ARCHIVE_SIZE = 2.5 * 1024 * 1024 * 1024; // 2.5GB limit for RAR with 4Gi memory + GCS FUSE
+export const RAR_MAX_ARCHIVE_SIZE = 2.5 * 1024 * 1024 * 1024;
 export const RAR_MAX_INLINE_FILE_SIZE = 2 * 1024 * 1024 * 1024;
 export const RAR_MAX_TOTAL_UNCOMPRESSED = 10 * 1024 * 1024 * 1024;
 

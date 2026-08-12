@@ -73,7 +73,7 @@ export class IngestService
     archiveBombs: 0,
   };
 
-  private logger: pino.Logger = createLogger(module);
+  public readonly logger: pino.Logger = createLogger(module);
 
   private readonly EXTRACTION_TIMEOUT_MS = 50 * 60 * 1000;
 
@@ -965,7 +965,7 @@ export class IngestService
 IngestService.getInstance()
     .start()
     .catch((err) => {
-      console.error("ingest_start_failed", { error: String(err) });
+      IngestService.getInstance().logger.error({ error: String(err) }, "ingest_start_failed");
       process.exit(1);
     });
 

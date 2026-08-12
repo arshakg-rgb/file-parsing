@@ -932,8 +932,6 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
           return null;
         }
 
-        // When the triggering line is a JSON object, force the structure to "json"
-        // and rewrite index/regex locators to key locators against the real JSON keys.
         let parsedJson: Record<string, unknown> | null = null;
         const trimmed = line.trim();
         let structure = (template.structure as string) || "csv";

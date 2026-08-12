@@ -576,9 +576,6 @@ export class QueueService extends ServiceManager
     {
       return this.pubModifyAckDeadline(queueUrl, receiptHandle, deadlineSeconds);
     }
-    // SQS doesn't need explicit deadline extension - it uses visibility timeout.
-    // For SQS, ChangeMessageVisibility would be used here, but it isn't
-    // required for the current use case.
   }
 
   /**

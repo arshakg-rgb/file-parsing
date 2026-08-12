@@ -1,5 +1,7 @@
 import { createServer } from "node:http";
+import { createLogger } from "@utils/logger/Log.js";
 
+const logger = createLogger(module);
 const port = Number(process.env.PORT || process.env.HEALTH_CHECK_PORT || "8080");
 
 const server = createServer((_req, res) => {
@@ -8,9 +10,9 @@ const server = createServer((_req, res) => {
 });
 
 server.listen(port, "0.0.0.0", () => {
-  console.log(`[HealthServer] listening on 0.0.0.0:${port}`);
+  logger.info({ port }, "[HealthServer] listening");
 });
 
 server.on("error", (err) => {
-  console.error("[HealthServer] error:", err);
+  logger.error({ err }, "[HealthServer] error");
 });

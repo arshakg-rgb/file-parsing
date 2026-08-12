@@ -56,27 +56,25 @@ async function uploadLargeFile(rows: number): Promise<string> {
 async function testBackfillPerformance(rows: number): Promise<void> {
   console.log(`\n=== Testing backfill performance with ${rows} rows ===`);
   const startTime = Date.now();
-  
+
   const s3Key = await uploadLargeFile(rows);
-  
-  // Simulate backfill by reading the file and computing line positions
+
   const { gcsClient, readFull, parseGcsUrl } = await import("@shared/GcsUtils.js");
   const [bucket, key] = parseGcsUrl(`s3://${DATA_BUCKET}/${s3Key}`);
   const source = await readFull(bucket, key);
-  
-  // Simulate computing line map for random offsets
+
   const offsets: number[] = [];
   for (let i = 0; i < Math.min(rows, 1000); i++) {
     const offset = Math.floor(Math.random() * source.length);
     offsets.push(offset);
   }
   offsets.sort((a, b) => a - b);
-  
+
   const lineMap = new Map<number, number>();
   let sourcePos = 0;
   let nextOffsetIndex = 0;
   let newlineCount = 0;
-  
+
   while (sourcePos < source.length && nextOffsetIndex < offsets.length) {
     while (nextOffsetIndex < offsets.length && offsets[nextOffsetIndex] <= sourcePos) {
       lineMap.set(offsets[nextOffsetIndex], newlineCount + 1);
@@ -87,14 +85,14 @@ async function testBackfillPerformance(rows: number): Promise<void> {
     }
     sourcePos++;
   }
-  
+
   const elapsed = Date.now() - startTime;
   console.log(`Backfill completed in ${elapsed}ms`);
   console.log(`Source file size: ${source.length} bytes`);
   console.log(`Offsets processed: ${offsets.length}`);
   console.log(`Lines found: ${newlineCount}`);
   console.log(`Performance: ${(source.length / (elapsed / 1000) / 1024 / 1024).toFixed(2)} MB/s`);
-  
+
   // Cleanup
   await s3.send(new PutObjectCommand({ Bucket: DATA_BUCKET, Key: s3Key, Body: "" }));
 }
@@ -104,9 +102,9 @@ async function testBackfillPerformance(rows: number): Promise<void> {
  */
 async function runPerformanceTests(): Promise<void> {
   console.log("Starting finalize backfill performance tests...");
-  
+
   const testSizes = [1000, 10000, 100000, 1000000];
-  
+
   for (const size of testSizes) {
     try {
       await testBackfillPerformance(size);
@@ -114,7 +112,7 @@ async function runPerformanceTests(): Promise<void> {
       console.error(`Performance test failed for ${size} rows:`, err);
     }
   }
-  
+
   console.log("\n=== Performance tests completed ===");
 }
 

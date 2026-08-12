@@ -252,10 +252,6 @@ export class RarExtractor
     {
         logger.info("rar_extracting_file", { jobId, name: file.name, size: file.size });
 
-        // Key is intentionally stable by (jobId, file.name). This path is queue-driven
-        // (ingest queue), so redeliveries must overwrite the same object rather than
-        // create duplicates. Concurrent writes for the same key are rare but possible;
-        // randomizing would trade that race for guaranteed duplicate rows on retry.
         const entryKey = `archive/${jobId}/${file.name}`;
         const entryFile = this.gcsUtils.getStorage().bucket(bucket).file(entryKey);
         const writeStream = entryFile.createWriteStream();

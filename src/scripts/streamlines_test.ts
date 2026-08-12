@@ -52,7 +52,6 @@ async function run(): Promise<void> {
     return data.subarray(start, stop);
   };
 
-  // Reference: force the single-GET path, which uses splitBytesToLines directly.
   (gcs as unknown as Record<string, unknown>).readFull = async () => data;
   process.env.SMALL_FILE_SINGLE_GET_THRESHOLD = String(data.length + 1000);
   const { default: Config } = await import("@config/system-config/Config.js");
@@ -60,7 +59,6 @@ async function run(): Promise<void> {
     data.length + 1000;
   const reference = await collect(gcs, 64, 0);
 
-  // Chunked + prefetch path across many chunk sizes.
   (Config.getInstance() as unknown as { settings: Record<string, unknown> }).settings.SMALL_FILE_SINGLE_GET_THRESHOLD = 1;
 
   for (const chunkSize of [7, 13, 64, 100, 512, 4096, data.length - 1]) {
@@ -75,7 +73,6 @@ async function run(): Promise<void> {
   }
   console.log("PASS: chunked+prefetch === single-GET reference for all chunk sizes");
 
-  // Short-read correction path.
   for (const every of [2, 3, 5]) {
     for (const chunkSize of [16, 64, 256]) {
       reads = 0;
@@ -90,7 +87,6 @@ async function run(): Promise<void> {
   }
   console.log("PASS: short-read correction preserves exact lines and byte offsets");
 
-  // Byte offsets must point at the real line start in the source buffer.
   for (const [text, offset, length] of reference) {
     const slice = data.subarray(offset, offset + length).toString("utf-8");
     assert.ok(

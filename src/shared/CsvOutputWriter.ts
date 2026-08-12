@@ -92,8 +92,6 @@ export class CsvOutputWriter {
    * @param fieldSpec - The field spec
    */
   constructor(private readonly jobId: string, fieldSpec: string[]) {
-    // Output columns are the requested field_spec (deduplicated, with meta removed),
-    // followed by a trailing "meta" column that captures all unmapped fields.
     const base = (fieldSpec && fieldSpec.length > 0 ? fieldSpec : ["value"]).filter((c) => c !== "meta");
     this.columns = [...new Set(base), "meta"];
     this.tmpPath = path.join(os.tmpdir(), `${jobId}-output.csv`);
@@ -104,9 +102,6 @@ export class CsvOutputWriter {
     this.stream.write("\ufeff" + this.line([...this.columns]), "utf8");
   }
 
-  // CRLF line endings + a UTF-8 BOM (written once, before the header) so the file opens cleanly
-  // in Excel — matching the delivered reference format. Columns are exactly the field_spec,
-  // with no internal line_no column.
   private line(vals: unknown[]): string {
     return vals.map((v) => csvEscapeCell(v)).join(",") + "\r\n";
   }

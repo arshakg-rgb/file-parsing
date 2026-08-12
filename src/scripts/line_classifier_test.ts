@@ -77,7 +77,6 @@ check("string field containing JSON object is parsed and flattened", () => {
 check("malformed JSON-in-JSON string kept as raw text", () => {
   const c = makeClassifier(["email"]);
   const result = c.classify('{"payload": "{not valid json}"}', 0, 0);
-  // No real field was matched, so the record is rejected rather than accepted with only meta.
   assert.notEqual(result.verdict, "parsed");
 });
 
@@ -100,7 +99,6 @@ console.log("\n=== 4. Multi-format rows (CSV with JSON cell) ===");
 
 check("CSV row with trailing JSON-like cell falls back to content detection for email", () => {
   const c = makeClassifier(["email", "name"]);
-  // First line is not a valid header (contains @), so second line is parsed by content.
   const row = expectParsed(c.classify('Alice, alice@example.com', 0, 0));
   assert.equal(row.email, "alice@example.com");
 });

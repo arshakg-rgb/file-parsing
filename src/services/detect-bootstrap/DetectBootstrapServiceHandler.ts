@@ -63,7 +63,7 @@ export class DetectBootstrapService
     cacheMisses: 0,
   };
 
-  private logger = createLogger(module);
+  public readonly logger = createLogger(module);
 
   private classify: ((req: ClassifyRequest) => Promise<ClassifyResponse>) | null = null;
 
@@ -733,7 +733,7 @@ export class DetectBootstrapService
 DetectBootstrapService.getInstance()
     .start()
     .catch((err) => {
-      console.error("detect_bootstrap_start_failed", { error: String(err) });
+      DetectBootstrapService.getInstance().logger.error({ error: String(err) }, "detect_bootstrap_start_failed");
       process.exit(1);
     });
 

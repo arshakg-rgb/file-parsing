@@ -62,8 +62,6 @@ class FinalizationService
       }
     }
 
-    // Cross-template final merge: if the per-template outputs are small enough, collapse
-    // them into one job-level merged Parquet file so callers receive a single output_paths entry.
     try {
       this.logger.info({ jobId, mergedPaths_count: mergedPaths.length }, "finalize_cross_merge_check");
       if (mergedPaths.length > 1) {
@@ -79,7 +77,6 @@ class FinalizationService
             const finalPath = new StoragePath(mergedStoragePaths[0].protocol, bucket, finalKey);
             await ParquetEngine.writeRows(finalPath, allRows);
             await this.backfillLineNumbers(jobId, [finalPath]);
-            // Delete raw parts after successful merge
             this.logger.info({ jobId, parts_count: partPaths.length }, "finalize_delete_parts_start");
             for (const p of partPaths) {
               try {
@@ -92,7 +89,6 @@ class FinalizationService
               }
             }
             this.logger.info({ jobId }, "finalize_delete_parts_complete");
-            // Delete per-template merged files after successful cross-merge
             this.logger.info({ jobId, merged_count: mergedPaths.length }, "finalize_delete_merged_start");
             for (const p of mergedPaths) {
               try {
@@ -116,7 +112,6 @@ class FinalizationService
       }
     } catch (err) {
       this.logger.error({ jobId, error: String(err) }, "finalize_cross_merge_failed");
-      // Continue with the per-template merged paths rather than failing the whole job.
     }
 
     await this.backfillLineNumbers(jobId, mergedPaths.map((p) => StoragePath.parse(p)));
@@ -137,7 +132,6 @@ class FinalizationService
   ): Promise<string[]> {
     const groupSize = await this.totalPartSize(group.paths);
     if (groupSize > settings.MAX_MERGED_PART_BYTES) {
-      // Too large to merge safely; keep the original part paths.
       return group.paths.map((p) => p.toString());
     }
 
@@ -252,9 +246,6 @@ class FinalizationService
     const sourcePath = StoragePath.parse(job.s3_url);
     const key = sourcePath.key.toLowerCase();
     if (key.endsWith(".json") && !key.endsWith(".ndjson")) {
-      // Pretty-printed JSON files are not line-oriented; byte offsets stored during parsing
-      // are record indexes, not source-file byte positions. Line-number backfill would map
-      // many records to the same source line and break the (job_id, line_no) unique constraint.
       this.logger.info({ jobId, s3_url: job.s3_url }, "backfill_skip_json_source");
       return;
     }

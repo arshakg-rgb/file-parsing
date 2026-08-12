@@ -26,7 +26,6 @@ export class ServiceManager
    * Override in lifecycle managers.
    */
   public async connect(): Promise<void> {
-    // no-op by default
   }
 
   /**
@@ -35,7 +34,6 @@ export class ServiceManager
    */
   public async gracefulStop(): Promise<void>
   {
-    // no-op by default
   }
 
   /**

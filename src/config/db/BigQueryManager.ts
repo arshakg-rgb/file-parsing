@@ -357,7 +357,6 @@ export class BigQueryManager extends ServiceManager
 
   public async gracefulStop(): Promise<void>
   {
-    // BigQuery client is stateless; nothing to close.
   }
 
   /**

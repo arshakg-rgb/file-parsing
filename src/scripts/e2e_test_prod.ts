@@ -8,7 +8,6 @@
 
 const JOB_SERVICE_URL = "https://job-service-81405680629.us-central1.run.app/v1/jobs";
 
-// Test CSV content
 const TEST_CSV = `email,name,surname,phone
 john.doe@example.com,John,Doe,555-1234
 jane.smith@example.com,Jane,Smith,555-5678`;
@@ -23,10 +22,10 @@ async function createJobFromGCS(gcsUrl: string, fieldSpec: string[]): Promise<{ 
   const response = await fetch(`${JOB_SERVICE_URL}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ 
-      source_type: "bucket", 
+    body: JSON.stringify({
+      source_type: "bucket",
       source_ref: gcsUrl,
-      field_spec: JSON.stringify(fieldSpec) 
+      field_spec: JSON.stringify(fieldSpec)
     }),
   });
 
@@ -89,18 +88,15 @@ async function main() {
   console.log("Starting production end-to-end test...");
 
   try {
-    // GCS URL for the large file
     const GCS_URL = "https://storage.googleapis.com/datalead-osint/archive/0fd825b9-824c-4d4e-b261-3182475c48c2/CSV samples/first-PassengerDetails.csv";
-    
-    // Create job from GCS
+
     console.log("Creating job from GCS...");
     const { job_id } = await createJobFromGCS(GCS_URL, ["field1", "field2", "field3"]);
     console.log(`Job created: ${job_id}`);
 
-    // Poll job status
     console.log("Polling job status (every 5s)...");
     let attempts = 0;
-    const maxAttempts = 120; // 10 minutes max for large file
+    const maxAttempts = 120;
 
     while (attempts < maxAttempts) {
       attempts++;

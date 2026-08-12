@@ -41,7 +41,6 @@ async function classifyMode() {
     : null;
 
   if (!fieldSpec) {
-    // Always ask AI for a field spec first. If AI is unavailable, fall back to dynamic flattening.
     const samples: string[] = [];
     if (data.profile) samples.push(JSON.stringify(data.profile));
     if (data.connections?.[0]) samples.push(JSON.stringify(data.connections[0]));
@@ -69,7 +68,6 @@ async function classifyMode() {
   const aiEnabled = aiMode !== "off";
   for (const { label, line } of records) {
     let result = classifier.classify(line, 0, 0);
-    // Local parser could not parse this record — ask AI if enabled.
     if (aiEnabled && result.verdict !== "parsed" && result.verdict !== "rubbish") {
       try {
         result = await classifier.classifyWithAI(line, []);

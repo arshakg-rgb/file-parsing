@@ -21,9 +21,6 @@ import path from "path";
 import os from "os";
 import fs from "fs/promises";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 function pass(label: string) { console.log(`  ✅  ${label}`); }
 /**
@@ -58,10 +55,6 @@ async function checkAsync(label: string, fn: () => Promise<void>) {
   catch (e) { _failed++; fail(label, e); }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 1. parseGcsUrl
-// ─────────────────────────────────────────────────────────────────────────────
-
 function parseGcsUrl(url: string): [string, string] {
   if (!url || !url.startsWith("gs://")) throw new Error(`Expected gs:// URL, got: ${url}`);
   const without = url.slice("gs://".length);
@@ -91,9 +84,6 @@ check("nested path preserved", () => {
   assert.equal(k, "ingested/abc-123/source");
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 2. parquetWriter – output path must have gs:// prefix
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 2. parquetWriter output path ===");
 
@@ -143,7 +133,7 @@ class MockOutputBuffer {
    */
   async flush(): Promise<string | null> {
     if (this.rows.length === 0) return null;
-    const gcsPath = `gs://${DATA_BUCKET}/output/${this.partId}.parquet`; // THE FIX
+    const gcsPath = `gs://${DATA_BUCKET}/output/${this.partId}.parquet`;
     this.uploadedPaths.push(gcsPath);
     this.rows = [];
     return gcsPath;
@@ -171,9 +161,6 @@ await checkAsync("OLD bug reproduced: missing gs:// prefix would throw in finali
   assert.throws(() => parseGcsUrl(badPath), /Expected gs:\/\/ URL/, "Finalization correctly rejects bad path");
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 3. detectArchiveType – magic bytes
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 3. detectArchiveType ===");
 
@@ -214,9 +201,6 @@ check("Short buffer returns null without crash", () => {
   assert.equal(detectArchiveType(Buffer.from([0x52, 0x61])), null);
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 4. Ingest error-handling logic
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 4. Ingest error-handling – ack logic ===");
 
@@ -248,9 +232,6 @@ check("'No such object' → NOT acked (file might appear later)", () => {
   assert.ok(!shouldAckIngestError("Error: No such object: datalead-osint/uploads/xyz/source"));
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 5. Stream-parser consumer error guard
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 5. Stream-parser error guard ===");
 
@@ -277,9 +258,6 @@ check("parser: parseGcsUrl error → NOT acked", () => {
   assert.ok(!shouldAckParserError("Expected gs:// URL, got: datalead-osint/output/foo.parquet"));
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 6. Upload path construction vs ingested path
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 6. Upload vs ingested GCS path ===");
 
@@ -315,33 +293,20 @@ check("upload path != ingested path (s3_url must be updated after ingest)", () =
   assert.notEqual(uploadPath("abc"), ingestedPath("abc"));
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 7. presignedPutUrl function signature
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 7. presignedPutUrl signature ===");
 
-// We can't call GCS in unit tests, but we verify our fixed function signature
-// accepts contentType and that the curl upload approach works correctly.
 
 check("contentType defaults to application/octet-stream in signature", () => {
-  // Simulate what curl must send for an unsigned content-type URL
-  const curlFlags = ["-H", "Content-Type:"];  // blank = removes Content-Type header
+  const curlFlags = ["-H", "Content-Type:"];
   assert.ok(curlFlags.includes("-H"));
   assert.ok(curlFlags.includes("Content-Type:"));
 });
 
 check("GCS SignatureDoesNotMatch fix: curl must blank Content-Type when URL has no contentType signed", () => {
-  // The old bug: presignedPutUrl didn't include contentType, GCS signed for empty string
-  // curl --data-binary adds 'application/x-www-form-urlencoded' automatically → mismatch
-  // Fix: either blank Content-Type in curl OR sign URL with explicit contentType
   const uploadCmd = "curl -X PUT -H \"Content-Type:\" --data-binary @file.csv \"$URL\"";
   assert.ok(uploadCmd.includes("Content-Type:\""));
 });
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 8. Quality gate logic
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 8. Quality gate ===");
 
@@ -388,9 +353,6 @@ check("mixed 40% parse rate fails with default threshold", () => {
   assert.ok(!qualityGatePasses({ parsed: 4, dropped_rubbish: 6, failed_by_class: {} }));
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 9. End-to-end CSV parse simulation (no GCP needed)
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 9. CSV parse simulation ===");
 
@@ -407,7 +369,7 @@ function classifyLine(line: string, fieldSpec: string[]): "parsed" | "rubbish" |
   if (line.length > 64 * 1024) return "uncertain";
   const parts = line.split(",");
   if (parts.length === fieldSpec.length) return "parsed";
-  if (parts.length >= 2 && parts.some(p => p.includes("@"))) return "parsed"; // email heuristic
+  if (parts.length >= 2 && parts.some(p => p.includes("@"))) return "parsed";
   return "uncertain";
 }
 
@@ -415,7 +377,7 @@ function classifyLine(line: string, fieldSpec: string[]): "parsed" | "rubbish" |
  * The c s v_ l i n e s
  */
 const CSV_LINES = [
-  "email,name,surname,phone",           // header – will classify as parsed (4 parts = 4 fields)
+  "email,name,surname,phone",
   "john@example.com,John,Doe,555-1234",
   "jane@example.com,Jane,Smith,555-5678",
   "test@test.com,Test,User,555-9012",
@@ -456,10 +418,6 @@ await checkAsync("CSV: output path generation is correct gs:// format", async ()
   assert.ok(key.endsWith(".parquet"));
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 10. Parquet temp-file round-trip (actual file I/O, no GCS)
-// ─────────────────────────────────────────────────────────────────────────────
-
 console.log("\n=== 10. Parquet temp-file I/O ===");
 
 await checkAsync("temp parquet file can be written and read back", async () => {
@@ -476,9 +434,6 @@ await checkAsync("temp parquet file can be written and read back", async () => {
   await fs.unlink(tmpFile);
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 11. State machine transition validation
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 11. State machine transitions ===");
 
@@ -531,9 +486,6 @@ check("failed → ingesting: BLOCKED (terminal state)", () => {
   assert.ok(!canTransition("failed", "ingesting"));
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 12. AI classify timeout guard
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 12. AI classify timeout guard ===");
 
@@ -580,9 +532,6 @@ await checkAsync("AI error propagates (not swallowed as timeout)", async () => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 13. Route ordering – /jobs/stuck must not match /jobs/:job_id
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 13. Express route ordering ===");
 
@@ -593,17 +542,14 @@ check("/jobs/stuck is not a valid UUID (would 404 as job_id)", () => {
 
 check("/jobs/stuck route must be registered before /jobs/:job_id", () => {
   const routes = [
-    "/jobs/stuck",      // static — must be first
-    "/jobs/:job_id",    // parameterized — must be after
+    "/jobs/stuck",
+    "/jobs/:job_id",
   ];
   const stuckIdx = routes.indexOf("/jobs/stuck");
   const paramIdx = routes.indexOf("/jobs/:job_id");
   assert.ok(stuckIdx < paramIdx, "/jobs/stuck must be defined before /jobs/:job_id");
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 14. waitForDb Cloud SQL proxy race condition guard
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 14. Cloud SQL proxy race condition guard ===");
 
@@ -616,7 +562,6 @@ await checkAsync("waitForDb succeeds on first attempt (DB ready)", async () => {
       return client;
     }
   };
-  // Simulate waitForDb with mock pool
   const maxAttempts = 12;
   let attempt = 0;
   while (attempt < maxAttempts) {
@@ -663,7 +608,7 @@ await checkAsync("waitForDb throws after max attempts (DB never ready)", async (
   const mockPool = {
     connect: async () => { throw new Error("ECONNREFUSED"); }
   };
-  const maxAttempts = 3; // Reduced for test speed
+  const maxAttempts = 3;
   let attempt = 0;
   let threw = false;
   try {
@@ -685,9 +630,6 @@ await checkAsync("waitForDb throws after max attempts (DB never ready)", async (
   assert.ok(threw, "Should throw after max attempts");
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 15. Vertex AI JSON extraction (handle conversational text, markdown fences)
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 15. Vertex AI JSON extraction ===");
 
@@ -767,14 +709,6 @@ check("extractJson handles nested JSON objects", () => {
   assert.equal((result.template as Record<string, unknown>).structure, "csv");
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 16. Encoding normalization / safe decode
-// Regression: jschardet emits labels (latin-1, iso-8859-1, cp1252, windows-1252,
-// iso-8859-2) that Buffer.toString rejects with ERR_UNKNOWN_ENCODING. This crashed
-// detect-bootstrap and stream-parser. Fixed twice incorrectly (latin-1 -> iso-8859-1,
-// both invalid) before decode() routed non-native labels through TextDecoder.
-// ─────────────────────────────────────────────────────────────────────────────
-
 console.log("\n=== 16. Encoding normalization / safe decode ===");
 
 /**
@@ -812,28 +746,18 @@ check("isLikelyUtf8: UTF-8 multibyte content is recognized (real file had œæ�
   assert.equal(isLikelyUtf8(Buffer.from("plain ascii only", "utf-8")), true);
 });
 check("isLikelyUtf8: genuine latin-1 (high byte followed by ASCII in the interior) is NOT valid UTF-8", () => {
-  // "café résumé" in latin-1: 0xE9 followed by a space/letter is an invalid UTF-8 sequence.
   assert.equal(isLikelyUtf8(Buffer.from("café résumé", "latin1")), false);
-  assert.equal(isLikelyUtf8(Buffer.from([0xe9, 0x20, 0x72])), false); // é + " r"
+  assert.equal(isLikelyUtf8(Buffer.from([0xe9, 0x20, 0x72])), false);
 });
 check("isLikelyUtf8: tolerates a multibyte char truncated at the buffer end (probe-window boundary)", () => {
-  const full = Buffer.from("café", "utf-8");         // é = 0xc3 0xa9
-  assert.equal(isLikelyUtf8(full.subarray(0, full.length - 1)), true); // drop trailing 0xa9
+  const full = Buffer.from("café", "utf-8");
+  assert.equal(isLikelyUtf8(full.subarray(0, full.length - 1)), true);
 });
 check("UTF-8 content round-trips correctly (not mojibake) once detected as utf-8", () => {
   const raw = Buffer.from("Name: œæ∆¶Œ≥", "utf-8");
   assert.equal(decode(raw, "utf-8"), "Name: œæ∆¶Œ≥");
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 17. Ordered line classifier (design conformance)
-// The stream-parser now routes every line through LineClassifierServiceImpl.classify() in the
-// designed order (length/binary gate -> learned templates -> structural JSON/kv ->
-// rubbish -> validated CSV -> uncertain), extracting ONLY field_spec fields and
-// DECLINING junk/header lines instead of force-parsing them. These cases lock in the
-// fixes an adversarial review surfaced (header misdetection, kv/JSON over-matching,
-// phone false-positives, field_spec parsing).
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 17. Ordered line classifier ===");
 
@@ -853,7 +777,6 @@ const FS = ["email", "name", "phone", "address"];
 const classifyOne = (fields: string[], line: string) =>
   new LineClassifier("test", fields, [], []).classify(line, 0, line.length);
 
-// --- extraction honors field_spec (only requested fields, others null) ---
 check("twitter key-value line extracts ONLY field_spec fields", () => {
   const r = classifyOne(FS, "Email: a@b.com - Name: Jane Roe - ScreenName: jr - Followers: 5 - Created At: Mon");
   assert.equal(r.verdict, "parsed");
@@ -869,7 +792,6 @@ check("JSON record extracts ONLY field_spec fields (no screen_name/followers dum
   assert.equal(r.row!.name, "Aaliyah");
 });
 
-// --- header handling: header declined, columns mapped for data rows ---
 check("header row is declined (rubbish), not emitted as data", () => {
   const r = classifyOne(FS, "id,email,full_name,phone,address");
   assert.equal(r.verdict, "rubbish");
@@ -877,16 +799,14 @@ check("header row is declined (rubbish), not emitted as data", () => {
 });
 check("data rows after a header map to the right columns (all four fields)", () => {
   const c = new LineClassifier("test", FS, [], []);
-  c.classify("id,email,full_name,phone,address", 0, 0); // header
+  c.classify("id,email,full_name,phone,address", 0, 0);
   const r = c.classify("7,jane@x.com,Jane Roe,5551234567,\"12 Main St\"", 0, 0);
   assert.equal(r.verdict, "parsed");
   assert.equal(r.template_id, "csv-mapped");
   assert.deepEqual(r.row, { email: "jane@x.com", name: "Jane Roe", phone: "5551234567", address: "12 Main St" });
 });
 
-// --- junk / ambiguous lines are DECLINED, never force-parsed ---
 check("headerless plain-words first row is NOT mistaken for a header (no data loss)", () => {
-  // "Cell,Berlin": 'Cell' aliases nothing dangerous now; must not become a header map.
   const r = classifyOne(["phone", "address"], "Cell,Berlin");
   assert.notEqual(r.template_id, "header");
   assert.equal(r.verdict, "uncertain");
@@ -895,7 +815,6 @@ check("single 'Name: value' log fragment is declined (needs a strong field or >=
   assert.equal(classifyOne(["email", "name", "phone"], "Name: Full Name").verdict, "uncertain");
 });
 check("JSON log line whose key only weakly aliases a field is declined", () => {
-  // 'username' no longer aliases 'name'; nothing else matches -> declined.
   assert.equal(classifyOne(["name"], "{\"level\":\"info\",\"username\":\"svc-bot\",\"msg\":\"go\"}").verdict, "uncertain");
 });
 check("binary / mostly-nonprintable line is dropped as rubbish", () => {
@@ -907,12 +826,11 @@ check("empty line is length-gated to rubbish", () => {
   assert.equal(classifyOne(FS, "   ").template_id, "length-gate");
 });
 
-// --- content-based CSV column identification (headerless) ---
 check("headerless CSV identifies the email column by content, declines rows with none", () => {
   const withEmail = classifyOne(FS, "1416779,2231849,\"OD2667900\",GLENN.RAINEY@HOTMAIL.CO.UK,07700900123");
   assert.equal(withEmail.verdict, "parsed");
   assert.equal(withEmail.row!.email, "GLENN.RAINEY@HOTMAIL.CO.UK");
-  assert.equal(withEmail.row!.phone, "07700900123"); // 11 digits, not the 7-digit ID
+  assert.equal(withEmail.row!.phone, "07700900123");
   const noField = classifyOne(FS, "1416779,2231849,OD2667900,code");
   assert.equal(noField.verdict, "uncertain");
 });
@@ -921,7 +839,6 @@ check("phone content-match rejects ZIP+4 / year ranges (needs 10-15 digits)", ()
   assert.equal(classifyOne(["phone"], "2020-2021,Town").verdict, "uncertain");
 });
 
-// --- router field_spec normalization (job-service accepts multiple encodings) ---
 check("field_spec normalization: array / JSON-array string / JSON-{fields} string / comma string", () => {
   const norm = (field_spec: unknown): string[] => {
     const namesFromArray = (arr: unknown[]): string[] =>
@@ -943,18 +860,11 @@ check("field_spec normalization: array / JSON-array string / JSON-{fields} strin
     return fieldNames;
   };
   assert.deepEqual(norm(["email", "name"]), ["email", "name"]);
-  assert.deepEqual(norm("[\"email\",\"name\"]"), ["email", "name"]); // the exact string the client sent
+  assert.deepEqual(norm("[\"email\",\"name\"]"), ["email", "name"]);
   assert.deepEqual(norm("{\"fields\":[{\"name\":\"email\"},{\"name\":\"phone\"}]}"), ["email", "phone"]);
   assert.deepEqual(norm("email,name,phone"), ["email", "name", "phone"]);
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 18. Line-splitting recovery + CSV output escaping
-// Regression: a stray/unbalanced " in messy data flipped the quote-aware line reader's
-// inQuote flag and swallowed the rest of the file into one giant "line". With
-// MAX_QUOTED_NEWLINES=0 a newline always ends a line (quotes still protect embedded
-// delimiters within a physical line). Plus the new per-job CSV output writer.
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log("\n=== 18. Line-splitting recovery + CSV output ===");
 
@@ -1000,9 +910,6 @@ check("csvEscapeCell quotes commas/quotes/newlines and doubles inner quotes", ()
   assert.equal(csvEscapeCell(42), "42");
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Summary
-// ─────────────────────────────────────────────────────────────────────────────
 
 console.log(`\n${"─".repeat(60)}`);
 console.log(`Results: ${_passed} passed, ${_failed} failed`);
