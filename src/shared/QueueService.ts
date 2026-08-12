@@ -77,7 +77,7 @@ export class QueueService extends ServiceManager
    * Sqs Client
    * @private
    */
-  private sqsClient: unknown = null;
+  private sqsClient: SQSClient | null = null;
 
   /**
    * Constructs a new QueueService instance.
@@ -277,7 +277,7 @@ export class QueueService extends ServiceManager
    * @returns A promise that resolves to the SQS client
    * @private
    */
-  private async getSqsClient(): Promise<unknown>
+  private async getSqsClient(): Promise<SQSClient>
   {
     if (this.sqsClient) return this.sqsClient;
     const { SQSClient } = await import("@aws-sdk/client-sqs");
@@ -424,7 +424,7 @@ export class QueueService extends ServiceManager
         params.MessageGroupId = groupId;
         params.MessageDeduplicationId = randomUUID();
       }
-      const client = (await this.getSqsClient()) as SQSClient;
+      const client = await this.getSqsClient();
       const resp = await this.withTimeout<{ MessageId?: string }>(
           async () =>
           {
@@ -451,7 +451,7 @@ export class QueueService extends ServiceManager
     return this.withRetry(async () =>
     {
       const { ReceiveMessageCommand } = await import("@aws-sdk/client-sqs");
-      const client = (await this.getSqsClient()) as SQSClient;
+      const client = await this.getSqsClient();
       const resp = await this.withTimeout<{ Messages?: { Body?: string; ReceiptHandle?: string }[] }>(
           () => client.send(new ReceiveMessageCommand({
             QueueUrl: queueUrl,
@@ -481,7 +481,7 @@ export class QueueService extends ServiceManager
     await this.withRetry(async () =>
     {
       const { DeleteMessageCommand } = await import("@aws-sdk/client-sqs");
-      const client = (await this.getSqsClient()) as SQSClient;
+      const client = await this.getSqsClient();
       await this.withTimeout<unknown>(
           () => client.send(new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: receiptHandle })),
           this.QUEUE_TIMEOUT_SEND

@@ -17,7 +17,7 @@ function requireEnv(name: string): string {
 
 const isProduction: boolean = false;
 
-let transport: any = undefined;
+let transport: pino.DestinationStream | undefined = undefined;
 if (isProduction)
 {
   transport = pino.transport<LokiOptions>({

@@ -19,6 +19,14 @@ import {QueueService} from "@shared/QueueService";
 
 const logger: pino.Logger = createLogger(module);
 
+const RAR_BLOCK_SPLIT_RE = /\r?\n\r?\n/;
+const RAR_NAME_RE = /^\s*Name:\s*(.+)$/m;
+const RAR_SIZE_RE = /^\s*Size:\s*(\d+)$/m;
+const RAR_TYPE_RE = /^\s*Type:\s*(.+)$/m;
+const RAR_DIRECTORY_RE = /directory/i;
+const RAR_CLASSIC_ENTRY_RE = /^\s+(\.\.A\.\.\.\.)\s+(\d+)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+(.+)$/;
+const RAR_EMPTY_OUTPUT_RE = /no files to extract|0 files? found/i;
+
 /**
  * RAR extraction runs full-file CLI-based (unrar) extraction rather than the
  * library approach used for the other formats, to keep memory usage constant
@@ -77,15 +85,15 @@ export class RarExtractor
 
         if (output.includes("Name:") && output.includes("Size:"))
         {
-            const blocks: string[] = output.split(/\r?\n\r?\n/);
+            const blocks: string[] = output.split(RAR_BLOCK_SPLIT_RE);
 
             for (const block of blocks
                 ) {
-                const nameMatch: RegExpMatchArray = block.match(/^\s*Name:\s*(.+)$/m);
-                const sizeMatch: RegExpMatchArray = block.match(/^\s*Size:\s*(\d+)$/m);
-                const typeMatch: RegExpMatchArray = block.match(/^\s*Type:\s*(.+)$/m);
+                const nameMatch: RegExpMatchArray = block.match(RAR_NAME_RE);
+                const sizeMatch: RegExpMatchArray = block.match(RAR_SIZE_RE);
+                const typeMatch: RegExpMatchArray = block.match(RAR_TYPE_RE);
 
-                if (nameMatch && sizeMatch && (!typeMatch || !/directory/i.test(typeMatch[1])))
+                if (nameMatch && sizeMatch && (!typeMatch || !RAR_DIRECTORY_RE.test(typeMatch[1])))
                 {
                     files.push({ name: nameMatch[1].trim(), size: parseInt(sizeMatch[1], 10) });
                 }
@@ -95,7 +103,7 @@ export class RarExtractor
 
         for (const line of output.split("\n"))
         {
-            const match: RegExpMatchArray = line.match(/^\s+(\.\.A\.\.\.\.)\s+(\d+)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}\s+(.+)$/);
+            const match: RegExpMatchArray = line.match(RAR_CLASSIC_ENTRY_RE);
 
             if (match)
             {
@@ -162,7 +170,7 @@ export class RarExtractor
         const files: RarFileEntry[] = this.parseUnrarListing(listOutput);
         logger.info("rar_list_parsed", { jobId, fileCount: files.length, files: files.map((f) => ({ name: f.name, size: f.size })) });
 
-        if (files.length === 0 && !/no files to extract|0 files? found/i.test(listOutput) && listOutput.trim().length > 200)
+        if (files.length === 0 && !RAR_EMPTY_OUTPUT_RE.test(listOutput) && listOutput.trim().length > 200)
         {
             logger.error("rar_parse_suspicious_empty", { jobId, outputLength: listOutput.length, sampleOutput: listOutput.substring(0, 500) });
             throw new Error(`RAR listing parse produced 0 files but unrar output was non-trivial (${listOutput.length} chars) — parser likely broken, not an empty archive`);

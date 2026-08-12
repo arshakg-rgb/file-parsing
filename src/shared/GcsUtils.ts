@@ -8,6 +8,13 @@ import { createLogger } from "@utils/logger/Log.js";
 import EncodingService from "@utils/normalizers/Encoding";
 import Config from "@config/system-config/Config";
 
+/**
+ * MySQL CREATE TABLE keywords that are not column names.
+ */
+const MYSQL_COLUMN_KEYWORDS = new Set([
+  "PRIMARY", "UNIQUE", "KEY", "INDEX", "CONSTRAINT", "FOREIGN", "CHECK", "FULLTEXT", "SPATIAL",
+]);
+
 
 /**
  * GcsUtils is a singleton class responsible for managing Google Cloud
@@ -904,7 +911,6 @@ export class GcsUtils extends ServiceManager
       body.push(current);
     }
 
-    const columnKeywords = new Set(["PRIMARY", "UNIQUE", "KEY", "INDEX", "CONSTRAINT", "FOREIGN", "CHECK", "FULLTEXT", "SPATIAL"]);
     const columns: string[] = [];
 
     for (const segment of body)
@@ -917,7 +923,7 @@ export class GcsUtils extends ServiceManager
       }
 
       const word = m[1].toUpperCase();
-      if (columnKeywords.has(word) || word === "" || !isNaN(Number(word)))
+      if (MYSQL_COLUMN_KEYWORDS.has(word) || word === "" || !isNaN(Number(word)))
       {
         continue;
       }
