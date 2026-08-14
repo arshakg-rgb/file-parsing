@@ -2486,9 +2486,7 @@ export class LineClassifierServiceImpl implements IClassifier
     {
       const row: Record<string, unknown> = {};
       let matched: number = 0;
-      const mappedIndices = new Set<number>(
-        Object.values(this.headerMap!).flatMap((v) => (Array.isArray(v) ? v : [v]))
-      );
+      const mappedIndices = new Set<number>();
 
       for (let i = 0; i < this.fieldSpec.length; i++)
       {
@@ -2504,11 +2502,19 @@ export class LineClassifierServiceImpl implements IClassifier
 
         if (Array.isArray(spec))
         {
+          for (const idx of spec)
+          {
+            mappedIndices.add(idx);
+          }
           const cells: string[] = spec.map((idx) => (idx < parts.length ? String(parts[idx] ?? "").trim() : "")).filter((c) => c !== "");
           value = cells.join(", ");
         }
         else
         {
+          if (spec !== undefined)
+          {
+            mappedIndices.add(spec);
+          }
           value = spec !== undefined && spec < parts.length ? parts[spec] : "";
         }
 
