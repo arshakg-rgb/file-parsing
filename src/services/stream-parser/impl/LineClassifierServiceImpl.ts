@@ -757,6 +757,13 @@ export class LineClassifierServiceImpl implements IClassifier
       return null;
     }
 
+    // If we already have an injected/detected header map, prefer the header-aware
+    // path so unselected columns are aggregated into meta.
+    if (this.headerMap)
+    {
+      return null;
+    }
+
     const mapped: Record<string, unknown> | null = this.applyColumnMap(line);
 
     if (!mapped)
