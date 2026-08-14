@@ -184,10 +184,6 @@ export class JobServiceImpl implements JobService
       }
     }
 
-    if (!fieldNames.length)
-    {
-      throw new ValidationError(ValidationError.INPUT, "field_spec must contain at least one valid field name");
-    }
 
     const jobId = randomUUID();
     const batchId: string = batch_id || randomUUID();
@@ -306,10 +302,6 @@ export class JobServiceImpl implements JobService
       }
     }
 
-    if (!fieldNames.length)
-    {
-      throw new ValidationError(ValidationError.INPUT, "field_spec must contain at least one valid field name");
-    }
 
     const jobId = randomUUID();
     const batchId: string = batch_id || randomUUID();
