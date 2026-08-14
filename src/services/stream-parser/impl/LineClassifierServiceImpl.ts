@@ -296,12 +296,20 @@ export class LineClassifierServiceImpl implements IClassifier
    * @param headerLine - The raw CSV header line.
    */
 
-  public setHeaderMap(map: Record<string, number | number[]>, headerLine: string): void
+  public setHeaderMap(map: Record<string, number | number[]>, headersOrHeaderLine: string[] | string): void
   {
     this.headerMap = map;
-    const found: { parts: string[]; delim: string } | null = this.splitBestDelimitedWithDelim(headerLine);
-    this.headerParts = found ? found.parts.map((p) => p.trim()) : [headerLine.trim()];
-    this.headerDelimiter = found?.delim ?? null;
+    if (Array.isArray(headersOrHeaderLine))
+    {
+      this.headerParts = headersOrHeaderLine.map((p) => p.trim());
+      this.headerDelimiter = null;
+    }
+    else
+    {
+      const found: { parts: string[]; delim: string } | null = this.splitBestDelimitedWithDelim(headersOrHeaderLine);
+      this.headerParts = found ? found.parts.map((p) => p.trim()) : [headersOrHeaderLine.trim()];
+      this.headerDelimiter = found?.delim ?? null;
+    }
   }
 
   /**

@@ -674,7 +674,7 @@ export class StreamParserService
 
     if (columnMap && msg.headers?.length)
     {
-      classifier.setHeaderMap(columnMap, msg.headers.join("\t"));
+      classifier.setHeaderMap(columnMap, msg.headers as string[]);
     }
 
     const outputManager = new OutputManager();
