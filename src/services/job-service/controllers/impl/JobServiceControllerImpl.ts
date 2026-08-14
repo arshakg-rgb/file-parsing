@@ -352,7 +352,11 @@ export class JobControllerImpl implements JobServiceController
   {
     try
     {
-      const request: IRetryJobRequest = { target_status: req.body.target_status };
+      const request: IRetryJobRequest = {
+        target_status: req.body.target_status,
+        field_spec: req.body.field_spec,
+        column_map: req.body.column_map,
+      };
       await this.service.retryJob(String(req.params.job_id), request);
 
       this.handleSuccessResponse(res, {}, false, 204);
