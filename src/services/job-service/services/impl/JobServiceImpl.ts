@@ -5,7 +5,7 @@ import { ValidationError } from "@errors/ValidationError.js";
 import { settings } from "@shared/Settings.js";
 import { DatabaseManager } from "@shared/DatabaseManager.js";
 import type { ParseJobRow } from "@shared/DatabaseManager.js";
-import { SourceType, JobStatus, JobTimings, JobCounts, totalFailed } from "@shared/models/job.js";
+import { SourceType, JobStatus, JobTimings, JobCounts, totalFailed, ColumnMap } from "@shared/models/job.js";
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
@@ -396,7 +396,7 @@ export class JobServiceImpl implements JobService
       job_id: row.job_id,
       headers: (row.headers as string[]) ?? [],
       field_spec: (row.field_spec as string[]) ?? [],
-      column_map: row.column_map as Record<string, unknown> | null | undefined,
+      column_map: row.column_map as ColumnMap | null | undefined,
     };
   }
 
@@ -542,7 +542,7 @@ export class JobServiceImpl implements JobService
       },
       fields: row.field_spec as string[],
       headers: row.headers as string[] | null | undefined,
-      column_map: row.column_map as Record<string, unknown> | null | undefined,
+      column_map: row.column_map as ColumnMap | null | undefined,
       started_at: startedAt,
       finished_at: finishedAt,
       parsed: counts.parsed,
@@ -641,14 +641,13 @@ export class JobServiceImpl implements JobService
 
     if (!row)
     {
-     
-
-    const target_status: JobStatus = request.target_status ?? JobStatus.INGESTING; throw new HttpError(HttpError.NOT_FOUND, "Job not found");
+      throw new HttpError(HttpError.NOT_FOUND, "Job not found");
     }
 
     let queueUrl: string;
     let message: Record<string, unknown> = { job_id: jobId, manual_override: true };
 
+    const target_status: JobStatus = request.target_status ?? JobStatus.INGESTING;
     switch (target_status)
     {
       case JobStatus.INGESTING:
