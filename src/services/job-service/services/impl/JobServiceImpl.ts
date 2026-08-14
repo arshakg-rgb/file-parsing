@@ -9,7 +9,7 @@ import { SourceType, JobStatus, JobTimings, JobCounts, totalFailed } from "@shar
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
-import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IStatusesResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest, IDownloadCsvResponse } from "@service/job-service/io/IJob.js";
+import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IJobHeadersResponse, IStuckJobsResponse, IStatusesResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest, IDownloadCsvResponse } from "@service/job-service/io/IJob.js";
 import {HttpError} from "@errors/HttpError.js";
 import {ServerError} from "@errors/ServerError.js";
 import type {IParseJob, ParseJobAttributes} from "@config/db/models";
@@ -383,6 +383,23 @@ export class JobServiceImpl implements JobService
    * @returns The job details, or null if the job does not exist.
    */
 
+  public async getJobHeaders(jobId: string): Promise<IJobHeadersResponse | null>
+  {
+    const row: IParseJob = await this.dbManager.repositories.jobs.findById(jobId);
+
+    if (!row)
+    {
+      return null;
+    }
+
+    return {
+      job_id: row.job_id,
+      headers: (row.headers as string[]) ?? [],
+      field_spec: (row.field_spec as string[]) ?? [],
+      column_map: row.column_map as Record<string, unknown> | null | undefined,
+    };
+  }
+
   public async getJob(jobId: string): Promise<IJobResponse | null>
   {
     const row: IParseJob = await this.dbManager.repositories.jobs.findById(jobId);
@@ -524,6 +541,8 @@ export class JobServiceImpl implements JobService
         file_name: fileName,
       },
       fields: row.field_spec as string[],
+      headers: row.headers as string[] | null | undefined,
+      column_map: row.column_map as Record<string, unknown> | null | undefined,
       started_at: startedAt,
       finished_at: finishedAt,
       parsed: counts.parsed,
@@ -601,8 +620,9 @@ export class JobServiceImpl implements JobService
       throw new HttpError(HttpError.NOT_FOUND, "Job not found");
     }
 
-    await this.dbManager.repositories.jobs.markFailed(jobId, request.reason || "manually_failed");
-    this.logger.info("job_marked_failed", { job_id: jobId, reason: request.reason });
+    const failureReason = (request.reason?.trim() || row.error || "manually_failed") as string;
+    await this.dbManager.repositories.jobs.markFailed(jobId, failureReason);
+    this.logger.info("job_marked_failed", { job_id: jobId, reason: failureReason });
   }
 
   /**
@@ -617,13 +637,13 @@ export class JobServiceImpl implements JobService
 
   public async retryJob(jobId: string, request: IRetryJobRequest): Promise<void>
   {
-    const { target_status } = request;
-
     const row: IParseJob = await this.dbManager.repositories.jobs.findById(jobId);
 
     if (!row)
     {
-      throw new HttpError(HttpError.NOT_FOUND, "Job not found");
+     
+
+    const target_status: JobStatus = request.target_status ?? JobStatus.INGESTING; throw new HttpError(HttpError.NOT_FOUND, "Job not found");
     }
 
     let queueUrl: string;
@@ -654,10 +674,47 @@ export class JobServiceImpl implements JobService
         break;
       case JobStatus.PARSING:
         queueUrl = settings.PARSE_QUEUE_URL;
+
+        let updatedFieldSpec: string[] = Array.isArray(request.field_spec)
+          ? request.field_spec
+          : (Array.isArray(row.field_spec) ? row.field_spec : []);
+
+        const detectedHeaders: string[] = Array.isArray(row.headers) ? row.headers : [];
+        const userSelected: boolean = Array.isArray(request.field_spec);
+
+        let updatedColumnMap: Record<string, number | number[]> | undefined = userSelected
+          ? {}
+          : (request.column_map ?? row.column_map ?? undefined);
+
+        if (userSelected)
+        {
+          const selected: Set<string> = new Set(updatedFieldSpec);
+          const hasUnselected: boolean = detectedHeaders.length > 0 && detectedHeaders.some((h) => !selected.has(h));
+
+          if (hasUnselected && !selected.has("meta"))
+          {
+            updatedFieldSpec = [...updatedFieldSpec, "meta"];
+          }
+
+          for (const field of updatedFieldSpec)
+          {
+            if (field === "meta") continue;
+            const idx = detectedHeaders.indexOf(field);
+            if (idx >= 0) (updatedColumnMap as Record<string, number | number[]>)[field] = idx;
+          }
+
+          await this.dbManager.repositories.jobs.updateFields(jobId, {
+            field_spec: updatedFieldSpec,
+            column_map: updatedColumnMap,
+          });
+        }
+
         message = {
           job_id: jobId,
           s3_url: row.s3_url,
-          field_spec: Array.isArray(row.field_spec) ? row.field_spec : [],
+          field_spec: updatedFieldSpec,
+          column_map: updatedColumnMap,
+          headers: detectedHeaders,
           manual_override: true,
         };
         break;

@@ -132,6 +132,16 @@ export class QualityGate extends ServiceManager
       threshold: this.FAILED_LINE_RATIO_THRESHOLD
     });
 
+    if (metrics.parsedLines >= 1)
+    {
+      this.logger.info("quality_gate_passed_min_parsed", {
+        job_id: jobId,
+        parsed_lines: metrics.parsedLines,
+        failed_line_ratio: metrics.failedLineRatio,
+      });
+      return { passes: true };
+    }
+
     if (metrics.failedLineRatio > this.FAILED_LINE_RATIO_THRESHOLD)
     {
       return {

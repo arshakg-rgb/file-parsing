@@ -23,7 +23,13 @@ export const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
   [JobStatus.COMPLETED]: [],
   [JobStatus.PARTIAL]: [],
   [JobStatus.ON_HOLD]: [JobStatus.SAVING_TO_DATABASE],
-  [JobStatus.FAILED]: [],
+  [JobStatus.FAILED]: [
+    JobStatus.INGESTING,
+    JobStatus.DETECTING,
+    JobStatus.PARSING,
+    JobStatus.SAVING_TO_DATABASE,
+    JobStatus.REPORTING,
+  ],
 };
 
 /**
@@ -125,6 +131,7 @@ export interface ParseMessage {
   size: number;
   field_spec: string[];
   column_map?: ColumnMap;
+  headers?: string[];
   seed_template_ids: string[];
 }
 

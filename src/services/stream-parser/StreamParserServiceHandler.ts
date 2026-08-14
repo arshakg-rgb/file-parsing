@@ -671,6 +671,12 @@ export class StreamParserService
     }
 
     const classifier: LineClassifierServiceImpl = LineClassifierServiceImpl.getInstance(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, this.getAIRateLimiter(), customAliases, customComponents);
+
+    if (columnMap && msg.headers?.length)
+    {
+      classifier.setHeaderMap(columnMap, msg.headers.join("\t"));
+    }
+
     const outputManager = new OutputManager();
     const csvWriter = new CsvOutputWriter(jobId, fieldSpec);
     const qualityGate: QualityGate = QualityGate.getInstance();

@@ -6,6 +6,7 @@ import {
   PrimaryKey,
 } from "sequelize-typescript";
 import type { JobCounts, JobTimings } from "@shared/models/job.js";
+import type { ColumnMap } from "@shared/models/job.js";
 
 export interface IParseJob {
   job_id: string;
@@ -16,6 +17,8 @@ export interface IParseJob {
   s3_url?: string | null;
   size?: number | null;
   field_spec: string[];
+  column_map?: ColumnMap | null;
+  headers?: string[] | null;
   exec_path: string;
   status: string;
   output_paths: string[];
@@ -90,6 +93,18 @@ export default class ParseJob extends Model<IParseJob, ParseJobCreationAttribute
    */
   @Column({ type: DataType.JSONB, allowNull: false, defaultValue: [] })
   declare field_spec: string[];
+
+    /**
+   * Column_map
+   */
+  @Column({ type: DataType.JSONB, allowNull: true })
+  declare column_map: ColumnMap | null;
+
+    /**
+   * Detected headers / keys
+   */
+  @Column({ type: DataType.JSONB, allowNull: true })
+  declare headers: string[] | null;
 
     /**
    * Exec_path

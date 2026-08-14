@@ -367,13 +367,13 @@ export class DetectBootstrapService
 
     if (!hadHeader || sampleLines.length <= 1)
     {
-      return { dataLines: sampleLines, hadHeader: false };
+      return { dataLines: sampleLines, hadHeader: false, headerLine: undefined };
     }
 
     this.stats.headerSkips++;
     const dataLines: string[] = sampleLines.slice(1);
     this.logger.info("detect_header_skipped", { job_id: jobId, dataLinesCount: dataLines.length });
-    return { dataLines, hadHeader: true };
+    return { dataLines, hadHeader: true, headerLine: firstLine };
   }
 
   /**
@@ -552,6 +552,78 @@ export class DetectBootstrapService
   }
 
   /**
+   * Extract the candidate headers/keys from the first meaningful bytes of the file.
+   * Works for CSV/TSV header lines and for JSON/JSONL object keys.
+   *
+   * @param bucket - GCS bucket
+   * @param key - GCS object key
+   * @param encoding - Detected file encoding
+   * @param fileSize - Total file size in bytes
+   * @param jobId - Job identifier for logging
+   * @returns Array of detected headers, or null if extraction failed
+   */
+
+  private async extractHeaders(bucket: string, key: string, encoding: string, fileSize: number, jobId: string): Promise<string[] | null>
+  {
+    try
+    {
+      const headEnd: number = Math.min(settings.PROBE_WINDOW_MIN_BYTES - 1, fileSize - 1);
+      if (headEnd < 0)
+      {
+        return [];
+      }
+
+      const headRaw: Buffer = await this.gcsUtils.readRange(bucket, key, 0, headEnd);
+      const sampleLines: string[] = this.extractSampleLines(headRaw, encoding, 5);
+
+      if (!sampleLines.length)
+      {
+        return [];
+      }
+
+      const { hadHeader, headerLine } = this.stripHeaderLine(sampleLines, jobId);
+      const candidate: string | undefined = hadHeader ? headerLine : sampleLines[0];
+
+      if (!candidate)
+      {
+        return [];
+      }
+
+      const trimmed: string = candidate.trim();
+
+      if (trimmed.startsWith("{") || trimmed.startsWith("["))
+      {
+        try
+        {
+          const parsed: unknown = JSON.parse(trimmed);
+
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+          {
+            return Object.keys(parsed as Record<string, unknown>);
+          }
+
+          if (Array.isArray(parsed) && parsed.length > 0 && parsed[0] && typeof parsed[0] === "object")
+          {
+            return Object.keys(parsed[0] as Record<string, unknown>);
+          }
+        }
+        catch
+        {
+          // not a JSON payload, fall through to delimiter split
+        }
+      }
+
+      const delimiter: string = (trimmed.split("\t").length > trimmed.split(",").length) ? "\t" : ",";
+      return trimmed.split(delimiter).map((h) => h.trim().replace(/^["']|["']$/g, ""));
+    }
+    catch (err)
+    {
+      this.logger.warn("extract_headers_failed", { job_id: jobId, error: String(err) });
+      return null;
+    }
+  }
+
+  /**
    * Detect encoding and probe window sizing from the head of the file.
    *
    * @param bucket - GCS bucket
@@ -579,7 +651,7 @@ export class DetectBootstrapService
    * @param fileSize - Resolved file size
    * @param seedTemplateIds - Template ids seeded/resolved during probing
    */
-  private async forwardToParse(msg: ClassifyMessage, jobId: string, fileSize: number, seedTemplateIds: string[]): Promise<void>
+  private async forwardToParse(msg: ClassifyMessage, jobId: string, fileSize: number, seedTemplateIds: string[], headers?: string[]): Promise<void>
   {
     const parseMsg: ParseMessage = {
       job_id: jobId,
@@ -587,6 +659,7 @@ export class DetectBootstrapService
       size: fileSize,
       field_spec: msg.field_spec,
       column_map: msg.column_map,
+      headers,
       seed_template_ids: seedTemplateIds,
     };
 
@@ -671,6 +744,18 @@ export class DetectBootstrapService
       }
     }
 
+    const headers: string[] | null = await this.extractHeaders(bucket, key, encoding, fileSize, jobId);
+    if (headers)
+    {
+      await DatabaseService.getInstance().repositories.jobs.updateFields(jobId, { headers });
+    }
+
+    if (fieldSpecArray.length === 0)
+    {
+      this.logger.info("detect_headers_awaiting_field_spec", { job_id: jobId, headers });
+      return;
+    }
+
     const bootstrapDuration: number = Date.now() - bootstrapStartTime;
 
     this.logger.info("detect_complete", {
@@ -684,7 +769,7 @@ export class DetectBootstrapService
     MetricsUtils.set("detect.duration_ms", bootstrapDuration);
 
     await transition(jobId, JobStatus.PARSING);
-    await this.forwardToParse(msg, jobId, fileSize, seedTemplateIds);
+    await this.forwardToParse(msg, jobId, fileSize, seedTemplateIds, headers);
   }
 
   /**
@@ -719,6 +804,18 @@ export class DetectBootstrapService
       catch (exc)
       {
         const errMsg: string = String(exc);
+
+        try
+        {
+          // Fail the job immediately instead of relying on the job-events bus,
+          // so the UI never gets stuck at Detecting.
+          await transition(payload.job_id, JobStatus.FAILED, errMsg);
+        }
+        catch (transitionErr)
+        {
+          this.logger.warn("detect_failed_transition_error", { job_id: payload.job_id, error: String(transitionErr) });
+        }
+
         this.logger.error("detect_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
         MetricsUtils.increment("detect.error", 1);
         await this.emit(payload.job_id, EventType.ERROR_OCCURRED, { error: errMsg });

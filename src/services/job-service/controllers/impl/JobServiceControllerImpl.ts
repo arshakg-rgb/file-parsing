@@ -6,9 +6,19 @@ import { JobService } from "@service/job-service/services/JobService.js";
 import { JobServiceImpl  } from "@service/job-service/services/impl/JobServiceImpl.js";
 import {
   ICreateJobRequest,
+  ICreateJobResponse,
+  IJobResponse,
+  IJobHeadersResponse,
+  IStuckJobsResponse,
+  IStatusesResponse,
   IProvidePasswordRequest,
   IMarkFailedRequest,
-  IRetryJobRequest, ICreateJobResponse, IStuckJobsResponse, IJobResponse, IStatusesResponse, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest, IDownloadCsvResponse,
+  IRetryJobRequest, 
+  IJobLogEntry, 
+  IUploadCsvRequest, 
+  IUploadCsvResponse, 
+  IUploadAndCreateJobRequest, 
+  IDownloadCsvResponse,
 } from "@service/job-service/io/IJob.js";
 import { ServiceResponse } from "@utils/response/ServiceResponse.js";
 import { HttpError } from "@errors/HttpError.js";
@@ -170,6 +180,32 @@ export class JobControllerImpl implements JobServiceController
     try
     {
       const result: IJobResponse = await this.service.getJob(String(req.params.job_id));
+
+      if (!result)
+      {
+        next(new HttpError(HttpError.NOT_FOUND, "NOT_FOUND", ));
+        return;
+      }
+
+      this.handleSuccessResponse(res, result);
+    }
+    catch (err)
+    {
+      next(err);
+    }
+  };
+
+  /**
+   * @param req - The request object.
+   * @param res - The response object.
+   * @param next - The next middleware function.
+   */
+
+  public getJobHeaders: (req: Request, res: Response, next: NextFunction) => Promise<void> = async (req: Request, res: Response, next: NextFunction): Promise<void> =>
+  {
+    try
+    {
+      const result: IJobHeadersResponse | null = await this.service.getJobHeaders(String(req.params.job_id));
 
       if (!result)
       {

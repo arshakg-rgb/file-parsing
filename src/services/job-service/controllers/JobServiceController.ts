@@ -11,6 +11,7 @@ export interface JobServiceController {
   uploadAndCreateJob(req: Request, res: Response, next: NextFunction): Promise<void>;
   findStuckJobs(req: Request, res: Response, next: NextFunction): Promise<void>;
   getJob(req: Request, res: Response, next: NextFunction): Promise<void>;
+  getJobHeaders(req: Request, res: Response, next: NextFunction): Promise<void>;
   getBatchJobs(req: Request, res: Response, next: NextFunction): Promise<void>;
   getAllJobs(req: Request, res: Response, next: NextFunction): Promise<void>;
   getAllStatuses(req: Request, res: Response, next: NextFunction): Promise<void>;

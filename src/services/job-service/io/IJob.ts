@@ -1,4 +1,4 @@
-import { SourceType, JobStatus, JobCounts, JobTimings } from "@shared/models/job.js";
+import { SourceType, JobStatus, JobCounts, JobTimings, ColumnMap } from "@shared/models/job.js";
 
 /**
  * Job creation request payload.
@@ -56,10 +56,22 @@ export interface IJobResponse {
   error: string | null | undefined;
   input: IJobInput;
   fields: string[];
+  headers?: string[] | null;
+  column_map?: ColumnMap | null;
   started_at: string | null | undefined;
   finished_at: string | null | undefined;
   parsed: number;
   failed: number;
+}
+
+/**
+ * Detected headers/keys for a job before user field selection.
+ */
+export interface IJobHeadersResponse {
+  job_id: string;
+  headers: string[];
+  field_spec: string[];
+  column_map?: ColumnMap | null;
 }
 
 /**
@@ -82,7 +94,9 @@ export interface IProvidePasswordRequest {
  * Manual retry request payload.
  */
 export interface IRetryJobRequest {
-  target_status: JobStatus;
+  target_status?: JobStatus;
+  field_spec?: string[];
+  column_map?: ColumnMap;
 }
 
 /**

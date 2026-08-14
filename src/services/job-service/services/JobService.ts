@@ -1,4 +1,4 @@
-import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IStuckJobsResponse, IStatusesResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest, IDownloadCsvResponse } from "@service/job-service/io/IJob.js";
+import { ICreateJobRequest, ICreateJobResponse, IJobResponse, IJobHeadersResponse, IStuckJobsResponse, IStatusesResponse, IProvidePasswordRequest, IMarkFailedRequest, IRetryJobRequest, IJobLogEntry, IUploadCsvRequest, IUploadCsvResponse, IUploadAndCreateJobRequest, IDownloadCsvResponse } from "@service/job-service/io/IJob.js";
 
 /**
  * Job Service business-logic interface.
@@ -9,6 +9,7 @@ export interface JobService
   uploadAndCreateJob(request: IUploadAndCreateJobRequest): Promise<ICreateJobResponse>;
   findStuckJobs(thresholdMinutes: number): Promise<IStuckJobsResponse>;
   getJob(jobId: string): Promise<IJobResponse | null>;
+  getJobHeaders(jobId: string): Promise<IJobHeadersResponse | null>;
   getBatchJobs(batchId: string, limit?: number, offset?: number): Promise<IJobResponse[]>;
   getAllJobs(statuses?: string[], limit?: number, offset?: number): Promise<IJobResponse[]>;
   getAllStatuses(): Promise<IStatusesResponse>;

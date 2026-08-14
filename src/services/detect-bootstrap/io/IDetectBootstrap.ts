@@ -46,6 +46,7 @@ export interface ProbeResult {
 export interface HeaderStripResult {
   dataLines: string[];
   hadHeader: boolean;
+  headerLine?: string;
 }
 
 /**

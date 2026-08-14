@@ -55,6 +55,9 @@ export class JobServiceRouter extends CustomRouter
     this.route("/jobs/:job_id")
       .get(this.controller.getJob);
 
+    this.route("/jobs/:job_id/headers")
+      .get(this.controller.getJobHeaders);
+
     this.route("/batches/:batch_id/jobs")
       .get(this.controller.getBatchJobs);
 
