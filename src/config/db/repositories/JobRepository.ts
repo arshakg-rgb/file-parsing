@@ -4,7 +4,7 @@ import type {
   ParseJobAttributes,
   ParseJobCreationAttributes,
 } from "../models/ParseJob.js";
-import type { JobCounts, JobTimings } from "@shared/models/job.js";
+import { JobCounts, JobTimings, ColumnMap } from "@shared/models/job.js";
 
 const TABLE = "parse_jobs";
 const FULL_TABLE = `\`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASET}.${TABLE}\``;
@@ -47,6 +47,8 @@ function fromRow(row: Record<string, unknown>): ParseJobAttributes
     s3_url: (row.s3_url as string | null) ?? null,
     size: (row.size as number | null) ?? null,
     field_spec: fromJson<string[]>(row.field_spec) ?? [],
+    column_map: fromJson<ColumnMap>(row.column_map) ?? null,
+    headers: fromJson<string[]>(row.headers) ?? null,
     exec_path: row.exec_path as string,
     status: row.status as string,
     output_paths: fromJson<string[]>(row.output_paths) ?? [],
@@ -60,7 +62,7 @@ function fromRow(row: Record<string, unknown>): ParseJobAttributes
 
 function serializeField(key: string, value: unknown): unknown
 {
-  if (["field_spec", "output_paths", "counts", "timings"].includes(key))
+  if (["field_spec", "output_paths", "counts", "timings", "headers", "column_map"].includes(key))
   {
     return toJson(value);
   }
@@ -139,6 +141,8 @@ export class JobRepository
       s3_url: data.s3_url ?? null,
       size: data.size ?? null,
       field_spec: toJson(data.field_spec),
+      column_map: toJson(data.column_map),
+      headers: toJson(data.headers),
       exec_path: data.exec_path ?? "",
       status: data.status,
       output_paths: toJson(data.output_paths),
