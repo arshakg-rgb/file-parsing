@@ -1610,12 +1610,12 @@ export class LineClassifierServiceImpl implements IClassifier
 
     const normalizedField: string = this.normalizeKey(field);
 
-    if (normalizedField === "email")
+    if (normalizedField.includes("email"))
     {
       return LineClassifierServiceImpl.EMAIL_RE.test(v);
     }
 
-    if (normalizedField === "phone")
+    if (normalizedField.includes("phone"))
     {
       if (v.includes("@"))
       {
@@ -1898,7 +1898,7 @@ export class LineClassifierServiceImpl implements IClassifier
           consumedKeys.add(fullKey);
         }
 
-        if ((nf === "email" || nf === "phone") && this.validateField(field, row[field]))
+        if ((nf.includes("email") || nf.includes("phone")) && this.validateField(field, row[field]))
         {
           strong++;
         }
@@ -1953,10 +1953,10 @@ export class LineClassifierServiceImpl implements IClassifier
         {
           row[field] = sourceValue;
           matched++;
-          if ((nf === "email" || nf === "phone") && this.validateField(field, sourceValue))
-          {
-            strong++;
-          }
+          if ((nf.includes("email") || nf.includes("phone")) && this.validateField(field, sourceValue))
+        {
+          strong++;
+        }
         }
         consumedKeys.add(nf);
       }
@@ -1982,7 +1982,7 @@ export class LineClassifierServiceImpl implements IClassifier
       if (field === "meta" || row[field] !== null) continue;
       const nf = normalizedSpec[i];
       const looseCandidates = Object.keys(obj).filter((k) =>
-        !consumedKeys.has(this.normalizeKey(k)) && this.normalizeKey(k).includes(nf.slice(0, 3))
+        !consumedKeys.has(this.normalizeKey(k)) && this.normalizeKey(k).includes(nf)
       );
       if (looseCandidates.length > 1) ambiguous = true;
     }
