@@ -574,7 +574,7 @@ export class DetectBootstrapService
       }
 
       const headRaw: Buffer = await this.gcsUtils.readRange(bucket, key, 0, headEnd);
-      const sampleLines: string[] = this.extractSampleLines(headRaw, encoding, 5);
+      const sampleLines: string[] = this.extractSampleLines(headRaw, encoding, 50);
 
       if (!sampleLines.length)
       {
@@ -599,12 +599,53 @@ export class DetectBootstrapService
 
           if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
           {
-            return Object.keys(parsed as Record<string, unknown>);
+            const keys = new Set<string>();
+            for (const line of sampleLines)
+            {
+              const lineTrim = line.trim();
+              if (!lineTrim)
+              {
+                continue;
+              }
+              try
+              {
+                const p: unknown = JSON.parse(lineTrim);
+                if (p && typeof p === "object" && !Array.isArray(p))
+                {
+                  for (const k of Object.keys(p as Record<string, unknown>))
+                  {
+                    keys.add(k);
+                  }
+                }
+              }
+              catch
+              {
+                // ignore malformed sample
+              }
+            }
+            if (keys.size)
+            {
+              return Array.from(keys);
+            }
           }
 
           if (Array.isArray(parsed) && parsed.length > 0 && parsed[0] && typeof parsed[0] === "object")
           {
-            return Object.keys(parsed[0] as Record<string, unknown>);
+            const keys = new Set<string>();
+            for (const item of parsed as Record<string, unknown>[])
+            {
+              if (item && typeof item === "object")
+              {
+                for (const k of Object.keys(item))
+                {
+                  keys.add(k);
+                }
+              }
+            }
+            if (keys.size)
+            {
+              return Array.from(keys);
+            }
           }
         }
         catch
