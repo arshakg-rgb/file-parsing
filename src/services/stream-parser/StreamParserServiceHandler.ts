@@ -899,9 +899,25 @@ export class StreamParserService
             return row;
           }
 
-          const metaObj: Record<string, unknown> = parsed as Record<string, unknown>;
-          const cleanedMeta: Record<string, unknown> = { ...metaObj };
+          let metaObj: Record<string, unknown> = parsed as Record<string, unknown>;
+          let cleanedMeta: Record<string, unknown> = { ...metaObj };
           const extracted: Record<string, unknown> = {};
+
+          // If the meta column is itself a serialized JSON object, use its keys as the
+          // extraction source so fields can be backfilled from a packed meta column.
+          if (typeof metaObj["meta"] === "string" && (metaObj["meta"] as string).startsWith("{"))
+          {
+            try
+            {
+              const nestedMeta = JSON.parse(metaObj["meta"] as string) as Record<string, unknown>;
+              metaObj = { ...metaObj, ...nestedMeta };
+              cleanedMeta = { ...nestedMeta };
+            }
+            catch
+            {
+              // malformed nested meta; keep the outer meta object
+            }
+          }
 
           for (const field of fieldSpec)
           {
