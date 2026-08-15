@@ -574,6 +574,14 @@ export class DetectBootstrapService
       }
 
       const headRaw: Buffer = await this.gcsUtils.readRange(bucket, key, 0, headEnd);
+      const headText: string = EncodingService.decode(headRaw, encoding).replace(/\0/g, "");
+
+      const copyMatch = headText.match(/COPY\s+\S+\s*\(([^)]+)\)\s*FROM\s+stdin;?/im);
+      if (copyMatch)
+      {
+        return copyMatch[1].split(",").map((h) => h.trim().replace(/^["`]+|["`]+$/g, "")).filter((h) => h.length > 0);
+      }
+
       const sampleLines: string[] = this.extractSampleLines(headRaw, encoding, 500);
 
       if (!sampleLines.length)
