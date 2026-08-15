@@ -4,7 +4,7 @@ import type {
   ParseJobAttributes,
   ParseJobCreationAttributes,
 } from "../models/ParseJob.js";
-import { JobCounts, JobTimings, ColumnMap } from "@shared/models/job.js";
+import { JobCounts, JobTimings, ColumnMap, TERMINAL_STATUSES } from "@shared/models/job.js";
 
 const TABLE = "parse_jobs";
 const FULL_TABLE = `\`${settings.BIGQUERY_PROJECT_ID}.${settings.BIGQUERY_DATASET}.${TABLE}\``;
@@ -302,7 +302,7 @@ export class JobRepository
        WHERE status NOT IN UNNEST(@terminal_statuses)
          AND updated_at < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @threshold_minutes MINUTE)`,
       {
-        terminal_statuses: ["done", "failed", "partial", "held"],
+        terminal_statuses: [...TERMINAL_STATUSES],
         threshold_minutes: thresholdMinutes,
       }
     );

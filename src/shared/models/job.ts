@@ -22,7 +22,7 @@ export const VALID_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
   [JobStatus.REPORTING]: [JobStatus.COMPLETED, JobStatus.PARTIAL, JobStatus.FAILED],
   [JobStatus.COMPLETED]: [],
   [JobStatus.PARTIAL]: [],
-  [JobStatus.ON_HOLD]: [JobStatus.SAVING_TO_DATABASE],
+  [JobStatus.ON_HOLD]: [JobStatus.SAVING_TO_DATABASE, JobStatus.FAILED],
   [JobStatus.FAILED]: [
     JobStatus.INGESTING,
     JobStatus.DETECTING,

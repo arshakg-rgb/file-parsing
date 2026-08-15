@@ -261,12 +261,20 @@ export class StateMachineImpl implements StateMachine
         await this.onReportingCompleted(event);
         break;
       case EventType.ERROR_OCCURRED:
+      {
+        const row = await this.getJob(event.job_id);
+        if (!row || isTerminal(row.status as JobStatus))
+        {
+          break;
+        }
+
         await this.transition(
             event.job_id,
             JobStatus.FAILED,
             (event.data as Record<string, unknown>).error as string
         );
         break;
+      }
     }
   }
 
