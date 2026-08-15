@@ -5,7 +5,7 @@ import { ValidationError } from "@errors/ValidationError.js";
 import { settings } from "@shared/Settings.js";
 import { DatabaseManager } from "@shared/DatabaseManager.js";
 import type { ParseJobRow } from "@shared/DatabaseManager.js";
-import { SourceType, JobStatus, JobTimings, JobCounts, totalFailed, ColumnMap } from "@shared/models/job.js";
+import { SourceType, JobStatus, JobTimings, JobCounts, totalFailed, ColumnMap, isTerminal } from "@shared/models/job.js";
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {JobService } from "@service/job-service/services/JobService.js";
@@ -401,7 +401,86 @@ export class JobServiceImpl implements JobService
       return null;
     }
 
-    return await this.buildJobResponse(row as ParseJobAttributes);
+    const parentRow = row as ParseJobAttributes;
+
+    if (parentRow.batch_id)
+    {
+      const children = await this.findChildJobs(parentRow);
+      if (children.length > 0)
+      {
+        return await this.buildArchiveParentResponse(parentRow, children);
+      }
+    }
+
+    return await this.buildJobResponse(parentRow);
+  }
+
+  private async findChildJobs(parentRow: ParseJobAttributes): Promise<ParseJobAttributes[]>
+  {
+    const rows: ParseJobAttributes[] = await this.dbManager.repositories.jobs.findByBatchId(parentRow.batch_id as string);
+    return rows.filter((r) => r.parent_job_id === parentRow.job_id);
+  }
+
+  private async buildArchiveParentResponse(parentRow: ParseJobAttributes, children: ParseJobAttributes[]): Promise<IJobResponse>
+  {
+    const base: IJobResponse = await this.buildJobResponse(parentRow);
+
+    const mergedCounts: JobCounts = { parsed: 0, dropped_rubbish: 0, failed_by_class: {}, dlq_count: 0 };
+    const fieldSet = new Set<string>();
+    const headerSet = new Set<string>();
+    let latestCompleted: string | undefined;
+
+    for (const child of children)
+    {
+      const c = child.counts || { parsed: 0, dropped_rubbish: 0, failed_by_class: {}, dlq_count: 0 };
+      mergedCounts.parsed += c.parsed || 0;
+      mergedCounts.dropped_rubbish += c.dropped_rubbish || 0;
+      mergedCounts.dlq_count = (mergedCounts.dlq_count || 0) + (c.dlq_count || 0);
+
+      for (const [cls, n] of Object.entries(c.failed_by_class || {}))
+      {
+        mergedCounts.failed_by_class[cls] = (mergedCounts.failed_by_class[cls] || 0) + (n as number);
+      }
+
+      (child.field_spec || []).forEach((f) => fieldSet.add(f));
+      (child.headers || []).forEach((h) => headerSet.add(h));
+
+      const childCompleted = (child.timings as JobTimings | undefined)?.completed_at;
+      if (childCompleted && (!latestCompleted || childCompleted > latestCompleted))
+      {
+        latestCompleted = childCompleted;
+      }
+    }
+
+    const allTerminal: boolean = children.every((c) => isTerminal(c.status as JobStatus));
+    const hasFailed: boolean = children.some((c) => c.status === JobStatus.FAILED);
+
+    let status: JobStatus;
+    if (allTerminal)
+    {
+      status = hasFailed ? JobStatus.PARTIAL : JobStatus.COMPLETED;
+    }
+    else
+    {
+      const firstNonTerminal = children.find((c) => !isTerminal(c.status as JobStatus));
+      status = (firstNonTerminal?.status as JobStatus) || JobStatus.PARTIAL;
+    }
+
+    if (latestCompleted)
+    {
+      base.timings.completed_at = latestCompleted;
+      base.finished_at = latestCompleted;
+    }
+
+    return {
+      ...base,
+      status,
+      counts: mergedCounts,
+      parsed: mergedCounts.parsed,
+      failed: totalFailed(mergedCounts),
+      fields: Array.from(fieldSet),
+      headers: Array.from(headerSet),
+    };
   }
 
   private readonly DEFAULT_JOB_LIST_LIMIT = 100;
