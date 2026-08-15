@@ -4,6 +4,7 @@ import { JobStatus, ParseMessage, FailureClass, JobCounts, totalFailed, ColumnMa
 import {templateRegistry} from "@shared/TemplateRegistryService.js";
 import { OutputManager } from "@shared/OutputManager.js";
 import { CsvOutputWriter } from "@shared/CsvOutputWriter.js";
+import { RubbishCsvWriter } from "@shared/RubbishCsvWriter.js";
 import { QualityGate } from "@shared/QualityGate.js";
 import { AdaptiveProbing } from "@shared/AdaptiveProbing.js";
 import { startPushConsumer } from "@shared/PushConsumerServer.js";
@@ -679,6 +680,7 @@ export class StreamParserService
 
     const outputManager = new OutputManager();
     const csvWriter = new CsvOutputWriter(jobId, fieldSpec);
+    const rubbishCsvWriter = new RubbishCsvWriter(jobId);
     const qualityGate: QualityGate = QualityGate.getInstance();
 
     const counts: JobCounts = { parsed: 0, dropped_rubbish: 0, failed_by_class: {} };
@@ -1263,6 +1265,18 @@ export class StreamParserService
               raw_bytes: sanitizedLine,
               matched_template_id: result.template_id || "unknown",
             });
+            const rFlush = rubbishCsvWriter.addRow({
+              line_no: lineNo,
+              byte_offset: byteOffset,
+              byte_length: byteLength,
+              raw_bytes: sanitizedLine,
+              source: "rubbish",
+              failure_class: "",
+              error: "",
+              matched_template_id: result.template_id || "unknown",
+              dlq_id: "",
+            });
+            if (rFlush) await rFlush;
             counts.dropped_rubbish++;
             break;
           }
@@ -1332,8 +1346,9 @@ export class StreamParserService
             {
               const sanitizedUncertainLine: string = this.sanitizeForPg(line);
               const failureClass = result.failure_class || FailureClass.UNCERTAIN;
+              const dlqId = crypto.randomUUID();
               dlqBatch.push({
-                dlq_id: crypto.randomUUID(),
+                dlq_id: dlqId,
                 job_id: jobId,
                 byte_offset: byteOffset,
                 byte_length: byteLength,
@@ -1344,6 +1359,18 @@ export class StreamParserService
                 attempts: 0,
                 status: "pending",
               });
+              const rFlush = rubbishCsvWriter.addRow({
+                line_no: lineNo,
+                byte_offset: byteOffset,
+                byte_length: byteLength,
+                raw_bytes: sanitizedUncertainLine,
+                source: "dlq",
+                failure_class: failureClass,
+                error: result.failure_class || "Uncertain classification",
+                matched_template_id: "",
+                dlq_id: dlqId,
+              });
+              if (rFlush) await rFlush;
 
               if (!counts.failed_by_class[failureClass])
               {
@@ -1363,16 +1390,18 @@ export class StreamParserService
       this.logger.info("lines_streamed", { job_id: jobId, line_count: lineNo, duration_ms: Date.now() - lineSourceStart });
 
       const finalFlushStart: number = Date.now();
-      const [_, outputPaths, csvOutputPath] = await Promise.all([
+      const [_, outputPaths, csvOutputPath, rubbishCsvPath] = await Promise.all([
         flushBatches(true),
         outputManager.flushAll(),
-        csvWriter.flush()
+        csvWriter.flush(),
+        rubbishCsvWriter.flush()
       ]);
+      counts.rubbish_log_path = rubbishCsvPath || undefined;
       this.logger.info("parse_flushed", { job_id: jobId, duration_ms: Date.now() - finalFlushStart });
 
       const outputFlushStart: number = Date.now();
 
-      this.logger.info("output_flushed", { job_id: jobId, csv_output_path: csvOutputPath || null, duration_ms: Date.now() - outputFlushStart });
+      this.logger.info("output_flushed", { job_id: jobId, csv_output_path: csvOutputPath || null, rubbish_csv_path: rubbishCsvPath || null, duration_ms: Date.now() - outputFlushStart });
 
       if (csvOutputPath)
       {
@@ -1449,7 +1478,10 @@ export class StreamParserService
           this.logger.error("flush_failed", { job_id: jobId, error: String(flushErr) });
         }
 
-        await csvWriter.flush().catch(() => {});
+        await Promise.all([
+          csvWriter.flush().catch(() => {}),
+          rubbishCsvWriter.flush().catch(() => {}),
+        ]);
       }
 
       if (fatal)

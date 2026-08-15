@@ -250,11 +250,12 @@ class FinalizationService
       return;
     }
 
-    const timings = (job.timings as Record<string, unknown>) || {};
-    const rubbishLogPath = timings._rubbish_log_path as string | undefined;
-    const deadLetters: DeadLetterRow[] = await DatabaseService.getInstance().repositories.deadLetters.findByJob(jobId);
+    const [deadLetters, rubbishRows] = await Promise.all([
+      DatabaseService.getInstance().repositories.deadLetters.findByJob(jobId),
+      DatabaseService.getInstance().repositories.rubbishLogs.findByJob(jobId),
+    ]);
 
-    if (deadLetters.length === 0 && !rubbishLogPath) {
+    if (deadLetters.length === 0 && rubbishRows.length === 0) {
       this.logger.info({ jobId, parts: mergedPaths.length }, "backfill_skip_no_external_line_data");
       return;
     }
@@ -279,27 +280,10 @@ class FinalizationService
       }
     }
 
-    let rubbishEntries: Array<Record<string, unknown>> = [];
-    if (rubbishLogPath) {
-      try {
-        const raw = await GcsUtils.getInstance().readFull(StoragePath.parse(rubbishLogPath).bucket, StoragePath.parse(rubbishLogPath).key);
-        const text = raw.toString("utf-8");
-        rubbishEntries = text
-          .split("\n")
-          .filter((l) => l.trim())
-          .map((l) => JSON.parse(l));
-        for (const e of rubbishEntries) {
-          if (typeof e.byte_offset === "number" && typeof e.line_no === "number") {
-            lineMap.set(e.byte_offset, e.line_no);
-          }
-        }
-      } catch (e) {
-        this.logger.warn({ jobId, error: String(e) }, "backfill_rubbish_read_failed");
+    for (const r of rubbishRows) {
+      if (r.line_no !== undefined && r.line_no !== null) {
+        lineMap.set(Number(r.byte_offset), Number(r.line_no));
       }
-    }
-
-    if (rubbishLogPath && rubbishEntries.length) {
-      await this.updateRubbishLog(jobId, rubbishLogPath, rubbishEntries, lineMap);
     }
 
     for (const p of mergedPaths) {

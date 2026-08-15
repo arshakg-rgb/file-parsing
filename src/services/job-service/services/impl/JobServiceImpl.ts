@@ -485,6 +485,22 @@ export class JobServiceImpl implements JobService
         timings.download_path = null;
       }
     }
+
+    const rubbishLogPath = rawTimings._rubbish_log_path as string | undefined;
+    if (rubbishLogPath)
+    {
+      try
+      {
+        const [bucket, key] = this.gcsUtils.parseGcsUrl(rubbishLogPath);
+        const filename = key.split("/").pop() ?? `rubbish-${jobId}.csv`;
+        timings.rubbish_download_path = await this.gcsUtils.presignedGetUrl(bucket, key, 3600, filename);
+      }
+      catch (err)
+      {
+        this.logger.warn("rubbish_download_url_generation_failed", { job_id: jobId, error: String(err) });
+        timings.rubbish_download_path = null;
+      }
+    }
     return timings;
   }
 
