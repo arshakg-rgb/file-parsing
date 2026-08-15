@@ -358,19 +358,14 @@ export class StateMachineImpl implements StateMachine
     const now: string = new Date().toISOString();
     const childId = randomUUID();
 
-    if (data.entry_name && !/^gs:\/\/|^s3:\/\//i.test(data.entry_name))
+    if (!data.entry_s3_url || !/^gs:\/\/|^s3:\/\//i.test(data.entry_s3_url))
     {
-      throw new Error(`source_ref must be a gs:// or s3:// URL: ${data.entry_name}`);
+      throw new Error(`entry_s3_url must be a gs:// or s3:// URL: ${data.entry_s3_url}`);
     }
 
     if (!Array.isArray(data.field_spec))
     {
       throw new Error("field_spec must be an array of field names");
-    }
-
-    if (!data.field_spec.length)
-    {
-      throw new Error("field_spec must contain at least one field name");
     }
 
     const fieldSpec: string[] = data.field_spec;
