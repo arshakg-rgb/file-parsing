@@ -1650,11 +1650,18 @@ export class LineClassifierServiceImpl implements IClassifier
 
       if (v !== null && typeof v === "object" && !Array.isArray(v))
       {
+        if (this.normalizedFieldSpec.includes(this.normalizeKey(key)))
+        {
+          out[key] = v;
+        }
         const nested: Record<string, unknown> = this.flattenObject(v as Record<string, unknown>, key);
 
         if (Object.keys(nested).length === 0)
         {
-          out[key] = {};
+          if (!out[key])
+          {
+            out[key] = {};
+          }
         }
         else
         {
