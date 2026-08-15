@@ -455,7 +455,7 @@ export class LineClassifierServiceImpl implements IClassifier
         }
       }
 
-      if (this.headerMap)
+      if (this.headerMap && !looksLikeStructuredRecord)
       {
         const parts: string[] | null = this.splitBestDelimited(line);
         if (parts)
