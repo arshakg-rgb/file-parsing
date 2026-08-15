@@ -149,6 +149,8 @@ class ReportServiceImpl extends ServiceManager implements ReportService
         {
           this.logger.error("report_failed", { job_id: payload.job_id }, exc instanceof Error ? exc : new Error(String(exc)));
           MetricsUtils.increment("report.error", 1);
+          await this.queueService.publishEvent(makeJobEvent(EventType.ERROR_OCCURRED, payload.job_id, "report", { error: errorStr }));
+          await this.queueService.deleteMessage(config.settings.REPORT_QUEUE_URL, receiptHandle);
         }
       }
     });
