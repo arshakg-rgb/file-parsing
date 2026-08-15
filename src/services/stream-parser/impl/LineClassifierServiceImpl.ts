@@ -2193,7 +2193,25 @@ export class LineClassifierServiceImpl implements IClassifier
       return null;
     }
 
-    return this.extractFromObject(obj, "kv");
+    const extracted = this.extractFromObject(obj, "kv");
+    if (extracted)
+    {
+      return extracted;
+    }
+
+    const hasStrongLabel = Object.keys(obj).some((k) =>
+    {
+      const nk = this.normalizeKey(k);
+      const strong = ["email", "mail", "e_mail", "name", "phone", "mobile", "tel"];
+      return strong.some((s) => nk === s || nk.includes(s));
+    });
+
+    if (hasStrongLabel && Object.keys(obj).length >= 2)
+    {
+      return this.extractFromObject(obj, "kv", undefined, true);
+    }
+
+    return null;
   }
 
   /**
