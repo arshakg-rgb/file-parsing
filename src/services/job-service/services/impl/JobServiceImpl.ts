@@ -466,11 +466,38 @@ export class JobServiceImpl implements JobService
       status = (firstNonTerminal?.status as JobStatus) || JobStatus.PARTIAL;
     }
 
+    const childTimings: JobTimings[] = children.map((c) => c.timings as JobTimings).filter(Boolean);
+    const earliestChildTime = (key: keyof JobTimings): string | undefined =>
+    {
+      const vals: string[] = [];
+      for (const t of childTimings)
+      {
+        const v = t[key];
+        if (typeof v === "string" && v.length > 0)
+        {
+          vals.push(v);
+        }
+      }
+      if (vals.length === 0)
+      {
+        return undefined;
+      }
+      return vals.reduce((a, b) => (a < b ? a : b));
+    };
+
+    base.timings.detecting_at = earliestChildTime("detecting_at") ?? base.timings.detecting_at;
+    base.timings.parsing_at = earliestChildTime("parsing_at") ?? base.timings.parsing_at;
+    base.timings.merging_output_at = earliestChildTime("merging_output_at") ?? base.timings.merging_output_at;
+    base.timings.saving_to_database_at = earliestChildTime("saving_to_database_at") ?? base.timings.saving_to_database_at;
+    base.timings.reporting_at = earliestChildTime("reporting_at") ?? base.timings.reporting_at;
+
     if (latestCompleted)
     {
       base.timings.completed_at = latestCompleted;
       base.finished_at = latestCompleted;
     }
+
+    const childResponses: IJobResponse[] = await Promise.all(children.map((c) => this.buildJobResponse(c)));
 
     return {
       ...base,
@@ -480,6 +507,7 @@ export class JobServiceImpl implements JobService
       failed: totalFailed(mergedCounts),
       fields: Array.from(fieldSet),
       headers: Array.from(headerSet),
+      children: childResponses,
     };
   }
 

@@ -62,6 +62,7 @@ export interface IJobResponse {
   finished_at: string | null | undefined;
   parsed: number;
   failed: number;
+  children?: IJobResponse[];
 }
 
 /**
