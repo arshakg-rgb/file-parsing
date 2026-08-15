@@ -569,7 +569,7 @@ export class GcsUtils extends ServiceManager
       return;
     }
 
-    let remainder: Buffer<ArrayBuffer> = Buffer.alloc(0);
+    let remainder: Buffer = Buffer.alloc(0);
     let remainderStart: number = 0;
 
     type PendingRead = { offset: number; expectedLength: number; promise: Promise<Buffer> };
@@ -607,7 +607,7 @@ export class GcsUtils extends ServiceManager
         next = startRead(current.offset + chunk.length);
       }
 
-      const data: Buffer<ArrayBuffer> = Buffer.concat([remainder, chunk]);
+      const data: Buffer = Buffer.concat([remainder, chunk]);
       const dataBase: number = remainderStart;
 
       try
@@ -627,7 +627,7 @@ export class GcsUtils extends ServiceManager
 
     if (remainder.length > 0)
     {
-      const raw: Buffer<ArrayBuffer> = remainder;
+      const raw: Buffer = remainder;
       const lineText: string = EncodingService.decode(raw, encoding).replace(/\r\n$|\n$/, "");
 
       if (lineText)

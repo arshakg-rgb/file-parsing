@@ -80,6 +80,18 @@ export class QueueService extends ServiceManager
   private sqsClient: SQSClient | null = null;
 
   /**
+   * Cached SQS module
+   * @private
+   */
+  private sqsModule: typeof import("@aws-sdk/client-sqs") | null = null;
+
+  /**
+   * Cached Pub/Sub module
+   * @private
+   */
+  private pubSubModule: typeof import("@google-cloud/pubsub") | null = null;
+
+  /**
    * Constructs a new QueueService instance.
    * Private — use QueueService.getInstance() instead.
    * @param enforce - A function reference used to enforce the singleton pattern
@@ -217,11 +229,17 @@ export class QueueService extends ServiceManager
    * @returns A promise that resolves to the publisher client
    * @private
    */
+  private async getPubSubModule(): Promise<typeof import("@google-cloud/pubsub")>
+  {
+    if (!this.pubSubModule) this.pubSubModule = await import("@google-cloud/pubsub");
+    return this.pubSubModule;
+  }
+
   private async getPubPublisher(): Promise<unknown>
   {
     if (this.pubPublisher) return this.pubPublisher;
     const config = this.getConfig();
-    const { v1 } = await import("@google-cloud/pubsub");
+    const { v1 } = await this.getPubSubModule();
     this.pubPublisher = new v1.PublisherClient({
       projectId: config.settings.GCP_PROJECT_ID,
       ...(config.settings.GOOGLE_APPLICATION_CREDENTIALS ? { keyFilename: config.settings.GOOGLE_APPLICATION_CREDENTIALS } : {}),
@@ -238,7 +256,7 @@ export class QueueService extends ServiceManager
   {
     if (this.pubSubscriber) return this.pubSubscriber;
     const config = this.getConfig();
-    const { v1 } = await import("@google-cloud/pubsub");
+    const { v1 } = await this.getPubSubModule();
     this.pubSubscriber = new v1.SubscriberClient({
       projectId: config.settings.GCP_PROJECT_ID,
       ...(config.settings.GOOGLE_APPLICATION_CREDENTIALS ? { keyFilename: config.settings.GOOGLE_APPLICATION_CREDENTIALS } : {}),
@@ -277,10 +295,16 @@ export class QueueService extends ServiceManager
    * @returns A promise that resolves to the SQS client
    * @private
    */
+  private async getSqsModule(): Promise<typeof import("@aws-sdk/client-sqs")>
+  {
+    if (!this.sqsModule) this.sqsModule = await import("@aws-sdk/client-sqs");
+    return this.sqsModule;
+  }
+
   private async getSqsClient(): Promise<SQSClient>
   {
     if (this.sqsClient) return this.sqsClient;
-    const { SQSClient } = await import("@aws-sdk/client-sqs");
+    const { SQSClient } = await this.getSqsModule();
     const cfg: SQSClientConfig & { endpoint?: string; forcePathStyle?: boolean } = { region: "us-east-1" };
     const ep = process.env.AWS_ENDPOINT_URL;
     if (ep) { cfg.endpoint = ep; cfg.forcePathStyle = true; }
@@ -428,7 +452,7 @@ export class QueueService extends ServiceManager
       const resp = await this.withTimeout<{ MessageId?: string }>(
           async () =>
           {
-            const { SendMessageCommand } = await import("@aws-sdk/client-sqs");
+            const { SendMessageCommand } = await this.getSqsModule();
             return client.send(new SendMessageCommand(params));
           },
           this.QUEUE_TIMEOUT_SEND
@@ -450,7 +474,7 @@ export class QueueService extends ServiceManager
   {
     return this.withRetry(async () =>
     {
-      const { ReceiveMessageCommand } = await import("@aws-sdk/client-sqs");
+      const { ReceiveMessageCommand } = await this.getSqsModule();
       const client = await this.getSqsClient();
       const resp = await this.withTimeout<{ Messages?: { Body?: string; ReceiptHandle?: string }[] }>(
           () => client.send(new ReceiveMessageCommand({
@@ -480,7 +504,7 @@ export class QueueService extends ServiceManager
     if (!receiptHandle) return;
     await this.withRetry(async () =>
     {
-      const { DeleteMessageCommand } = await import("@aws-sdk/client-sqs");
+      const { DeleteMessageCommand } = await this.getSqsModule();
       const client = await this.getSqsClient();
       await this.withTimeout<unknown>(
           () => client.send(new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: receiptHandle })),

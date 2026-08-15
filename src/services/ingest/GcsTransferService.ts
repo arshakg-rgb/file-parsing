@@ -80,7 +80,7 @@ export class GcsTransferService
             total += chunk.length;
             chunks.push(chunk);
         }
-        const body: Buffer<ArrayBuffer> = Buffer.concat(chunks);
+        const body: Buffer = Buffer.concat(chunks);
         await this.gcsUtils.putObject(settings.DATA_BUCKET, s3Key, body);
         const s3Url = `gs://${settings.DATA_BUCKET}/${s3Key}`;
         logger.info("url_fetched_to_gcs", { jobId, s3Url, bytes: total });
