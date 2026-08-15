@@ -455,6 +455,19 @@ export class JobServiceImpl implements JobService
     const allTerminal: boolean = children.every((c) => isTerminal(c.status as JobStatus));
     const hasFailed: boolean = children.some((c) => c.status === JobStatus.FAILED);
 
+    const PIPELINE_ORDER: JobStatus[] = [
+      JobStatus.CREATED,
+      JobStatus.INGESTING,
+      JobStatus.NEEDS_PASSWORD,
+      JobStatus.DETECTING,
+      JobStatus.PARSING,
+      JobStatus.MERGING_OUTPUT,
+      JobStatus.SAVING_TO_DATABASE,
+      JobStatus.REPORTING,
+      JobStatus.COMPLETED,
+    ];
+    const statusIndex = (s: JobStatus): number => PIPELINE_ORDER.indexOf(s);
+
     let status: JobStatus;
     if (allTerminal)
     {
@@ -462,8 +475,10 @@ export class JobServiceImpl implements JobService
     }
     else
     {
-      const firstNonTerminal = children.find((c) => !isTerminal(c.status as JobStatus));
-      status = (firstNonTerminal?.status as JobStatus) || JobStatus.PARTIAL;
+      const activeChildren = children.filter((c) => !isTerminal(c.status as JobStatus));
+      status = activeChildren
+        .map((c) => c.status as JobStatus)
+        .reduce((earliest, current) => (statusIndex(current) < statusIndex(earliest) ? current : earliest), JobStatus.PARTIAL);
     }
 
     const childTimings: JobTimings[] = children.map((c) => c.timings as JobTimings).filter(Boolean);
