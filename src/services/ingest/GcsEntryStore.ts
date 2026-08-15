@@ -69,7 +69,7 @@ export class GcsEntryStore
 
     public makeEntryEvent(parentJobId: string, batchId: string, s3Url: string, name: string, size: number, fieldSpec: string[])
     {
-        return { parent_job_id: parentJobId, batchId: batchId, entry_s3_url: s3Url, entry_name: name, entry_size: size, field_spec: fieldSpec };
+        return { parent_job_id: parentJobId, batch_id: batchId, entry_s3_url: s3Url, entry_name: name, entry_size: size, field_spec: fieldSpec };
     }
 
     /**
