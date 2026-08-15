@@ -822,8 +822,9 @@ export class DetectBootstrapService
         throw new Error("No headers could be detected; the job cannot proceed without a field_spec");
       }
 
-      this.logger.info("detect_headers_awaiting_field_spec", { job_id: jobId, headers });
-      return;
+      fieldSpecArray.push(...headers);
+      msg.field_spec = fieldSpecArray;
+      this.logger.info("detect_headers_used_as_field_spec", { job_id: jobId, headers });
     }
 
     const bootstrapDuration: number = Date.now() - bootstrapStartTime;
