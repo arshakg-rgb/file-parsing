@@ -2576,6 +2576,52 @@ export class LineClassifierServiceImpl implements IClassifier
         }
       }
 
+      const metaColumnIndex = this.headerMap!["meta"];
+      let metaPayload: string | null = null;
+      if (metaColumnIndex !== undefined)
+      {
+        metaPayload = (row["meta"] as string) ?? null;
+      }
+      else if (typeof row["meta"] === "string" && row["meta"].startsWith("{"))
+      {
+        try
+        {
+          const wrapped: Record<string, unknown> = JSON.parse(row["meta"]) as Record<string, unknown>;
+          const inner = wrapped["meta"];
+          if (typeof inner === "string")
+          {
+            metaPayload = inner;
+          }
+        }
+        catch
+        {
+          // ignore malformed wrapper
+        }
+      }
+
+      if (metaPayload && metaPayload.startsWith("{"))
+      {
+        try
+        {
+          const source: Record<string, unknown> = JSON.parse(metaPayload) as Record<string, unknown>;
+          for (const field of this.fieldSpec)
+          {
+            if (field === "meta" || (row[field] !== null && row[field] !== ""))
+            {
+              continue;
+            }
+            if (field in source)
+            {
+              row[field] = source[field];
+            }
+          }
+        }
+        catch
+        {
+          // ignore malformed meta payload
+        }
+      }
+
       return matched > 0 ? { row, usedHeader: true } : null;
     }
 
