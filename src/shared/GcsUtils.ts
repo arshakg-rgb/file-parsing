@@ -1122,6 +1122,89 @@ export class GcsUtils extends ServiceManager
 
     return trimmed;
   }
+
+  public async *streamPostgresCopyRows(
+      bucket: string,
+      key: string,
+      chunkSize = this.FETCH_CHUNK_SIZE,
+      encoding = "utf-8"
+  ): AsyncGenerator<[string, number, number]>
+  {
+    let columns: string[] | null = null;
+    let inCopy = false;
+
+    this.logger.info("postgres_copy_stream_start", { bucket, key });
+
+    for await (const [line, offset] of this.streamLines(bucket, key, chunkSize, encoding))
+    {
+      const trimmed = line.trim();
+
+      if (!inCopy)
+      {
+        const match = trimmed.match(/COPY\s+\S+\s*\(([^)]+)\)\s*FROM\s+stdin;?/i);
+        if (match)
+        {
+          columns = match[1].split(",").map((s) => s.trim().replace(/^["`']+|["`']+$/g, "")).filter((s) => s.length > 0);
+          inCopy = true;
+        }
+        continue;
+      }
+
+      if (trimmed === "\\." || trimmed.toUpperCase() === ".")
+      {
+        inCopy = false;
+        columns = null;
+        continue;
+      }
+
+      if (columns && columns.length > 0)
+      {
+        const values = line.split("\t");
+        const record: Record<string, unknown> = {};
+
+        for (let j = 0; j < columns.length; j++)
+        {
+          record[columns[j]] = j < values.length ? this.coercePostgresCopyValue(values[j]) : null;
+        }
+
+        if (values.length > columns.length)
+        {
+          record.meta = values.slice(columns.length).map((v) => this.coercePostgresCopyValue(v));
+        }
+
+        const json = JSON.stringify(record);
+        yield [json, offset, json.length];
+      }
+    }
+
+    this.logger.info("postgres_copy_stream_end", { bucket, key });
+  }
+
+  private coercePostgresCopyValue(raw: string): unknown
+  {
+    if (raw === "\\N")
+    {
+      return null;
+    }
+
+    const unescaped = raw
+        .replace(/\\\\/g, "\\")
+        .replace(/\\n/g, "\n")
+        .replace(/\\t/g, "\t")
+        .replace(/\\r/g, "\r");
+
+    if (/^-?\d+$/.test(unescaped))
+    {
+      return Number(unescaped);
+    }
+
+    if (/^-?\d+\.\d+$/.test(unescaped))
+    {
+      return Number(unescaped);
+    }
+
+    return unescaped;
+  }
 }
 
 /**

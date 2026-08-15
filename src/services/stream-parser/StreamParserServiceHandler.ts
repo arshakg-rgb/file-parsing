@@ -819,6 +819,7 @@ export class StreamParserService
     let isJsonFile = false;
     let isNdjson = false;
     let isMySqlDump = false;
+    let isPostgresDump = false;
     let jsonRecords: string[] | null = null;
 
     if (fileSize > 0) {
@@ -830,10 +831,12 @@ export class StreamParserService
         isJsonFile = (key.endsWith(".json") && !key.endsWith(".ndjson")) || headText.startsWith("{") || headText.startsWith("[");
         isNdjson = key.endsWith(".ndjson") || new RegExp("}(?:\\n|\\r\\n)\\s*\\{").test(headText);
         isMySqlDump = !isJsonFile && (headUpper.includes("MYSQL DUMP") || headUpper.startsWith("CREATE TABLE") || headUpper.includes("INSERT INTO"));
+        isPostgresDump = !isJsonFile && (headUpper.includes("POSTGRESQL") || headUpper.includes("PG_DUMP") || /COPY\s+\S+\s*\([^)]+\)\s*FROM\s+STDIN/i.test(headText));
       } catch (err) {
         this.logger.warn("json_head_peek_failed", { job_id: jobId, s3_url: msg.s3_url, error: String(err) });
         isJsonFile = key.endsWith(".json") && !key.endsWith(".ndjson");
         isMySqlDump = false;
+        isPostgresDump = false;
       }
     }
 
@@ -869,7 +872,9 @@ export class StreamParserService
           })()
           : isMySqlDump
               ? this.gcsUtils.streamMysqlDumpRows(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding)
-              : this.gcsUtils.streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding);
+              : isPostgresDump
+                  ? this.gcsUtils.streamPostgresCopyRows(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding)
+                  : this.gcsUtils.streamLines(bucket, key, settings.FETCH_CHUNK_SIZE, detectedEncoding);
 
       let aiHeaderMapped: boolean = false;
 

@@ -591,6 +591,17 @@ export class DetectBootstrapService
 
       const trimmed: string = candidate.trim();
 
+      // PostgreSQL COPY header: capture the column list inside the parentheses
+      for (const line of sampleLines)
+      {
+        const lineTrim = line.trim();
+        const copyMatch = lineTrim.match(/COPY\s+\S+\s*\(([^)]+)\)\s*FROM\s+stdin;?/i);
+        if (copyMatch)
+        {
+          return copyMatch[1].split(",").map((h) => h.trim().replace(/^["`]+|["`]+$/g, "")).filter((h) => h.length > 0);
+        }
+      }
+
       if (trimmed.startsWith("{") || trimmed.startsWith("["))
       {
         try
