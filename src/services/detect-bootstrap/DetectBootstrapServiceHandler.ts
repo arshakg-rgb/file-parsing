@@ -567,14 +567,14 @@ export class DetectBootstrapService
   {
     try
     {
-      const headEnd: number = Math.min(settings.PROBE_WINDOW_MIN_BYTES - 1, fileSize - 1);
+      const headEnd: number = Math.min(settings.PROBE_WINDOW_MAX_BYTES - 1, fileSize - 1);
       if (headEnd < 0)
       {
         return [];
       }
 
       const headRaw: Buffer = await this.gcsUtils.readRange(bucket, key, 0, headEnd);
-      const sampleLines: string[] = this.extractSampleLines(headRaw, encoding, 50);
+      const sampleLines: string[] = this.extractSampleLines(headRaw, encoding, 500);
 
       if (!sampleLines.length)
       {

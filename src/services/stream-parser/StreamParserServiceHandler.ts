@@ -823,7 +823,7 @@ export class StreamParserService
     let jsonRecords: string[] | null = null;
 
     if (fileSize > 0) {
-      const headSize = Math.min(fileSize, 4096);
+      const headSize = Math.min(fileSize, 65536);
       try {
         const headRaw = await this.gcsUtils.readRange(bucket, key, 0, headSize);
         const headText = EncodingService.decode(headRaw, detectedEncoding).replace(/\0/g, "").trim();
