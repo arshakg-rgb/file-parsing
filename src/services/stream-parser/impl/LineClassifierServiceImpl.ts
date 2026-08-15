@@ -1601,7 +1601,9 @@ export class LineClassifierServiceImpl implements IClassifier
       return false;
     }
 
-    const v: string = String(value).trim();
+    const v: string = (typeof value === "object" && value !== null)
+      ? JSON.stringify(value)
+      : String(value).trim();
 
     if (v === "")
     {
@@ -1877,7 +1879,10 @@ export class LineClassifierServiceImpl implements IClassifier
         }
       }
 
-      if (value !== undefined && value !== null && String(value).trim() !== "")
+      const isPresent: boolean = value !== undefined && value !== null &&
+        (typeof value === "object" ? Object.keys(value).length > 0 : String(value).trim() !== "");
+
+      if (isPresent)
       {
         if (Array.isArray(value))
         {
