@@ -969,6 +969,35 @@ export class StreamParserService
             }
           }
 
+          // Fall back to full_name for name / user_name fields when no other source matched.
+          for (const field of fieldSpec)
+          {
+            if (field === "meta" || extracted[field] !== undefined)
+            {
+              continue;
+            }
+
+            if (field === "name" || field === "user_name")
+            {
+              const fullNameKey = Object.keys(metaObj).find((k) => /full[_-]?name/i.test(k));
+
+              if (fullNameKey)
+              {
+                const fullNameVal: unknown = metaObj[fullNameKey];
+
+                if (typeof fullNameVal === "string" && fullNameVal.trim())
+                {
+                  extracted[field] = fullNameVal.trim();
+
+                  if (normalizeKey(fullNameKey) !== "name")
+                  {
+                    delete cleanedMeta[fullNameKey];
+                  }
+                }
+              }
+            }
+          }
+
           for (const [field, value] of Object.entries(extracted))
           {
             if (value === null || value === undefined)
@@ -1189,10 +1218,7 @@ export class StreamParserService
           case "parsed": {
             const sanitizedRow: Record<string, unknown> = this.sanitizeRecord(result.row || {});
 
-            if (result.template_id === "json" || result.template_id?.startsWith("json-"))
-            {
-              await enrichFromMeta(sanitizedRow);
-            }
+            await enrichFromMeta(sanitizedRow);
 
             if (!classifier.rowStrongFieldsOk(sanitizedRow))
             {
