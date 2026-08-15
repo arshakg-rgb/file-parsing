@@ -10,7 +10,7 @@ import { GcsEntryStore } from "../GcsEntryStore.js";
 import { ArchiveTypeDetector } from "../ArchiveTypeDetector.js";
 import { TempFileManager } from "../TempFileManager.js";
 import { RAR_MAX_ARCHIVE_SIZE, RAR_MAX_INLINE_FILE_SIZE, RAR_MAX_TOTAL_UNCOMPRESSED, RarFileEntry } from "@service/ingest/io/IIngest";
-import {Readable} from "node:stream";
+import {Readable, PassThrough} from "node:stream";
 import {IngestServiceImpl} from "@service/ingest/IngestServiceImpl";
 import {InstantiationError} from "@errors/InstantiationError";
 import {DatabaseService} from "@shared/DatabaseManager";
@@ -272,7 +272,10 @@ export class RarExtractor
         }
 
         const extractProcess = spawn("unrar", extractArgs);
-        extractProcess.stdout.pipe(writeStream);
+        const passThrough = new PassThrough();
+        let bytesWritten = 0;
+        passThrough.on("data", (chunk: Buffer) => { bytesWritten += chunk.length; });
+        extractProcess.stdout.pipe(passThrough).pipe(writeStream);
 
         await new Promise<void>((resolve, reject) =>
         {
@@ -291,8 +294,7 @@ export class RarExtractor
 
         const entryUrl = `gs://${bucket}/${entryKey}`;
 
-        const actualSize = await this.gcsUtils.objectSize(bucket, entryKey);
-        file.size = actualSize;
+        file.size = bytesWritten;
 
         let detectedArchiveType: string | null = null;
 
