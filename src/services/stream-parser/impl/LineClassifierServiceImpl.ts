@@ -1909,6 +1909,59 @@ export class LineClassifierServiceImpl implements IClassifier
       }
     }
 
+    // Backfill empty/null selected fields from a serialized JSON object stored in meta.
+    const rawMeta: unknown = obj["meta"];
+    let metaSource: Record<string, unknown> | null = null;
+    if (typeof rawMeta === "string" && rawMeta.startsWith("{"))
+    {
+      try
+      {
+        metaSource = JSON.parse(rawMeta) as Record<string, unknown>;
+      }
+      catch
+      {
+        metaSource = null;
+      }
+    }
+
+    if (metaSource)
+    {
+      const metaSourceKeyMap = new Map<string, string>();
+      for (const k of Object.keys(metaSource))
+      {
+        metaSourceKeyMap.set(this.normalizeKey(k), k);
+      }
+      for (let i = 0; i < spec.length; i++)
+      {
+        const field: string = spec[i];
+        const nf: string = normalizedSpec[i];
+        if (field === "meta" || (row[field] !== null && row[field] !== ""))
+        {
+          continue;
+        }
+        const sourceKey = metaSourceKeyMap.get(nf);
+        if (sourceKey === undefined)
+        {
+          continue;
+        }
+        const sourceValue = metaSource[sourceKey];
+        if (sourceValue === null || (typeof sourceValue === "string" && sourceValue.trim() === ""))
+        {
+          row[field] = null;
+        }
+        else
+        {
+          row[field] = sourceValue;
+          matched++;
+          if ((nf === "email" || nf === "phone") && this.validateField(field, sourceValue))
+          {
+            strong++;
+          }
+        }
+        consumedKeys.add(nf);
+      }
+    }
+
     const metaObj: Record<string, unknown> = {};
 
     for (const [k, v] of Object.entries(obj))
