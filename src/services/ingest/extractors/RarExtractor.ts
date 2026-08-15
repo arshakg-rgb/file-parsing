@@ -291,6 +291,9 @@ export class RarExtractor
 
         const entryUrl = `gs://${bucket}/${entryKey}`;
 
+        const actualSize = await this.gcsUtils.objectSize(bucket, entryKey);
+        file.size = actualSize;
+
         let detectedArchiveType: string | null = null;
 
         try

@@ -268,6 +268,11 @@ export class GcsUtils extends ServiceManager
    */
   public async readRange(bucket: string, key: string, start: number, end: number): Promise<Buffer>
   {
+    if (start < 0 || end < 0 || end < start)
+    {
+      throw new Error(`Invalid GCS read range for ${bucket}/${key}: start=${start}, end=${end}`);
+    }
+
     return this.withRetry(
         () => this.withTimeout(async () => {
           const chunks: Buffer[] = [];

@@ -772,6 +772,11 @@ export class DetectBootstrapService
     const [bucket, key] = this.gcsUtils.parseGcsUrl(msg.s3_url);
     const fileSize: number = msg.size || (await this.gcsUtils.objectSize(bucket, key));
 
+    if (!fileSize)
+    {
+      throw new Error(`Source file has zero size: ${msg.s3_url}`);
+    }
+
     const { encoding, windowSize } = await this.detectFileProperties(bucket, key, fileSize);
 
     const offsets: number[] = this.computeProbeOffsets(fileSize, windowSize);
