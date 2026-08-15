@@ -2483,6 +2483,14 @@ export class LineClassifierServiceImpl implements IClassifier
 
   private applyHeaderMap(line: string, parts: string[]): { row: Record<string, unknown>; usedHeader: boolean } | null | undefined
   {
+    if (this.headerParts && this.headerParts.length >= 2 && parts.length > this.headerParts.length && this.headerParts[this.headerParts.length - 1] === "meta")
+    {
+      const lastIdx = this.headerParts.length - 1;
+      const delimiter = this.headerDelimiter ?? ",";
+      const metaValue = parts.slice(lastIdx).join(delimiter);
+      parts.splice(lastIdx, parts.length - lastIdx, metaValue);
+    }
+
     const headerColCount: number = this.headerParts?.length ?? 0;
     const columnCountDiff: number = Math.abs(headerColCount - parts.length);
     let useHeaderMap: boolean = columnCountDiff <= 2;
