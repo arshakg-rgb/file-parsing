@@ -679,7 +679,7 @@ export class DetectBootstrapService
     catch (err)
     {
       this.logger.warn("extract_headers_failed", { job_id: jobId, error: String(err) });
-      return null;
+      throw err;
     }
   }
 
@@ -812,6 +812,11 @@ export class DetectBootstrapService
 
     if (fieldSpecArray.length === 0)
     {
+      if (!headers || headers.length === 0)
+      {
+        throw new Error("No headers could be detected; the job cannot proceed without a field_spec");
+      }
+
       this.logger.info("detect_headers_awaiting_field_spec", { job_id: jobId, headers });
       return;
     }
