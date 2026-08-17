@@ -183,8 +183,7 @@ export class JobServiceImpl implements JobService
         throw new ValidationError(ValidationError.INPUT, "field_spec must be an array of field names, not a string");
       }
     }
-
-
+    
     const jobId = randomUUID();
     const batchId: string = batch_id || randomUUID();
     let putUrl: string | undefined;
