@@ -2635,9 +2635,22 @@ export class LineClassifierServiceImpl implements IClassifier
       return null;
     }
 
-    let parts: string[] | null = this.headerDelimiter
-      ? LineClassifierServiceImpl.mergeSchemeColon(LineClassifierServiceImpl.parseCsvLine(line, this.headerDelimiter, LineClassifierServiceImpl.csvQuoteFor(this.headerDelimiter)), this.headerDelimiter)
-      : this.splitBestDelimited(line);
+    let parts: string[] | null;
+    let usedDelim: string;
+
+    if (this.headerDelimiter)
+    {
+      usedDelim = this.headerDelimiter;
+      parts = LineClassifierServiceImpl.mergeSchemeColon(LineClassifierServiceImpl.parseCsvLine(line, this.headerDelimiter, LineClassifierServiceImpl.csvQuoteFor(this.headerDelimiter)), this.headerDelimiter);
+    }
+    else
+    {
+      const found: { parts: string[]; delim: string } | null = this.splitBestDelimitedWithDelim(line);
+      if (!found) return null;
+      usedDelim = found.delim;
+      parts = LineClassifierServiceImpl.mergeSchemeColon(found.parts, found.delim);
+    }
+
     if (!parts) return null;
 
     // Mixed-delimiter file guard: some sources concatenate logs from multiple tools
@@ -2654,7 +2667,8 @@ export class LineClassifierServiceImpl implements IClassifier
 
       if (altSplit && altSplit.parts.length > parts.length)
       {
-        parts = altSplit.parts;
+        usedDelim = altSplit.delim;
+        parts = LineClassifierServiceImpl.mergeSchemeColon(altSplit.parts, altSplit.delim);
       }
     }
 
