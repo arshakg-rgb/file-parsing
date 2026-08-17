@@ -72,6 +72,7 @@ export class LineClassifierServiceImpl implements IClassifier
   private readonly aiRateLimiter?: AiRateLimiter;
   private readonly defaultMinMatches: number;
   private static readonly ALIASES: Record<string, string[]> = {
+    account: ["account", "accountid", "account_id", "accountidentifier", "account_identifier", "identifier", "login", "user", "username", "email", "mail", "e_mail", "useremail", "phone", "mobile", "userid", "user_id", "id"],
     email: ["email", "mail", "emailaddress", "e_mail", "emails", "useremail", "e"],
     name: ["name", "fullname", "full_name", "username", "surname", "фио", "n", "firstname", "lastname", "first_name", "last_name"],
     phone: ["phone", "mobile", "telephone", "phonenumber", "msisdn", "phones", "mobile_phone_no", "mobile_number", "телефон", "t"],
@@ -103,6 +104,7 @@ export class LineClassifierServiceImpl implements IClassifier
    */
 
   private static readonly CATEGORY_KEYWORDS: Array<{ category: string; re: RegExp }> = [
+    { category: "account", re: /account|identifier|login|user\s*id|username/ },
     { category: "email", re: /mail/ },
     { category: "phone", re: /phone|mobile|tel|msisdn/ },
     { category: "name", re: /name|surname/ },
