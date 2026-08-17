@@ -111,6 +111,116 @@ class SafeRegexUtils {
     if (!re) return false;
     return re.test(line);
   }
+
+  /**
+   * Minimum length of a plain-literal character run (i.e. not part of a
+   * character class, generic escape class like \d/\w/\s, wildcard, or
+   * quantified token) required for a regex source to be considered
+   * "specific" rather than a generic structural shape.
+   * @private
+   */
+  private static readonly MIN_SPECIFIC_LITERAL_RUN = 6;
+
+  /**
+   * Checks whether a regex source contains a sufficiently long run of plain
+   * literal characters. A regex made entirely of generic tokens (e.g.
+   * "^https?:\\/\\/.+:.+:.+$") describes a broad structural shape rather than
+   * a specific piece of content, and must never be trusted as a global
+   * rubbish/junk signature applied indiscriminately to every future line —
+   * whether at the moment it's proposed, or every time it's loaded back out
+   * of persistent storage and re-applied.
+   * @param source - The regex source to inspect.
+   * @returns True if a literal run of at least MIN_SPECIFIC_LITERAL_RUN characters was found.
+   */
+  public static hasSpecificLiteralRun(source: string): boolean {
+    if (!source) return false;
+
+    let run = 0;
+    let i = 0;
+
+    while (i < source.length) {
+      const c = source[i];
+
+      if (c === "\\") {
+        const next = source[i + 1];
+        const genericClasses = new Set(["d", "D", "w", "W", "s", "S", "b", "B"]);
+
+        if (next && genericClasses.has(next)) {
+          run = 0;
+          i += 2;
+          continue;
+        }
+
+        run++;
+        i += 2;
+        continue;
+      }
+
+      if (c === "[") {
+        run = 0;
+        let j = i + 1;
+
+        while (j < source.length && source[j] !== "]") {
+          j++;
+        }
+
+        i = j + 1;
+        continue;
+      }
+
+      if (c === "." || c === "^" || c === "$" || c === "|") {
+        run = 0;
+        i++;
+        continue;
+      }
+
+      if (c === "(" || c === ")") {
+        i++;
+        continue;
+      }
+
+      if (c === "*" || c === "+" || c === "?" || c === "{") {
+        run = Math.max(0, run - 1);
+
+        if (c === "{") {
+          let j = i + 1;
+
+          while (j < source.length && source[j] !== "}") {
+            j++;
+          }
+
+          i = j + 1;
+          continue;
+        }
+
+        i++;
+        continue;
+      }
+
+      run++;
+
+      if (run >= SafeRegexUtils.MIN_SPECIFIC_LITERAL_RUN) {
+        return true;
+      }
+
+      i++;
+    }
+
+    return false;
+  }
+
+  /**
+   * Builds a regex source that matches only the exact given line, by
+   * escaping every regex-special character. Used as a safe fallback
+   * signature when a proposed regex is too generic to trust as a global
+   * signature.
+   * @param line - The line to build an exact-match signature for.
+   * @returns A regex source anchored to match only this exact line.
+   */
+  public static escapeRegexLiteral(line: string): string {
+    const escaped: string = line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return `^${escaped}$`;
+  }
 }
 
 export default SafeRegexUtils;

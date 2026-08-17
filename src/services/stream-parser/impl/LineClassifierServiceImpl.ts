@@ -928,7 +928,11 @@ export class LineClassifierServiceImpl implements IClassifier
 
   private matchesRubbishSignature(t: RubbishTemplate, line: string): boolean
   {
-    return (t.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN && SafeRegexUtils.safeRegexTest(t.signature, line);
+    return (
+        (t.confidence || 0) >= settings.RUBBISH_CONFIDENCE_MIN &&
+        SafeRegexUtils.hasSpecificLiteralRun(t.signature) &&
+        SafeRegexUtils.safeRegexTest(t.signature, line)
+    );
   }
 
   /**

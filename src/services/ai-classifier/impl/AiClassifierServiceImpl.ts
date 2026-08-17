@@ -9,6 +9,7 @@ import {IClassifierStats, PersistKind} from "@service/ai-classifier/io/IClassifi
 import {Constants} from "@common/io/Constants.js";
 import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
 import {ColumnMap} from "@shared/models/job.js";
+import SafeRegexUtils from "@utils/validator/SafeRegex";
 
 export class AiClassifierServiceImpl
 {
@@ -1042,9 +1043,12 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
         } as RecordTemplate;
       }
 
+      const aiSignature: string = (template.signature as string) || "";
+      const signature: string = this.tightenRubbishSignature(aiSignature, line);
+
       return {
         ...base,
-        signature: (template.signature as string) || "",
+        signature,
         confidence: (template.confidence as number) ?? 1,
       } as RubbishTemplate;
     }
@@ -1052,6 +1056,36 @@ ${req.context_lines ? `Context lines:\n${req.context_lines.join("\n")}` : ""}`;
     {
       return null;
     }
+  }
+
+  /**
+   * Guards against an AI-proposed rubbish signature being too generic and
+   * blast-radius-matching unrelated, genuinely valid lines that merely share
+   * the same coarse shape (e.g. "url:user:pass"). Rubbish templates are
+   * persisted globally and re-applied to every future line in every job, so
+   * a single overly-broad regex here can silently drop huge amounts of good
+   * data across unrelated jobs. If the AI's regex doesn't contain a long
+   * enough literal (non-wildcard) run, or fails to actually match the line
+   * that triggered it, fall back to an exact-literal signature scoped only
+   * to that one line.
+   *
+   * @param aiSignature - The regex signature proposed by the model.
+   * @param line - The original triggering line.
+   * @returns A signature safe to persist and reuse globally.
+   */
+
+  private tightenRubbishSignature(aiSignature: string, line: string): string
+  {
+    if (
+        aiSignature &&
+        SafeRegexUtils.hasSpecificLiteralRun(aiSignature) &&
+        SafeRegexUtils.safeRegexTest(aiSignature, line)
+    )
+    {
+      return aiSignature;
+    }
+
+    return SafeRegexUtils.escapeRegexLiteral(line);
   }
 
   /**
