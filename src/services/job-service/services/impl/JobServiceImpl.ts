@@ -191,8 +191,6 @@ export class JobServiceImpl implements JobService
     let s3Url: string | undefined;
     const uploadContentType: string = content_type || "application/octet-stream";
 
-
-
     if (source_type === SourceType.UPLOAD)
     {
       const rawName: string = (filename || "source").trim();
