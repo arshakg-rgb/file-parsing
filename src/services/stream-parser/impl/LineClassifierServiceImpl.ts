@@ -2540,10 +2540,28 @@ export class LineClassifierServiceImpl implements IClassifier
       return null;
     }
 
-    const parts: string[] | null = this.headerDelimiter
+    let parts: string[] | null = this.headerDelimiter
       ? LineClassifierServiceImpl.parseCsvLine(line, this.headerDelimiter, LineClassifierServiceImpl.csvQuoteFor(this.headerDelimiter))
       : this.splitBestDelimited(line);
     if (!parts) return null;
+
+    // Mixed-delimiter file guard: some sources concatenate logs from multiple tools
+    // that each use a different column separator (e.g. "|" for one batch, ":" for
+    // another, within the SAME file). If the delimiter locked in from earlier rows
+    // splits this particular line far short of the expected column count, it's
+    // almost certainly the wrong delimiter for THIS row - try auto-detecting this
+    // line's own delimiter instead of forcing a mis-split (which would otherwise
+    // collapse the whole row into a single unmatched column and get rejected as
+    // "uncertain" even though it's perfectly valid data under its own delimiter).
+    if (this.headerDelimiter && this.headerParts && this.headerParts.length >= 2 && parts.length < this.headerParts.length)
+    {
+      const altSplit: { parts: string[]; delim: string } | null = this.splitBestDelimitedWithDelim(line);
+
+      if (altSplit && altSplit.parts.length > parts.length)
+      {
+        parts = altSplit.parts;
+      }
+    }
 
     if (this.headerMap)
     {
