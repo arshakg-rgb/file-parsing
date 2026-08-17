@@ -33,6 +33,12 @@ export class LineClassifierServiceImpl implements IClassifier
   private headerMap: Record<string, number | number[]> | null = null;
   private headerParts: string[] | null = null;
 
+  /**
+   * true  = headerParts came from the first raw line of the file (real header row, must be skipped).
+   * false = headerParts came from an upstream/AI-inferred header and the first line is data.
+   */
+  private headerFromFile: boolean = false;
+
   /** Delimiter that was used to split the header row. Once established, every
    *  subsequent data row is split using this SAME delimiter (rather than
    *  re-guessing per line) so that a free-text column (e.g. an address or tag
@@ -306,6 +312,8 @@ export class LineClassifierServiceImpl implements IClassifier
   public setHeaderMap(map: Record<string, number | number[]>, headersOrHeaderLine: string[] | string): void
   {
     this.headerMap = map;
+    this.headerFromFile = !Array.isArray(headersOrHeaderLine);
+
     if (Array.isArray(headersOrHeaderLine))
     {
       this.headerParts = headersOrHeaderLine.map((p) => p.trim());
@@ -514,12 +522,17 @@ export class LineClassifierServiceImpl implements IClassifier
 
       if (this.headerMap && !looksLikeStructuredRecord)
       {
-        const parts: string[] | null = this.splitBestDelimited(line);
-        if (parts)
+        // If the map came from a real header row, skip the first line and use it as the header.
+        // If it was pre-inferred by AI/upstream, the first line is data and must be parsed.
+        if (this.headerFromFile)
         {
-          this.headerParts = parts.map((p) => p.trim());
+          const parts: string[] | null = this.splitBestDelimited(line);
+          if (parts)
+          {
+            this.headerParts = parts.map((p) => p.trim());
+          }
+          return { verdict: "rubbish", template_id: "header" };
         }
-        return { verdict: "rubbish", template_id: "header" };
       }
     }
 
