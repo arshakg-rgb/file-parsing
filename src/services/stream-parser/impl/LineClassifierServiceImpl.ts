@@ -183,7 +183,14 @@ export class LineClassifierServiceImpl implements IClassifier
    *  column splitter and the fingerprinting helper.
    */
 
-  private static readonly DELIMITER_CANDIDATES = [",", ";", "\t", "|"] as const;
+  private static readonly DELIMITER_CANDIDATES = [",", ";", "\t", "|", ":"] as const;
+
+  /** Matches a URI scheme prefix (e.g. "https://", "android://") so a ":"-delimiter
+   *  split doesn't mistake the scheme's own colon for a field separator on lines like
+   *  "https://example.com/:user:pass" (which must split into 3 fields, not 4).
+   */
+
+  private static readonly URI_SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]*$/;
 
   /** Precision-safe JSON parser: numbers that exceed Number's safe integer range are
    *  stored as strings instead of silently losing precision (e.g. int64 IDs).
@@ -2305,7 +2312,10 @@ export class LineClassifierServiceImpl implements IClassifier
         continue;
       }
 
-      const parts: string[] = LineClassifierServiceImpl.parseCsvLine(line, delim, LineClassifierServiceImpl.csvQuoteFor(delim));
+      const parts: string[] = LineClassifierServiceImpl.mergeSchemeColon(
+          LineClassifierServiceImpl.parseCsvLine(line, delim, LineClassifierServiceImpl.csvQuoteFor(delim)),
+          delim
+      );
 
       if (parts.length < 2)
       {
@@ -2318,6 +2328,26 @@ export class LineClassifierServiceImpl implements IClassifier
       }
     }
     return best;
+  }
+
+  /**
+   * When splitting on ":", a URI scheme prefix (e.g. "https://", "android://") produces
+   * its own leading colon that isn't a field separator - merges it back into the first
+   * cell so "https://example.com/:user:pass" splits into 3 fields, not 4.
+   *
+   * @param parts - The cells produced by splitting on `delim`.
+   * @param delim - The delimiter that was used to produce `parts`.
+   * @returns `parts`, unmodified unless `delim` is ":" and a scheme-prefix false split was detected.
+   */
+
+  private static mergeSchemeColon(parts: string[], delim: string): string[]
+  {
+    if (delim !== ":" || parts.length < 3 || !LineClassifierServiceImpl.URI_SCHEME_RE.test(parts[0]) || !parts[1].startsWith("//"))
+    {
+      return parts;
+    }
+
+    return [`${parts[0]}:${parts[1]}`, ...parts.slice(2)];
   }
 
   /**
@@ -2541,7 +2571,7 @@ export class LineClassifierServiceImpl implements IClassifier
     }
 
     let parts: string[] | null = this.headerDelimiter
-      ? LineClassifierServiceImpl.parseCsvLine(line, this.headerDelimiter, LineClassifierServiceImpl.csvQuoteFor(this.headerDelimiter))
+      ? LineClassifierServiceImpl.mergeSchemeColon(LineClassifierServiceImpl.parseCsvLine(line, this.headerDelimiter, LineClassifierServiceImpl.csvQuoteFor(this.headerDelimiter)), this.headerDelimiter)
       : this.splitBestDelimited(line);
     if (!parts) return null;
 
