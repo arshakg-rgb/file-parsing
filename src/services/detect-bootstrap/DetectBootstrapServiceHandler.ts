@@ -631,6 +631,15 @@ export class DetectBootstrapService
             this.logger.warn("ai_headers_inference_failed", { job_id: jobId, error: String(err) });
           }
         }
+
+        // No real header row exists and AI inference either did not run or did not
+        // produce a usable result. Do NOT fall through to the naive comma/tab split
+        // below - that would just re-label this raw DATA row (e.g. an
+        // "android://...|1625780328|jaaaaaaaaaaa" credential line) as "headers".
+        // Returning null leaves the job header-less so the stream-parser's own
+        // content-based / AI header fallback can take over at parse time instead.
+        this.logger.info("headerless_delimited_no_ai_headers", { job_id: jobId });
+        return null;
       }
 
       // PostgreSQL COPY header: capture the column list inside the parentheses
