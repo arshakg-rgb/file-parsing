@@ -317,6 +317,56 @@ export class LineClassifierServiceImpl implements IClassifier
       this.headerParts = found ? found.parts.map((p) => p.trim()) : [headersOrHeaderLine.trim()];
       this.headerDelimiter = found?.delim ?? null;
     }
+
+    // Fallback: if an upstream header label is a compound like "username_or_email" and one
+    // of the target fields has "username" or "email" as an alias, map that column to the
+    // first matching unmapped target. This is fully dynamic: it works for any fieldSpec that
+    // has an alias matching one of the header's components.
+    if (this.headerMap && this.headerParts && this.fieldSpec.length > 0)
+    {
+      const mapped = new Set<number>();
+
+      for (const spec of Object.values(this.headerMap))
+      {
+        for (const idx of Array.isArray(spec) ? spec : [spec])
+        {
+          mapped.add(idx);
+        }
+      }
+
+      for (let i = 0; i < this.headerParts.length; i++)
+      {
+        if (mapped.has(i)) continue;
+
+        const raw = this.headerParts[i].trim().toLowerCase();
+        if (!raw || raw === "meta" || raw.startsWith("col_")) continue;
+
+        const tokens = raw
+            .split(/(?:\s*_\s*or\s*_\s*|\s+or\s+|[\/,;])+/i)
+            .map((t) => t.trim())
+            .filter((t) => t.length >= 2);
+
+        for (const field of this.fieldSpec)
+        {
+          if (field === "meta" || this.headerMap[field] !== undefined) continue;
+
+          const aliasSet = this.aliasMap.get(this.normalizeKey(field));
+          if (!aliasSet) continue;
+
+          for (const token of tokens)
+          {
+            if (aliasSet.has(this.normalizeKey(token)))
+            {
+              this.headerMap[field] = i;
+              mapped.add(i);
+              break;
+            }
+          }
+
+          if (this.headerMap[field] !== undefined) break;
+        }
+      }
+    }
   }
 
   /**

@@ -1214,14 +1214,14 @@ Output:`;
 
     this.logger.info("ai_infer_headers_start", { job_id: jobId, sample_count: sampleLines.length, field_spec: fieldSpec });
 
-    const prompt = `You are a data-structure detection assistant. You are given raw sample lines from a delimited text file that has NO header row.
+    const prompt = `You are a data-structure detection assistant. You are given raw sample lines from a delimited text file that has NO header row — every line is raw data, never a header.
 
 Target fields the pipeline wants to extract: ${fieldSpec.join(", ") || "(none specified — propose your own best-guess semantic labels for every column)"}.
 
 Tasks:
-1. Detect the delimiter used to separate columns (e.g. "|", ",", ";", "\\t").
-2. Assign a short label to EVERY column, in left-to-right order. If a column clearly corresponds to one of the target fields, use that exact target field name as its label. Otherwise infer the most likely real-world meaning of that column from its values (e.g. "url", "email", "username", "password", "phone", "app_package", "timestamp", "ip_address") and use that as a short snake_case label — only fall back to a generic label like "col_2" if the content gives no semantic clue.
-3. Build a "field_map": for each target field you confidently located, its 0-based column index. Omit any target field you could not confidently locate. Never guess a target field onto a column whose values clearly don't match that field's meaning. If no target fields were given, return an empty object for "field_map".
+1. Detect the delimiter used to separate columns (e.g. "|", ",", ";", ":", "\\t").
+2. Assign a short label to EVERY column, in left-to-right order. If a column clearly corresponds to one of the target fields, use that EXACT target field name as its label. NEVER use a raw sample value as a label and NEVER invent an intermediate label like "username_or_email" — if a column is a username, email, login, phone, account name or any other account identifier and one of the target fields represents such an identifier, use that target field's exact name. Only fall back to a generic label like "col_2" if the content gives no semantic clue and no target field matches.
+3. Build a "field_map": for each target field you confidently located, its 0-based column index. Include EVERY target field that a column represents. If no target fields were given, return an empty object for "field_map".
 
 Return ONLY valid JSON in this exact shape (no markdown, no explanation):
 {
