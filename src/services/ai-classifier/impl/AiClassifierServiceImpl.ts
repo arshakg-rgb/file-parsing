@@ -1235,65 +1235,75 @@ ${sampleLines.join("\n")}
 
 Output:`;
 
-    try
+    const MAX_ATTEMPTS: number = 3;
+    let lastErrorMessage: string = "unknown";
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)
     {
-      const raw: string = await this.askVertexAI(prompt, 8000);
-      const jsonStr: string = AiClassifierServiceImpl.extractJsonFromMarkdown(raw);
-      const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
-
-      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.headers) || parsed.headers.length === 0)
+      try
       {
-        this.logger.warn("ai_infer_headers_invalid_response", { job_id: jobId, raw });
-        return null;
-      }
+        const raw: string = await this.askVertexAI(prompt, 8000);
+        const jsonStr: string = AiClassifierServiceImpl.extractJsonFromMarkdown(raw);
+        const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
 
-      const headers: string[] = (parsed.headers as unknown[])
-        .map((h) => String(h ?? "").trim())
-        .map((h, i) => h || `col_${i}`);
-
-      const fieldMap: ColumnMap = {};
-      const rawFieldMap: unknown = parsed.field_map;
-
-      if (rawFieldMap && typeof rawFieldMap === "object" && !Array.isArray(rawFieldMap))
-      {
-        for (const [field, idx] of Object.entries(rawFieldMap as Record<string, unknown>))
+        if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.headers) || parsed.headers.length === 0)
         {
-          if (!fieldSpec.includes(field))
-          {
-            continue;
-          }
+          lastErrorMessage = "invalid_response";
+          this.logger.warn("ai_infer_headers_invalid_response", { job_id: jobId, attempt, raw });
+          continue;
+        }
 
-          if (typeof idx === "number" && Number.isInteger(idx) && idx >= 0 && idx < headers.length)
-          {
-            fieldMap[field] = idx;
-          }
-          else if (Array.isArray(idx))
-          {
-            const idxs: number[] = idx.filter((n): n is number => typeof n === "number" && Number.isInteger(n) && n >= 0 && n < headers.length);
+        const headers: string[] = (parsed.headers as unknown[])
+          .map((h) => String(h ?? "").trim())
+          .map((h, i) => h || `col_${i}`);
 
-            if (idxs.length > 0)
+        const fieldMap: ColumnMap = {};
+        const rawFieldMap: unknown = parsed.field_map;
+
+        if (rawFieldMap && typeof rawFieldMap === "object" && !Array.isArray(rawFieldMap))
+        {
+          for (const [field, idx] of Object.entries(rawFieldMap as Record<string, unknown>))
+          {
+            if (!fieldSpec.includes(field))
             {
-              fieldMap[field] = idxs;
+              continue;
+            }
+
+            if (typeof idx === "number" && Number.isInteger(idx) && idx >= 0 && idx < headers.length)
+            {
+              fieldMap[field] = idx;
+            }
+            else if (Array.isArray(idx))
+            {
+              const idxs: number[] = idx.filter((n): n is number => typeof n === "number" && Number.isInteger(n) && n >= 0 && n < headers.length);
+
+              if (idxs.length > 0)
+              {
+                fieldMap[field] = idxs;
+              }
             }
           }
         }
-      }
 
-      if (fieldSpec.length > 0 && Object.keys(fieldMap).length === 0)
+        if (fieldSpec.length > 0 && Object.keys(fieldMap).length === 0)
+        {
+          lastErrorMessage = "no_field_map";
+          this.logger.warn("ai_infer_headers_no_field_map", { job_id: jobId, attempt, headers });
+          continue;
+        }
+
+        this.logger.info("ai_infer_headers_success", { job_id: jobId, attempt, headers, field_map: fieldMap });
+        return { headers, fieldMap };
+      }
+      catch (err)
       {
-        this.logger.warn("ai_infer_headers_no_field_map", { job_id: jobId, headers });
-        return null;
+        lastErrorMessage = err instanceof Error ? err.message : (typeof err === "string" ? err : JSON.stringify(err));
+        this.logger.warn("ai_infer_headers_attempt_failed", { job_id: jobId, attempt, error: lastErrorMessage });
       }
+    }
 
-      this.logger.info("ai_infer_headers_success", { job_id: jobId, headers, field_map: fieldMap });
-      return { headers, fieldMap };
-    }
-    catch (err)
-    {
-      const errorMessage = err instanceof Error ? err.message : (typeof err === "string" ? err : JSON.stringify(err));
-      this.logger.error("ai_infer_headers_failed", { job_id: jobId, error: errorMessage });
-      return null;
-    }
+    this.logger.error("ai_infer_headers_failed", { job_id: jobId, attempts: MAX_ATTEMPTS, error: lastErrorMessage });
+    return null;
   }
 
   private quickFingerprint(line: string): string
