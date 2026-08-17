@@ -673,9 +673,14 @@ export class StreamParserService
 
     const classifier: LineClassifierServiceImpl = LineClassifierServiceImpl.getInstance(jobId, fieldSpec, recordTemplates, rubbishTemplates, columnMap, this.getAIRateLimiter(), customAliases, customComponents);
 
-    if (columnMap && msg.headers?.length)
+    // Apply any headers already resolved upstream (e.g. by the detect stage's AI header
+    // inference) as soon as they're known, even when no column_map/field_map came with
+    // them (a legitimate outcome when the target field_spec has no overlap with the
+    // file's actual columns). Without this, the per-line legacy header-detection fallback
+    // below would run instead and mistakenly treat the first raw DATA row as a header.
+    if (msg.headers?.length)
     {
-      classifier.setHeaderMap(columnMap, msg.headers as string[]);
+      classifier.setHeaderMap(columnMap ?? {}, msg.headers as string[]);
     }
 
     const outputManager = new OutputManager();
@@ -1124,7 +1129,7 @@ export class StreamParserService
 
         await drainIfReady();
 
-        if (!aiHeaderMapped && !columnMap)
+        if (!aiHeaderMapped && !columnMap && !msg.headers?.length)
         {
           aiHeaderMapped = true;
 

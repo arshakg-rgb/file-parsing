@@ -3,7 +3,7 @@ import jschardet, {IDetectedMap} from "jschardet";
 import { transition } from "@service/job-service/StateMachineImpl.js";
 import { settings } from "@shared/Settings.js";
 import { EventType, makeJobEvent } from "@shared/models/events.js";
-import { JobStatus, ClassifyMessage, ParseMessage } from "@shared/models/job.js";
+import { JobStatus, ClassifyMessage, ParseMessage, ColumnMap } from "@shared/models/job.js";
 import { templateRegistry } from "@shared/TemplateRegistryService.js";
 import { createLogger } from "@utils/logger/Log.js";
 import {
@@ -563,14 +563,14 @@ export class DetectBootstrapService
    * @returns Array of detected headers, or null if extraction failed
    */
 
-  private async extractHeaders(bucket: string, key: string, encoding: string, fileSize: number, jobId: string): Promise<string[] | null>
+  private async extractHeaders(bucket: string, key: string, encoding: string, fileSize: number, jobId: string, fieldSpec: string[]): Promise<{ headers: string[]; fieldMap?: ColumnMap } | null>
   {
     try
     {
       const headEnd: number = Math.min(settings.PROBE_WINDOW_MAX_BYTES - 1, fileSize - 1);
       if (headEnd < 0)
       {
-        return [];
+        return { headers: [] };
       }
 
       const headRaw: Buffer = await this.gcsUtils.readRange(bucket, key, 0, headEnd);
@@ -579,14 +579,14 @@ export class DetectBootstrapService
       const copyMatch = headText.match(/COPY\s+\S+\s*\(([^)]+)\)\s*FROM\s+stdin;?/im);
       if (copyMatch)
       {
-        return copyMatch[1].split(",").map((h) => h.trim().replace(/^["`]+|["`]+$/g, "")).filter((h) => h.length > 0);
+        return { headers: copyMatch[1].split(",").map((h) => h.trim().replace(/^["`]+|["`]+$/g, "")).filter((h) => h.length > 0) };
       }
 
       const sampleLines: string[] = this.extractSampleLines(headRaw, encoding, 500);
 
       if (!sampleLines.length)
       {
-        return [];
+        return { headers: [] };
       }
 
       const { hadHeader, headerLine, dataLines } = this.stripHeaderLine(sampleLines, jobId);
@@ -594,7 +594,7 @@ export class DetectBootstrapService
 
       if (!candidate)
       {
-        return [];
+        return { headers: [] };
       }
 
       const trimmed: string = candidate.trim();
@@ -618,12 +618,12 @@ export class DetectBootstrapService
 
           try
           {
-            const inferred = await aiClassifierServiceImpl.inferHeadersFromSample(probeLines, [], jobId);
+            const inferred = await aiClassifierServiceImpl.inferHeadersFromSample(probeLines, fieldSpec, jobId);
 
             if (inferred && inferred.headers.length > 0)
             {
-              this.logger.info("ai_headers_inferred", { job_id: jobId, headers: inferred.headers });
-              return inferred.headers;
+              this.logger.info("ai_headers_inferred", { job_id: jobId, headers: inferred.headers, field_map: inferred.fieldMap });
+              return { headers: inferred.headers, fieldMap: inferred.fieldMap };
             }
           }
           catch (err)
@@ -649,7 +649,7 @@ export class DetectBootstrapService
         const copyMatch = lineTrim.match(/COPY\s+\S+\s*\(([^)]+)\)\s*FROM\s+stdin;?/i);
         if (copyMatch)
         {
-          return copyMatch[1].split(",").map((h) => h.trim().replace(/^["`]+|["`]+$/g, "")).filter((h) => h.length > 0);
+          return { headers: copyMatch[1].split(",").map((h) => h.trim().replace(/^["`]+|["`]+$/g, "")).filter((h) => h.length > 0) };
         }
       }
 
@@ -687,7 +687,7 @@ export class DetectBootstrapService
             }
             if (keys.size)
             {
-              return Array.from(keys);
+              return { headers: Array.from(keys) };
             }
           }
 
@@ -706,7 +706,7 @@ export class DetectBootstrapService
             }
             if (keys.size)
             {
-              return Array.from(keys);
+              return { headers: Array.from(keys) };
             }
           }
         }
@@ -717,7 +717,7 @@ export class DetectBootstrapService
       }
 
       const delimiter: string = (trimmed.split("\t").length > trimmed.split(",").length) ? "\t" : ",";
-      return trimmed.split(delimiter).map((h) => h.trim().replace(/^["']|["']$/g, ""));
+      return { headers: trimmed.split(delimiter).map((h) => h.trim().replace(/^["']|["']$/g, "")) };
     }
     catch (err)
     {
@@ -754,14 +754,14 @@ export class DetectBootstrapService
    * @param fileSize - Resolved file size
    * @param seedTemplateIds - Template ids seeded/resolved during probing
    */
-  private async forwardToParse(msg: ClassifyMessage, jobId: string, fileSize: number, seedTemplateIds: string[], headers?: string[]): Promise<void>
+  private async forwardToParse(msg: ClassifyMessage, jobId: string, fileSize: number, seedTemplateIds: string[], headers?: string[], inferredFieldMap?: ColumnMap): Promise<void>
   {
     const parseMsg: ParseMessage = {
       job_id: jobId,
       s3_url: msg.s3_url,
       size: fileSize,
       field_spec: msg.field_spec,
-      column_map: msg.column_map,
+      column_map: msg.column_map ?? inferredFieldMap,
       headers,
       seed_template_ids: seedTemplateIds,
     };
@@ -852,10 +852,20 @@ export class DetectBootstrapService
       }
     }
 
-    const headers: string[] | null = await this.extractHeaders(bucket, key, encoding, fileSize, jobId);
+    const headerResult: { headers: string[]; fieldMap?: ColumnMap } | null = await this.extractHeaders(bucket, key, encoding, fileSize, jobId, fieldSpecArray);
+    const headers: string[] | null = headerResult?.headers ?? null;
+    const inferredFieldMap: ColumnMap | undefined = headerResult?.fieldMap && Object.keys(headerResult.fieldMap).length > 0 ? headerResult.fieldMap : undefined;
+
     if (headers)
     {
-      await DatabaseService.getInstance().repositories.jobs.updateFields(jobId, { headers });
+      const updates: { headers: string[]; column_map?: ColumnMap } = { headers };
+
+      if (inferredFieldMap && !msg.column_map)
+      {
+        updates.column_map = inferredFieldMap;
+      }
+
+      await DatabaseService.getInstance().repositories.jobs.updateFields(jobId, updates);
     }
 
     if (fieldSpecArray.length === 0)
@@ -882,7 +892,7 @@ export class DetectBootstrapService
     MetricsUtils.set("detect.duration_ms", bootstrapDuration);
 
     await transition(jobId, JobStatus.PARSING);
-    await this.forwardToParse(msg, jobId, fileSize, seedTemplateIds, headers);
+    await this.forwardToParse(msg, jobId, fileSize, seedTemplateIds, headers, inferredFieldMap);
   }
 
   /**
