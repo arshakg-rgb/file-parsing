@@ -8,6 +8,7 @@ import { ClassifyRequest, ClassifyResponse, CSVParseResult, AIVerdict } from "@s
 import {IClassifierStats, PersistKind} from "@service/ai-classifier/io/IClassifierStats.js";
 import {Constants} from "@common/io/Constants.js";
 import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
+import {ColumnMap} from "@shared/models/job.js";
 
 export class AiClassifierServiceImpl
 {
@@ -1151,6 +1152,112 @@ Output:`;
     {
       const errorMessage = err instanceof Error ? err.message : (typeof err === "string" ? err : JSON.stringify(err));
       this.logger.error("ai_resolve_field_aliases_failed", { job_id: jobId, error: errorMessage });
+      return null;
+    }
+  }
+
+  /**
+   * Ask the model to detect the delimiter and infer a label for every column of a
+   * headerless delimited file, plus a field_map locating any requested target fields
+   * it can confidently identify by column position. Used as a last-resort structural
+   * probe when local heuristics (fixed column_map, detected header row, KV/JSON) all
+   * fail to identify the file's structure — so the pipeline never needs a hardcoded,
+   * file-specific column layout.
+   *
+   * @param sampleLines - A handful of raw sample lines from the file (no header row present).
+   * @param fieldSpec - The ordered target field names the job wants extracted.
+   * @param jobId - Job id for logging.
+   * @returns The detected header labels (one per column, in order) and a field_map of
+   *          any target fields the model located, or null on failure/no usable response.
+   */
+
+  public async inferHeadersFromSample(sampleLines: string[], fieldSpec: string[], jobId: string): Promise<{ headers: string[]; fieldMap: ColumnMap } | null>
+  {
+    if (sampleLines.length === 0)
+    {
+      return null;
+    }
+
+    this.logger.info("ai_infer_headers_start", { job_id: jobId, sample_count: sampleLines.length, field_spec: fieldSpec });
+
+    const prompt = `You are a data-structure detection assistant. You are given raw sample lines from a delimited text file that has NO header row.
+
+Target fields the pipeline wants to extract: ${fieldSpec.join(", ") || "(none specified — propose your own best-guess semantic labels for every column)"}.
+
+Tasks:
+1. Detect the delimiter used to separate columns (e.g. "|", ",", ";", "\\t").
+2. Assign a short label to EVERY column, in left-to-right order. If a column clearly corresponds to one of the target fields, use that exact target field name as its label. Otherwise infer the most likely real-world meaning of that column from its values (e.g. "url", "email", "username", "password", "phone", "app_package", "timestamp", "ip_address") and use that as a short snake_case label — only fall back to a generic label like "col_2" if the content gives no semantic clue.
+3. Build a "field_map": for each target field you confidently located, its 0-based column index. Omit any target field you could not confidently locate. Never guess a target field onto a column whose values clearly don't match that field's meaning. If no target fields were given, return an empty object for "field_map".
+
+Return ONLY valid JSON in this exact shape (no markdown, no explanation):
+{
+  "delimiter": "|",
+  "headers": ["label_for_col_0", "label_for_col_1", "label_for_col_2"],
+  "field_map": { "target_field_name": 0 }
+}
+
+Sample lines:
+${sampleLines.join("\n")}
+
+Output:`;
+
+    try
+    {
+      const raw: string = await this.askVertexAI(prompt, 8000);
+      const jsonStr: string = AiClassifierServiceImpl.extractJsonFromMarkdown(raw);
+      const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+
+      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.headers) || parsed.headers.length === 0)
+      {
+        this.logger.warn("ai_infer_headers_invalid_response", { job_id: jobId, raw });
+        return null;
+      }
+
+      const headers: string[] = (parsed.headers as unknown[])
+        .map((h) => String(h ?? "").trim())
+        .map((h, i) => h || `col_${i}`);
+
+      const fieldMap: ColumnMap = {};
+      const rawFieldMap: unknown = parsed.field_map;
+
+      if (rawFieldMap && typeof rawFieldMap === "object" && !Array.isArray(rawFieldMap))
+      {
+        for (const [field, idx] of Object.entries(rawFieldMap as Record<string, unknown>))
+        {
+          if (!fieldSpec.includes(field))
+          {
+            continue;
+          }
+
+          if (typeof idx === "number" && Number.isInteger(idx) && idx >= 0 && idx < headers.length)
+          {
+            fieldMap[field] = idx;
+          }
+          else if (Array.isArray(idx))
+          {
+            const idxs: number[] = idx.filter((n): n is number => typeof n === "number" && Number.isInteger(n) && n >= 0 && n < headers.length);
+
+            if (idxs.length > 0)
+            {
+              fieldMap[field] = idxs;
+            }
+          }
+        }
+      }
+
+      if (fieldSpec.length > 0 && Object.keys(fieldMap).length === 0)
+      {
+        this.logger.warn("ai_infer_headers_no_field_map", { job_id: jobId, headers });
+        return null;
+      }
+
+      this.logger.info("ai_infer_headers_success", { job_id: jobId, headers, field_map: fieldMap });
+      return { headers, fieldMap };
+    }
+    catch (err)
+    {
+      const errorMessage = err instanceof Error ? err.message : (typeof err === "string" ? err : JSON.stringify(err));
+      this.logger.error("ai_infer_headers_failed", { job_id: jobId, error: errorMessage });
       return null;
     }
   }

@@ -823,6 +823,7 @@ export class StreamParserService
     let isMySqlDump = false;
     let isPostgresDump = false;
     let jsonRecords: string[] | null = null;
+    let fileHeadSample: string = "";
 
     if (fileSize > 0) {
       const headSize = Math.min(fileSize, settings.PROBE_WINDOW_MAX_BYTES);
@@ -834,11 +835,46 @@ export class StreamParserService
         isNdjson = key.endsWith(".ndjson") || new RegExp("}(?:\\n|\\r\\n)\\s*\\{").test(headText);
         isMySqlDump = !isJsonFile && (headUpper.includes("MYSQL DUMP") || headUpper.startsWith("CREATE TABLE") || headUpper.includes("INSERT INTO"));
         isPostgresDump = !isJsonFile && (headUpper.includes("POSTGRESQL") || headUpper.includes("PG_DUMP") || /COPY\s+\S+\s*\([^)]+\)\s*FROM\s+STDIN/i.test(headText));
+        fileHeadSample = headText;
       } catch (err) {
         this.logger.warn("json_head_peek_failed", { job_id: jobId, s3_url: msg.s3_url, error: String(err) });
         isJsonFile = key.endsWith(".json") && !key.endsWith(".ndjson");
         isMySqlDump = false;
         isPostgresDump = false;
+      }
+    }
+
+    // Last-resort structural probe: no client column_map/headers, and the file isn't
+    // JSON/NDJSON/SQL-dump (those have their own dedicated parsers), and the classifier
+    // hasn't already been told about a header via those. Ask the AI to look at a few raw
+    // sample lines and dynamically infer a column layout for this specific file, instead
+    // of relying on any hardcoded/file-specific column order.
+    if (!columnMap && !msg.headers?.length && !isJsonFile && !isNdjson && !isMySqlDump && !isPostgresDump && aiEnabled && fieldSpec.length > 0 && fileHeadSample)
+    {
+      const sampleLines: string[] = fileHeadSample
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0)
+        .slice(0, 8);
+
+      const looksStructured: boolean = sampleLines.length > 0 && (sampleLines[0][0] === "{" || sampleLines[0][0] === "[");
+
+      if (!looksStructured && sampleLines.length >= 2)
+      {
+        try
+        {
+          const inferred = await aiClassifierServiceImpl.inferHeadersFromSample(sampleLines, fieldSpec, jobId);
+
+          if (inferred)
+          {
+            classifier.setHeaderMap(inferred.fieldMap, inferred.headers);
+            this.logger.info("ai_header_inference_applied", { job_id: jobId, headers: inferred.headers, field_map: inferred.fieldMap });
+          }
+        }
+        catch (err)
+        {
+          this.logger.warn("ai_header_inference_failed", { job_id: jobId, error: String(err) });
+        }
       }
     }
 

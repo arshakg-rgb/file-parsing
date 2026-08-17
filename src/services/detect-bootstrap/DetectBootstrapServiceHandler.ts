@@ -589,7 +589,7 @@ export class DetectBootstrapService
         return [];
       }
 
-      const { hadHeader, headerLine } = this.stripHeaderLine(sampleLines, jobId);
+      const { hadHeader, headerLine, dataLines } = this.stripHeaderLine(sampleLines, jobId);
       const candidate: string | undefined = hadHeader ? headerLine : sampleLines[0];
 
       if (!candidate)
@@ -598,6 +598,40 @@ export class DetectBootstrapService
       }
 
       const trimmed: string = candidate.trim();
+      const headUpper: string = headText.toUpperCase();
+      const isSqlDump: boolean = headUpper.includes("MYSQL DUMP") || headUpper.startsWith("CREATE TABLE") || headUpper.includes("INSERT INTO") || headUpper.includes("POSTGRESQL") || headUpper.includes("PG_DUMP");
+
+      // No real header row, and not JSON/SQL (those have their own dedicated parsers and
+      // already work correctly): the naive comma/tab split below would just re-label the
+      // first raw DATA row as "headers", which is meaningless for any other delimiter
+      // (e.g. "|"). Ask the AI to look at a few raw sample lines and propose a real
+      // semantic label per column instead, restricted to plain headerless delimited
+      // files (e.g. "url|user|password" credential logs) only.
+      if (!hadHeader && trimmed[0] !== "{" && trimmed[0] !== "[" && !copyMatch && !isSqlDump)
+      {
+        const aiMode: string = settings.AI_INLINE_MODE;
+        const aiEnabled: boolean = aiMode === "mock" || aiMode === "live";
+
+        if (aiEnabled)
+        {
+          const probeLines: string[] = (dataLines.length > 0 ? dataLines : sampleLines).slice(0, 8);
+
+          try
+          {
+            const inferred = await aiClassifierServiceImpl.inferHeadersFromSample(probeLines, [], jobId);
+
+            if (inferred && inferred.headers.length > 0)
+            {
+              this.logger.info("ai_headers_inferred", { job_id: jobId, headers: inferred.headers });
+              return inferred.headers;
+            }
+          }
+          catch (err)
+          {
+            this.logger.warn("ai_headers_inference_failed", { job_id: jobId, error: String(err) });
+          }
+        }
+      }
 
       // PostgreSQL COPY header: capture the column list inside the parentheses
       for (const line of sampleLines)
