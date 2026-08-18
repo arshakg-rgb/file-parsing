@@ -64,6 +64,18 @@ export class OutputBuffer
   private pendingBytes: number = 0;
 
   /**
+   * Running estimate of bytes per row, refreshed periodically by sampling.
+   * @private
+   */
+  private estimatedRowBytes: number = 0;
+
+  /**
+   * How often to recompute the per-row byte estimate.
+   * @private
+   */
+  private static readonly PENDING_BYTES_SAMPLE_INTERVAL: number = 100;
+
+  /**
    * Byte threshold for forcing a flush before the row-count threshold.
    * A 64 MB cap keeps merged parts well under the 64 MB merge limit.
    * @private
@@ -244,7 +256,16 @@ export class OutputBuffer
   public addRow(row: OutputRow): Promise<void> | undefined
   {
     this.rows.push(row);
-    this.pendingBytes += Buffer.byteLength(JSON.stringify(row), "utf8");
+
+    if (this.rows.length === 1 || this.rows.length % OutputBuffer.PENDING_BYTES_SAMPLE_INTERVAL === 0)
+    {
+      this.estimatedRowBytes = Buffer.byteLength(JSON.stringify(row), "utf8");
+      this.pendingBytes = this.rows.length * this.estimatedRowBytes;
+    }
+    else
+    {
+      this.pendingBytes += this.estimatedRowBytes;
+    }
 
     if (!this.shouldFlush())
     {

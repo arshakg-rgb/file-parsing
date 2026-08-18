@@ -1200,10 +1200,28 @@ export class StreamParserService
           if (fastMySql)
           {
             const parsed: Record<string, unknown> = JSON.parse(line);
-            const coerced: Record<string, unknown> | null = classifier.coerce(parsed);
-            result = coerced
-                ? { verdict: "parsed", row: coerced, template_id: "mysql", template_version: 1 }
-                : { verdict: "rubbish", template_id: "mysql" };
+            const minimalRow: Record<string, unknown> = {};
+
+            for (const field of fieldSpec)
+            {
+              const rawKey: number | number[] | undefined = columnMap?.[field];
+
+              if (field === "meta" && rawKey === undefined)
+              {
+                minimalRow[field] = line;
+                continue;
+              }
+
+              const firstKey: number | string = Array.isArray(rawKey) ? rawKey[0] : (rawKey ?? field);
+              const headerName: string | undefined = typeof firstKey === "number" ? msg.headers?.[firstKey] : String(firstKey);
+
+              if (headerName && headerName in parsed)
+              {
+                minimalRow[field] = parsed[headerName];
+              }
+            }
+
+            result = { verdict: "parsed", row: minimalRow, template_id: "mysql", template_version: 1 };
           }
           else
           {
@@ -1274,7 +1292,10 @@ export class StreamParserService
           case "parsed": {
             const sanitizedRow: Record<string, unknown> = this.sanitizeRecord(result.row || {});
 
-            await enrichFromMeta(sanitizedRow);
+            if (!fastMySql)
+            {
+              await enrichFromMeta(sanitizedRow);
+            }
 
             if (!classifier.rowStrongFieldsOk(sanitizedRow))
             {

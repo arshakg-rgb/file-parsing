@@ -15,13 +15,13 @@ import { createLogger } from "@utils/logger/Log.js";
  */
 export function csvEscapeCell(v: unknown): string {
   if (v === null || v === undefined) return "";
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
   if (typeof v === "bigint") return String(v);
-  let s: string;
-  if (Array.isArray(v) || (typeof v === "object" && !(v instanceof Date))) {
-    s = JSON.stringify(v);
-  } else {
-    s = String(v);
+  if (v instanceof Date) return String(v);
+  if (typeof v === "string") {
+    return /[",\r\n]/.test(v) ? "\"" + v.replace(/"/g, "\"\"") + "\"" : v;
   }
+  const s = JSON.stringify(v);
   return /[",\r\n]/.test(s) ? "\"" + s.replace(/"/g, "\"\"") + "\"" : s;
 }
 
