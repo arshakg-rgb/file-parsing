@@ -2065,6 +2065,21 @@ export class LineClassifierServiceImpl implements IClassifier
       else
       {
         row[field] = null;
+
+        // A key WAS found for this field (e.g. an exact-name match whose source value
+        // happens to be null/empty) - consume it so it doesn't later show up as a
+        // spurious "unconsumed candidate" in the ambiguity check below, which would
+        // otherwise falsely reject an already-correctly-extracted row as ambiguous.
+        if (value !== undefined)
+        {
+          consumedKeys.add(matchedKey!);
+          const fullKey = leafToFull.get(matchedKey!);
+
+          if (fullKey)
+          {
+            consumedKeys.add(fullKey);
+          }
+        }
       }
     }
 
