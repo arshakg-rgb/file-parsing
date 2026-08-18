@@ -52,6 +52,7 @@ export class LineClassifierServiceImpl implements IClassifier
   private sqlDumpMode: boolean = false;
   private sqlCopyMode: boolean = false;
   private sqlCopyColumns: string[] | null = null;
+  private sqlCopyColumnToField: (string | null)[] | null = null;
   private sqlCopyTable: string | null = null;
   private coerceRejectsLogged: number = 0;
   private readonly logger: pino.Logger;
@@ -694,6 +695,7 @@ export class LineClassifierServiceImpl implements IClassifier
       {
         this.sqlCopyMode = false;
         this.sqlCopyColumns = null;
+        this.sqlCopyColumnToField = null;
         this.sqlCopyTable = null;
         return { verdict: "rubbish", template_id: "pg-copy-end" };
       }
@@ -707,6 +709,7 @@ export class LineClassifierServiceImpl implements IClassifier
     {
       this.sqlCopyTable = copyMatch[1];
       this.sqlCopyColumns = copyMatch[2].split(",").map((s) => s.trim());
+      this.sqlCopyColumnToField = this.resolvePgCopyMapping(this.sqlCopyColumns);
       this.sqlCopyMode = true;
       this.firstLine = false;
       return { verdict: "rubbish", template_id: "pg-copy-start" };
@@ -716,8 +719,81 @@ export class LineClassifierServiceImpl implements IClassifier
   }
 
   /**
+   * Precompute a column-to-field mapping for a PostgreSQL COPY column list, once per
+   * COPY block (not per row).
+   *
+   * Exact normalized name matches are resolved FIRST, across all columns, claiming both
+   * the column and the target field. Only afterwards are any still-unclaimed columns
+   * matched via the fuzzy alias/category map (`keyMatchesField`) against still-unclaimed
+   * fields.
+   *
+   * This two-pass order matters: some fields (e.g. `user_id`) are fuzzy-categorized as a
+   * generic "account identifier" whose alias set intentionally includes `email`/`phone`
+   * tokens (for headerless leak dumps that only ever have ONE identifying column). Without
+   * the exact-match pass running first, a well-named SQL schema column like `user_email`
+   * would be stolen by the earlier-ordered `user_id` field before `user_email` itself
+   * (its true exact match) ever gets a chance, silently corrupting the row.
+   *
+   * @param columns - The ordered source column names from the `COPY ... (...)` statement.
+   * @returns A same-length array where `mapping[i]` is the matched fieldSpec field name for
+   *          `columns[i]`, or `null` if the column has no target field and must fall back
+   *          to `meta`.
+   */
+
+  private resolvePgCopyMapping(columns: string[]): (string | null)[]
+  {
+    const mapping: (string | null)[] = new Array(columns.length).fill(null);
+    const usedFields: Set<string> = new Set<string>();
+
+    for (let i = 0; i < columns.length; i++)
+    {
+      const nCol: string = this.normalizeKey(columns[i]);
+
+      for (const f of this.fieldSpec)
+      {
+        if (f === "meta" || usedFields.has(f))
+        {
+          continue;
+        }
+
+        if (this.normalizeKey(f) === nCol)
+        {
+          mapping[i] = f;
+          usedFields.add(f);
+          break;
+        }
+      }
+    }
+
+    for (let i = 0; i < columns.length; i++)
+    {
+      if (mapping[i] !== null)
+      {
+        continue;
+      }
+
+      for (const f of this.fieldSpec)
+      {
+        if (f === "meta" || usedFields.has(f))
+        {
+          continue;
+        }
+
+        if (this.keyMatchesField(columns[i], f))
+        {
+          mapping[i] = f;
+          usedFields.add(f);
+          break;
+        }
+      }
+    }
+
+    return mapping;
+  }
+
+  /**
    * Parse a single tab-delimited row from a PostgreSQL COPY block.
-   * Maps every column to the best matching fieldSpec field using the alias map.
+   * Uses the mapping precomputed once per COPY block by `resolvePgCopyMapping`.
    * Unmapped columns are always bundled into the `meta` JSON field because the output
    * layer (CSV/Parquet) always emits a `meta` column, even if it is not listed in the
    * job's `field_spec`.
@@ -738,35 +814,20 @@ export class LineClassifierServiceImpl implements IClassifier
 
     const meta: Record<string, unknown> = {};
     const columns: string[] = this.sqlCopyColumns ?? [];
+    const columnToField: (string | null)[] = this.sqlCopyColumnToField ?? [];
 
     for (let i = 0; i < columns.length; i++)
     {
       const col: string = columns[i];
       const raw: string | null = i < parts.length ? parts[i] : null;
       const val: string | null = this.cleanPgCopyValue(raw);
+      const f: string | null = columnToField[i] ?? null;
 
-      let mapped: boolean = false;
-
-      for (const f of this.fieldSpec)
+      if (f)
       {
-        if (this.keyMatchesField(col, f))
-        {
-          if (f === "meta")
-          {
-            // Source column literally named "meta" gets preserved in the meta payload.
-            meta[col] = val;
-          }
-          else
-          {
-            row[f] = val;
-          }
-
-          mapped = true;
-          break;
-        }
+        row[f] = val;
       }
-
-      if (!mapped)
+      else
       {
         meta[col] = val;
       }
