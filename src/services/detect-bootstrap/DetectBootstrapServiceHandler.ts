@@ -574,8 +574,50 @@ export class DetectBootstrapService
   }
 
   /**
+   * Extract the column names declared inside a MySQL CREATE TABLE block.
+   *
+   * @param sampleLines - Non-empty lines from the head of the file
+   * @returns Array of column names, or empty array if no CREATE TABLE block is found
+   */
+  private extractMySqlCreateTableColumns(sampleLines: string[]): string[]
+  {
+    let inCreateTable = false;
+    const columns: string[] = [];
+
+    for (const rawLine of sampleLines)
+    {
+      const line = rawLine.trim();
+
+      if (!inCreateTable)
+      {
+        if (/^CREATE TABLE\s+/i.test(line))
+        {
+          inCreateTable = true;
+        }
+        continue;
+      }
+
+      // Closing paren of the CREATE TABLE column list
+      if (/^\)\s*[;,]?/.test(line))
+      {
+        break;
+      }
+
+      // Column definitions start with a backtick-quoted identifier followed by a type
+      const match = line.match(/^`([^`]+)`\s+\w+/);
+      if (match)
+      {
+        columns.push(match[1]);
+      }
+    }
+
+    return columns;
+  }
+
+  /**
    * Extract the candidate headers/keys from the first meaningful bytes of the file.
-   * Works for CSV/TSV header lines and for JSON/JSONL object keys.
+   * Works for CSV/TSV header lines, JSON/JSONL object keys, and MySQL CREATE TABLE
+   * dumps.
    *
    * @param bucket - GCS bucket
    * @param key - GCS object key
@@ -735,6 +777,15 @@ export class DetectBootstrapService
         catch
         {
           // not a JSON payload, fall through to delimiter split
+        }
+      }
+
+      if (headUpper.includes("CREATE TABLE"))
+      {
+        const createTableColumns: string[] = this.extractMySqlCreateTableColumns(sampleLines);
+        if (createTableColumns.length > 0)
+        {
+          return { headers: createTableColumns };
         }
       }
 
