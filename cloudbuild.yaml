@@ -257,7 +257,7 @@ steps:
           --allow-unauthenticated \
           --service-account=datalead-osint@data-etl-499916.iam.gserviceaccount.com \
           --add-cloudsql-instances=data-etl-499916:us-central1:datalead-osint \
-          --memory 8Gi \
+          --memory 16Gi \
           --cpu 4 \
           --timeout 3600s \
           --max-instances 100 \

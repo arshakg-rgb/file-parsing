@@ -804,13 +804,14 @@ export class GcsUtils extends ServiceManager
         try
         {
           const statement = buffer.trim();
+          const statementPrefix = statement.slice(0, 80).toUpperCase();
 
-          if (statement.toUpperCase().startsWith("CREATE TABLE"))
+          if (statementPrefix.startsWith("CREATE TABLE"))
           {
             columns = this.parseMysqlCreateTableColumns(statement);
             this.logger.debug("mysql_dump_columns_parsed", { count: columns.length, first_five: columns.slice(0, 5) });
           }
-          else if (statement.toUpperCase().startsWith("INSERT INTO"))
+          else if (statementPrefix.startsWith("INSERT INTO"))
           {
             insertColumns = this.parseMysqlInsertColumnList(statement) ?? columns;
 
