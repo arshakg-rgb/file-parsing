@@ -403,53 +403,75 @@ export class DetectBootstrapService
 
   /**
    * Classify an unknown line via the AI classifier, racing against a timeout.
-   * Handles all timeout logging/metrics; returns null if the call timed out.
+   * Retries up to 3 times on timeout/failure; if all attempts fail the job is
+   * aborted by throwing an error that the consumer loop converts to a FAILED status.
    *
    * @param req - Classification request
    * @param jobId - Job identifier, for logging
    * @param fingerprint - Fingerprint of the probe window, for logging
-   * @returns Classification response, or null on timeout
+   * @returns Classification response
+   * @throws Error when the AI call fails after 3 attempts
    */
 
-  private async classifyWithTimeout(req: ClassifyRequest, jobId: string, fingerprint: string): Promise<ClassifyResponse | null>
+  private async classifyWithTimeout(req: ClassifyRequest, jobId: string, fingerprint: string): Promise<ClassifyResponse>
   {
-    this.logger.info("ai_call_initiated", {
+    const MAX_ATTEMPTS = 3;
+    let lastErr: Error | unknown;
+
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)
+    {
+      this.logger.info("ai_call_initiated", {
+        job_id: jobId,
+        source: "detect-bootstrap",
+        attempt,
+        max_attempts: MAX_ATTEMPTS,
+        unknown_line_length: req.unknown_line.length,
+        context_lines: (req.context_lines || []).length,
+        fingerprint,
+      });
+
+      try
+      {
+        const aiTimeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("ai_classify_timeout")), settings.AI_CLASSIFY_TIMEOUT_MS));
+        const resp: ClassifyResponse = await Promise.race([this.classify!(req), aiTimeout]);
+
+        this.logger.info("ai_call_completed", {
+          job_id: jobId,
+          source: "detect-bootstrap",
+          attempt,
+          verdict: resp.kind,
+          has_template: !!resp.template,
+          fingerprint,
+        });
+
+        return resp;
+      }
+      catch (aiErr)
+      {
+        lastErr = aiErr;
+        this.stats.aiTimeouts++;
+
+        this.logger.warn("ai_call_timeout", {
+          job_id: jobId,
+          source: "detect-bootstrap",
+          attempt,
+          max_attempts: MAX_ATTEMPTS,
+          fingerprint,
+          error: String(aiErr),
+        });
+        MetricsUtils.increment("detect.ai_timeout", 1);
+      }
+    }
+
+    this.logger.error("ai_call_failed", {
       job_id: jobId,
       source: "detect-bootstrap",
-      unknown_line_length: req.unknown_line.length,
-      context_lines: (req.context_lines || []).length,
       fingerprint,
+      attempts: MAX_ATTEMPTS,
+      error: String(lastErr),
     });
 
-    try
-    {
-      const aiTimeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("ai_classify_timeout")), settings.AI_CLASSIFY_TIMEOUT_MS));
-      const resp: ClassifyResponse = await Promise.race([this.classify!(req), aiTimeout]);
-
-      this.logger.info("ai_call_completed", {
-        job_id: jobId,
-        source: "detect-bootstrap",
-        verdict: resp.kind,
-        has_template: !!resp.template,
-        fingerprint,
-      });
-
-      return resp;
-    }
-    catch (aiErr)
-    {
-      this.stats.aiTimeouts++;
-
-      this.logger.warn("ai_call_timeout", {
-        job_id: jobId,
-        source: "detect-bootstrap",
-        fingerprint,
-        error: String(aiErr),
-      });
-      MetricsUtils.increment("detect.ai_timeout", 1);
-
-      return null;
-    }
+    throw new Error(`AI call failed after ${MAX_ATTEMPTS} attempts: ${String(lastErr)}`);
   }
 
   /**
