@@ -3237,7 +3237,7 @@ export class LineClassifierServiceImpl implements IClassifier
    * @returns The coerced row with normalized values, or `null` if any field is rejected for binary corruption.
    */
 
-  private coerce(row: Record<string, unknown>): Record<string, unknown> | null
+  public coerce(row: Record<string, unknown>): Record<string, unknown> | null
   {
     const out: Record<string, unknown> = {};
 

@@ -1070,6 +1070,8 @@ export class StreamParserService
         return row;
       };
 
+      const fastMySql = isMySqlDump && !!msg.headers?.length && fieldSpec.length > 0;
+
       for await (const [line, byteOffset, byteLength] of lineSource)
       {
         lineNo += 1;
@@ -1191,11 +1193,22 @@ export class StreamParserService
           }
         }
 
-        let result;
+        let result: ClassifyResult;
 
         try
         {
-          result = classifier.classify(line, byteOffset, byteLength);
+          if (fastMySql)
+          {
+            const parsed: Record<string, unknown> = JSON.parse(line);
+            const coerced: Record<string, unknown> | null = classifier.coerce(parsed);
+            result = coerced
+                ? { verdict: "parsed", row: coerced, template_id: "mysql", template_version: 1 }
+                : { verdict: "rubbish", template_id: "mysql" };
+          }
+          else
+          {
+            result = classifier.classify(line, byteOffset, byteLength);
+          }
         }
         catch (lineError)
         {

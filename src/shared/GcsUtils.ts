@@ -67,7 +67,7 @@ export class GcsUtils extends ServiceManager
    * @private
    */
 
-  private readonly FETCH_CHUNK_SIZE: number = 1048576;
+  private readonly FETCH_CHUNK_SIZE: number = 32 * 1024 * 1024;
 
   /**
    * GCS resumable upload threshold (5 MB)
@@ -1051,7 +1051,7 @@ export class GcsUtils extends ServiceManager
   private splitMysqlValues(tuple: string): string[]
   {
     const values: string[] = [];
-    let current = "";
+    let start = 0;
     let inQuote = false;
     let quoteChar = "";
 
@@ -1063,7 +1063,7 @@ export class GcsUtils extends ServiceManager
       {
         if (c === "\\" && i + 1 < tuple.length)
         {
-          current += c + tuple[++i];
+          i++;
           continue;
         }
 
@@ -1072,7 +1072,6 @@ export class GcsUtils extends ServiceManager
           inQuote = false;
         }
 
-        current += c;
         continue;
       }
 
@@ -1080,23 +1079,20 @@ export class GcsUtils extends ServiceManager
       {
         inQuote = true;
         quoteChar = c;
-        current += c;
         continue;
       }
 
       if (c === ",")
       {
-        values.push(current.trim());
-        current = "";
+        values.push(tuple.slice(start, i).trim());
+        start = i + 1;
         continue;
       }
-
-      current += c;
     }
 
-    if (current.trim().length > 0)
+    if (start < tuple.length)
     {
-      values.push(current.trim());
+      values.push(tuple.slice(start).trim());
     }
 
     return values;
@@ -1104,29 +1100,56 @@ export class GcsUtils extends ServiceManager
 
   private coerceMysqlValue(raw: string): unknown
   {
-    const trimmed = raw.trim();
-
-    if (trimmed.toUpperCase() === "NULL")
+    if (raw === "NULL")
     {
       return null;
     }
 
-    if (/^'.*'$/.test(trimmed))
+    const len = raw.length;
+    if (len >= 2 && raw[0] === "'" && raw[len - 1] === "'")
     {
-      return trimmed.slice(1, -1).replace(/\\(['"\\])/g, "$1").replace(/''/g, "'");
+      return raw.slice(1, -1).replace(/\\(['"\\])/g, "$1").replace(/''/g, "'");
     }
 
-    if (/^-?\d+$/.test(trimmed))
+    if (len > 0)
     {
-      return Number(trimmed);
+      let isNumeric = true;
+      let dot = false;
+      let idx = 0;
+      if (raw[0] === "-")
+      {
+        if (len === 1)
+        {
+          isNumeric = false;
+        }
+        idx = 1;
+      }
+      for (; idx < len && isNumeric; idx++)
+      {
+        const c = raw.charCodeAt(idx);
+        if (c === 46)
+        {
+          if (dot)
+          {
+            isNumeric = false;
+            break;
+          }
+          dot = true;
+          continue;
+        }
+        if (c < 48 || c > 57)
+        {
+          isNumeric = false;
+          break;
+        }
+      }
+      if (isNumeric)
+      {
+        return Number(raw);
+      }
     }
 
-    if (/^-?\d+\.\d+$/.test(trimmed))
-    {
-      return Number(trimmed);
-    }
-
-    return trimmed;
+    return raw;
   }
 
   public async *streamPostgresCopyRows(

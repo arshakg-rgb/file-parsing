@@ -275,7 +275,6 @@ steps:
       - '-c'
       - |
         gcloud pubsub subscriptions update fpp-parse-sub --project=data-etl-499916 --push-endpoint="" --ack-deadline=600
-        gcloud pubsub subscriptions add-iam-policy-binding fpp-parse-sub --project=data-etl-499916 --member="serviceAccount:datalead-osint@data-etl-499916.iam.gserviceaccount.com" --role="roles/pubsub.subscriber"
 
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     id: 'deploy-load-small'
