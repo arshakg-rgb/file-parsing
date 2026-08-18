@@ -280,7 +280,17 @@ export class LineClassifierServiceImpl implements IClassifier
 
       if (parts && parts.length > 1)
       {
-        this.componentMap.set(nf, parts.map((p) => this.normalizeKey(p)).filter((p) => p !== ""));
+        const normalizedParts: string[] = parts.map((p) => this.normalizeKey(p)).filter((p) => p !== "");
+
+        // A field is only a composite AGGREGATE (e.g. "name") if it is not itself one of the
+        // parts being combined. Without this guard, a literal "FirstName"/"LastName" field
+        // (whose normalized name is a member of the "name" category's static aliases) would
+        // be wrongly treated as needing firstname+lastname combined into ITSELF, clobbering
+        // both fields with the same "First Last" string instead of their own real values.
+        if (!normalizedParts.includes(nf))
+        {
+          this.componentMap.set(nf, normalizedParts);
+        }
       }
     }
 
@@ -2131,12 +2141,23 @@ export class LineClassifierServiceImpl implements IClassifier
       if (field === "meta" || row[field] !== null) continue;
       const nf = normalizedSpec[i];
       const looseCandidates = Object.keys(obj).filter((k) =>
-        !consumedKeys.has(this.normalizeKey(k)) && this.normalizeKey(k).includes(nf)
+        !consumedKeys.has(this.normalizeKey(k)) &&
+        this.normalizeKey(k).includes(nf) &&
+        !k.startsWith(`${field}[`) &&
+        !k.startsWith(`${field}.`)
       );
       if (looseCandidates.length > 1) ambiguous = true;
     }
 
-    const minMatches: number = fieldSpecOverride ? Math.max(1, Math.ceil(fieldSpecOverride.filter((f) => f !== "meta").length * 0.75)) : this.defaultMinMatches;
+    // Cap the required match count by how many distinct keys the source object actually
+    // has. A sparse-but-legitimate record (e.g. a LinkedIn profile where City/EmailAddress/
+    // Phone are simply absent) should not be rejected just because it can never reach 75% of
+    // the FULL target schema; it only needs to cover 75% of what it actually contains.
+    const specCountForThreshold: number = fieldSpecOverride
+      ? fieldSpecOverride.filter((f) => f !== "meta").length
+      : spec.filter((f) => f !== "meta").length;
+    const effectiveCountForThreshold: number = Math.min(specCountForThreshold, normalizedObjKeys.size);
+    const minMatches: number = Math.max(1, Math.ceil(effectiveCountForThreshold * 0.75));
 
     const accept: boolean = strong >= 1 || matched >= minMatches;
 
