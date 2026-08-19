@@ -3056,15 +3056,31 @@ export class LineClassifierServiceImpl implements IClassifier
 
         if (source)
         {
+          const sourceKeys: string[] = Object.keys(source);
+
           for (const field of this.fieldSpec)
           {
             if (field === "meta" || (row[field] !== null && row[field] !== ""))
             {
               continue;
             }
+
+            // The blob's keys are whatever the ORIGINAL file's own header labels were
+            // (e.g. "FirstName"), which will rarely equal this job's target field_spec
+            // naming convention verbatim (e.g. "first_name"). Fall back to the same
+            // alias-tolerant matching used for real header columns instead of requiring
+            // an exact, case-sensitive key match that would almost never hit.
             if (field in source)
             {
               row[field] = source[field];
+              continue;
+            }
+
+            const matchedKey: string | undefined = sourceKeys.find((k) => this.keyMatchesField(k, field));
+
+            if (matchedKey !== undefined)
+            {
+              row[field] = source[matchedKey];
             }
           }
         }
