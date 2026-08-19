@@ -548,6 +548,23 @@ export class LineClassifierServiceImpl implements IClassifier
         }
       }
     }
+    else if (this.headerFromFile && this.headerParts && this.headerDelimiter)
+    {
+      // Some CSV exports repeat the header row a second time further down the file
+      // (e.g. as a literal "column names as values" row). Since only the very first
+      // line is checked above, that repeat would otherwise be parsed as a normal data
+      // row - each field ending up set to its own column name and any trailing labels
+      // dumped into meta. Detect and drop it the same way as the real header line.
+      const repeatParts: string[] | null = LineClassifierServiceImpl.mergeSchemeColon(
+        LineClassifierServiceImpl.parseCsvLine(line, this.headerDelimiter, LineClassifierServiceImpl.csvQuoteFor(this.headerDelimiter)),
+        this.headerDelimiter,
+      );
+
+      if (repeatParts && this.isDuplicateHeaderRow(repeatParts))
+      {
+        return { verdict: "rubbish", template_id: "header" };
+      }
+    }
 
     const columnMapped: ClassifyResult | null = this.classifyViaColumnMap(line);
 
@@ -2673,6 +2690,52 @@ export class LineClassifierServiceImpl implements IClassifier
     this.headerParts = parts.map((p) => p.trim());
     this.headerDelimiter = found.delim;
     return map;
+  }
+
+  /**
+   * Detects whether an already-split data line is actually a repeat of the header row
+   * (e.g. some CSV exports embed the column-name row a second time further down the
+   * file). A row qualifies when a majority of its cells equal the corresponding header
+   * label at the same position, ignoring case/whitespace/punctuation via `normalizeKey`.
+   *
+   * @param parts - The candidate row already split using the locked-in header delimiter.
+   * @returns `true` if `parts` is a duplicate of `this.headerParts`, otherwise `false`.
+   */
+
+  private isDuplicateHeaderRow(parts: string[]): boolean
+  {
+    if (!this.headerParts || this.headerParts.length < 2)
+    {
+      return false;
+    }
+
+    const limit: number = Math.min(parts.length, this.headerParts.length);
+    let matched: number = 0;
+    let considered: number = 0;
+
+    for (let i = 0; i < limit; i++)
+    {
+      const headerLabel: string = this.headerParts[i].trim();
+
+      if (!headerLabel)
+      {
+        continue;
+      }
+
+      considered++;
+
+      if (this.normalizeKey(parts[i].trim()) === this.normalizeKey(headerLabel))
+      {
+        matched++;
+      }
+    }
+
+    if (considered < 2)
+    {
+      return false;
+    }
+
+    return matched >= Math.max(2, Math.ceil(considered / 2));
   }
 
   /**
