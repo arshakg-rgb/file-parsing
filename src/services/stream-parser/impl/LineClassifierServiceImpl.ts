@@ -2895,11 +2895,95 @@ export class LineClassifierServiceImpl implements IClassifier
 
       if (viaHeader !== undefined)
       {
+        if (viaHeader)
+        {
+          this.liftFieldsFromEmbeddedJson(viaHeader.row, parts);
+        }
+
         return viaHeader;
       }
     }
 
-    return this.parseDelimitedByContent(parts);
+    const viaContent = this.parseDelimitedByContent(parts);
+
+    if (viaContent)
+    {
+      this.liftFieldsFromEmbeddedJson(viaContent.row, parts);
+    }
+
+    return viaContent;
+  }
+
+  /**
+   * Backfills any still-empty target fields by scanning every raw cell for an embedded
+   * JSON object/array (a common shape for "meta"/activity-dump columns) and pulling out
+   * matching keys. Independent of whatever header/columnMap path produced `row`, so it
+   * catches cases where the field_spec's real data ended up serialized inside a JSON blob
+   * instead of its own column - including blobs truncated/corrupted mid-write, where a
+   * strict `JSON.parse` would otherwise discard everything.
+   *
+   * @param row - The row being built; mutated in place with any recovered field values.
+   * @param parts - The line's raw delimited cells to scan for embedded JSON.
+   */
+
+  private liftFieldsFromEmbeddedJson(row: Record<string, unknown>, parts: string[]): void
+  {
+    for (const part of parts)
+    {
+      const trimmed: string = part.trim();
+
+      if (trimmed.length < 2 || (trimmed[0] !== "{" && trimmed[0] !== "["))
+      {
+        continue;
+      }
+
+      let source: Record<string, unknown> | null = null;
+
+      try
+      {
+        const parsed: unknown = JSON.parse(trimmed);
+
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+        {
+          source = parsed as Record<string, unknown>;
+        }
+      }
+      catch
+      {
+        if (trimmed[0] === "{")
+        {
+          source = LineClassifierServiceImpl.extractLooseJsonFields(trimmed);
+        }
+      }
+
+      if (!source)
+      {
+        continue;
+      }
+
+      const sourceKeys: string[] = Object.keys(source);
+
+      for (const field of this.fieldSpec)
+      {
+        if (field === "meta" || (row[field] !== null && row[field] !== undefined && row[field] !== ""))
+        {
+          continue;
+        }
+
+        if (field in source)
+        {
+          row[field] = source[field];
+          continue;
+        }
+
+        const matchedKey: string | undefined = sourceKeys.find((k) => this.keyMatchesField(k, field));
+
+        if (matchedKey !== undefined)
+        {
+          row[field] = source[matchedKey];
+        }
+      }
+    }
   }
 
   /**
@@ -3040,49 +3124,24 @@ export class LineClassifierServiceImpl implements IClassifier
 
       if (metaPayload && metaPayload.startsWith("{"))
       {
-        let source: Record<string, unknown> | null = null;
-
         try
         {
-          source = JSON.parse(metaPayload) as Record<string, unknown>;
-        }
-        catch
-        {
-          // The blob may be truncated/corrupted (e.g. a source row cut off mid-write).
-          // Recover whatever leading "key":"value" pairs are still intact instead of
-          // discarding real data (FirstName, City, etc.) just because a later key broke.
-          source = LineClassifierServiceImpl.extractLooseJsonFields(metaPayload);
-        }
-
-        if (source)
-        {
-          const sourceKeys: string[] = Object.keys(source);
-
+          const source: Record<string, unknown> = JSON.parse(metaPayload) as Record<string, unknown>;
           for (const field of this.fieldSpec)
           {
             if (field === "meta" || (row[field] !== null && row[field] !== ""))
             {
               continue;
             }
-
-            // The blob's keys are whatever the ORIGINAL file's own header labels were
-            // (e.g. "FirstName"), which will rarely equal this job's target field_spec
-            // naming convention verbatim (e.g. "first_name"). Fall back to the same
-            // alias-tolerant matching used for real header columns instead of requiring
-            // an exact, case-sensitive key match that would almost never hit.
             if (field in source)
             {
               row[field] = source[field];
-              continue;
-            }
-
-            const matchedKey: string | undefined = sourceKeys.find((k) => this.keyMatchesField(k, field));
-
-            if (matchedKey !== undefined)
-            {
-              row[field] = source[matchedKey];
             }
           }
+        }
+        catch
+        {
+          // ignore malformed meta payload
         }
       }
 
