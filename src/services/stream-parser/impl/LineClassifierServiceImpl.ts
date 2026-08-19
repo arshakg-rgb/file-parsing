@@ -3099,49 +3099,20 @@ export class LineClassifierServiceImpl implements IClassifier
         }
       }
 
-      const metaColumnIndex = this.headerMap!["meta"];
-      let metaPayload: string | null = null;
-      if (metaColumnIndex !== undefined)
-      {
-        metaPayload = (row["meta"] as string) ?? null;
-      }
-      else if (typeof row["meta"] === "string" && row["meta"].startsWith("{"))
-      {
-        try
-        {
-          const wrapped: Record<string, unknown> = JSON.parse(row["meta"]) as Record<string, unknown>;
-          const inner = wrapped["meta"];
-          if (typeof inner === "string")
-          {
-            metaPayload = inner;
-          }
-        }
-        catch
-        {
-          // ignore malformed wrapper
-        }
-      }
+      // Try to backfill any still-empty target fields by scanning the raw cells for
+      // an embedded JSON blob - common when an upstream serialization crammed the
+      // entire record into one column (e.g. "meta") or when a row is truncated and
+      // the only recoverable data is inside a malformed JSON payload.
+      this.liftFieldsFromEmbeddedJson(row, parts);
 
-      if (metaPayload && metaPayload.startsWith("{"))
+      // Recompute matched count from the final row; a row that had zero direct
+      // column matches may now be valid because its fields were lifted from the blob.
+      matched = 0;
+      for (const v of Object.values(row))
       {
-        try
+        if (v !== null)
         {
-          const source: Record<string, unknown> = JSON.parse(metaPayload) as Record<string, unknown>;
-          for (const field of this.fieldSpec)
-          {
-            if (field === "meta" || (row[field] !== null && row[field] !== ""))
-            {
-              continue;
-            }
-            if (field in source)
-            {
-              row[field] = source[field];
-            }
-          }
-        }
-        catch
-        {
-          // ignore malformed meta payload
+          matched++;
         }
       }
 
