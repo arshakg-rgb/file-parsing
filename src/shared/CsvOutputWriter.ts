@@ -7,6 +7,7 @@ import type { WriteStream } from "node:fs";
 import Config from "@config/system-config/Config.js";
 import {FirestoreCacheUtils} from "@utils/cache/FirestoreCacheUtils.js";
 import { createLogger } from "@utils/logger/Log.js";
+import EncodingService from "@utils/normalizers/Encoding.js";
 
 /**
  * Performs the csv escape cell operation.
@@ -19,7 +20,8 @@ export function csvEscapeCell(v: unknown): string {
   if (typeof v === "bigint") return String(v);
   if (v instanceof Date) return String(v);
   if (typeof v === "string") {
-    return /[",\r\n]/.test(v) ? "\"" + v.replace(/"/g, "\"\"") + "\"" : v;
+    const fixed = EncodingService.recoverMojibake(v);
+    return /[",\r\n]/.test(fixed) ? "\"" + fixed.replace(/"/g, "\"\"") + "\"" : fixed;
   }
   const s = JSON.stringify(v);
   return /[",\r\n]/.test(s) ? "\"" + s.replace(/"/g, "\"\"") + "\"" : s;

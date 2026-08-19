@@ -3313,33 +3313,67 @@ export class LineClassifierServiceImpl implements IClassifier
     const quote: string | null = quoteChar || null;
     const parts: string[] = [];
     let current: string = "";
-    let inQuote: boolean = false;
+    let i: number = 0;
 
-    for (let i = 0; i < line.length; i++)
+    while (i < line.length)
     {
       const c: string = line[i];
-      const next: string = line[i + 1];
 
-      if (quote && c === quote)
+      // A quote only starts a quoted field when it is the very first
+      // character of the cell. Otherwise it is literal data. This keeps
+      // unquoted JSON / text containing " characters from swallowing
+      // commas and shifting later columns.
+      if (quote && c === quote && current.length === 0)
       {
-        if (inQuote && next === quote)
+        i++;
+
+        while (i < line.length)
         {
-          current += quote;
+          const qc: string = line[i];
+
+          if (qc === quote)
+          {
+            if (i + 1 < line.length && line[i + 1] === quote)
+            {
+              current += quote;
+              i += 2;
+            }
+            else
+            {
+              i++;
+              break;
+            }
+          }
+          else
+          {
+            current += qc;
+            i++;
+          }
+        }
+
+        // After a quoted field, consume the following delimiter if present.
+        if (i < line.length && line[i] === delim)
+        {
+          parts.push(current);
+          current = "";
           i++;
         }
-        else
+        else if (i === line.length)
         {
-          inQuote = !inQuote;
+          parts.push(current);
+          current = "";
         }
       }
-      else if (c === delim && !inQuote)
+      else if (c === delim)
       {
         parts.push(current.trim());
         current = "";
+        i++;
       }
       else
       {
         current += c;
+        i++;
       }
     }
 

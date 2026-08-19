@@ -148,6 +148,40 @@ class EncodingUtils
     }
     return view.toString("latin1");
   }
+
+  /**
+   * Attempts to recover text that was double-encoded (mojibake):
+   * UTF-8 bytes that were read as Latin-1 and stored as Latin-1 characters.
+   * Returns the original string if it already contains characters outside the
+   * Latin-1 range, if the bytes are not valid UTF-8, or if any step fails.
+   */
+
+  public static recoverMojibake(input: string): string
+  {
+    if (!input)
+    {
+      return input;
+    }
+
+    // Nothing to do for plain ASCII, and strings that already contain real
+    // UTF-8 code points (> U+00FF) must not be recoded.
+    if (!/[\u0080-\u00FF]/.test(input) || /[^\u0000-\u00FF]/.test(input))
+    {
+      return input;
+    }
+
+    try
+    {
+      const bytes: Buffer = Buffer.from(input, "latin1");
+      const decoded: string = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+
+      return decoded === input ? input : decoded;
+    }
+    catch
+    {
+      return input;
+    }
+  }
 }
 
 export default EncodingUtils;

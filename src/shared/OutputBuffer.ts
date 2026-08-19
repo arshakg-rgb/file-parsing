@@ -6,6 +6,7 @@ import { parquetOutputService } from "./ParquetOutputService.js";
 import { settings } from "./Settings.js";
 import Config from "@config/system-config/Config";
 import {OutputRow} from "@shared/io/IOutputBuffer";
+import EncodingService from "@utils/normalizers/Encoding.js";
 
 /**
  * OutputBuffer is responsible for buffering rows for a single job and
@@ -192,9 +193,14 @@ export class OutputBuffer
       return Number(value);
     }
 
-    if (typeof value === "boolean" || typeof value === "number" || typeof value === "string")
+    if (typeof value === "boolean" || typeof value === "number")
     {
       return value;
+    }
+
+    if (typeof value === "string")
+    {
+      return EncodingService.recoverMojibake(value);
     }
 
     if (value instanceof Date)
