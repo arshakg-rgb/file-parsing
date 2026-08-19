@@ -881,6 +881,9 @@ export class LineClassifierServiceImpl implements IClassifier
       }
     }
 
+    // Fix common data-placement errors (e.g. phone numbers stored under user_email).
+    this.normalizePgCopyRow(row);
+
     // Always emit a meta payload: CsvOutputWriter and OutputBuffer always include a
     // trailing `meta` column, so unmapped SQL columns must never be silently dropped.
     row.meta = Object.keys(meta).length ? JSON.stringify(meta) : null;
@@ -927,6 +930,126 @@ export class LineClassifierServiceImpl implements IClassifier
     }
 
     return trimmed;
+  }
+
+  /**
+   * Post-process a PostgreSQL COPY row to clean common data-placement errors:
+   *   - user_name falls back to full_name when the source user_name is null.
+   *   - user_email values that are actually phone numbers are moved to msisdn
+   *     (and vice-versa for misplaced emails in msisdn).
+   *
+   * This is safe to run only after the strict column mapping because it works
+   * on the final field values, not on the raw parts.
+   */
+
+  private normalizePgCopyRow(row: Record<string, unknown>): void
+  {
+    const get = (k: string): string | null =>
+    {
+      const v = row[k];
+
+      if (v === null || v === undefined)
+      {
+        return null;
+      }
+
+      const s: string = String(v).trim();
+
+      return s === "" ? null : s;
+    };
+
+    const set = (k: string, v: string | null): void =>
+    {
+      row[k] = v;
+    };
+
+    const userName: string | null = get("user_name");
+    const fullName: string | null = get("full_name");
+
+    if (!userName && fullName)
+    {
+      set("user_name", fullName);
+    }
+
+    const email: string | null = get("user_email");
+    const phone: string | null = get("msisdn");
+
+    if (!email && !phone)
+    {
+      return;
+    }
+
+    const isEmail = (v: string | null): boolean =>
+    {
+      return v !== null && LineClassifierServiceImpl.EMAIL_RE.test(v);
+    };
+
+    const isPhone = (v: string | null): boolean =>
+    {
+      if (v === null || v.includes("@"))
+      {
+        return false;
+      }
+
+      const digits: string = v.replace(/\D/g, "");
+
+      return digits.length >= 10 && digits.length <= 15;
+    };
+
+    const emailIsEmail: boolean = isEmail(email);
+    const phoneIsPhone: boolean = isPhone(phone);
+    const emailIsPhone: boolean = !emailIsEmail && isPhone(email);
+    const phoneIsEmail: boolean = !phoneIsPhone && isEmail(phone);
+
+    if (!emailIsEmail)
+    {
+      if (emailIsPhone)
+      {
+        if (!phone)
+        {
+          set("msisdn", email);
+          set("user_email", null);
+        }
+        else if (phoneIsPhone)
+        {
+          // The phone column already has a valid phone; the misplaced one in email is a duplicate.
+          set("user_email", null);
+        }
+        else
+        {
+          // msisdn contains something invalid; replace it with the actual phone from user_email.
+          set("msisdn", email);
+          set("user_email", null);
+        }
+      }
+      else
+      {
+        // not an email and not a phone; clear the bad value.
+        set("user_email", null);
+      }
+    }
+
+    if (!phoneIsPhone)
+    {
+      if (phoneIsEmail)
+      {
+        if (!email)
+        {
+          set("user_email", phone);
+          set("msisdn", null);
+        }
+        else
+        {
+          // email already exists; the value in msisdn is a misplaced duplicate.
+          set("msisdn", null);
+        }
+      }
+      else if (phone !== null)
+      {
+        // not a phone and not an email; clear it.
+        set("msisdn", null);
+      }
+    }
   }
 
   /**
