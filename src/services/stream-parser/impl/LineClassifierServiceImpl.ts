@@ -3040,9 +3040,22 @@ export class LineClassifierServiceImpl implements IClassifier
 
       if (metaPayload && metaPayload.startsWith("{"))
       {
+        let source: Record<string, unknown> | null = null;
+
         try
         {
-          const source: Record<string, unknown> = JSON.parse(metaPayload) as Record<string, unknown>;
+          source = JSON.parse(metaPayload) as Record<string, unknown>;
+        }
+        catch
+        {
+          // The blob may be truncated/corrupted (e.g. a source row cut off mid-write).
+          // Recover whatever leading "key":"value" pairs are still intact instead of
+          // discarding real data (FirstName, City, etc.) just because a later key broke.
+          source = LineClassifierServiceImpl.extractLooseJsonFields(metaPayload);
+        }
+
+        if (source)
+        {
           for (const field of this.fieldSpec)
           {
             if (field === "meta" || (row[field] !== null && row[field] !== ""))
@@ -3054,10 +3067,6 @@ export class LineClassifierServiceImpl implements IClassifier
               row[field] = source[field];
             }
           }
-        }
-        catch
-        {
-          // ignore malformed meta payload
         }
       }
 
@@ -3500,6 +3509,49 @@ export class LineClassifierServiceImpl implements IClassifier
     parts.push(current.trim());
 
     return parts;
+  }
+
+  /**
+   * Best-effort recovery of top-level `"key":value` pairs from a JSON object string that
+   * failed strict `JSON.parse` (e.g. truncated mid-write by the upstream source). Only scans
+   * for simple string/boolean/null/number values immediately after each key - nested
+   * objects/arrays are skipped rather than risk mis-parsing broken structure - so a cut-off
+   * tail doesn't sacrifice the still-intact leading fields.
+   *
+   * @param payload - The (possibly malformed/truncated) JSON object text, including braces.
+   * @returns A flat map of whatever key/value pairs could be confidently recovered.
+   */
+
+  private static extractLooseJsonFields(payload: string): Record<string, unknown>
+  {
+    const result: Record<string, unknown> = {};
+    const pairRe: RegExp = /"([A-Za-z0-9_]+)"\s*:\s*(?:"((?:[^"\\]|\\.)*)"|(true|false|null)|(-?\d+(?:\.\d+)?))/g;
+    let m: RegExpExecArray | null;
+
+    while ((m = pairRe.exec(payload)) !== null)
+    {
+      const key: string = m[1];
+
+      if (key in result)
+      {
+        continue;
+      }
+
+      if (m[2] !== undefined)
+      {
+        result[key] = m[2].replace(/\\"/g, "\"").replace(/\\\\/g, "\\");
+      }
+      else if (m[3] !== undefined)
+      {
+        result[key] = m[3] === "null" ? null : m[3] === "true";
+      }
+      else if (m[4] !== undefined)
+      {
+        result[key] = Number(m[4]);
+      }
+    }
+
+    return result;
   }
 
   /**
