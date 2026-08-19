@@ -1827,6 +1827,17 @@ export class LineClassifierServiceImpl implements IClassifier
 
       if (Array.isArray(v))
       {
+        // Same reasoning as the nested-object case above: if this key exactly matches
+        // a target field (e.g. "Experience", "Education"), keep the array intact under
+        // that field instead of exploding it into "key[0].child" keys. Those exploded
+        // keys never match the field itself, so the field stays null/empty while its
+        // data leaks into meta.
+        if (this.normalizedFieldSpec.includes(this.normalizeKey(key)))
+        {
+          out[key] = v;
+          continue;
+        }
+
         const allObjects: boolean = v?.length > 0 && v?.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
 
         if (allObjects)
@@ -1874,6 +1885,12 @@ export class LineClassifierServiceImpl implements IClassifier
 
             if (Array.isArray(parsed))
             {
+              if (this.normalizedFieldSpec.includes(this.normalizeKey(key)))
+              {
+                out[key] = parsed;
+                continue;
+              }
+
               const allObjects: boolean = parsed.length > 0 && parsed.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
 
               if (allObjects)
@@ -2039,13 +2056,26 @@ export class LineClassifierServiceImpl implements IClassifier
       {
         if (Array.isArray(value))
         {
-          const meaningful: unknown[] = value.filter((x) => x !== null && x !== undefined && String(x).trim() !== "");
+          // Arrays of objects (e.g. a whole "Experience"/"Education" array kept intact by
+          // flattenObject because the key exactly matched this field) belong entirely under
+          // this field - splitting them into a "first item" value plus a "<field>_all"
+          // meta entry would just move the duplication problem instead of fixing it.
+          const isObjectArray: boolean = value.length > 0 && value.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
 
-          row[field] = meaningful.length > 0 ? meaningful[0] : null;
-
-          if (meaningful.length > 1)
+          if (isObjectArray)
           {
-            extraMeta[`${field}_all`] = meaningful;
+            row[field] = value;
+          }
+          else
+          {
+            const meaningful: unknown[] = value.filter((x) => x !== null && x !== undefined && String(x).trim() !== "");
+
+            row[field] = meaningful.length > 0 ? meaningful[0] : null;
+
+            if (meaningful.length > 1)
+            {
+              extraMeta[`${field}_all`] = meaningful;
+            }
           }
         }
         else
