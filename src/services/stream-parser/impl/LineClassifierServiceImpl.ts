@@ -165,15 +165,19 @@ export class LineClassifierServiceImpl implements IClassifier
 
   private static readonly KV_SEG_RE: RegExp = /^\s*([A-Za-z][A-Za-z0-9 _]*?)\s*:\s*(.*)$/;
 
-  /** Matches control/private-use/unassigned code points — true binary corruption.
+  /** Matches control/unassigned code points — true binary corruption.
    *  Deliberately excludes C1 controls (0x80-0x9F) because those code points are
    *  commonly used for printable characters when a file is mis-encoded as Latin-1.
    *  Deliberately excludes emoji/symbol categories (So/Sm/Sk), which are normal in real
-   *  names/usernames and must not reject an otherwise-valid line. Reused by both the
+   *  names/usernames and must not reject an otherwise-valid line. Also deliberately
+   *  excludes Private Use (Co) code points: many "fancy text" generators used for
+   *  stylized display names (bubble/gothic/fraktur-style letters not covered by a real
+   *  Unicode block) render via the Private Use Area, so treating them as corruption
+   *  would wrongly drop legitimate names/usernames as rubbish. Reused by both the
    *  line-level binary gate and the field-level check in `coerce()`.
    */
 
-  private static readonly BINARY_RE: RegExp = /[\0-\x08\x0B\x0C\x0E-\x1F\x7F\p{Co}\p{Cn}]/gu;
+  private static readonly BINARY_RE: RegExp = /[\0-\x08\x0B\x0C\x0E-\x1F\x7F\p{Cn}]/gu;
   private static readonly MAX_LINE_LENGTH: number = 64 * 1024;
   private static readonly NON_PRINTABLE_RATIO_MAX: number = 0.15;
   private static readonly BINARY_RATIO_MAX: number = 0.05;
@@ -536,7 +540,12 @@ export class LineClassifierServiceImpl implements IClassifier
       if (this.headerMap && !looksLikeStructuredRecord)
       {
         // If the map came from a real header row, skip the first line and use it as the header.
-        // If it was pre-inferred by AI/upstream, the first line is data and must be parsed.
+        // If it was pre-inferred by AI/upstream, the first line is USUALLY data — except when
+        // that upstream inference simply read this SAME file's own header row (rather than
+        // guessing field names from a data sample). In that case the raw byte stream handed to
+        // this classifier still contains that literal header line as its first row, and it must
+        // be skipped the same way, or it gets parsed as a bogus record with every field set to
+        // its own column name (and the rest dumped into meta).
         if (this.headerFromFile)
         {
           const parts: string[] | null = this.splitBestDelimited(line);
@@ -546,9 +555,21 @@ export class LineClassifierServiceImpl implements IClassifier
           }
           return { verdict: "rubbish", template_id: "header" };
         }
+        else if (this.headerParts)
+        {
+          const found: { parts: string[]; delim: string } | null = this.splitBestDelimitedWithDelim(line);
+
+          if (found && this.isDuplicateHeaderRow(found.parts))
+          {
+            // Lock in the delimiter now that we know it, so later lines (including a
+            // possible second repeat of the header further down the file) split consistently.
+            this.headerDelimiter = found.delim;
+            return { verdict: "rubbish", template_id: "header" };
+          }
+        }
       }
     }
-    else if (this.headerFromFile && this.headerParts && this.headerDelimiter)
+    else if (this.headerParts && this.headerDelimiter)
     {
       // Some CSV exports repeat the header row a second time further down the file
       // (e.g. as a literal "column names as values" row). Since only the very first
