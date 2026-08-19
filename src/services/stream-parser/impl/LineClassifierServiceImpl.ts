@@ -2495,6 +2495,20 @@ export class LineClassifierServiceImpl implements IClassifier
     }
     catch
     {
+      // If strict JSON parsing failed, try to recover whatever top-level key/value pairs are
+      // still intact in a truncated/malformed object (common in the last line of JSON Lines
+      // files that were cut mid-write). Returning a partial object lets the same extraction
+      // pipeline recover the leading, still-complete fields instead of dropping the line.
+      if (trimmed[0] === "{")
+      {
+        const loose: Record<string, unknown> = LineClassifierServiceImpl.extractLooseJsonFields(trimmed);
+
+        if (Object.keys(loose).length > 0)
+        {
+          return loose;
+        }
+      }
+
       return null;
     }
 
