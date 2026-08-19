@@ -2932,31 +2932,44 @@ export class LineClassifierServiceImpl implements IClassifier
     {
       const trimmed: string = part.trim();
 
-      if (trimmed.length < 2 || (trimmed[0] !== "{" && trimmed[0] !== "["))
+      if (trimmed.length < 2)
       {
         continue;
       }
 
       let source: Record<string, unknown> | null = null;
 
-      try
+      if (trimmed[0] === "{" || trimmed[0] === "[")
       {
-        const parsed: unknown = JSON.parse(trimmed);
-
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+        try
         {
-          source = parsed as Record<string, unknown>;
+          const parsed: unknown = JSON.parse(trimmed);
+
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+          {
+            source = parsed as Record<string, unknown>;
+          }
         }
-      }
-      catch
-      {
-        if (trimmed[0] === "{")
+        catch
         {
           source = LineClassifierServiceImpl.extractLooseJsonFields(trimmed);
         }
       }
 
-      if (!source)
+      if (!source || Object.keys(source).length === 0)
+      {
+        // Also try loose recovery for non-JSON-shaped cells (e.g. a quoted JSON payload,
+        // a re-joined tail that still carries the CSV quote, or a truncated blob that
+        // no longer begins with a brace after the upstream split).
+        const loose: Record<string, unknown> = LineClassifierServiceImpl.extractLooseJsonFields(trimmed);
+
+        if (Object.keys(loose).length > 0)
+        {
+          source = loose;
+        }
+      }
+
+      if (!source || Object.keys(source).length === 0)
       {
         continue;
       }
