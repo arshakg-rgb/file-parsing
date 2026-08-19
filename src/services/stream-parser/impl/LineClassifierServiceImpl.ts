@@ -1799,18 +1799,24 @@ export class LineClassifierServiceImpl implements IClassifier
 
       if (v !== null && typeof v === "object" && !Array.isArray(v))
       {
+        // If this key itself exactly matches a target field (e.g. "_source"),
+        // keep it as a single raw object rather than also flattening its
+        // children into the output. Otherwise the whole nested object is
+        // captured once under `key` AND every descendant is captured again
+        // as `key.child`, `key.child.grandchild`, etc. — duplicate data that
+        // ends up written twice (once under the matched field, once under
+        // `meta` since the dotted descendant keys don't match any field).
         if (this.normalizedFieldSpec.includes(this.normalizeKey(key)))
         {
           out[key] = v;
+          continue;
         }
+
         const nested: Record<string, unknown> = this.flattenObject(v as Record<string, unknown>, key);
 
         if (Object.keys(nested).length === 0)
         {
-          if (!out[key])
-          {
-            out[key] = {};
-          }
+          out[key] = {};
         }
         else
         {
