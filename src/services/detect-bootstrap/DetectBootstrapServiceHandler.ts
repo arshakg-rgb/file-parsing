@@ -763,33 +763,58 @@ export class DetectBootstrapService
               }
             };
 
-            collectKeysFromLines(sampleLines);
-
             // JSONL files can have optional/inconsistent keys per record (e.g. an
-            // "Expertise" array only present on some records). A head-only sample can
-            // easily miss those, silently dropping the field into `meta` for every row
-            // instead of giving it its own column. Sample a few additional windows
-            // spread across the rest of the file so keys appearing later are still
-            // discovered.
-            if (extraOffsets.length > 0 && extraWindowSize > 0)
-            {
-              for (const offset of extraOffsets)
-              {
-                if (offset <= headEnd)
-                {
-                  continue;
-                }
+            // "Expertise" array only present on a handful of records out of thousands).
+            // A head-only, line-capped, or sparsely-sampled scan can easily miss those,
+            // silently dropping the field into `meta` for every row instead of giving it
+            // its own column. For files small enough to read in full cheaply, scan every
+            // line so no key is ever missed regardless of where it first appears.
+            const FULL_SCAN_MAX_BYTES = 20 * 1024 * 1024;
 
+            if (fileSize <= FULL_SCAN_MAX_BYTES)
+            {
+              collectKeysFromLines(this.extractSampleLines(headRaw, encoding, Number.MAX_SAFE_INTEGER));
+
+              if (fileSize > headEnd + 1)
+              {
                 try
                 {
-                  const end: number = Math.min(offset + extraWindowSize - 1, fileSize - 1);
-                  const extraRaw: Buffer = await this.gcsUtils.readRange(bucket, key, offset, end);
-                  const extraLines: string[] = this.extractSampleLines(extraRaw, encoding, 200);
-                  collectKeysFromLines(extraLines.slice(1));
+                  const restRaw: Buffer = await this.gcsUtils.readRange(bucket, key, headEnd + 1, fileSize - 1);
+                  collectKeysFromLines(this.extractSampleLines(restRaw, encoding, Number.MAX_SAFE_INTEGER));
                 }
                 catch (err)
                 {
-                  this.logger.warn("extract_headers_extra_probe_failed", { job_id: jobId, offset, error: String(err) });
+                  this.logger.warn("extract_headers_full_scan_failed", { job_id: jobId, error: String(err) });
+                }
+              }
+            }
+            else
+            {
+              collectKeysFromLines(sampleLines);
+
+              // Too large to scan in full: sample additional windows spread across the
+              // rest of the file so keys appearing later still have a chance of being
+              // discovered (best-effort - not a full-coverage guarantee for huge files).
+              if (extraOffsets.length > 0 && extraWindowSize > 0)
+              {
+                for (const offset of extraOffsets)
+                {
+                  if (offset <= headEnd)
+                  {
+                    continue;
+                  }
+
+                  try
+                  {
+                    const end: number = Math.min(offset + extraWindowSize - 1, fileSize - 1);
+                    const extraRaw: Buffer = await this.gcsUtils.readRange(bucket, key, offset, end);
+                    const extraLines: string[] = this.extractSampleLines(extraRaw, encoding, 200);
+                    collectKeysFromLines(extraLines.slice(1));
+                  }
+                  catch (err)
+                  {
+                    this.logger.warn("extract_headers_extra_probe_failed", { job_id: jobId, offset, error: String(err) });
+                  }
                 }
               }
             }
