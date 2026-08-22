@@ -627,7 +627,7 @@ export class DetectBootstrapService
    * @returns Array of detected headers, or null if extraction failed
    */
 
-  private async extractHeaders(bucket: string, key: string, encoding: string, fileSize: number, jobId: string, fieldSpec: string[]): Promise<{ headers: string[]; fieldMap?: ColumnMap } | null>
+  private async extractHeaders(bucket: string, key: string, encoding: string, fileSize: number, jobId: string, fieldSpec: string[], extraOffsets: number[] = [], extraWindowSize: number = 0): Promise<{ headers: string[]; fieldMap?: ColumnMap } | null>
   {
     try
     {
@@ -726,29 +726,64 @@ export class DetectBootstrapService
           if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
           {
             const keys = new Set<string>();
-            for (const line of sampleLines)
+            const collectKeysFromLines = (lines: string[]): void =>
             {
-              const lineTrim = line.trim();
-              if (!lineTrim)
+              for (const line of lines)
               {
-                continue;
-              }
-              try
-              {
-                const p: unknown = JSON.parse(lineTrim);
-                if (p && typeof p === "object" && !Array.isArray(p))
+                const lineTrim = line.trim();
+                if (!lineTrim)
                 {
-                  for (const k of Object.keys(p as Record<string, unknown>))
+                  continue;
+                }
+                try
+                {
+                  const p: unknown = JSON.parse(lineTrim);
+                  if (p && typeof p === "object" && !Array.isArray(p))
                   {
-                    keys.add(k);
+                    for (const k of Object.keys(p as Record<string, unknown>))
+                    {
+                      keys.add(k);
+                    }
                   }
                 }
+                catch
+                {
+                  // ignore malformed sample
+                }
               }
-              catch
+            };
+
+            collectKeysFromLines(sampleLines);
+
+            // JSONL files can have optional/inconsistent keys per record (e.g. an
+            // "Expertise" array only present on some records). A head-only sample can
+            // easily miss those, silently dropping the field into `meta` for every row
+            // instead of giving it its own column. Sample a few additional windows
+            // spread across the rest of the file so keys appearing later are still
+            // discovered.
+            if (extraOffsets.length > 0 && extraWindowSize > 0)
+            {
+              for (const offset of extraOffsets)
               {
-                // ignore malformed sample
+                if (offset <= headEnd)
+                {
+                  continue;
+                }
+
+                try
+                {
+                  const end: number = Math.min(offset + extraWindowSize - 1, fileSize - 1);
+                  const extraRaw: Buffer = await this.gcsUtils.readRange(bucket, key, offset, end);
+                  const extraLines: string[] = this.extractSampleLines(extraRaw, encoding, 200);
+                  collectKeysFromLines(extraLines.slice(1));
+                }
+                catch (err)
+                {
+                  this.logger.warn("extract_headers_extra_probe_failed", { job_id: jobId, offset, error: String(err) });
+                }
               }
             }
+
             if (keys.size)
             {
               return { headers: Array.from(keys) };
@@ -925,7 +960,7 @@ export class DetectBootstrapService
       }
     }
 
-    const headerResult: { headers: string[]; fieldMap?: ColumnMap } | null = await this.extractHeaders(bucket, key, encoding, fileSize, jobId, fieldSpecArray);
+    const headerResult: { headers: string[]; fieldMap?: ColumnMap } | null = await this.extractHeaders(bucket, key, encoding, fileSize, jobId, fieldSpecArray, offsets, windowSize);
     const headers: string[] | null = headerResult?.headers ?? null;
     const inferredFieldMap: ColumnMap | undefined = headerResult?.fieldMap && Object.keys(headerResult.fieldMap).length > 0 ? headerResult.fieldMap : undefined;
 
