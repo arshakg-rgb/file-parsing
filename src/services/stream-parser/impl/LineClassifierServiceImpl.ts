@@ -2231,12 +2231,9 @@ export class LineClassifierServiceImpl implements IClassifier
           {
             const meaningful: unknown[] = value.filter((x) => x !== null && x !== undefined && String(x).trim() !== "");
 
-            row[field] = meaningful.length > 0 ? meaningful[0] : null;
-
-            if (meaningful.length > 1)
-            {
-              extraMeta[`${field}_all`] = meaningful;
-            }
+            // Scalar arrays (e.g. Expertise / Skills) belong to the matched field as a
+            // joined string, not split between the field and a "field_all" meta entry.
+            row[field] = meaningful.length > 0 ? this.joinScalarArray(meaningful) : null;
           }
         }
         else
@@ -2333,6 +2330,33 @@ export class LineClassifierServiceImpl implements IClassifier
       }
     }
 
+    // Try to promote unconsumed scalar arrays (e.g. "Expertise", "Skills") to the best
+    // empty target field so they do not leak into meta when the source key changed.
+    for (const [k, v] of Object.entries(obj))
+    {
+      const nk: string = this.normalizeKey(k);
+
+      if (consumedKeys.has(nk) || !Array.isArray(v))
+      {
+        continue;
+      }
+
+      const meaningful: unknown[] = v.filter((x) => x !== null && x !== undefined && String(x).trim() !== "");
+
+      if (meaningful.length === 0)
+      {
+        continue;
+      }
+
+      const target: string | null = this.findBestEmptyFieldForUnconsumedArray(k, meaningful, spec, normalizedSpec, row);
+
+      if (target)
+      {
+        row[target] = this.joinScalarArray(meaningful);
+        consumedKeys.add(nk);
+      }
+    }
+
     const metaObj: Record<string, unknown> = {};
 
     for (const [k, v] of Object.entries(obj))
@@ -2374,6 +2398,142 @@ export class LineClassifierServiceImpl implements IClassifier
     const accept: boolean = strong >= 1 || matched >= minMatches;
 
     return accept || loose ? { row, template_id: templateId, ambiguous } : null;
+  }
+
+  /**
+   * Join a scalar (string/number) array into a single delimited string for CSV output.
+   * Object values are JSON-stringified; nulls/empty entries are skipped.
+   */
+
+  private joinScalarArray(values: unknown[]): string
+  {
+    const parts: string[] = values
+      .filter((x) => x !== null && x !== undefined)
+      .map((x) => (typeof x === "object" ? JSON.stringify(x) : String(x).trim()))
+      .filter((x) => x.length > 0);
+
+    return parts.join("; ");
+  }
+
+  /**
+   * For an unconsumed scalar-array key (e.g. "Expertise") find the best empty target field.
+   * Handles exact/alias matches, a skill/competence semantic group, and fuzzy prefix overlap
+   * so source keys that rename over time still land in the right column when possible.
+   *
+   * @returns The target field name, or null when no safe empty match exists.
+   */
+
+  private findBestEmptyFieldForUnconsumedArray(key: string, _meaningful: unknown[], spec: string[], normalizedSpec: string[], row: Record<string, unknown>): string | null
+  {
+    const nk: string = this.normalizeKey(key);
+
+    if (!nk)
+    {
+      return null;
+    }
+
+    const SKILL_LIKE: Set<string> = new Set([
+      "expertise",
+      "skills",
+      "skill",
+      "competences",
+      "competencies",
+      "competency",
+      "proficiencies",
+      "proficiency",
+      "abilities",
+      "ability",
+      "capability",
+      "capabilities",
+    ]);
+
+    const nkIsSkill: boolean = SKILL_LIKE.has(nk);
+    let bestField: string | null = null;
+    let bestScore = 0;
+
+    for (let i = 0; i < spec.length; i++)
+    {
+      const field: string = spec[i];
+
+      if (field === "meta" || !field)
+      {
+        continue;
+      }
+
+      const nf: string = normalizedSpec[i];
+
+      if (!nf)
+      {
+        continue;
+      }
+
+      // Only move into empty fields; never overwrite an already extracted value.
+      const existing: unknown = row[field];
+
+      if (existing !== null && existing !== undefined)
+      {
+        const empty: boolean = Array.isArray(existing)
+          ? existing.length === 0
+          : (typeof existing === "string" ? existing.trim() === "" : false);
+
+        if (!empty)
+        {
+          continue;
+        }
+      }
+
+      // Exact or alias match is the strongest signal.
+      if (this.keyMatchesField(key, field))
+      {
+        return field;
+      }
+
+      let score = 0;
+
+      if (nk === nf)
+      {
+        score = 100;
+      }
+      else if (nkIsSkill && SKILL_LIKE.has(nf))
+      {
+        // Same semantic group: expertise / skills / competencies / etc.
+        score = 90;
+      }
+      else if (nk.includes(nf) || nf.includes(nk))
+      {
+        score = 60;
+      }
+      else
+      {
+        let commonPrefix = 0;
+
+        for (let j = 0; j < Math.min(nk.length, nf.length); j++)
+        {
+          if (nk[j] === nf[j])
+          {
+            commonPrefix++;
+          }
+          else
+          {
+            break;
+          }
+        }
+
+        if (commonPrefix >= 4)
+        {
+          score = Math.floor((commonPrefix / Math.max(nk.length, nf.length)) * 50);
+        }
+      }
+
+      if (score > bestScore)
+      {
+        bestScore = score;
+        bestField = field;
+      }
+    }
+
+    // Require a strong signal before moving data; otherwise leave it for meta.
+    return bestScore >= 30 ? bestField : null;
   }
 
   /**
