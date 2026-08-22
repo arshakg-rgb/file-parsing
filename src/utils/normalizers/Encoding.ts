@@ -57,6 +57,68 @@ class EncodingUtils
   }
 
   /**
+   * Detects UTF-16 (LE/BE) text that has no byte-order-mark. Files exported from tools
+   * like SQL Server/Excel are commonly ASCII/Latin-1 content encoded as UTF-16 without a
+   * BOM (every character followed/preceded by a 0x00 byte). Naively treating such a
+   * buffer as valid UTF-8 always "succeeds" (0x00 is a valid single-byte UTF-8 code
+   * point), so `isLikelyUtf8` alone cannot catch this case; every line ends up split
+   * into individual NUL-separated characters downstream, which then fails all header/
+   * delimiter detection. This looks for the alternating NUL-byte lane characteristic of
+   * un-BOM'd UTF-16 text and returns which lane (LE/BE) holds the NUL bytes.
+   *
+   * @param raw - Sample bytes from the start of the file.
+   * @returns `"utf-16le"`/`"utf-16be"` if the sample matches the pattern strongly, otherwise `null`.
+   */
+
+  public static looksLikeUtf16(raw: Buffer): "utf-16le" | "utf-16be" | null
+  {
+    const sampleLen: number = Math.min(raw.length - (raw.length % 2), 8192);
+
+    if (sampleLen < 16)
+    {
+      return null;
+    }
+
+    let nullAtEven = 0;
+    let nullAtOdd = 0;
+
+    for (let i = 0; i < sampleLen; i++)
+    {
+      if (raw[i] === 0)
+      {
+        if (i % 2 === 0)
+        {
+          nullAtEven++;
+        }
+        else
+        {
+          nullAtOdd++;
+        }
+      }
+    }
+
+    const halfLen: number = sampleLen / 2;
+    const evenRatio: number = nullAtEven / halfLen;
+    const oddRatio: number = nullAtOdd / halfLen;
+
+    // Genuine UTF-16 text with mostly ASCII/Latin content has one byte lane almost
+    // entirely NUL (the high byte of every code unit) and the other lane almost
+    // entirely non-NUL (the actual character byte). Require a strong, one-sided
+    // signal so real binary/UTF-8 content is never misclassified.
+    if (evenRatio > 0.6 && oddRatio < 0.1)
+    {
+      return "utf-16be";
+    }
+
+    if (oddRatio > 0.6 && evenRatio < 0.1)
+    {
+      return "utf-16le";
+    }
+
+    return null;
+  }
+
+  /**
    * Normalizes encoding
    * @param label - The label
    * @returns The string result

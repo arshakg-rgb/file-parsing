@@ -609,7 +609,16 @@ export class StreamParserService
       {
         const buffer: Buffer = await this.gcsUtils.readRange(bucket, key, offset, endOffset);
 
-        if (EncodingService.isLikelyUtf8(buffer))
+        // Check for un-BOM'd UTF-16 BEFORE trusting isLikelyUtf8: a NUL byte is valid
+        // single-byte UTF-8, so ASCII-content-as-UTF-16 buffers otherwise "pass" the
+        // UTF-8 check and get decoded as garbled NUL-interleaved single characters.
+        const utf16: "utf-16le" | "utf-16be" | null = EncodingService.looksLikeUtf16(buffer);
+
+        if (utf16)
+        {
+          detectedEncoding = utf16;
+        }
+        else if (EncodingService.isLikelyUtf8(buffer))
         {
           detectedEncoding = "utf-8";
         }

@@ -239,6 +239,16 @@ export class DetectBootstrapService
   {
     this.stats.encodingDetections++;
 
+    // Check for un-BOM'd UTF-16 BEFORE trusting isLikelyUtf8: a NUL byte is valid
+    // single-byte UTF-8, so ASCII-content-as-UTF-16 buffers otherwise "pass" the UTF-8
+    // check and get decoded as garbled NUL-interleaved single characters.
+    const utf16: "utf-16le" | "utf-16be" | null = EncodingService.looksLikeUtf16(raw.subarray(0, 65536));
+
+    if (utf16)
+    {
+      return utf16;
+    }
+
     if (EncodingService.isLikelyUtf8(raw.subarray(0, 65536)))
     {
       return "utf-8";
@@ -824,7 +834,10 @@ export class DetectBootstrapService
         }
       }
 
-      const delimiter: string = (trimmed.split("\t").length > trimmed.split(",").length) ? "\t" : ",";
+      // Pick whichever known delimiter actually splits this header line into the most
+      // fields (previously only tab vs comma were considered, so pipe/semicolon-
+      // delimited headers with no commas or tabs collapsed into a single field).
+      const delimiter: string = CSV_DELIMITERS.reduce((best, d) => (trimmed.split(d).length > trimmed.split(best).length ? d : best), CSV_DELIMITERS[0]);
       return { headers: trimmed.split(delimiter).map((h) => h.trim().replace(/^["']|["']$/g, "")) };
     }
     catch (err)

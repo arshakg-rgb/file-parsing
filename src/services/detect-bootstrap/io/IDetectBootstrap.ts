@@ -50,15 +50,18 @@ export interface HeaderStripResult {
 }
 
 /**
- * Header patterns for comma/semicolon/tab-delimited files.
+ * Header patterns for comma/semicolon/tab/pipe-delimited files.
  * A "header line" is a delimited line where every field looks like an identifier
  * (letters/digits/underscore, starting with a letter or underscore) rather than data.
+ * Optional surrounding whitespace per field is tolerated so fixed-width, padded
+ * exports (e.g. "  userid   |  fullname  | ...") are still recognized as headers.
  */
 
 export const HEADER_PATTERNS: RegExp[] = [
-  /^[a-zA-Z_][a-zA-Z0-9_]*(,[a-zA-Z_][a-zA-Z0-9_]*)+$/, // comma-delimited
-  /^[a-zA-Z_][a-zA-Z0-9_]*(;[a-zA-Z_][a-zA-Z0-9_]*)+$/, // semicolon-delimited
-  /^[a-zA-Z_][a-zA-Z0-9_]*(\t[a-zA-Z_][a-zA-Z0-9_]*)+$/, // tab-delimited
+  /^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(,\s*[a-zA-Z_][a-zA-Z0-9_]*\s*)+$/, // comma-delimited
+  /^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(;\s*[a-zA-Z_][a-zA-Z0-9_]*\s*)+$/, // semicolon-delimited
+  /^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(\t\s*[a-zA-Z_][a-zA-Z0-9_]*\s*)+$/, // tab-delimited
+  /^\s*[a-zA-Z_][a-zA-Z0-9_]*\s*(\|\s*[a-zA-Z_][a-zA-Z0-9_]*\s*)+$/, // pipe-delimited
 ];
 
 /**
