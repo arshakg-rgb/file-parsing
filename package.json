@@ -21,8 +21,7 @@
     "test:integration": "tsx src/scripts/integration_test.ts",
     "test:perf": "tsx src/scripts/perf_test_backfill.ts",
     "lint": "eslint 'src/**/*.ts'",
-    "lint:fix": "eslint 'src/**/*.ts' --fix",
-    "test:unit": "tsx --test tests/*.test.ts"
+    "lint:fix": "eslint 'src/**/*.ts' --fix"
   },
   "keywords": [],
   "author": "",
@@ -41,7 +40,6 @@
     "cors": "^2.8.6",
     "dotenv": "^16.4.5",
     "express": "^4.19.0",
-    "firebase-admin": "^12.7.0",
     "joi": "^18.2.3",
     "jschardet": "^3.1.0",
     "json-bigint": "^1.0.0",
