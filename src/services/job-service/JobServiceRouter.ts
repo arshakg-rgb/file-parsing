@@ -3,13 +3,14 @@ import { InstantiationError } from "@errors/InstantiationError.js";
 import { CustomRouter } from "@utils/router/CustomRouter.js";
 import { JobServiceController } from "@service/job-service/controllers/JobServiceController.js";
 import { JobControllerImpl } from "@service/job-service/controllers/impl/JobServiceControllerImpl.js";
+import { verifyFirebaseToken } from "@common/middleware/FirebaseAuthMiddleware.js";
 
 /**
  * Router for the Job Service.
  *
  * Follows the Reviro routing convention: singleton class extending
  * CustomRouter, controller injection, route definition in initializeRoutes().
- * No permission middleware is applied.
+ * All routes require a valid Firebase ID token (see `verifyFirebaseToken`).
  */
 export class JobServiceRouter extends CustomRouter
 {
@@ -41,6 +42,8 @@ export class JobServiceRouter extends CustomRouter
   private initializeRoutes(): void
   {
     const upload = multer({ storage: multer.memoryStorage() });
+
+    this.router.use(verifyFirebaseToken);
 
     this.route("/jobs")
       .get(this.controller.getAllJobs)

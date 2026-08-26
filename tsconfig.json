@@ -124,7 +124,7 @@
     "declarationMap": true,
     "sourceMap": true,
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "tests/**/*.ts"],
   "exclude": ["node_modules", "dist", "src/scripts", "src/db"],
   "files": ["src/scripts/reconciler.ts"]
 }
