@@ -113,7 +113,7 @@ export class FirebaseAuthClient
 
   public async signUp(email: string, password: string): Promise<IFirebaseAuthResult>
   {
-    return this.request("accounts:signUp", { email, password, returnSecureToken: true });
+    return this.request<IFirebaseAuthResult>("accounts:signUp", { email, password, returnSecureToken: true });
   }
 
   /**
@@ -125,7 +125,32 @@ export class FirebaseAuthClient
 
   public async signInWithPassword(email: string, password: string): Promise<IFirebaseAuthResult>
   {
-    return this.request("accounts:signInWithPassword", { email, password, returnSecureToken: true });
+    return this.request<IFirebaseAuthResult>("accounts:signInWithPassword", { email, password, returnSecureToken: true });
+  }
+
+  /**
+   * Requests a password-reset email for the given address via Identity
+   * Toolkit's out-of-band (oob) code flow. Resolves silently even if the
+   * caller-visible result should be generic (callers should not surface
+   * `EMAIL_NOT_FOUND` to avoid leaking which addresses have accounts).
+   * @param email - The account email to send the reset link to.
+   */
+
+  public async sendPasswordResetEmail(email: string): Promise<void>
+  {
+    await this.request<{ email: string }>("accounts:sendOobCode", { requestType: "PASSWORD_RESET", email });
+  }
+
+  /**
+   * Completes a password reset using the `oobCode` from the reset email.
+   * @param oobCode - The out-of-band code delivered to the user's email.
+   * @param newPassword - The new password to set (Firebase requires 6+ characters).
+   * @returns The email address whose password was reset.
+   */
+
+  public async resetPassword(oobCode: string, newPassword: string): Promise<{ email: string }>
+  {
+    return this.request<{ email: string }>("accounts:resetPassword", { oobCode, newPassword });
   }
 
   /**
@@ -168,7 +193,7 @@ export class FirebaseAuthClient
    * @private
    */
 
-  private async request(path: string, body: Record<string, unknown>): Promise<IFirebaseAuthResult>
+  private async request<T>(path: string, body: Record<string, unknown>): Promise<T>
   {
     const apiKey: string = this.getApiKey();
     const response: Response = await fetch(`${FirebaseAuthClient.BASE_URL}/${path}?key=${apiKey}`, {
@@ -177,7 +202,7 @@ export class FirebaseAuthClient
       body: JSON.stringify(body),
     });
 
-    const responseBody = await response.json() as IFirebaseAuthResult & IIdentityToolkitErrorResponse;
+    const responseBody = await response.json() as T & IIdentityToolkitErrorResponse;
 
     if (!response.ok)
     {
@@ -219,6 +244,10 @@ export class FirebaseAuthClient
       case "INVALID_REFRESH_TOKEN":
       case "TOKEN_EXPIRED":
         return new AuthError(AuthError.TOKEN_INVALID, "Refresh token is invalid or expired. Please log in again.");
+      case "INVALID_OOB_CODE":
+        return new AuthError(AuthError.OOB_CODE_INVALID, "This password reset link is invalid or has already been used.");
+      case "EXPIRED_OOB_CODE":
+        return new AuthError(AuthError.OOB_CODE_EXPIRED, "This password reset link has expired. Please request a new one.");
       default:
         if (message.startsWith("WEAK_PASSWORD"))
         {

@@ -1,5 +1,6 @@
 import pino from "pino";
 import express, { Request, Response, NextFunction } from "express";
+import cookieParser from "cookie-parser";
 import { Server as HttpServer } from "node:http";
 import ServiceManager from "@config/ServiceManager.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
@@ -108,6 +109,7 @@ class JobServiceManager extends ServiceManager implements IJobService
   {
     this.app.use(CorsUtils.setupCors());
     this.app.use(express.json());
+    this.app.use(cookieParser());
     this.app.use("/v1", FirebaseAuthRouter.getInstance().getRouter());
     this.app.use("/v1", JobServiceRouter.getInstance().getRouter());
 

@@ -8,23 +8,38 @@ import { createLogger } from "@utils/logger/Log.js";
 const logger: pino.Logger = createLogger(module);
 
 /**
- * Extracts the bearer token from the `Authorization` header.
+ * Name of the httpOnly cookie that carries the Firebase ID token for
+ * browser clients (set by {@link FirebaseAuthRouter}).
+ */
+
+export const ID_TOKEN_COOKIE: string = "id_token";
+
+/**
+ * Extracts the Firebase ID token from the request: prefers the
+ * `Authorization: Bearer <token>` header (used by non-browser/API
+ * clients), falling back to the `id_token` httpOnly cookie set on
+ * login/signup/refresh for browser clients.
  * @param req - The Express request object.
- * @returns The raw token string, or undefined if the header is missing/malformed.
+ * @returns The raw token string, or undefined if neither source is present.
  */
 
 function extractBearerToken(req: Request): string | undefined
 {
   const header: string | undefined = req.headers.authorization;
 
-  if (!header || !header.startsWith("Bearer "))
+  if (header && header.startsWith("Bearer "))
   {
-    return undefined;
+    const token: string = header.slice("Bearer ".length).trim();
+
+    if (token.length > 0)
+    {
+      return token;
+    }
   }
 
-  const token: string = header.slice("Bearer ".length).trim();
+  const cookieToken: unknown = req.cookies?.[ID_TOKEN_COOKIE];
 
-  return token.length > 0 ? token : undefined;
+  return typeof cookieToken === "string" && cookieToken.length > 0 ? cookieToken : undefined;
 }
 
 /**

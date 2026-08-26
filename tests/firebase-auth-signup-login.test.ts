@@ -216,27 +216,32 @@ test("FirebaseAuthClient.refresh: INVALID_REFRESH_TOKEN -> AuthError TOKEN_INVAL
 // ---------------------------------------------------------------------------
 
 /**
- * Runs a router handler and captures the response / forwarded error.
+ * Runs a router handler and captures the response / forwarded error, plus
+ * any cookies set via `res.cookie(...)`.
  */
 async function runHandler(
   handler: (req: Request, res: ExpressResponse, next: NextFunction) => Promise<void>,
-  body: unknown
-): Promise<{ status: number; jsonBody: unknown; nextErr: unknown }>
+  body: unknown,
+  cookies: Record<string, string> = {}
+): Promise<{ status: number; jsonBody: unknown; nextErr: unknown; cookies: Record<string, unknown> }>
 {
   let status = 200;
   let jsonBody: unknown;
   let nextErr: unknown = "not-called";
+  const setCookies: Record<string, unknown> = {};
 
-  const req = { body } as unknown as Request;
+  const req = { body, cookies, ip: "127.0.0.1" } as unknown as Request;
   const res = {
     status: (code: number) => { status = code; return res; },
     json: (b: unknown) => { jsonBody = b; },
+    cookie: (name: string, value: unknown) => { setCookies[name] = value; return res; },
+    clearCookie: (name: string) => { delete setCookies[name]; return res; },
   } as unknown as ExpressResponse;
   const next: NextFunction = ((err?: unknown) => { nextErr = err; }) as NextFunction;
 
   await handler(req, res, next);
 
-  return { status, jsonBody, nextErr };
+  return { status, jsonBody, nextErr, cookies: setCookies };
 }
 
 test("FirebaseAuthRouter.signup: missing password -> ValidationError forwarded, no response sent", async () => {
@@ -250,7 +255,7 @@ test("FirebaseAuthRouter.signup: missing password -> ValidationError forwarded, 
   assert.equal((nextErr as ValidationError).code, ValidationError.INPUT);
 });
 
-test("FirebaseAuthRouter.signup: valid body -> 201 with token payload", async () => {
+test("FirebaseAuthRouter.signup: valid body -> 201 with identity payload and auth cookies, no tokens in body", async () => {
   const restore = stubFetch(() => fakeResponse(true, {
     idToken: "id-4", refreshToken: "refresh-4", expiresIn: "3600", localId: "uid-4", email: "new@b.com",
   }));
@@ -261,14 +266,16 @@ test("FirebaseAuthRouter.signup: valid body -> 201 with token payload", async ()
       signup: (req: Request, res: ExpressResponse, next: NextFunction) => Promise<void>;
     };
 
-    const { status, jsonBody, nextErr } = await runHandler(router.signup, { email: "new@b.com", password: "password123" });
+    const { status, jsonBody, nextErr, cookies } = await runHandler(router.signup, { email: "new@b.com", password: "password123" });
 
     assert.equal(status, 201);
     assert.equal(nextErr, "not-called");
     assert.deepEqual(jsonBody, {
       success: true,
-      data: { uid: "uid-4", email: "new@b.com", idToken: "id-4", refreshToken: "refresh-4", expiresIn: "3600" },
+      data: { uid: "uid-4", email: "new@b.com", expiresIn: "3600" },
     });
+    assert.equal(cookies.id_token, "id-4");
+    assert.equal(cookies.refresh_token, "refresh-4");
   }
   finally
   {
@@ -297,7 +304,7 @@ test("FirebaseAuthRouter.login: wrong password -> INVALID_CREDENTIALS forwarded 
   }
 });
 
-test("FirebaseAuthRouter.login: valid credentials -> 200 with token payload", async () => {
+test("FirebaseAuthRouter.login: valid credentials -> 200 with identity payload and auth cookies, no tokens in body", async () => {
   const restore = stubFetch(() => fakeResponse(true, {
     idToken: "id-5", refreshToken: "refresh-5", expiresIn: "3600", localId: "uid-5", email: "a@b.com",
   }));
@@ -308,14 +315,16 @@ test("FirebaseAuthRouter.login: valid credentials -> 200 with token payload", as
       login: (req: Request, res: ExpressResponse, next: NextFunction) => Promise<void>;
     };
 
-    const { status, jsonBody, nextErr } = await runHandler(router.login, { email: "a@b.com", password: "password123" });
+    const { status, jsonBody, nextErr, cookies } = await runHandler(router.login, { email: "a@b.com", password: "password123" });
 
     assert.equal(status, 200);
     assert.equal(nextErr, "not-called");
     assert.deepEqual(jsonBody, {
       success: true,
-      data: { uid: "uid-5", email: "a@b.com", idToken: "id-5", refreshToken: "refresh-5", expiresIn: "3600" },
+      data: { uid: "uid-5", email: "a@b.com", expiresIn: "3600" },
     });
+    assert.equal(cookies.id_token, "id-5");
+    assert.equal(cookies.refresh_token, "refresh-5");
   }
   finally
   {
@@ -323,17 +332,18 @@ test("FirebaseAuthRouter.login: valid credentials -> 200 with token payload", as
   }
 });
 
-test("FirebaseAuthRouter.refreshToken: missing refreshToken -> ValidationError forwarded", async () => {
+test("FirebaseAuthRouter.refreshToken: missing refresh_token cookie -> AuthError TOKEN_MISSING forwarded", async () => {
   const router = FirebaseAuthRouter.getInstance() as unknown as {
     refreshToken: (req: Request, res: ExpressResponse, next: NextFunction) => Promise<void>;
   };
 
   const { nextErr } = await runHandler(router.refreshToken, {});
 
-  assert.ok(nextErr instanceof ValidationError);
+  assert.ok(nextErr instanceof AuthError);
+  assert.equal((nextErr as AuthError).code, AuthError.TOKEN_MISSING);
 });
 
-test("FirebaseAuthRouter.refreshToken: valid refresh token -> 200 with new token pair", async () => {
+test("FirebaseAuthRouter.refreshToken: valid refresh_token cookie -> 200 with new auth cookies, no tokens in body", async () => {
   const restore = stubFetch(() => fakeResponse(true, {
     id_token: "id-6", refresh_token: "refresh-6", expires_in: "3600", user_id: "uid-6",
   }));
@@ -344,14 +354,16 @@ test("FirebaseAuthRouter.refreshToken: valid refresh token -> 200 with new token
       refreshToken: (req: Request, res: ExpressResponse, next: NextFunction) => Promise<void>;
     };
 
-    const { status, jsonBody, nextErr } = await runHandler(router.refreshToken, { refreshToken: "old-refresh" });
+    const { status, jsonBody, nextErr, cookies } = await runHandler(router.refreshToken, {}, { refresh_token: "old-refresh" });
 
     assert.equal(status, 200);
     assert.equal(nextErr, "not-called");
     assert.deepEqual(jsonBody, {
       success: true,
-      data: { uid: "uid-6", email: undefined, idToken: "id-6", refreshToken: "refresh-6", expiresIn: "3600" },
+      data: { uid: "uid-6", email: undefined, expiresIn: "3600" },
     });
+    assert.equal(cookies.id_token, "id-6");
+    assert.equal(cookies.refresh_token, "refresh-6");
   }
   finally
   {

@@ -72,6 +72,16 @@ export class AuthError extends CustomError
     public static VALIDATION_ERROR: string = "VALIDATION_ERROR";
 
     /**
+     * Error code for an expired or already-used password reset (oob) code.
+     */
+    public static OOB_CODE_EXPIRED: string = "OOB_CODE_EXPIRED";
+
+    /**
+     * Error code for an invalid password reset (oob) code.
+     */
+    public static OOB_CODE_INVALID: string = "OOB_CODE_INVALID";
+
+    /**
      * Constructs a new instance of the AuthError class.
      * @param code - The error code.
      * @param message - The error message.
@@ -108,7 +118,9 @@ export class AuthError extends CustomError
             [AuthError.WEAK_PASSWORD]: HttpStatuses.HTTP_STATUS_BAD_REQUEST,
             [AuthError.INVALID_EMAIL]: HttpStatuses.HTTP_STATUS_BAD_REQUEST,
             [AuthError.TOO_MANY_REQUESTS]: HttpStatuses.HTTP_STATUS_TOO_MANY_REQUESTS,
-            [AuthError.VALIDATION_ERROR]: HttpStatuses.HTTP_STATUS_BAD_REQUEST
+            [AuthError.VALIDATION_ERROR]: HttpStatuses.HTTP_STATUS_BAD_REQUEST,
+            [AuthError.OOB_CODE_EXPIRED]: HttpStatuses.HTTP_STATUS_BAD_REQUEST,
+            [AuthError.OOB_CODE_INVALID]: HttpStatuses.HTTP_STATUS_BAD_REQUEST
         };
 
         const status: number | undefined = this.code ? statusMap[this.code] : undefined;

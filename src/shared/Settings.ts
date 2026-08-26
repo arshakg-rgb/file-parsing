@@ -39,6 +39,7 @@ function getOptionalString(name: string): string | undefined {
  * Application settings
  */
 export const settings = {
+  NODE_ENV: getString("NODE_ENV", "development"),
   GCP_PROJECT_ID: getString("GCP_PROJECT_ID", "data-etl-499916"),
   GOOGLE_APPLICATION_CREDENTIALS: getOptionalString("GOOGLE_APPLICATION_CREDENTIALS"),
   FIREBASE_WEB_API_KEY: getOptionalString("FIREBASE_WEB_API_KEY"),

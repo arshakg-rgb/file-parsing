@@ -212,9 +212,12 @@ test("FirebaseAuthRouter.logout: revokes refresh tokens for req.user.uid and res
 
   try
   {
-    const req = { user: { uid: "user-xyz" } } as unknown as Request;
+    const req = { user: { uid: "user-xyz" }, ip: "127.0.0.1" } as unknown as Request;
     let jsonBody: unknown;
-    const res = { json: (body: unknown) => { jsonBody = body; } } as unknown as Response;
+    const res = {
+      json: (body: unknown) => { jsonBody = body; },
+      clearCookie: () => res,
+    } as unknown as Response;
     let nextErr: unknown = "not-called";
     const next: NextFunction = ((err?: unknown) => { nextErr = err; }) as NextFunction;
 
@@ -235,7 +238,7 @@ test("FirebaseAuthRouter.logout: missing req.user -> forwards NOT_AUTHENTICATED 
     logout: (req: Request, res: Response, next: NextFunction) => Promise<void>;
   };
 
-  const req = { user: undefined } as unknown as Request;
+  const req = { user: undefined, ip: "127.0.0.1" } as unknown as Request;
   const res = { json: () => { throw new Error("res.json should not be called"); } } as unknown as Response;
   let nextErr: unknown;
   const next: NextFunction = ((err?: unknown) => { nextErr = err; }) as NextFunction;
@@ -257,7 +260,7 @@ test("FirebaseAuthRouter.logout: revokeRefreshTokens throws -> error forwarded t
 
   try
   {
-    const req = { user: { uid: "user-xyz" } } as unknown as Request;
+    const req = { user: { uid: "user-xyz" }, ip: "127.0.0.1" } as unknown as Request;
     const res = { json: () => { throw new Error("res.json should not be called"); } } as unknown as Response;
     let nextErr: unknown;
     const next: NextFunction = ((err?: unknown) => { nextErr = err; }) as NextFunction;
