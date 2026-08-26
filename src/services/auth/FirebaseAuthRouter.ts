@@ -1,11 +1,40 @@
 import { NextFunction, Request, Response } from "express";
+import joi, { ObjectSchema } from "joi";
 import { CustomRouter } from "@utils/router/CustomRouter.js";
+import { setupValidator } from "@utils/validator/SetupValidator.js";
 import { InstantiationError } from "@errors/InstantiationError.js";
 import { AuthError } from "@errors/AuthError.js";
 import { ValidationError } from "@errors/ValidationError.js";
 import { FirebaseAdmin } from "@config/firebase/FirebaseAdmin.js";
 import { FirebaseAuthClient, IFirebaseAuthResult } from "@config/firebase/FirebaseAuthClient.js";
 import { verifyFirebaseToken } from "@common/middleware/FirebaseAuthMiddleware.js";
+
+/**
+ * Schema for signup requests. Firebase itself rejects passwords under 6
+ * characters, so the same minimum is enforced here to fail fast with a
+ * clear message before making the network call.
+ */
+const signupSchema: ObjectSchema = joi.object().keys({
+  email: joi.string().trim().email().required(),
+  password: joi.string().min(6).max(4096).required()
+});
+
+/**
+ * Schema for login requests. Password strength is not enforced here since
+ * the account may predate any stricter policy; Firebase validates the
+ * credential itself.
+ */
+const loginSchema: ObjectSchema = joi.object().keys({
+  email: joi.string().trim().email().required(),
+  password: joi.string().min(1).max(4096).required()
+});
+
+/**
+ * Schema for refresh-token requests.
+ */
+const refreshSchema: ObjectSchema = joi.object().keys({
+  refreshToken: joi.string().min(1).required()
+});
 
 /**
  * Router exposing this app's own Firebase-authentication endpoints.
@@ -58,23 +87,28 @@ export class FirebaseAuthRouter extends CustomRouter
   }
 
   /**
-   * Extracts and validates `email`/`password` strings from a request body.
-   * @param req - The Express request object.
-   * @returns The validated email and password.
-   * @throws {ValidationError} if either field is missing or not a string.
+   * Validates a request body against a Joi schema, throwing a
+   * {@link ValidationError} listing every invalid/missing field.
+   * @param body - The raw request body to validate.
+   * @param schema - The Joi schema to validate against.
+   * @returns The validated (and stripped/typed) value.
+   * @throws {ValidationError} if the body fails validation.
    * @private
    */
 
-  private requireCredentials(req: Request): { email: string; password: string }
+  private validateBody<T>(body: unknown, schema: ObjectSchema): T
   {
-    const { email, password } = req.body ?? {};
+    const { error, value } = setupValidator(body ?? {}, schema, true, false);
 
-    if (typeof email !== "string" || !email.trim() || typeof password !== "string" || !password)
+    if (error)
     {
-      throw new ValidationError(ValidationError.INPUT, "'email' and 'password' are required.", ["email", "password"]);
+      const fields: string[] = error.details.map((detail) => String(detail.path[0]));
+      const message: string = error.details.map((detail) => detail.message).join("; ");
+
+      throw new ValidationError(ValidationError.INPUT, message, fields);
     }
 
-    return { email, password };
+    return value as T;
   }
 
   /**
@@ -109,7 +143,7 @@ export class FirebaseAuthRouter extends CustomRouter
   {
     try
     {
-      const { email, password } = this.requireCredentials(req);
+      const { email, password } = this.validateBody<{ email: string; password: string }>(req.body, signupSchema);
       const result: IFirebaseAuthResult = await FirebaseAuthClient.getInstance().signUp(email, password);
 
       res.status(201).json(this.toAuthResponse(result));
@@ -131,7 +165,7 @@ export class FirebaseAuthRouter extends CustomRouter
   {
     try
     {
-      const { email, password } = this.requireCredentials(req);
+      const { email, password } = this.validateBody<{ email: string; password: string }>(req.body, loginSchema);
       const result: IFirebaseAuthResult = await FirebaseAuthClient.getInstance().signInWithPassword(email, password);
 
       res.json(this.toAuthResponse(result));
@@ -154,13 +188,7 @@ export class FirebaseAuthRouter extends CustomRouter
   {
     try
     {
-      const refreshToken: unknown = req.body?.refreshToken;
-
-      if (typeof refreshToken !== "string" || !refreshToken)
-      {
-        throw new ValidationError(ValidationError.INPUT, "'refreshToken' is required.", ["refreshToken"]);
-      }
-
+      const { refreshToken } = this.validateBody<{ refreshToken: string }>(req.body, refreshSchema);
       const result: IFirebaseAuthResult = await FirebaseAuthClient.getInstance().refresh(refreshToken);
 
       res.json(this.toAuthResponse(result));
