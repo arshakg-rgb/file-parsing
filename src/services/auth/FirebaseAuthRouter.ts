@@ -204,6 +204,8 @@ export class FirebaseAuthRouter extends CustomRouter
       data: {
         uid: result.localId,
         email: result.email,
+        idToken: result.idToken,
+        refreshToken: result.refreshToken,
         expiresIn: result.expiresIn
       }
     };
