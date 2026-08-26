@@ -2,8 +2,8 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-COPY package.json pnpm-lock.yaml tsconfig.json ./
-RUN npm install -g pnpm && pnpm install --frozen-lockfile
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
+RUN npm install -g pnpm@10 && pnpm install --frozen-lockfile
 
 COPY src/ ./src/
 RUN pnpm run build
@@ -21,8 +21,8 @@ RUN apk add --no-cache wget gcompat libc6-compat && \
     rm -rf /tmp/rar /tmp/unrar.tar.gz && \
     apk del wget
 
-COPY package.json pnpm-lock.yaml ./
-RUN npm install -g pnpm && pnpm install --prod --frozen-lockfile
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN npm install -g pnpm@10 && pnpm install --prod --frozen-lockfile
 
 COPY --from=builder /app/dist ./dist
 COPY configs/ ./configs/
