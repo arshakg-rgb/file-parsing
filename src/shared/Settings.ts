@@ -41,6 +41,7 @@ function getOptionalString(name: string): string | undefined {
 export const settings = {
   GCP_PROJECT_ID: getString("GCP_PROJECT_ID", "data-etl-499916"),
   GOOGLE_APPLICATION_CREDENTIALS: getOptionalString("GOOGLE_APPLICATION_CREDENTIALS"),
+  FIREBASE_WEB_API_KEY: getOptionalString("FIREBASE_WEB_API_KEY"),
   BIGQUERY_PROJECT_ID: getString("BIGQUERY_PROJECT_ID", "data-etl-499916"),
   BIGQUERY_DATASET: getString("BIGQUERY_DATASET", "file_parsing"),
   BIGQUERY_LOCATION: getString("BIGQUERY_LOCATION", "us-central1"),

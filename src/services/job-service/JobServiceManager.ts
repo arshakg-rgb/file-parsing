@@ -8,6 +8,7 @@ import { createLogger } from "@utils/logger/Log.js";
 import { JobEvent } from "@shared/models/events.js";
 import { handleEvent } from "@service/job-service/StateMachineImpl.js";
 import { JobServiceRouter } from "@service/job-service/JobServiceRouter.js";
+import { FirebaseAuthRouter } from "@service/auth/FirebaseAuthRouter.js";
 import {
   DEFAULT_PORT,
   EVENT_BATCH_SIZE,
@@ -107,6 +108,7 @@ class JobServiceManager extends ServiceManager implements IJobService
   {
     this.app.use(CorsUtils.setupCors());
     this.app.use(express.json());
+    this.app.use("/v1", FirebaseAuthRouter.getInstance().getRouter());
     this.app.use("/v1", JobServiceRouter.getInstance().getRouter());
 
     this.app.get("/health", (_req: Request, res: Response) => {
