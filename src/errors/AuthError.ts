@@ -82,6 +82,11 @@ export class AuthError extends CustomError
     public static OOB_CODE_INVALID: string = "OOB_CODE_INVALID";
 
     /**
+     * Error code for a cross-origin request that is not in the allow-list.
+     */
+    public static CSRF_ORIGIN_MISMATCH: string = "CSRF_ORIGIN_MISMATCH";
+
+    /**
      * Constructs a new instance of the AuthError class.
      * @param code - The error code.
      * @param message - The error message.
@@ -120,7 +125,8 @@ export class AuthError extends CustomError
             [AuthError.TOO_MANY_REQUESTS]: HttpStatuses.HTTP_STATUS_TOO_MANY_REQUESTS,
             [AuthError.VALIDATION_ERROR]: HttpStatuses.HTTP_STATUS_BAD_REQUEST,
             [AuthError.OOB_CODE_EXPIRED]: HttpStatuses.HTTP_STATUS_BAD_REQUEST,
-            [AuthError.OOB_CODE_INVALID]: HttpStatuses.HTTP_STATUS_BAD_REQUEST
+            [AuthError.OOB_CODE_INVALID]: HttpStatuses.HTTP_STATUS_BAD_REQUEST,
+            [AuthError.CSRF_ORIGIN_MISMATCH]: HttpStatuses.HTTP_STATUS_FORBIDDEN
         };
 
         const status: number | undefined = this.code ? statusMap[this.code] : undefined;

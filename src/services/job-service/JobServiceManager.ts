@@ -24,6 +24,7 @@ import {QueueService} from "@shared/QueueService";
 import {QueueMessage} from "@shared/io/IQueueService";
 import {SecretsService} from "@shared/SecretsService";
 import CorsUtils from "@config/cors/CorsUtils.js";
+import { originCsrfMiddleware } from "@common/middleware/OriginCsrfMiddleware.js";
 import { error404Handler } from "@common/middleware/CommonMiddleware.js";
 
 /**
@@ -110,6 +111,7 @@ class JobServiceManager extends ServiceManager implements IJobService
     this.app.use(CorsUtils.setupCors());
     this.app.use(express.json());
     this.app.use(cookieParser());
+    this.app.use(originCsrfMiddleware);
     this.app.use("/v1", FirebaseAuthRouter.getInstance().getRouter());
     this.app.use("/v1", JobServiceRouter.getInstance().getRouter());
 
