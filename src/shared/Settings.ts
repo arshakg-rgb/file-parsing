@@ -70,6 +70,10 @@ export const settings = {
   FIRESTORE_DATABASE_ID: getString("FIRESTORE_DATABASE_ID", "file-parsing-db"),
   TEMPLATE_COLLECTION: getString("TEMPLATE_COLLECTION", "file-parsing-templates"),
 
+  COOKIE_SAMESITE: getString("COOKIE_SAMESITE", "Strict"),
+  COOKIE_DOMAIN: getOptionalString("COOKIE_DOMAIN"),
+  COOKIE_SECURE: process.env.COOKIE_SECURE ? process.env.COOKIE_SECURE === "true" : getString("NODE_ENV", "development") === "production",
+
   BEDROCK_MODEL_ID: getString("BEDROCK_MODEL_ID", "mock"),
   AI_RATE_LIMIT_RPM: getNumber("AI_RATE_LIMIT_RPM", 60),
   AI_RATE_LIMIT_BURST: getNumber("AI_RATE_LIMIT_BURST", 10),

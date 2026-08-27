@@ -157,24 +157,38 @@ export class FirebaseAuthRouter extends CustomRouter
 
   private setAuthCookies(res: Response, result: IFirebaseAuthResult): void
   {
-    const secure: boolean = settings.NODE_ENV === "production";
+    const sameSite: "strict" | "lax" | "none" | undefined = settings.COOKIE_SAMESITE.toLowerCase() as "strict" | "lax" | "none";
     const expiresInMs: number = Number(result.expiresIn) * 1000 || 60 * 60 * 1000;
 
-    res.cookie(ID_TOKEN_COOKIE, result.idToken, {
+    const cookieOptions: Record<string, unknown> = {
       httpOnly: true,
-      secure,
-      sameSite: "strict",
+      secure: settings.COOKIE_SECURE,
+      sameSite,
       maxAge: expiresInMs,
       path: "/"
-    });
+    };
 
-    res.cookie(REFRESH_TOKEN_COOKIE, result.refreshToken, {
+    if (settings.COOKIE_DOMAIN)
+    {
+      cookieOptions.domain = settings.COOKIE_DOMAIN;
+    }
+
+    res.cookie(ID_TOKEN_COOKIE, result.idToken, cookieOptions as Record<string, unknown> & { maxAge: number } as any);
+
+    const refreshCookieOptions: Record<string, unknown> = {
       httpOnly: true,
-      secure,
-      sameSite: "strict",
+      secure: settings.COOKIE_SECURE,
+      sameSite,
       maxAge: REFRESH_TOKEN_COOKIE_MAX_AGE_MS,
       path: "/v1/auth"
-    });
+    };
+
+    if (settings.COOKIE_DOMAIN)
+    {
+      refreshCookieOptions.domain = settings.COOKIE_DOMAIN;
+    }
+
+    res.cookie(REFRESH_TOKEN_COOKIE, result.refreshToken, refreshCookieOptions as Record<string, unknown> & { maxAge: number } as any);
   }
 
   /**
@@ -185,8 +199,13 @@ export class FirebaseAuthRouter extends CustomRouter
 
   private clearAuthCookies(res: Response): void
   {
-    res.clearCookie(ID_TOKEN_COOKIE, { path: "/" });
-    res.clearCookie(REFRESH_TOKEN_COOKIE, { path: "/v1/auth" });
+    const clearOptions: Record<string, unknown> = { path: "/" };
+    if (settings.COOKIE_DOMAIN) { clearOptions.domain = settings.COOKIE_DOMAIN; }
+    res.clearCookie(ID_TOKEN_COOKIE, clearOptions as any);
+
+    const refreshClearOptions: Record<string, unknown> = { path: "/v1/auth" };
+    if (settings.COOKIE_DOMAIN) { refreshClearOptions.domain = settings.COOKIE_DOMAIN; }
+    res.clearCookie(REFRESH_TOKEN_COOKIE, refreshClearOptions as any);
   }
 
   /**
