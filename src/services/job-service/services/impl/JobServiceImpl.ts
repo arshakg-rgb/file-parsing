@@ -183,7 +183,7 @@ export class JobServiceImpl implements JobService
         throw new ValidationError(ValidationError.INPUT, "field_spec must be an array of field names, not a string");
       }
     }
-    
+
     const jobId = randomUUID();
     const batchId: string = batch_id || randomUUID();
     let putUrl: string | undefined;
@@ -198,6 +198,7 @@ export class JobServiceImpl implements JobService
       putUrl = await this.gcsUtils.presignedPutUrl(settings.DATA_BUCKET, uploadKey, 3600, uploadContentType);
       s3Url = `gs://${settings.DATA_BUCKET}/${uploadKey}`;
     }
+
 
     const now: string = new Date().toISOString();
     const row: ParseJobRow = {
