@@ -3225,9 +3225,11 @@ export class LineClassifierServiceImpl implements IClassifier
 
   private liftFieldsFromEmbeddedJson(row: Record<string, unknown>, parts: string[]): void
   {
-    for (const part of parts)
+    const consumedHeaderNames = new Set<string>();
+
+    for (let i = 0; i < parts.length; i++)
     {
-      const trimmed: string = part.trim();
+      const trimmed: string = parts[i].trim();
 
       if (trimmed.length < 2 || (trimmed[0] !== "{" && trimmed[0] !== "["))
       {
@@ -3259,11 +3261,46 @@ export class LineClassifierServiceImpl implements IClassifier
       }
 
       const sourceKeys: string[] = Object.keys(source);
+      const headerName: string | undefined = this.headerParts && i < this.headerParts.length ? this.headerParts[i] : undefined;
+      const normalizedHeaderName: string | undefined = headerName ? this.normalizeKey(headerName) : undefined;
 
       for (const field of this.fieldSpec)
       {
         if (field === "meta" || (row[field] !== null && row[field] !== undefined && row[field] !== ""))
         {
+          continue;
+        }
+
+        const dotIdx: number = field.lastIndexOf(".");
+
+        if (dotIdx > 0)
+        {
+          // Dotted field (e.g. "_source.AGE"): only pull it from the cell whose OWN
+          // header matches the "_source" prefix, so a same-named leaf key in an
+          // unrelated JSON column can never be mistaken for this field.
+          const prefix: string = field.slice(0, dotIdx);
+          const leaf: string = field.slice(dotIdx + 1);
+
+          if (!normalizedHeaderName || normalizedHeaderName !== this.normalizeKey(prefix))
+          {
+            continue;
+          }
+
+          if (leaf in source)
+          {
+            row[field] = source[leaf];
+            if (headerName) consumedHeaderNames.add(headerName);
+            continue;
+          }
+
+          const matchedLeafKey: string | undefined = sourceKeys.find((k) => this.normalizeKey(k) === this.normalizeKey(leaf));
+
+          if (matchedLeafKey !== undefined)
+          {
+            row[field] = source[matchedLeafKey];
+            if (headerName) consumedHeaderNames.add(headerName);
+          }
+
           continue;
         }
 
@@ -3279,6 +3316,36 @@ export class LineClassifierServiceImpl implements IClassifier
         {
           row[field] = source[matchedKey];
         }
+      }
+    }
+
+    // A raw column fully expanded into its own dotted field_spec columns above (e.g.
+    // "_source" -> "_source.AGE", "_source.BPLACE", ...) shouldn't also duplicate its
+    // whole JSON blob into `meta`.
+    if (consumedHeaderNames.size > 0 && typeof row["meta"] === "string" && row["meta"].startsWith("{"))
+    {
+      try
+      {
+        const metaObj: Record<string, unknown> = JSON.parse(row["meta"]) as Record<string, unknown>;
+        let changed: boolean = false;
+
+        for (const name of consumedHeaderNames)
+        {
+          if (name in metaObj)
+          {
+            delete metaObj[name];
+            changed = true;
+          }
+        }
+
+        if (changed)
+        {
+          row["meta"] = Object.keys(metaObj).length ? JSON.stringify(metaObj) : null;
+        }
+      }
+      catch
+      {
+        // ignore malformed meta payload
       }
     }
   }
