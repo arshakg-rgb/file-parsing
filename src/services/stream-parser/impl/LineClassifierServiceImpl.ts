@@ -1988,8 +1988,11 @@ export class LineClassifierServiceImpl implements IClassifier
 
       if (Array.isArray(v))
       {
-        // If this key exactly matches a target field (e.g. "Experience", "Education"),
-        // always keep the array intact under that field.
+        // Same reasoning as the nested-object case above: if this key exactly matches
+        // a target field (e.g. "Experience", "Education"), keep the array intact under
+        // that field instead of exploding it into "key[0].child" keys. Those exploded
+        // keys never match the field itself, so the field stays null/empty while its
+        // data leaks into meta.
         if (this.normalizedFieldSpec.includes(this.normalizeKey(key)))
         {
           out[key] = v;
@@ -1998,28 +2001,11 @@ export class LineClassifierServiceImpl implements IClassifier
 
         const allObjects: boolean = v?.length > 0 && v?.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
 
-        if (allObjects && v.length > 1)
+        if (allObjects)
         {
-          // Several JSON records under one key - keep them together as a single
-          // column instead of exploding into "key[0].child", "key[1].child", ...
-          // which would scatter one logical multi-record field across many
-          // disconnected meta keys.
-          out[key] = v;
-        }
-        else if (allObjects && v.length === 1)
-        {
-          // A single JSON record wrapped in an array behaves like a plain nested
-          // object: flatten it directly so its leaf keys can still match
-          // field_spec columns (e.g. "_source": [{ AGE: ... }] -> "_source.AGE").
-          const nested: Record<string, unknown> = this.flattenObject(v[0] as Record<string, unknown>, key);
-
-          if (Object.keys(nested).length === 0)
+          for (let i = 0; i < v?.length; i++)
           {
-            out[key] = {};
-          }
-          else
-          {
-            Object.assign(out, nested);
+            Object.assign(out, this.flattenObject(v[i] as Record<string, unknown>, `${key}[${i}]`));
           }
         }
         else
@@ -2068,26 +2054,11 @@ export class LineClassifierServiceImpl implements IClassifier
 
               const allObjects: boolean = parsed.length > 0 && parsed.every((x) => x !== null && typeof x === "object" && !Array.isArray(x));
 
-              if (allObjects && parsed.length > 1)
+              if (allObjects)
               {
-                // Several JSON records under one key - keep them together as a single
-                // column instead of exploding into "key[0].child", "key[1].child", ...
-                out[key] = parsed;
-              }
-              else if (allObjects && parsed.length === 1)
-              {
-                // A single JSON record wrapped in an array behaves like a plain nested
-                // object: flatten it directly so its leaf keys can still match
-                // field_spec columns.
-                const nested: Record<string, unknown> = this.flattenObject(parsed[0] as Record<string, unknown>, key);
-
-                if (Object.keys(nested).length === 0)
+                for (let i = 0; i < parsed.length; i++)
                 {
-                  out[key] = {};
-                }
-                else
-                {
-                  Object.assign(out, nested);
+                  Object.assign(out, this.flattenObject(parsed[i] as Record<string, unknown>, `${key}[${i}]`));
                 }
               }
               else
