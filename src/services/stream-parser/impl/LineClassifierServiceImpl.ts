@@ -3881,6 +3881,7 @@ export class LineClassifierServiceImpl implements IClassifier
     const quote: string | null = quoteChar || null;
     const parts: string[] = [];
     let current: string = "";
+    let isLastFieldQuoted = false;
     let i: number = 0;
 
     while (i < line.length)
@@ -3893,6 +3894,7 @@ export class LineClassifierServiceImpl implements IClassifier
       // commas and shifting later columns.
       if (quote && c === quote && current.length === 0)
       {
+        isLastFieldQuoted = true;
         i++;
 
         while (i < line.length)
@@ -3919,23 +3921,21 @@ export class LineClassifierServiceImpl implements IClassifier
           }
         }
 
-        // After a quoted field, consume the following delimiter if present.
+        // If the quoted field ends at EOL, let the final push below handle it.
+        // If a delimiter follows, push it here and clear state for the next cell.
         if (i < line.length && line[i] === delim)
         {
           parts.push(current);
           current = "";
+          isLastFieldQuoted = false;
           i++;
-        }
-        else if (i === line.length)
-        {
-          parts.push(current);
-          current = "";
         }
       }
       else if (c === delim)
       {
         parts.push(current.trim());
         current = "";
+        isLastFieldQuoted = false;
         i++;
       }
       else
@@ -3945,7 +3945,7 @@ export class LineClassifierServiceImpl implements IClassifier
       }
     }
 
-    parts.push(current.trim());
+    parts.push(isLastFieldQuoted ? current : current.trim());
 
     return parts;
   }
