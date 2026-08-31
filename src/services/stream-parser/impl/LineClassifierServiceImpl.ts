@@ -108,7 +108,7 @@ export class LineClassifierServiceImpl implements IClassifier
     { category: "account", re: /account|identifier|login|user\s*id|username/ },
     { category: "email", re: /mail/ },
     { category: "phone", re: /phone|mobile|tel|msisdn/ },
-    { category: "name", re: /name|surname/ },
+    { category: "name", re: /(?<!label)name|surname/ },
     { category: "address", re: /address|street/ },
     { category: "location", re: /city|country|county|postcode|postal|zip|state|province|region|town|geo|locality/ },
   ];

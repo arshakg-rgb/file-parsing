@@ -22,7 +22,7 @@ import {QueueService} from "@shared/QueueService";
 import {QueueConsumerPool} from "@shared/QueueConsumerPool.js";
 import {InstantiationError} from "@errors/InstantiationError";
 import {RecordTemplate, RubbishTemplate} from "@shared/io/ITemplateRegistryService";
-import {expandJsonColumns} from "@service/detect-bootstrap/impl/JsonColumnExpander";
+import {collectJsonLeafPaths, expandJsonColumns} from "@service/detect-bootstrap/impl/JsonColumnExpander";
 
 
 export class DetectBootstrapService
@@ -751,10 +751,7 @@ export class DetectBootstrapService
                   const p: unknown = JSON.parse(lineTrim);
                   if (p && typeof p === "object" && !Array.isArray(p))
                   {
-                    for (const k of Object.keys(p as Record<string, unknown>))
-                    {
-                      keys.add(k);
-                    }
+                    collectJsonLeafPaths(p as Record<string, unknown>, "", keys);
                   }
                 }
                 catch
@@ -833,10 +830,7 @@ export class DetectBootstrapService
             {
               if (item && typeof item === "object")
               {
-                for (const k of Object.keys(item))
-                {
-                  keys.add(k);
-                }
+                collectJsonLeafPaths(item, "", keys);
               }
             }
             if (keys.size)
